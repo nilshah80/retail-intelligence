@@ -1,0 +1,24 @@
+# `api/` — Go API & serving layer
+
+**Purpose:** serve the Python-produced artifacts to the UI and own the decision/governance layer:
+workflow / HITL (approvals, planner overrides, idempotency, audit), **serve-time guardrail
+re-validation**, staleness handling (409/503), RBAC / auth.
+
+**Language:** Go.
+
+**Origin (`[REUSE-as-redesign]`):** the M5 PoC's `api/app.py` (FastAPI), `workflow_service.py`,
+and `workflow_repository.py` establish the design and rules; the **code is re-implemented in Go**.
+
+**Boundary:** reads Python artifacts + PostgreSQL + the shared guardrail YAMLs in `contracts/`.
+Two hard requirements:
+- **Fingerprint parity** — SHA-256 over canonical JSON must be byte-identical to Python's
+  (see `contracts/`), or lineage checks 409 spuriously.
+- **Single-sourced thresholds** — read guardrail numbers from `contracts/` YAMLs; never hard-code.
+
+**Interactive scoring:** compute closed-form projections in Go from stored β / P50 / P90
+(`units = p50·(price/price0)^β`, revenue/margin, safety stock); call a Python scoring service only
+for model-backed scoring or the LLM copilot (OPEN — see `docs/OPEN_DECISIONS.md`).
+
+**Spec:** §4.7–4.8 (HITL, lineage), §8 (screens), Architecture note.
+
+_No code yet — information only._
