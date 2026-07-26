@@ -45,9 +45,13 @@ encrypted), **RDS PostgreSQL**, **Secrets Manager**, IaC skeleton (Terraform/CDK
 pipeline. **Exit:** `terraform apply` stands up an empty, private, encrypted environment.
 
 ### Phase A1 — Data landing & ingest
-Run the `datagen` job (Batch/SageMaker Processing) → S3 **raw** prefix; run ingest + quality
-(Python from `ml/`) as a **SageMaker Processing** job → S3 **curated**; register the run.
-**Exit:** generated dataset lands in S3 and passes the fail-closed quality gate in-cloud.
+Run the `datagen` client-shaped publisher (Batch/SageMaker Processing) → immutable S3 **raw**.
+Python SageMaker Processing jobs run Gate A; the profile-driven normalizer/adapter emits
+standardized staging; shared transforms produce canonical data; Gate B promotes only passing
+results to S3 **curated** and registers manifests, lineage and reconciliation. **Exit:** Gate A
+passes every snapshot; pure Shopify reconstructs its declared slice with `validated_partial`
+only; generic and Shopify-plus-companion reconstruct the full truth and pass full Gate B before
+curated promotion in-cloud.
 
 ### Phase A2 — ML pipeline (features, forecast, elasticity)
 Feature build + LightGBM forecast + Poisson-EB elasticity as SageMaker jobs; orchestrate with

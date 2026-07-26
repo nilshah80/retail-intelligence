@@ -9,10 +9,13 @@ Take `retail-intelligence` from an empty scaffold to **one end-to-end Retail AI 
 locally on synthetic data**, populating the dashboard's screens through a real API. "Done
 locally" means:
 
-- A **separate data generator** (`datagen/`) produces the full `retail_v2` dataset (Indian
-  multi-category retail) as CSV/Parquet — deterministic, point-in-time, contract-valid.
-- The **Python ML pipeline** (`ml/`) ingests those files (via the `mapped_files` adapter),
-  runs quality gates, builds features, and produces **demand forecasts (P50/P90 + drivers)**,
+- An isolated, extract-ready **data generator** (`datagen/`) creates one deterministic Indian
+  multi-category retail truth and publishes both exact canonical fixtures and source-shaped
+  CSV/Parquet/JSONL test dialects (including a direct-identifier-free,
+  protected-field-minimized Shopify-shaped example).
+- The **Python ML pipeline** (`ml/`) lands and validates raw snapshots, maps and semantically
+  transforms each source into canonical `retail_v2`, runs the canonical quality/PIT gate, builds
+  features, and produces **demand forecasts (P50/P90 + drivers)**,
   **inventory/replenishment** decisions (safety stock, transfers, allocation), and
   **pricing/promotion** recommendations under guardrails — all as fingerprinted artifacts.
 - The **Go API** (`api/`) serves those artifacts, owns **workflow/HITL** (approve / override /
@@ -32,12 +35,14 @@ re-implemented in Go.
 - **Engines compute the numbers, not the LLM.** Every quantity/price/margin comes from
   deterministic, unit-tested engine code (Python) or the Go re-validation; the copilot only
   reads and explains.
-- **Point-in-time everywhere.** Every fact carries `known_as_of`; features/labels respect the
+- **Point-in-time everywhere.** Every temporal fact carries `known_as_of`; features/labels respect the
   embargo; a late fact never rewrites history.
 - **Fail closed.** Missing required fields, stale lineage, mixed provenance, or unverifiable cost
   stop the pipeline / return 409/503 — never a silent guess.
-- **One contract.** `contracts/` is the single source of truth shared by `datagen`, `ml`, `api`;
-  fingerprints must be byte-identical across Python and Go.
+- **One canonical contract.** `contracts/` defines canonical `retail_v2`, the source-profile/
+  transform extension points and shared guardrails. Raw source schemas may differ; only the
+  transformed canonical output is consumed downstream. Fingerprints must be byte-identical across
+  Python and Go.
 - **`datagen/` is isolated.** It depends on `contracts/` only, so it can be extracted later.
 
 ## 3 · Phases (local)
@@ -47,47 +52,70 @@ Status markers: `[ ]` not started · `[~]` partial · `[x]` done. Task-level det
 
 ### Phase 1 — Synthetic data generation `[FIRST]`
 
-**Goal:** stand up `datagen/` producing the complete `retail_v2` dataset for an Indian
-multi-category retailer, plus the minimal `contracts/` needed to emit against.
+**Goal:** stand up `datagen/` with one internally canonical retail truth and two publishers:
+`SYNTHETIC_CANONICAL_TEST` for component tests and `SYNTHETIC_CLIENT_SHAPED_TEST` for the real
+raw→transform→canonical onboarding path, plus the contracts needed by both.
 
 **Scope:**
-- **Contracts (prerequisite):** lock the `retail_v2` schema (entities, columns, types,
-  `known_as_of`, minor-unit money, `*_source` labels) from spec §11; publish the `mapped_files`
-  ingest-profile template and a data dictionary. Seed the guardrail YAMLs.
+- **Contracts (prerequisite):** lock canonical `retail_v2` (entities, grains, columns, types,
+  `known_as_of`, minor-unit money, row provenance) from spec §11; publish the source-profile
+  schema, coverage/capability and composite manifests, approved-mapping/runtime-crosswalk split,
+  staging + adapter/transform interfaces, data dictionary and seed guardrail YAMLs.
 - **Generator config:** 4 categories (Footwear / Apparel / Electronics / Beauty), 5 stores
   (Mumbai, Noida, Bengaluru, Kolkata, Chennai) + 2–3 DCs, N SKUs/category, ~3 years daily
   history, deterministic seed.
-- **Demand model:** per-SKU×store base level, weekly seasonality (Fourier), **Indian
+- **Demand/inventory model:** per-SKU×store latent demand, weekly seasonality (Fourier), **Indian
   festival/monsoon/EOSS calendar bumps**, day-of-week, trend, promo lift, price elasticity,
   intermittency / new-product launch gate, **weather** and **local-event** multipliers, macro
-  drift; Poisson/neg-binomial draw.
+  drift; Poisson/neg-binomial draw; a supply/ATP event loop emits inventory-constrained realized
+  sales with explicit versions/exact money, demand-to-supply `sales_fulfillments`, and versioned
+  post-sale adjustments without rewriting earlier knowledge.
 - **Money & operational streams:** regular/promo price series; **cost ledger
   (`purchase_receipts`) with the same SKU received at different costs over time** (§10.5);
-  inventory snapshots (on-hand/on-order, reserved/damaged), **batches + expiry**, inbound
-  shipments; suppliers + `supplier_performance` (OTD, lead-time variability).
-- **New feeds:** competitor prices + availability + a seed match table; weather actual +
-  forecast (Indian cities); local events; macro index; FX rates; promotions + customer segments.
+  inventory snapshots with disjoint on-order/in-transit and committed/reserved/damaged buckets,
+  explicit ATP method/reconciliation, **batches + expiry**, inbound shipments; suppliers +
+  `supplier_performance` (OTD, lead-time variability).
+- **New feeds:** competitor product/price/availability inputs plus test-only match truth (runtime
+  matches remain a PoC output); weather actual + forecast (Indian cities); local events; macro
+  index; FX rates; promotions + customer segments.
+- **Publication dialects:** exact canonical Parquet; a full-coverage generic retailer-shaped
+  snapshot; a direct-identifier-free, protected-field-minimized Shopify-shaped snapshot for the
+  domains Shopify can supply; and synthetic PIM/ERP/WMS/external companion feeds for a complete
+  Shopify-led test. Real Shopify data is never used locally.
 - **Engineering discipline:** deterministic seeds, immutable publication (`run_id` from inputs),
-  boundary validation, and `known_as_of` on every temporal file.
+  boundary validation, control totals, and `known_as_of` on every temporal fact.
 
-**Deliverables:** `datagen/` CLI, one full generated dataset (CSV/Parquet), data dictionary,
-tests (determinism, boundary, `known_as_of`, schema conformance).
+**Deliverables:** `datagen/` CLI, internal canonical truth, canonical and client-shaped
+publications (CSV/Parquet/JSONL as declared), source coverage/capability + composite manifests,
+profiles, data dictionary, and tests for determinism, boundary, `known_as_of`, schema
+conformance, protected-field exclusion and webhook-authentication failure.
 
-**Exit criteria:** every `[gen]` entity in §11 is emitted with correct columns and
-`known_as_of`; a re-run is byte-identical; the cost ledger demonstrably shows one SKU at
-multiple costs over time; a smoke read by the Phase-2 adapter raises no schema error.
+**Exit criteria:** every `[in]` entity in §11 exists in the internal truth; canonical mode emits
+correct columns/`known_as_of`; client-shaped snapshots have valid manifests/profiles; a re-run is
+byte-identical; the cost ledger shows one SKU at multiple costs; Phase 2 can land the generic,
+Shopify and companion snapshots.
 
 ### Phase 2 — Ingest & data quality (`ml/data`)
 
-**Goal:** map generator files → canonical `retail_v2` and prove they're clean.
+**Goal:** prove that differently shaped raw sources become the same clean canonical `retail_v2`
+without source logic leaking downstream.
 
-**Scope:** copy/adapt the M5 `mapped_files` adapter; author the profile mapping `datagen`'s
-columns → canonical; run the quality battery (fail-closed): negative units, non-positive price,
-duplicate keys, per-series date gaps, `known_as_of` placement, recomputed promo rule, **cost
-completeness**, referential integrity; write curated Parquet + a DuckDB warehouse.
+**Scope:** implement immutable raw landing; Gate A source/manifest/coverage/mapping validation; adapt M5
+`mapped_files` as the profile-driven default normalizer and add a thin versioned adapter interface
+for source-specific semantics; emit standardized staging; apply source-neutral domain transforms
+(joins, filters, refunds/cancellations, money/unit/timezone conversion, aggregation, inventory
+snapshots) into canonical `retail_v2`; attach PIT/provenance/lineage; run Gate B canonical
+validation (coverage/capability status, exact sales-money and fulfillment reconciliation,
+adjustment equations, monotonic version keys, inventory/ATP invariants, negative units,
+non-positive price, date gaps, `known_as_of`, recomputed promo rule, cost-ledger completeness,
+referential integrity and control totals); atomically publish curated Parquet + DuckDB and
+reason-coded quarantine.
 
-**Exit criteria:** `status = pass` (0 critical violations) on the generated dataset;
-referential integrity holds; curated tables materialize.
+**Exit criteria:** Gate A passes for every snapshot; the pure Shopify fixture receives only
+`validated_partial` after reconstructing its manifest-declared supported slice; the generic and
+Shopify-plus-companion datasets reconstruct the full truth/control totals and receive full Gate-B
+`pass` before curated promotion. References hold, curated full/capability-complete tables
+materialize, and no model/engine code differs by source.
 
 ### Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 
@@ -107,9 +135,9 @@ P50≤P90; artifacts fingerprinted. **Unlocks the Demand Forecast screen data.**
 **Goal:** turn forecasts into stock decisions.
 
 **Scope:** reorder / safety-stock (quantile-spread × service level); **service-level policy
-calibration on 5% + validation on 95%** (A/B/C); multi-echelon `locations`, ATP, in-transit,
-**batches/expiry, ageing**; transfer optimizer; constrained allocation; inventory-replay
-simulator + acceptance; demand-at-risk.
+calibration on 5% + validation on 95%** (A/B/C); multi-echelon `locations`, reconciled ATP,
+inbound/in-transit shipment state, **batches/expiry, ageing**; transfer optimizer; constrained
+allocation; inventory-replay simulator + acceptance; demand-at-risk.
 
 **Exit criteria:** replay passes acceptance (fewer stock-outs / less inventory / ≥ fill);
 policy holdout passes. **Unlocks Inventory + Replenishment/Planner screens.**
@@ -154,7 +182,9 @@ them (§8.3 note).
 
 **Scope:** model registry/drift, alerts + data-freshness, data-source management, reports;
 adoption metrics / performance insights (AI-vs-control); disclosure guardrails; end-to-end
-acceptance run + a synthetic "client-shaped" dataset proving onboarding is config-only.
+acceptance run + at least two synthetic client-shaped dialects proving onboarding is
+configuration-only where existing transforms cover the semantics, or otherwise needs only a
+bounded versioned adapter with no downstream changes.
 
 **Exit criteria:** a full ingest→serve run passes fail-closed gates end to end; all screens live.
 

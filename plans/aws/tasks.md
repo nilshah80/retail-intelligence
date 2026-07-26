@@ -16,10 +16,21 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 
 ## Phase A1 — Data landing & ingest
 - [ ] Package `datagen/` as a job (AWS Batch or SageMaker Processing).
-- [ ] Run generator → S3 **raw** prefix (with run manifest + `known_as_of`).
-- [ ] Package `ml/` ingest + quality as a SageMaker Processing job.
-- [ ] Ingest (mapped_files) → curated S3; fail-closed quality gate in-cloud.
-- [ ] **Exit:** dataset in S3 passes quality gate; run registered.
+- [ ] Publish full generic, Shopify-supported and synthetic PIM/ERP/WMS/external companion snapshots
+      → versioned S3 **raw** prefixes with source coverage/capability manifests, composite
+      precedence, hashes, controls and `known_as_of`.
+- [ ] Package `ml/` raw gate, profile-driven normalizer/adapters, standardized staging,
+      source-neutral transforms, canonical gate and curated publisher as SageMaker Processing
+      jobs.
+- [ ] Persist lineage, reconciliation and quarantine artifacts; atomically publish passing
+      canonical Parquet to S3 **curated**.
+- [ ] Re-run the local Shopify golden suite in-cloud: bootstrap/webhook ID parity, fulfillment
+      and return/refund transitions, exact split-money allocation, inventory-state controls,
+      unresolved historical lines, HMAC/authenticity rejection and protected-field exclusion
+      before the S3 raw boundary.
+- [ ] **Exit:** Gate A passes every source; pure Shopify is `validated_partial` and unpromoted;
+      generic and Shopify-plus-companion reconstruct full truth, pass full Gate B and register
+      curated runs.
 
 ## Phase A2 — ML pipeline (features, forecast, elasticity)
 - [ ] Feature build job → S3 features prefix (point-in-time).

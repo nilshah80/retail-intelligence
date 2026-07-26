@@ -8,10 +8,19 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | # | Decision | Status | Value |
 |---|---|---|---|
 | 1 | Monorepo name | **DECIDED** | `retail-intelligence` |
-| 2 | Data production vs consumption split | **DECIDED** | separate `datagen/` emits CSV/Parquet; PoC ingests |
+| 2 | Data production vs consumption split | **DECIDED** | isolated `datagen/` publishes immutable source/canonical fixtures; `ml/data` owns raw→transform→canonical |
 | 3 | ML language / API language | **DECIDED** | Python ML pipelines, Go API |
 | 4 | Money storage | **DECIDED** | integer minor units (paise), `minor_unit_exponent = 2`; FX display-only |
 | 5 | Contract version | **DECIDED** | `retail_v2` (superset of M5 `retail_v1`) |
+| 20 | Source transformation extension points | **DECIDED** | profile-driven default mapper or thin source adapter → standardized staging → shared source-neutral transforms → canonical; no source logic downstream |
+| 21 | Generator acceptance dialects | **DECIDED** | one internal truth; `canonical_test`, full generic dialect, Shopify-supported dialect and companion PIM/ERP/WMS/external feeds |
+| 22 | Location keys | **DECIDED** | `locations.location_id` authoritative; demand-only `stores` view uses `store_id = location_id` |
+| 23 | Sales/returns semantics | **DECIDED** | explicit cumulative sales versions carry fulfilled units + exact net amount; fulfillment lines bridge demand/supply nodes; pre-fulfilment cancellations are excluded; later unit/revenue reversals are typed, versioned adjustments |
+| 24 | Shopify local scope | **DECIDED** | documented adapter + fully synthetic golden fixture only; real Shopify runs client-controlled |
+| 25 | Competitor-match ownership | **DECIDED** | `competitor_matches` is a PoC output; generator match truth is test-only |
+| 29 | Partial-source acceptance | **DECIDED** | manifest-declared entity/field/capability coverage; pure Shopify may be `validated_partial` only; only capability-complete full Gate-B runs are promoted |
+| 30 | Source mapping ownership | **DECIDED** | admins approve immutable mapping config; ingestion writes resolved runtime crosswalks and quarantines unknown/ambiguous keys |
+| 31 | ATP and inbound semantics | **DECIDED** | source-observed or fixed bucket formula; on-order and in-transit are disjoint; ATP excludes inbound |
 
 ## Recommended (confirm)
 
@@ -36,6 +45,9 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | 17 | UI framework | **OPEN** | the `docs/` mockup is static HTML; pick the real stack | §8.4 (ui) |
 | 18 | Copilot serving | **OPEN** | Go proxies to a Python copilot service vs Go calls the LLM directly; grounding from same artifacts | §8.4 |
 | 19 | Customer/segment data depth | **OPEN** | segment mix only, or basket-level for cannibalisation/bundle models | §8.1, §11.4 |
+| 26 | Incremental ingestion semantics | **OPEN** | local path is immutable full snapshots; define CDC/upsert/watermark rules after round-trip acceptance | §11.10 |
+| 27 | Non-INR source accounting conversion | **OPEN** | separate from display FX; fail closed until an approved accounting/tax policy exists | §11.11 |
+| 28 | Production Shopify connector scope | **OPEN** | after local PoC: connector deliverable vs client-provided landed export | §11.11 |
 
 ## Do NOT carry over from the M5 PoC
 
