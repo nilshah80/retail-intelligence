@@ -1,15 +1,26 @@
 # `contracts/` — the shared contract
 
-**Purpose:** the single source of truth shared across the repo. `datagen/` builds an internal truth
-against it, `ml/data` transforms raw sources into it, and `api/` serves artifacts derived from it.
-Raw retailer/platform schemas do not have to match it. This folder prevents source, language and
-cross-repo drift.
+**Purpose:** the single source of truth for ingestion output, downstream artifacts and API
+behavior. `ingestion/` transforms raw sources into it, `ml/` consumes it, and `api/` serves
+artifacts derived from it. Raw retailer/platform/datagen schemas do not have to match it.
+
+`datagen/` deliberately does **not** depend on this folder. It owns a separate source-data
+specification and source-run manifest; the profile/adapter in `ingestion/` is the boundary between
+that source contract and this canonical contract.
 
 **Planned contents:**
 - **`retail_v2` schema** — canonical entity/grain/column definitions (the authoritative version
   of spec §11): versioned sales, exact money, adjustments and demand-to-supply fulfillment facts;
   cost/price history; competitor; promotions/segments; external signals; multi-echelon inventory;
-  supplier performance; outputs/governance.
+  supplier performance; outputs/governance. Single-axis geography uses market-qualified
+  `geo_scope_*`; supplier/promotion merchandise rules use `merch_scope_*` with
+  `sku > dept > category`; promotion applicability keeps its explicit multi-axis qualifier rows.
+- **Temporal identity rules** — explicit monotonic integers for cumulative/correctable facts;
+  stable natural key + effective/observation time + `known_as_of` for observation/reference facts,
+  with deterministic cutoff selection and divergent-duplicate quarantine.
+- **Money/FX rules** — sales and sell prices use location operating currency; presentment money is
+  audit-only. Reporting FX is exact local/base→reporting/quote `DECIMAL(38,18)` with
+  exponent-aware per-fact `ROUND_HALF_EVEN` and shared Python/Go golden vectors.
 - **Source-profile schema** — source system/schema/snapshot, formats and paths/objects, source and
   canonical grains, keys, mappings, joins, filters, code maps, timezone/business day, currency/
   unit/tax basis, `known_as_of`, event/API authenticity, pre-landing field-projection policy,
@@ -30,8 +41,11 @@ cross-repo drift.
 - **Fingerprint canonicalization spec** — exact canonical-JSON rules (key ordering, number
   formatting, volatile-key stripping) so SHA-256 is **byte-identical in Python and Go**, plus
   shared golden vectors.
-- **Guardrail config** — `pricing_rules.yaml`, `policy.yaml`, `price_response.yaml` (read by both
-  the Python engines and the Go serve-time re-validation — never duplicated in code).
+- **Guardrail config** — `pricing_rules.yaml`, `policy.yaml`, `price_response.yaml` with
+  deterministic global-default → `market_id + currency_code` resolution. Currency-neutral
+  percentages/evidence gates may inherit defaults; absolute money, grid/step and price-ending
+  conventions must be market-scoped. Python engines and Go serve-time re-validation read and
+  fingerprint the same resolved payload—never duplicated in code.
 - **API contract** — proto / OpenAPI for the Go ↔ UI (and Go ↔ Python scoring service) surface.
 
 **Spec:** Architecture/data flow, §4.1 (two gates), §11 (canonical schema and source adapters).

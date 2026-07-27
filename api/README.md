@@ -14,6 +14,12 @@ Two hard requirements:
 - **Fingerprint parity** — SHA-256 over canonical JSON must be byte-identical to Python's
   (see `contracts/`), or lineage checks 409 spuriously.
 - **Single-sourced thresholds** — read guardrail numbers from `contracts/` YAMLs; never hard-code.
+- **Market-scoped money** — resolve the same `market_id + currency_code` guardrail payload as
+  Python; attach market/currency to price activations and recommendations, reject mismatches, and
+  never price in presentment currency or sum local-currency amounts without the governed exact
+  local/base→reporting/quote conversion and shared rounding vectors.
+- **Evidence disclosure** — return a reason-coded `insufficient_evidence` capability/state for a
+  market/department rather than an unexplained empty pricing result.
 
 **Interactive scoring:** compute closed-form projections in Go from stored β / P50 / P90
 (`units = p50·(price/price0)^β`, revenue/margin, safety stock); call a Python scoring service only

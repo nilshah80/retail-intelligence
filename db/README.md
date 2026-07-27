@@ -7,9 +7,11 @@
 structs from the resulting schema. (Avoids two tools racing on one schema.)
 
 **Planned tables:**
-- **Reused from the M5 PoC (`[REUSE]`, migrations 001/002/003):** `workflow_sessions`,
+- **Reused and extended from the M5 PoC (`[REUSE + EXTEND]`, migrations 001/002/003):** `workflow_sessions`,
   `draft_orders`, `approvals`, `exceptions` (+ notes, status history), `audit_log`, `policy_edits`,
-  `price_recs`, `price_rec_reviews`, `adoption_metrics`.
+  `pricing_activations`, `price_recs`, `price_rec_reviews`, `adoption_metrics`. Preserve workflow
+  semantics, but add explicit market/currency/resolved-policy identity to pricing records and
+  demand/supply location or warehouse/lane context to replenishment drafts.
 - **New for `retail_v2` (`[NEW]`):** `forecast_versions` / `forecast_series` / `forecast_drivers`,
   `planner_adjustments`, `inventory_cost`, `competitor_matches`, `transfer_orders`, `allocations`,
   `model_registry`, `model_drift`, `users` / `roles`, `alert_rules`, `data_sources`,

@@ -8,8 +8,9 @@ _Cygnet.One · Cloud deployment of the Retail Intelligence PoC · Companion: `pl
 Deploy the **same** codebase that works locally onto AWS, running end-to-end on generated
 synthetic data, in a **controlled, private, least-privilege** account, with the identical
 shadow-only + fail-closed + point-in-time guarantees. AWS is a **deployment target after the
-local build works** (not a prerequisite). The Python ML pipeline runs as managed jobs; the Go
-API runs as a container service; artifacts + lineage live in S3; workflow/audit in RDS.
+local build works** (not a prerequisite). Python datagen, ingestion and ML workloads run as
+managed jobs; the Go API runs as a container service; artifacts + lineage live in S3;
+workflow/audit in RDS.
 
 **Governance hard rule:** real client data (if ever used) runs only in an approved
 **client-controlled account** with residency, encryption, retention, and access controls — never
@@ -22,8 +23,9 @@ The design is built around config-switched seams so local and AWS run the same l
 | Seam | Local | AWS |
 |---|---|---|
 | Object storage (lake, artifacts) | Parquet/DuckDB on disk | **S3** (raw / curated / features / artifacts prefixes) |
-| Data generator | `datagen/` CLI | `datagen` job (**AWS Batch** or **SageMaker Processing**) → S3 raw |
-| ML compute (ingest, features, models, engines) | local Python | **SageMaker Processing / Training jobs** (or ECS/Batch) |
+| Data generator | `datagen/` Config Builder artifact + CLI | `datagen` job (**AWS Batch** or **SageMaker Processing**) → S3 raw |
+| Ingestion compute | `ingestion/` Python | **SageMaker Processing** (or ECS/Batch) |
+| ML compute | `ml/` Python features/models/engines | **SageMaker Processing / Training jobs** (or ECS/Batch) |
 | Pipeline orchestration | scripts / nightly | **Step Functions + EventBridge** (or SageMaker Pipelines) |
 | Model tracking / registry | local MLflow | **MLflow on ECS** + **SageMaker Model Registry** |
 | Relational DB (workflow, audit, recs) | Postgres (Docker) | **RDS PostgreSQL** (Multi-AZ) |
@@ -45,29 +47,46 @@ encrypted), **RDS PostgreSQL**, **Secrets Manager**, IaC skeleton (Terraform/CDK
 pipeline. **Exit:** `terraform apply` stands up an empty, private, encrypted environment.
 
 ### Phase A1 — Data landing & ingest
-Run the `datagen` client-shaped publisher (Batch/SageMaker Processing) → immutable S3 **raw**.
-Python SageMaker Processing jobs run Gate A; the profile-driven normalizer/adapter emits
-standardized staging; shared transforms produce canonical data; Gate B promotes only passing
-results to S3 **curated** and registers manifests, lineage and reconciliation. **Exit:** Gate A
-passes every snapshot; pure Shopify reconstructs its declared slice with `validated_partial`
-only; generic and Shopify-plus-companion reconstruct the full truth and pass full Gate B before
-curated promotion in-cloud.
+Upload a Config-Builder-generated scenario, run `datagen` to publish Shopify-shaped, Business
+Central-shaped and companion sources to immutable S3 **raw**, and retain its source-run manifest
+and hidden truth outside curated paths. Package `ingestion/` as Python SageMaker Processing jobs:
+landing manifest → Gate A → profile/adapter → staging → source-neutral transforms → Gate B →
+curated. Missing source manifests/timestamps/versions are derived from immutable landing evidence
+under the canonical entity's explicit-version or observation-identity policy, or quarantined.
+**Exit:** core Shopify+BC+companion data receives the
+required full Gate-B capability pass; partial Shopify stops before curated promotion.
+Canonical locations/stores retain market, operating currency and timezone; in-cloud golden tests
+use the same ingestion-owned source-truth→canonical control oracle as local. Contextual signals
+retain market-qualified `geo_scope_*`, multi-axis promotion scope stays structured, Shopify
+presentment money remains audit-only, `merch_scope_*` resolution is deterministic and FX uses the
+shared exact local/base→reporting/quote arithmetic.
 
 ### Phase A2 — ML pipeline (features, forecast, elasticity)
-Feature build + LightGBM forecast + Poisson-EB elasticity as SageMaker jobs; orchestrate with
+Market-local calendar/normalized-price feature build + LightGBM forecast + market-scoped
+Poisson-EB elasticity as SageMaker jobs; orchestrate with
 **Step Functions / SageMaker Pipelines**; write fingerprinted artifacts to S3; log to MLflow +
-**SageMaker Model Registry**; enforce the forecast acceptance gates in-pipeline. **Exit:** a
-one-click pipeline run produces accepted, fingerprinted forecast artifacts in S3.
+**SageMaker Model Registry**; enforce global and supported-market forecast acceptance gates
+in-pipeline. **Exit:** a one-click pipeline run produces accepted, market/config-fingerprinted
+forecast artifacts in S3.
+The cloud regression runs both pricing presets: the response-rich IN+US showcase must meet
+per-market gated-series coverage, while the sparse preset must publish
+`insufficient_evidence`.
 
 ### Phase A3 — Engines & batch decisioning
 Reorder/safety-stock, pricing, allocation, transfer, ageing engines as jobs; policy calibration
-(5%) + validation (95%); write recommendations/drafts to **RDS** + artifacts to S3. **Exit:**
-replenishment + pricing artifacts published in-cloud under guardrails.
+(5%) + validation (95%); resolve pricing policies by market/currency and keep ABC/valuation
+market-local unless approved reporting FX is applied; write recommendations/drafts to **RDS** +
+artifacts to S3. Revenue pricing may publish without cost; margin remains unavailable until the
+cost capability passes. Reporting conversion uses the same exponent-aware per-fact rounding as
+local. **Exit:** replenishment + pricing artifacts are market-scoped and
+published in-cloud under guardrails.
 
 ### Phase A4 — Go API & workflow
 Go API on **ECS Fargate** behind **ALB/API Gateway**; **RDS** for workflow/audit; **Cognito**
-for RBAC; serve S3 artifacts; serve-time guardrail re-validation; staleness 409/503; fingerprint
-parity with the Python side. **Exit:** the API serves live artifacts; approve/override audited;
+for RBAC; serve S3 artifacts; preserve local market/currency on recommendations; serve-time
+guardrail re-validation against the same resolved market policy; staleness 409/503; fingerprint
+parity with the Python side; reason-coded evidence blocks remain visible rather than becoming
+empty pricing results. **Exit:** the API serves live artifacts; approve/override audited;
 auth enforced.
 
 ### Phase A5 — UI
@@ -75,8 +94,8 @@ Host the front-end on **S3 + CloudFront** (or Amplify), pointed at the API Gatew
 FX display. **Exit:** all screens render live cloud data.
 
 ### Phase A6 — Orchestration & unattended run
-**EventBridge** schedule → **Step Functions** nightly (regenerate/ingest → pipeline → engines →
-publish); alerting to CloudWatch/SNS; idempotent re-runs. **Exit:** an unattended scheduled run
+**EventBridge** schedule → **Step Functions** nightly (generate → ingest/transform → ML →
+engines → publish); alerting to CloudWatch/SNS; idempotent re-runs. **Exit:** an unattended scheduled run
 completes and republishes idempotently.
 
 ### Phase A7 — Security, residency, observability, cost, DR
