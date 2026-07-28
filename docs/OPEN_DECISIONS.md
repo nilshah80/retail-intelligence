@@ -55,7 +55,7 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | 14 | Competitor data source + SKU↔competitor match key | **OPEN** | scraped / panel / third-party; hardest new feed to source | §8.1, §11.3 |
 | 15 | Production weather granularity + provider | **OPEN** | synthetic data is market/region/store configurable; choose the client-actual provider and timestamp evidence later | §11.5 |
 | 16 | Fingerprint canonicalization spec | **OPEN** | must be byte-identical in Python + Go (key order, number format); resolve and publish golden vectors in Phase 2 before Phase 3 emits fingerprinted artifacts | Arch note |
-| 17 | UI framework | **OPEN** | the `docs/` mockup is static HTML; pick the real stack | §8.4 (ui) |
+| 17 | UI framework | **OPEN** | the `docs/` mockup is static HTML; pick the real stack by the end of Phase 1 so the dashboard/API vertical-slice track starts in Phase 2 | §8.4 (ui) |
 | 18 | Copilot serving | **OPEN** | Go proxies to a Python copilot service vs Go calls the LLM directly; grounding from same artifacts | §8.4 |
 | 19 | Customer/segment data depth | **OPEN** | segment mix only, or basket-level for cannibalisation/bundle models | §8.1, §11.4 |
 | 26 | Incremental ingestion semantics | **OPEN** | local path is immutable full snapshots; define CDC/upsert/watermark rules after round-trip acceptance | §11.10 |

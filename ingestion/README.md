@@ -54,6 +54,24 @@ The source profile/adapter must declare how each missing operational property is
 Derived metadata always carries provenance and a quality policy. It can satisfy a synthetic PoC
 profile when defensible, but a client-actual capability may impose stricter evidence.
 
+## Datagen source-format and DuckDB profile
+
+Datagen v5 publishes one authoritative tabular format per run—CSV or Parquet—and a single
+`source-run.duckdb` mirror. Gate A must support both authoritative formats. For the PoC it may
+also use a dedicated datagen-DuckDB source profile to accelerate staging, provided it:
+
+- lands the DuckDB and manifest immutably and validates them against the object/catalog hashes;
+- selects datasets through `source_object_catalog`/`source_dataset_catalog`, never hard-coded
+  table names;
+- admits only `restricted=false` datasets into ordinary staging;
+- prevents every `_truth/*`/`truth_*` dataset from entering transformations or ML features;
+- records the authoritative CSV/Parquet logical path, format, compression and hash as lineage,
+  even when rows were read from the DuckDB mirror.
+
+The DuckDB path is a synthetic-run convenience, not a requirement for real retailers. A retailer
+may land CSV, Parquet, JSONL, API extracts or another declared format directly; its profile still
+normalizes to the same staging contract.
+
 ## Locale and money normalization
 
 Source amounts remain exact in their declared local currency. Ingestion converts decimal major

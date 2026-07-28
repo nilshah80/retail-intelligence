@@ -4,6 +4,12 @@
 workflow / HITL (approvals, planner overrides, idempotency, audit), **serve-time guardrail
 re-validation**, staleness handling (409/503), RBAC / auth.
 
+**Delivery:** introduce a thin, versioned read-only API alongside each demoable capability rather
+than waiting for the governance phase: ingestion/quality in Phase 2, demand in Phase 3, inventory
+and replenishment in Phase 4, and pricing/promotion in Phase 5. Deterministic UI stubs use the same
+OpenAPI/read-model contracts. Phase 6 consolidates and hardens these reads and adds governed
+write/workflow endpoints.
+
 **Language:** Go.
 
 **Origin (`[REUSE-as-redesign]`):** the M5 PoC's `api/app.py` (FastAPI), `workflow_service.py`,

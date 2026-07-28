@@ -52,6 +52,10 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
 - **Market-local money, reporting FX.** Locations carry market/currency/timezone; price, cost,
   margin and policy enforcement stay within one local currency. Cross-market monetary totals are
   separately derived under the reporting-FX policy and are never causal model inputs.
+- **Demo by vertical slice.** The runtime UI and a thin read-only Go API start when the first
+  versioned screen contract is frozen. Each capability phase replaces its clearly labelled stub
+  with accepted live artifacts; Phases 6–7 add governed interactions and complete integration
+  rather than starting API/UI work for the first time.
 
 ## 3 · Phases (local)
 
@@ -66,8 +70,9 @@ publish source-shaped Shopify, Business Central and companion datasets without i
 `retail_v2`.
 
 **Scope:**
-- **Config Builder:** sole authoring surface; import/export equivalent YAML and JSON; no hidden
-  preset-only values; browser validation and resolved preview.
+- **Config Builder:** sole authoring surface; conventional YAML is the default import/export and
+  execution format, JSON remains supported and equivalent; no hidden preset-only values; browser
+  validation and resolved preview.
 - **Topology:** one retailer with explicit markets, stores, online channels, warehouses/DCs and
   store-to-warehouse service relationships. The demo config includes Mumbai plus New York and
   proves both single- and multi-warehouse cases.
@@ -77,9 +82,24 @@ publish source-shaped Shopify, Business Central and companion datasets without i
   Each pack controls native currency/minor unit, price bands/endings, category tax, fiscal/timezone
   defaults, addresses/postcodes, holidays/sale seasons and climate. Reviewed date tables cover
   lunar holidays.
+- **Rich catalog packs:** adapt the reusable product/variant behavior and partial option-matrix
+  generation from the reference generator, but replace generic names/SKUs with versioned
+  IN/US/GB/DE real-brand reference packs. The normalized default hierarchy contains 10
+  departments and 41 categories, including Groceries. The builder controls generated/hybrid/explicit modes,
+  exact sellable-SKU targets, opening-incumbent share, variants per product, category
+  economics/behavior, lifecycle/replacement controls and explicit product definitions. Flagship
+  profiles add spike/decay, anticipation, substitution, overlapping predecessor runout,
+  markdown, clearance and fire sale; Shopify
+  and BC receive their own product/item and variant/lifecycle projections.
+- **Long history and disruption:** support at least the checked-in 2005–2024 run, with incumbent
+  assortment at the opening boundary, later product/SKU introductions, monthly physical
+  partitions, compound growth/inflation and config-owned H1N1/COVID/neutral-outbreak phases.
+  Pandemic demand/channel semantics adapt `../retail_ai`; supplier/cost/inventory shock mechanics
+  adapt the original source generator.
 - **Demand model:** per-SKU×store latent demand, weekly and locale seasonality, holidays, trend,
   configured promotion lift, price elasticity, intermittency/new-product gates, weather,
-  local-event, competitor and macro effects; enabled signals must actually influence demand.
+  local-event, competitor and macro effects; `startingDailyOrders` controls real order headers
+  through config-owned average basket lines; enabled signals must actually influence demand.
 - **Context and pricing-evidence presets:** companion signals and promotion targets carry
   generator-owned market plus structured region/store/channel scope. The primary Mumbai+New York
   scenario uses response-rich assortment/price dynamics; a separate sparse preset demonstrates
@@ -87,23 +107,34 @@ publish source-shaped Shopify, Business Central and companion datasets without i
 - **Source projections:** Shopify-shaped, Business Central-shaped and external/companion source
   datasets generated from the same causal run. Source-native currencies, tax behavior and
   timestamps are preserved.
-- **Publication:** source-run manifest with resolved config/run identity, topology, outputs,
-  row/control totals and hashes; hidden generator-vocabulary truth for evaluation; deterministic
-  replay and honest declarations of the formats actually written.
-- **Deferred fidelity:** exhaustive split/status/return/refund/HMAC conformance fixtures, every
-  inventory state, and complete receipt/inbound/batch/supplier/competitor-match histories are
-  config-driven screen-completeness extensions, not blockers for the first forecast/revenue-
-  pricing round-trip. Margin-aware pricing remains unavailable until an enabled receipt/cost
-  projection passes the cost capability gate.
+- **Publication:** one selected authoritative source CSV/Parquet format, one all-source
+  `source-run.duckdb` browsing mirror,
+  a generated source-field dictionary, and a manifest with resolved config/run identity,
+  topology, capabilities, row/control totals and hashes; hidden generator-vocabulary truth for
+  evaluation; deterministic replay.
+- **Screen-completeness fidelity:** config-driven split/status/return/refund/HMAC fixtures, the
+  named inventory-state matrix, and receipt/inbound/batch/supplier/competitor-match/warehouse/
+  transfer/allocation evidence are included in source spec v9. Margin-aware pricing remains
+  unavailable downstream until the enabled receipt/cost projection passes the ingestion cost
+  capability gate.
+- **Operational realism:** adaptive SKU/location replenishment closes the inventory loop using
+  availability-normalized observed sales, pending supply, lead times, fill rates, MOQ and pack
+  size without reading hidden demand truth. Orders reserve causal
+  committed stock until fulfillment; receipt inspection creates causal quality-control/damaged
+  states and later waste disposition. Every fulfillment-timed sale, receipt, transfer, waste and
+  adjustment posts to a complete BC-shaped ledger that reconciles to current inventory. Explicit
+  operation feature switches can remove an optional evidence domain cleanly.
 
 **Deliverables:** Config Builder HTML, generator-owned schema and locale packs, CLI, Shopify/BC/
-companion publishers, source-run manifest, hidden truth and deterministic tests.
+companion publishers, source-run manifest, authoritative CSV/Parquet selection, one DuckDB
+mirror, generated source-field dictionary, hidden truth and deterministic tests.
 
 **Exit criteria:** the page can create and re-open a multi-market scenario; YAML and JSON resolve
 identically; IN/US/GB/DE locale tests pass; Mumbai and New York stores produce different correct
 currency/tax/holiday/signal scope; response-rich and sparse-evidence presets are reproducible; the
 same config/seed reproduces the same logical source run; Phase 2 can land every declared source
-output. No generated file uses `retail_v2` vocabulary by design.
+output. No generated file uses `retail_v2` vocabulary by design. **Demo checkpoint 1:** create,
+re-open and generate the Mumbai + New York source run from the Config Builder.
 
 ### Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
@@ -125,13 +156,16 @@ promotion scope; observation/reference facts
 use natural-key/effective-time/`known_as_of` ordering while cumulative/correctable facts use
 explicit versions. Sales/sell prices use location operating currency, supplier terms have typed
 scope and exact origin semantics, and reporting FX uses the shared direction/precision/rounding
-contract.
+contract. Freeze the first screen contract—common OpenAPI envelopes plus Data Management/quality
+read models—and scaffold the runtime dashboard with the selected UI framework and its initial
+read-only Go API slice.
 
 **Exit criteria:** Gate A passes every generated source snapshot; Shopify/BC/companion adapters
 reconstruct their declared canonical slices and reconciliations; missing source metadata is
 derived with visible provenance or quarantined; only capability-complete composites receive full
 Gate-B `pass` and curated publication; golden controls match through the ingestion-owned oracle.
-No model/engine code differs by source.
+No model/engine code differs by source. **Demo checkpoint 2:** the dashboard renders live ingest
+runs, coverage, Gate A/B, reconciliation and quarantine status.
 
 ### Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 
@@ -148,7 +182,9 @@ groups), per-series confidence.
 
 **Exit criteria:** forecast beats seasonal-naive ≥25%; P90 coverage ∈ [0.85, 0.95]; monotonic
 P50≤P90 globally and for every supported market; artifacts include market/config fingerprints.
-**Unlocks the Demand Forecast screen data.**
+The read-only API and Demand Forecast vertical slice are delivered with the model.
+**Demo checkpoint 3:** the screen renders live Mumbai + New York P50/P90, accuracy, confidence
+and drivers.
 
 ### Phase 4 — Inventory & replenishment (`ml/engines`)
 
@@ -163,7 +199,9 @@ and supply terms resolve by destination/location lane plus `sku > dept > categor
 precedence rather than one department term alone.
 
 **Exit criteria:** replay passes acceptance (fewer stock-outs / less inventory / ≥ fill);
-policy holdout passes. **Unlocks Inventory + Replenishment/Planner screens.**
+policy holdout passes. The matching read-only API/UI slice is delivered in the phase.
+**Demo checkpoint 4:** Inventory + Replenishment/Planner screens render live market/location
+outputs.
 
 ### Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 
@@ -184,29 +222,36 @@ AND/OR scope-row semantics and merchandise overlap resolves `sku > dept > catego
 currency and is guardrail-valid; revenue recommendations never imply margin, and any enabled
 margin uses cost-as-of. The primary IN+US showcase produces at least 25 actually gated series per
 enabled department in both markets; the sparse preset returns a reason-coded
-`insufficient_evidence` state. **Unlocks Pricing, Competitor Monitor, Promotion Planner screens.**
+`insufficient_evidence` state. The matching read-only API/UI slice is delivered in the phase.
+**Demo checkpoint 5:** Pricing, Competitor Monitor and Promotion Planner render live
+response-rich and sparse-evidence outcomes.
 
 ### Phase 6 — Go API, workflow & governance (`api/`, `db/`)
 
-**Goal:** serve artifacts and own the decision/governance layer in Go.
+**Goal:** harden the incrementally delivered read-only API and add the decision/governance layer
+in Go.
 
-**Scope:** Alembic migrations (`db/`, reuse + new tables); Go API serving artifacts; workflow /
-HITL (approvals, planner overrides, idempotency, audit); market/currency-scoped pricing
-activations; **serve-time guardrail re-validation** over the same resolved market policy;
-staleness 409/503; RBAC/auth; **fingerprint parity** (Python↔Go golden vectors); lineage/audit.
+**Scope:** Alembic migrations (`db/`, reuse + new tables); consolidate the versioned read API
+slices delivered in Phases 2–5; workflow/HITL (approvals, planner overrides, idempotency, audit);
+market/currency-scoped pricing activations; **serve-time guardrail re-validation** over the same
+resolved market policy; staleness 409/503; RBAC/auth; **fingerprint parity** (Python↔Go golden
+vectors); lineage/audit.
 
 **Exit criteria:** an approve/override writes an audit row; stale artifact → 409, missing → 503;
-Go and Python produce identical fingerprints on shared vectors. **Unlocks Governance + approvals.**
+Go and Python produce identical fingerprints on shared vectors. **Demo checkpoint 6:** a planner
+reviews live evidence, approves/overrides a draft and sees its audit record in the UI.
 
-### Phase 7 — UI (`ui/`)
+### Phase 7 — UI completion and end-to-end integration (`ui/`)
 
-**Goal:** the dashboard screens against the real API.
+**Goal:** complete the dashboard and remove remaining core-screen stubs; UI work has already
+advanced with every vertical slice since Phase 2.
 
-**Scope:** implement the screens from the mockup; multi-currency display (FX); the interactive
-what-ifs (scenario/simulation) wired to the API; rich capture forms where the mockup only stubs
-them (§8.3 note).
+**Scope:** complete remaining core screens and shared responsive/accessibility behavior; verify
+multi-currency display (FX); wire interactive what-ifs (scenario/simulation) to the API; build
+rich capture forms where the mockup only stubs them (§8.3 note).
 
-**Exit criteria:** each screen renders live API data; no mock data paths.
+**Exit criteria:** each Phase-2–6 core screen renders live API data; no core mock data paths or
+demo feature flags remain.
 
 ### Phase 8 — Analytics, admin & hardening
 
@@ -222,11 +267,14 @@ bounded versioned adapter with no downstream changes.
 
 ## 4 · Sequencing
 
-Phases are largely sequential. The datagen source contract and the downstream `retail_v2`
-contract evolve independently and meet only at the Phase-2 adapter boundary. `contracts/` is
-frozen before Gate-B implementation, but it is not a datagen dependency. `db/` (Phase 6) can
-start once workflow tables are known. UI (Phase 7) can start against stub API responses once the
-API contract is fixed. Phase-1 `datagen/` scaffolding may start under its already locked isolated
+Capability phases are largely sequential, but API/UI delivery is an explicit parallel track. The
+datagen source contract and downstream `retail_v2` contract evolve independently and meet only at
+the Phase-2 adapter boundary. `contracts/` is frozen before Gate-B implementation, but it is not a
+datagen dependency. Resolve UI framework decision #17 by the end of Phase 1. In Phase 2, freeze
+the first screen contracts and start the dashboard shell plus thin read-only Go API; Phases 2–5
+each deliver a demoable live vertical slice without changing its stub contract. `db/` can start
+once workflow tables are known. Phases 6–7 harden workflows and complete integration rather than
+starting API/UI work. Phase-1 `datagen/` scaffolding may start under its already locked isolated
 boundary; lock Python environment topology (decision #38) before scaffolding the `ingestion/`/
 `ml/` package boundary. Resolve fingerprint canonicalization (decision #16) during the Phase-2
 contract freeze before Phase 3 publishes artifacts. Market/currency guardrail resolution is

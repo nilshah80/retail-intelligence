@@ -733,8 +733,10 @@ Beyond the demand-forecast feeds in §2.2–2.3, the other screens require:
 > `contracts/`, `ingestion/`, `ml/` or `api/` code.
 >
 > **What it publishes:** Shopify-shaped, Business Central-shaped and external/companion source
-> datasets, a generator-owned source-run manifest and hidden causal truth. It never publishes
-> canonical `retail_v2` fixtures.
+> datasets in one selected authoritative CSV/Parquet format, exactly one all-source
+> `source-run.duckdb` browsing mirror, a
+> generator-owned source-run manifest and hidden causal truth. It never publishes canonical
+> `retail_v2` fixtures.
 
 The M5 PoC generated realistic retail data in two layers that remain useful **implementation
 references**, not downstream contracts:
@@ -760,8 +762,10 @@ units ~ Poisson( base × level × trend × gate × pandemic_mult × weather_mult
   bumps for the Indian calendar — Diwali, Holi, EOSS, monsoon, wedding season).
 - **level:** per-series scale anchor.
 - **trend:** per-department deterministic growth (decline into the past, growth forward).
-- **gate:** launch/retirement + intermittency (new-product ramp over ~6 weeks; dead/retired
-  series stay zero) — this is what produces the "new product / sparse history" cohort.
+- **gate:** launch/retirement + intermittency. Ordinary products use a configurable cold-start
+  ramp. Flagship successors use a launch spike/decay plus substitution, while the predecessor
+  remains sellable at sharply reduced demand through markdown, clearance and final fire-sale
+  runout. A series stays zero only before launch or after actual discontinuation.
 - **pandemic_mult / weather_mult:** see §9.4.
 
 Prices are a separate stream: real anchor × cumulative inflation index × **promo dips**
@@ -864,7 +868,8 @@ Both modulate the demand mean via a single multiplier, on synthetic days only:
 ### 9.6 Config Builder and multi-market configuration
 
 The HTML Config Builder is the sole supported scenario-authoring surface. Every executable
-setting must be visible/editable, and YAML/JSON exports must resolve to the same object. The
+setting must be visible/editable, conventional YAML is the default import/export and execution
+format, and retained JSON exports must resolve to the same object. The
 builder must import its own exports for lossless editing and must not hide preset-only country,
 currency, format, execution or event fields. The export records each locale-pack ID/version and
 materializes the full resolved values and explicit overrides, so a run never changes because a
@@ -873,33 +878,83 @@ pack was revised later.
 The configuration hierarchy is:
 
 ```yaml
-scenario: {id: multi-market-demo, seed: 20260101, start_date: 2024-01-01, end_date: 2026-12-31}
-retailer: {id: retailer-001, reporting_currency: INR}
+specVersion: retail-source-config/v9
+identity: {scenarioId: multi-market-demo, scenarioVersion: 1.0.0, masterSeed: 20260101}
+time: {startDate: 2025-01-01, endDate: 2025-03-31, generationPartition: month}
+retailer: {retailerId: retailer-001, name: Example Retail, reportingCurrency: INR}
 markets:
-  - market_id: india
-    locale_pack: IN
-    assortment: {skus_per_department: 60}
-    price_dynamics: {profile: response_rich, min_price_change_events_per_sku: 8}
-    stores:
-      - {store_id: mumbai-01, city: Mumbai, timezone: Asia/Kolkata, channels: [pos, online]}
-  - market_id: us
-    locale_pack: US
-    assortment: {skus_per_department: 60}
-    price_dynamics: {profile: response_rich, min_price_change_events_per_sku: 8}
-    stores:
-      - {store_id: new-york-01, city: New York, timezone: America/New_York, channels: [pos, online]}
+  - marketId: india
+    countryCode: IN
+    currencyCode: INR
+    timezone: Asia/Kolkata
+    localePack: "<fully materialized versioned IN pack>"
+    catalogPack: "<fully materialized versioned IN catalog pack>"
+    assortment: {skusPerDepartment: 36, variantsPerProduct: 3,
+                 categoryAssortmentWeights: {grocery-staples: 2.0}}
+    demand: {startingDailyOrders: 420, averageLinesPerOrder: 1.8,
+             dayOfWeekFactors: [0.90, 0.93, 0.97, 1.02, 1.12, 1.28, 1.24]}
+    priceDynamics: {profile: response-rich, priceChangeEventsPerSkuPerYear: 36,
+                    annualInflationRate: 0.055, priceEndingAdherence: 0.82}
+  - marketId: us
+    countryCode: US
+    currencyCode: USD
+    timezone: America/New_York
+    localePack: "<fully materialized versioned US pack>"
+    catalogPack: "<fully materialized versioned US catalog pack>"
+    assortment: {skusPerDepartment: 36, variantsPerProduct: 3}
+    demand: {startingDailyOrders: 420, averageLinesPerOrder: 1.8,
+             dayOfWeekFactors: [0.94, 0.97, 1.00, 1.04, 1.15, 1.22, 1.12]}
+    priceDynamics: {profile: response-rich, priceChangeEventsPerSkuPerYear: 36,
+                    annualInflationRate: 0.032, priceEndingAdherence: 0.82}
+stores:
+  - {storeId: mumbai-01, marketId: india, city: Mumbai,
+     warehousePriority: [india-wh-01]}
+  - {storeId: new-york-01, marketId: us, city: New York,
+     warehousePriority: [us-wh-01]}
 warehouses:
-  - {warehouse_id: india-wh-01, market_id: india, serves_locations: [mumbai-01]}
-  - {warehouse_id: us-wh-01, market_id: us, serves_locations: [new-york-01]}
-legal_entities:
-  - {company_id: india-co, market_id: india, base_currency: INR}
-  - {company_id: us-co, market_id: us, base_currency: USD}
-source_instances:
-  - {source_id: shopify-in, type: shopify, markets: [india], shop_currency: INR}
-  - {source_id: shopify-us, type: shopify, markets: [us], shop_currency: USD}
-  - {source_id: bc-retail, type: business_central, companies: [india-co, us-co]}
-companion_sources: [holidays, weather, local_events, promotions, competitors, macro, fx]
+  - {warehouseId: india-wh-01, marketId: india, servesLocations: [mumbai-01],
+     openingStockPerSku: 18, openingStockDaysOfCover: 21}
+  - {warehouseId: us-wh-01, marketId: us, servesLocations: [new-york-01],
+     openingStockPerSku: 18, openingStockDaysOfCover: 21}
+sourceInstances:
+  shopify:
+    - {shopId: shopify-in, marketId: india, storeIds: [mumbai-01]}
+    - {shopId: shopify-us, marketId: us, storeIds: [new-york-01]}
+  businessCentral:
+    - {companyId: bc-india, legalEntityId: india-co, warehouseIds: [india-wh-01]}
+    - {companyId: bc-us, legalEntityId: us-co, warehouseIds: [us-wh-01]}
+catalog:
+  generation: {mode: generated, incumbentProductPct: 1.0, launchHistoryDays: 365,
+               launchSpreadPct: 0.0, variantLaunchSpreadDays: 14,
+               discontinueRate: 0.03, replacementLinkRate: 0.0,
+               lifecycle: {defaultLaunchProfile: linear-ramp,
+                           launchSpikeMultiplier: 4.0, launchSpikeDays: 14,
+                           preLaunchAnticipationDays: 45, substitutionRate: 0.65,
+                           runoutMonths: 18, clearanceDiscountPct: 0.25,
+                           fireSaleFinalDays: 30, fireSaleDiscountPct: 0.45}}
+pandemics: [] # phased H1N1/COVID/etc. entries are available in the 20-year preset
+operations:
+  inventory: {replenishmentCycleDays: 7, supplierLeadTimeDays: 7,
+              replenishmentDemandBufferPct: 0.20, stockoutSkuRate: 0.0}
+  features: "<all source-fidelity feature switches are explicit>"
+output: {rootDirectory: output, publicFormats: [parquet, duckdb],
+         compression: zstd, writeHiddenTruth: true, overwrite: false}
 ```
+
+This is an abbreviated, readable excerpt; the Config Builder's resolved v9 YAML/JSON—including
+the complete locale/catalog packs and every operations field—is the executable contract.
+
+`categoryAssortmentWeights` is an optional per-market map owned by the Config Builder. Values
+are relative category-depth weights; unspecified categories use `1`. Omitting the map preserves
+the uniform catalog and current presets exactly. Explicit product templates remain mandatory
+catalog rows; the weights distribute the generated remainder.
+
+`openingStockDaysOfCover` is an optional warehouse boundary control. A positive value derives
+opening stock from the configured store assortment and velocity plan, with
+`openingStockPerSku` retained as the minimum floor. It represents retailer history before the
+extract begins; it is not reused as a replenishment truth floor. In-run purchase decisions use
+observed sales divided by days the SKU/location was available to sell, multiplied by the
+explicit `replenishmentDemandBufferPct`; hidden lost sales and `_truth/` are never inputs.
 
 Store and warehouse objects—not aggregate counts—are authoritative. A store may have an approved
 warehouse priority list; one warehouse may serve multiple stores; a scenario may also use a
@@ -926,6 +981,35 @@ Each locale pack owns:
 - reviewed fixed and lunar holiday/sale-period date tables;
 - climate profile and locale/category seasonality.
 
+Country selection also resolves a versioned **rich catalog pack** owned by `datagen/`. These packs
+contain real brand and product-line reference identities, source price bands, materials, option
+values and barcode behavior; all generated transactions, inventory, prices, costs and demand
+remain synthetic. The normalized default hierarchy has 10 departments and 41 categories,
+including Groceries and family-specific shelf-life behavior. The generator adapts the reusable product/variant
+model and deliberately partial option matrices from `../retail-synthetic-data-generator`, while
+replacing its generic `Category Word N` titles and `SKU-P...-V...` identifiers. A product has a
+stable product code; each sellable variant has a distinct stable SKU, valid EAN-13/UPC-A barcode,
+option combination, price/cost, popularity, elasticity, return propensity and lifecycle. The
+Config Builder exposes generated/hybrid/explicit catalog modes, exact sellable-SKU targets,
+variants per product, SKU prefix/lifecycle controls, per-category behavior and complete explicit
+product definitions. These remain generator/source concepts and do not import canonical product
+or SKU rules. The opening-incumbent share is explicit: long histories start with products already
+on sale, then introduce other products and independently dated variants during the run. Product
+replacement links and lifecycle gates prevent inventory, prices or orders before a SKU launch or
+after its discontinuation. A successor launch does not itself discontinue its predecessor: the
+builder exposes spike/decay, anticipation, substitution, runout, markdown, clearance and
+fire-sale controls.
+
+Source spec v9 accepts complete date ranges within the materialized locale-pack coverage. The
+current packs cover `2005-01-01` through `2026-12-31` (22 complete years), and the checked-in
+2005–2024 preset exercises the minimum 20-year requirement with monthly partitions, compound
+growth/inflation, ongoing catalog launches/replacements and phased pandemic/supply disruption.
+Pandemics are config data: an effect mode distinguishes synthetic shocks from timeline-only
+outbreak evidence; overlapping phases can alter demand, traffic, costs, supplier lead times,
+inventory loss and department/category/catalog-family/channel response. The model adapts the
+H1N1/COVID phase semantics from `../retail_ai` and the supply-shock mechanics from
+`../retail-synthetic-data-generator`.
+
 Locale selection must drive Shopify `taxes_included`, shop/market currency and tax lines;
 Business Central country/region, VAT/tax area and fiscal setup; source amounts; holidays; weather;
 and demand. A flat global `taxRate`, first-country lookup or one global timezone is invalid.
@@ -950,8 +1034,9 @@ until canonical cost-as-of exists. A generated cost ledger may later enable a cl
 synthetic margin scenario; only provenance-matched client cost can enable a client-actual margin
 objective.
 
-The following are **not Phase-1 blockers**. Add them as config-driven source fidelity when the
-corresponding dashboard/connector acceptance is scheduled:
+Source spec v9 implements the following as config-driven source fidelity. They remain
+**non-blocking capabilities** for a consumer that only needs the first forecast/revenue-pricing
+round-trip:
 
 - detailed split fulfillment, status histories and processed-return evidence;
 - successful/failed refund transactions and webhook/HMAC conformance fixtures;
@@ -960,7 +1045,26 @@ corresponding dashboard/connector acceptance is scheduled:
 - full promotion-SKU/customer-segment history and realistic competitor-product matching;
 - warehouse capacity/fill/dock-to-stock/blocked-stock, ageing/waste/valuation comparison,
   transfer-lane, allocation-pool and supplier-capacity/budget source evidence;
-- every CSV/Parquet/JSONL/compression combination.
+- one selected authoritative CSV/Parquet source format plus exactly one all-source
+  `source-run.duckdb` browsing mirror.
+
+The v8 simulation is closed-loop: purchase orders use SKU/location demand, inventory position,
+pending receipts, supplier lead-time/fill behavior, MOQ and pack size to replenish stock over
+time; receipts, sales, transfers, waste and adjustments post a complete Business Central-shaped
+item ledger that reconciles to the latest inventory quantities. Nominal prices inflate from each
+SKU's launch-era price while demand elasticity compares against its inflation-adjusted reference,
+so inflation does not accidentally cancel real demand growth. Each operation capability is
+controlled by its explicit `operations.features` switch.
+
+The DuckDB file contains public source tables and restricted hidden truth when truth is enabled,
+so the whole file is permissioned as restricted. `source_object_catalog` maps tables back to
+authoritative CSV/Parquet paths, formats, compression, hashes, row counts and access classes. It
+is an all-text convenience mirror, not a canonical or ML-ready database. A generated
+`source-schema.json` field dictionary (also exposed as DuckDB table `source_schema`) documents
+the published source fields without importing downstream schemas. Ingestion supports both
+authoritative choices and may use a datagen-DuckDB profile for the PoC only when restricted truth
+is excluded and authoritative object lineage is preserved. JSONL remains an ingestion adapter
+concern when a retailer supplies it.
 
 Datagen does not create forecast/model records, recommendations, transfers/allocations proposed
 by the engines, exceptions, approvals, users, alerts, model registry, reports or audit rows.

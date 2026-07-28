@@ -21,7 +21,9 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Package `datagen/` as a job (AWS Batch or SageMaker Processing).
 - [ ] Store the complete Config-Builder YAML/JSON artifact; publish Shopify-shaped, Business
       Central-shaped and companion snapshots plus source-run manifest to versioned S3 **raw**
-      prefixes; keep hidden truth in a restricted evaluation prefix.
+      prefixes in their selected CSV/Parquet format; keep hidden truth and the single all-source
+      `source-run.duckdb` mirror in a
+      restricted evaluation prefix.
 - [ ] Package `ingestion/` raw gate, profile-driven normalizer/adapters, standardized staging,
       source-neutral transforms, canonical gate and curated publisher as SageMaker Processing
       jobs.
@@ -38,9 +40,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
       unsupported sales-currency mismatches quarantine.
 - [ ] Run shared exact FX vectors for local/base→reporting/quote direction, decimal precision,
       exponent handling and per-fact `ROUND_HALF_EVEN`.
-- [ ] Re-run the core Shopify+BC+companion round-trip in-cloud; run detailed fulfillment,
-      return/refund, inventory-state and HMAC conformance only when those optional fixture tiers
-      are enabled.
+- [ ] Re-run the core Shopify+BC+companion round-trip in-cloud; validate detailed fulfillment,
+      return/refund, inventory-state and HMAC conformance for every enabled v4 feature.
 - [ ] **Exit:** Gate A passes every source; pure Shopify is `validated_partial` and unpromoted;
       the configured composite passes its required Gate-B capability mask and registers a curated
       run.
@@ -80,8 +81,9 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Fingerprint parity with Python (shared golden vectors) in-cloud.
 - [ ] **Exit:** API serves live artifacts; approve/override audited; auth enforced.
 
-## Phase A5 — UI
-- [ ] Build UI; host on S3 + CloudFront (or Amplify).
+## Phase A5 — UI deployment
+- [ ] Package and deploy the incrementally completed local UI; do not defer front-end
+      implementation to this cloud phase. Host on S3 + CloudFront (or Amplify).
 - [ ] Point at API Gateway/ALB; configure CORS/auth; FX display.
 - [ ] **Exit:** all screens render live cloud data.
 

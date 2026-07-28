@@ -1,0 +1,2075 @@
+specVersion: retail-source-config/v9
+identity:
+  scenarioId: multi-market-20-year-history
+  scenarioVersion: 1.0.0
+  scenarioName: Mumbai and New York 20-year evolving retail history
+  masterSeed: 20052024
+time:
+  startDate: '2005-01-01'
+  endDate: '2024-12-31'
+  generationPartition: month
+retailer:
+  retailerId: retailer-demo
+  name: Northstar Retail
+  reportingCurrency: INR
+markets:
+- marketId: india-mumbai
+  name: India — Mumbai
+  countryCode: IN
+  regionCode: MH
+  city: Mumbai
+  currencyCode: INR
+  timezone: Asia/Kolkata
+  catalogPack:
+    id: real-retail-IN
+    version: '2026.6'
+    label: India real-brand reference catalog
+    countryCode: IN
+    barcodeFormat: EAN13
+    familyIds:
+    - apparel-bottoms
+    - apparel-footwear
+    - apparel-outerwear
+    - apparel-tops
+    - automotive-accessories
+    - automotive-car-care
+    - automotive-oils
+    - automotive-two-wheeler
+    - baby-care
+    - baby-feeding
+    - beauty-cosmetics
+    - beauty-grooming
+    - beauty-haircare
+    - beauty-skincare
+    - books-fiction
+    - books-nonfiction
+    - electronics-accessories
+    - electronics-audio
+    - electronics-laptops
+    - electronics-mobile
+    - electronics-tablets
+    - grocery-beverages
+    - grocery-dairy
+    - grocery-snacks
+    - grocery-staples
+    - health-first-aid
+    - health-otc
+    - health-vitamins
+    - health-wellness
+    - home-appliances
+    - home-bedding
+    - home-cleaning
+    - home-cookware
+    - sports-fitness
+    - sports-outdoor
+    - sports-team
+    - sports-yoga
+    - stationery-notebooks
+    - stationery-writing
+    - toys-building
+    - toys-games
+  fxRateToReporting: '1.000000000000000000'
+  localePack:
+    id: IN
+    version: '2026.3'
+    label: India
+    currency:
+      code: INR
+      symbol: ₹
+      minorUnitExponent: 2
+      decimalSeparator: .
+      groupSeparator: ','
+      priceEndings:
+      - '00'
+      - '49'
+      - '99'
+      defaultPriceMin: '99.00'
+      defaultPriceMax: '9999.00'
+    tax:
+      basis: inclusive
+      defaultRate: '0.18'
+      categoryRates:
+        apparel: '0.12'
+        automotive: '0.28'
+        baby: '0.05'
+        beauty: '0.18'
+        books: '0.00'
+        electronics: '0.18'
+        grocery: '0.05'
+        health: '0.12'
+        home: '0.18'
+        sports: '0.18'
+        stationery: '0.12'
+        toys: '0.12'
+      jurisdiction: GST
+      components:
+        intraRegion:
+        - code: CGST
+          share: '0.5'
+        - code: SGST
+          share: '0.5'
+        interRegion:
+        - code: IGST
+          share: '1.0'
+    fiscalYearStartMonth: 4
+    timezones:
+    - Asia/Kolkata
+    fakerLocale: en_IN
+    postcodePattern: ^[1-9][0-9]{5}$
+    calendarCoverage:
+      startDate: '2005-01-01'
+      endDate: '2026-12-31'
+    climate:
+      profile: tropical-monsoon
+      summerC: 33
+      winterC: 23
+      monsoonMonths:
+      - 6
+      - 7
+      - 8
+      - 9
+    holidayRules:
+    - type: fixed
+      name: Republic Day
+      month: 1
+      day: 26
+      kind: public
+    - type: fixed
+      name: Independence Day
+      month: 8
+      day: 15
+      kind: public
+    - type: fixed
+      name: Gandhi Jayanti
+      month: 10
+      day: 2
+      kind: public
+    - type: fixed
+      name: Christmas
+      month: 12
+      day: 25
+      kind: public
+    holidays:
+    - date: '2005-03-25'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2006-03-15'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2007-03-04'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2008-03-22'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2009-03-11'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2010-03-01'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2011-03-20'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2012-03-08'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2013-03-27'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2014-03-17'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2015-03-06'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2016-03-24'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2017-03-13'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2018-03-02'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2019-03-21'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2020-03-10'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2021-03-29'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2022-03-18'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2023-03-08'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2024-03-25'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2025-03-14'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2026-03-04'
+      name: Holi
+      kind: reviewed-lunar
+    - date: '2005-11-04'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2006-10-24'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2007-10-13'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2008-10-02'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2009-09-21'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2010-09-11'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2011-08-31'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2012-08-20'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2013-08-09'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2014-07-29'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2015-07-18'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2016-07-07'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2017-06-26'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2018-06-16'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2019-06-05'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2020-05-25'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2021-05-14'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2022-05-03'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2023-04-22'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2024-04-11'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2025-03-31'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2026-03-20'
+      name: Eid al-Fitr
+      kind: reviewed-lunar
+    - date: '2005-11-01'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2006-10-21'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2007-11-09'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2008-10-28'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2009-10-17'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2010-11-05'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2011-10-26'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2012-11-13'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2013-11-03'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2014-10-23'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2015-11-11'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2016-10-30'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2017-10-19'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2018-11-07'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2019-10-27'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2020-11-14'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2021-11-04'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2022-10-24'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2023-11-12'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2024-10-31'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2025-10-20'
+      name: Diwali
+      kind: reviewed-lunar
+    - date: '2026-11-08'
+      name: Diwali
+      kind: reviewed-lunar
+    saleSeasons:
+    - id: diwali-season
+      startMonthDay: 10-01
+      endMonthDay: 11-10
+    - id: republic-day-sale
+      startMonthDay: 01-20
+      endMonthDay: 01-28
+  assortment:
+    skusPerDepartment: 12
+    variantsPerProduct: 3
+  demand:
+    startingDailyOrders: 4
+    averageLinesPerOrder: 1.8
+    demandLevelScalar: 1
+    annualGrowthRate: 0.025
+    noise: 0.12
+    intermittencyRate: 0.14
+    newProductRampDays: 90
+    dayOfWeekFactors:
+    - 0.9
+    - 0.93
+    - 0.97
+    - 1.02
+    - 1.12
+    - 1.28
+    - 1.24
+  priceDynamics:
+    profile: response-rich
+    priceChangeEventsPerSkuPerYear: 6
+    annualInflationRate: 0.055
+    priceEndingAdherence: 0.82
+  signals:
+    holidays: true
+    promotions: true
+    weather: true
+    localEvents: true
+    competitor: true
+    macro: true
+    fx: true
+- marketId: us-new-york
+  name: United States — New York
+  countryCode: US
+  regionCode: NY
+  city: New York
+  currencyCode: USD
+  timezone: America/New_York
+  catalogPack:
+    id: real-retail-US
+    version: '2026.6'
+    label: United States real-brand reference catalog
+    countryCode: US
+    barcodeFormat: UPCA
+    familyIds:
+    - apparel-bottoms
+    - apparel-footwear
+    - apparel-outerwear
+    - apparel-tops
+    - automotive-accessories
+    - automotive-car-care
+    - automotive-oils
+    - automotive-two-wheeler
+    - baby-care
+    - baby-feeding
+    - beauty-cosmetics
+    - beauty-grooming
+    - beauty-haircare
+    - beauty-skincare
+    - books-fiction
+    - books-nonfiction
+    - electronics-accessories
+    - electronics-audio
+    - electronics-laptops
+    - electronics-mobile
+    - electronics-tablets
+    - grocery-beverages
+    - grocery-dairy
+    - grocery-snacks
+    - grocery-staples
+    - health-first-aid
+    - health-otc
+    - health-vitamins
+    - health-wellness
+    - home-appliances
+    - home-bedding
+    - home-cleaning
+    - home-cookware
+    - sports-fitness
+    - sports-outdoor
+    - sports-team
+    - sports-yoga
+    - stationery-notebooks
+    - stationery-writing
+    - toys-building
+    - toys-games
+  fxRateToReporting: '83.000000000000000000'
+  localePack:
+    id: US
+    version: '2026.3'
+    label: United States
+    currency:
+      code: USD
+      symbol: $
+      minorUnitExponent: 2
+      decimalSeparator: .
+      groupSeparator: ','
+      priceEndings:
+      - '00'
+      - '49'
+      - '99'
+      defaultPriceMin: '5.00'
+      defaultPriceMax: '499.00'
+    tax:
+      basis: exclusive
+      defaultRate: '0.08875'
+      categoryRates:
+        apparel: '0.08875'
+        automotive: '0.08875'
+        baby: '0.08875'
+        beauty: '0.08875'
+        books: '0.08875'
+        electronics: '0.08875'
+        grocery: '0.00'
+        health: '0.00'
+        home: '0.08875'
+        sports: '0.08875'
+        stationery: '0.08875'
+        toys: '0.08875'
+      jurisdiction: NYC-sales-tax
+      components:
+        intraRegion:
+        - code: NY-state
+          share: '0.4507042254'
+        - code: MCTD
+          share: '0.0422535211'
+        - code: NYC-local
+          share: '0.5070422535'
+        interRegion:
+        - code: destination-sales-tax
+          share: '1.0'
+    fiscalYearStartMonth: 1
+    timezones:
+    - America/New_York
+    - America/Chicago
+    - America/Denver
+    - America/Los_Angeles
+    fakerLocale: en_US
+    postcodePattern: ^[0-9]{5}(-[0-9]{4})?$
+    calendarCoverage:
+      startDate: '2005-01-01'
+      endDate: '2026-12-31'
+    climate:
+      profile: continental-four-season
+      summerC: 27
+      winterC: 3
+      monsoonMonths: []
+    holidayRules:
+    - type: fixed
+      name: New Year's Day
+      month: 1
+      day: 1
+      kind: public
+    - type: nth-weekday
+      name: Martin Luther King Jr. Day
+      month: 1
+      weekday: 0
+      occurrence: 3
+      kind: public
+    - type: last-weekday
+      name: Memorial Day
+      month: 5
+      weekday: 0
+      kind: public
+    - type: fixed
+      name: Independence Day
+      month: 7
+      day: 4
+      kind: public
+    - type: nth-weekday
+      name: Labor Day
+      month: 9
+      weekday: 0
+      occurrence: 1
+      kind: public
+    - type: fixed
+      name: Veterans Day
+      month: 11
+      day: 11
+      kind: public
+    - type: nth-weekday
+      name: Thanksgiving
+      month: 11
+      weekday: 3
+      occurrence: 4
+      kind: public
+    - type: fixed
+      name: Christmas
+      month: 12
+      day: 25
+      kind: public
+    holidays: []
+    saleSeasons:
+    - id: holiday-season
+      startMonthDay: 11-15
+      endMonthDay: 12-31
+    - id: back-to-school
+      startMonthDay: 08-01
+      endMonthDay: 09-10
+  assortment:
+    skusPerDepartment: 12
+    variantsPerProduct: 3
+  demand:
+    startingDailyOrders: 4
+    averageLinesPerOrder: 1.8
+    demandLevelScalar: 1
+    annualGrowthRate: 0.025
+    noise: 0.12
+    intermittencyRate: 0.14
+    newProductRampDays: 90
+    dayOfWeekFactors:
+    - 0.94
+    - 0.97
+    - 1
+    - 1.04
+    - 1.15
+    - 1.22
+    - 1.12
+  priceDynamics:
+    profile: response-rich
+    priceChangeEventsPerSkuPerYear: 6
+    annualInflationRate: 0.028
+    priceEndingAdherence: 0.82
+  signals:
+    holidays: true
+    promotions: true
+    weather: true
+    localEvents: true
+    competitor: true
+    macro: true
+    fx: true
+legalEntities:
+- legalEntityId: northstar-india
+  name: Northstar Retail India Pvt Ltd
+  marketIds:
+  - india-mumbai
+- legalEntityId: northstar-us
+  name: Northstar Retail USA Inc
+  marketIds:
+  - us-new-york
+channels:
+- channelId: mumbai-store
+  name: Mumbai Store
+  marketId: india-mumbai
+  type: store
+- channelId: mumbai-online
+  name: India Online
+  marketId: india-mumbai
+  type: online
+- channelId: ny-store
+  name: New York Store
+  marketId: us-new-york
+  type: store
+- channelId: ny-online
+  name: US Online
+  marketId: us-new-york
+  type: online
+stores:
+- storeId: mumbai-bandra
+  name: Mumbai Bandra
+  marketId: india-mumbai
+  legalEntityId: northstar-india
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  warehousePriority:
+  - mumbai-dc
+  - pune-overflow
+  addressLine1: Linking Road, Bandra West
+  postcode: '400050'
+  assortmentCoverage: 0.92
+  demandScale: 1
+- storeId: ny-manhattan
+  name: New York Manhattan
+  marketId: us-new-york
+  legalEntityId: northstar-us
+  channelIds:
+  - ny-store
+  - ny-online
+  warehousePriority:
+  - newark-dc
+  addressLine1: 5th Avenue
+  postcode: '10011'
+  assortmentCoverage: 0.9
+  demandScale: 1
+warehouses:
+- warehouseId: mumbai-dc
+  name: Mumbai Distribution Centre
+  marketId: india-mumbai
+  legalEntityId: northstar-india
+  servesLocations:
+  - mumbai-bandra
+  businessCentralLocationCode: MUM-DC
+  capacityUnits: 18000
+  openingStockPerSku: 18
+  replenishmentPackSize: 12
+  openingStockDaysOfCover: 0
+- warehouseId: pune-overflow
+  name: Pune Overflow Warehouse
+  marketId: india-mumbai
+  legalEntityId: northstar-india
+  servesLocations:
+  - mumbai-bandra
+  businessCentralLocationCode: PUN-OF
+  capacityUnits: 9000
+  openingStockPerSku: 10
+  replenishmentPackSize: 8
+  openingStockDaysOfCover: 0
+- warehouseId: newark-dc
+  name: Newark Distribution Centre
+  marketId: us-new-york
+  legalEntityId: northstar-us
+  servesLocations:
+  - ny-manhattan
+  businessCentralLocationCode: NWK-DC
+  capacityUnits: 16000
+  openingStockPerSku: 18
+  replenishmentPackSize: 12
+  openingStockDaysOfCover: 0
+sourceInstances:
+  shopify:
+  - shopId: northstar-in
+    shopDomain: northstar-in.myshopify.com
+    marketId: india-mumbai
+    storeIds:
+    - mumbai-bandra
+  - shopId: northstar-us
+    shopDomain: northstar-us.myshopify.com
+    marketId: us-new-york
+    storeIds:
+    - ny-manhattan
+  businessCentral:
+  - companyId: bc-northstar-in
+    companyName: Northstar India
+    legalEntityId: northstar-india
+    warehouseIds:
+    - mumbai-dc
+    - pune-overflow
+  - companyId: bc-northstar-us
+    companyName: Northstar USA
+    legalEntityId: northstar-us
+    warehouseIds:
+    - newark-dc
+catalog:
+  generation:
+    mode: hybrid
+    catalogPackVersion: '2026.6'
+    skuPrefix: NST
+    launchHistoryDays: 365
+    incumbentProductPct: 0.5
+    discontinueRate: 0.2
+    launchSpreadPct: 0.92
+    variantLaunchSpreadDays: 120
+    replacementLinkRate: 0.72
+    minProductLifeDays: 365
+    maxProductLifeDays: 1825
+    lifecycle:
+      defaultLaunchProfile: linear-ramp
+      launchSpikeMultiplier: 4.0
+      launchSpikeDays: 14
+      launchSettleDays: 76
+      preLaunchAnticipationDays: 45
+      preLaunchDemandMultiplier: 0.55
+      substitutionRate: 0.65
+      runoutMonths: 18
+      runoutDemandMultiplier: 0.35
+      runoutMarkdownPct: 0.1
+      runoutMarkdownDemandMultiplier: 1.08
+      clearanceStartDaysAfterSuccessor: 120
+      clearanceDiscountPct: 0.25
+      clearanceDemandMultiplier: 1.35
+      fireSaleFinalDays: 30
+      fireSaleDiscountPct: 0.45
+      fireSaleDemandMultiplier: 2.1
+  departments:
+  - departmentId: apparel
+    name: Apparel
+    categories:
+    - categoryId: apparel-tops
+      name: Tops
+      taxCategory: apparel
+      catalogFamily: apparel-tops
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 4
+      seasonalityStrength: 0.18
+      costingMethod: FIFO
+      targetMargin: 0.54
+      baseReturnRate: 0.1
+      elasticityMin: -2.2
+      elasticityMax: -0.85
+    - categoryId: apparel-bottoms
+      name: Bottoms
+      taxCategory: apparel
+      catalogFamily: apparel-bottoms
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 9
+      seasonalityStrength: 0.15
+      costingMethod: FIFO
+      targetMargin: 0.52
+      baseReturnRate: 0.11
+      elasticityMin: -2.1
+      elasticityMax: -0.8
+    - categoryId: apparel-outerwear
+      name: Outerwear
+      taxCategory: apparel
+      catalogFamily: apparel-outerwear
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.45
+      costingMethod: FIFO
+      targetMargin: 0.56
+      baseReturnRate: 0.13
+      elasticityMin: -2.0
+      elasticityMax: -0.7
+    - categoryId: apparel-footwear
+      name: Footwear
+      taxCategory: apparel
+      catalogFamily: apparel-footwear
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 8
+      seasonalityStrength: 0.2
+      costingMethod: FIFO
+      targetMargin: 0.5
+      baseReturnRate: 0.14
+      elasticityMin: -2.1
+      elasticityMax: -0.7
+  - departmentId: electronics
+    name: Electronics
+    categories:
+    - categoryId: electronics-mobile
+      name: Mobile Phones
+      taxCategory: electronics
+      catalogFamily: electronics-mobile
+      optionDimensions:
+      - color
+      - storage
+      seasonalityPeakMonth: 9
+      seasonalityStrength: 0.28
+      costingMethod: WAC
+      targetMargin: 0.22
+      baseReturnRate: 0.065
+      elasticityMin: -1.6
+      elasticityMax: -0.4
+    - categoryId: electronics-tablets
+      name: Tablets
+      taxCategory: electronics
+      catalogFamily: electronics-tablets
+      optionDimensions:
+      - storage
+      - connectivity
+      seasonalityPeakMonth: 9
+      seasonalityStrength: 0.24
+      costingMethod: WAC
+      targetMargin: 0.25
+      baseReturnRate: 0.06
+      elasticityMin: -1.55
+      elasticityMax: -0.38
+    - categoryId: electronics-laptops
+      name: Laptops
+      taxCategory: electronics
+      catalogFamily: electronics-laptops
+      optionDimensions:
+      - storage
+      - format
+      seasonalityPeakMonth: 8
+      seasonalityStrength: 0.22
+      costingMethod: WAC
+      targetMargin: 0.23
+      baseReturnRate: 0.075
+      elasticityMin: -1.5
+      elasticityMax: -0.35
+    - categoryId: electronics-audio
+      name: Audio
+      taxCategory: electronics
+      catalogFamily: electronics-audio
+      optionDimensions:
+      - color
+      - connectivity
+      seasonalityPeakMonth: 11
+      seasonalityStrength: 0.24
+      costingMethod: WAC
+      targetMargin: 0.32
+      baseReturnRate: 0.07
+      elasticityMin: -1.8
+      elasticityMax: -0.55
+    - categoryId: electronics-accessories
+      name: Accessories
+      taxCategory: electronics
+      catalogFamily: electronics-accessories
+      optionDimensions:
+      - color
+      - compatibility
+      seasonalityPeakMonth: 11
+      seasonalityStrength: 0.16
+      costingMethod: WAC
+      targetMargin: 0.4
+      baseReturnRate: 0.045
+      elasticityMin: -2.0
+      elasticityMax: -0.7
+  - departmentId: groceries
+    name: Groceries
+    categories:
+    - categoryId: grocery-staples
+      name: Pantry Staples
+      taxCategory: grocery
+      catalogFamily: grocery-staples
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 10
+      seasonalityStrength: 0.12
+      costingMethod: FIFO
+      targetMargin: 0.24
+      baseReturnRate: 0.01
+      elasticityMin: -2.6
+      elasticityMax: -1.0
+    - categoryId: grocery-snacks
+      name: Snacks & Confectionery
+      taxCategory: grocery
+      catalogFamily: grocery-snacks
+      optionDimensions:
+      - packSize
+      - flavour
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.2
+      costingMethod: FIFO
+      targetMargin: 0.31
+      baseReturnRate: 0.008
+      elasticityMin: -3.0
+      elasticityMax: -1.2
+    - categoryId: grocery-beverages
+      name: Beverages
+      taxCategory: grocery
+      catalogFamily: grocery-beverages
+      optionDimensions:
+      - packSize
+      - flavour
+      seasonalityPeakMonth: 6
+      seasonalityStrength: 0.28
+      costingMethod: FIFO
+      targetMargin: 0.29
+      baseReturnRate: 0.006
+      elasticityMin: -3.1
+      elasticityMax: -1.1
+    - categoryId: grocery-dairy
+      name: Dairy & Chilled
+      taxCategory: grocery
+      catalogFamily: grocery-dairy
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 5
+      seasonalityStrength: 0.1
+      costingMethod: FIFO
+      targetMargin: 0.22
+      baseReturnRate: 0.005
+      elasticityMin: -2.5
+      elasticityMax: -1.0
+  - departmentId: home
+    name: Home & Kitchen
+    categories:
+    - categoryId: home-cookware
+      name: Cookware
+      taxCategory: home
+      catalogFamily: home-cookware
+      optionDimensions:
+      - size
+      - format
+      seasonalityPeakMonth: 10
+      seasonalityStrength: 0.18
+      costingMethod: WAC
+      targetMargin: 0.38
+      baseReturnRate: 0.045
+      elasticityMin: -1.8
+      elasticityMax: -0.6
+    - categoryId: home-appliances
+      name: Small Appliances
+      taxCategory: home
+      catalogFamily: home-appliances
+      optionDimensions:
+      - color
+      - power
+      seasonalityPeakMonth: 11
+      seasonalityStrength: 0.22
+      costingMethod: WAC
+      targetMargin: 0.3
+      baseReturnRate: 0.055
+      elasticityMin: -1.55
+      elasticityMax: -0.45
+    - categoryId: home-bedding
+      name: Bedding
+      taxCategory: home
+      catalogFamily: home-bedding
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.12
+      costingMethod: FIFO
+      targetMargin: 0.44
+      baseReturnRate: 0.06
+      elasticityMin: -1.9
+      elasticityMax: -0.7
+    - categoryId: home-cleaning
+      name: Cleaning & Laundry
+      taxCategory: home
+      catalogFamily: home-cleaning
+      optionDimensions:
+      - packSize
+      - flavour
+      seasonalityPeakMonth: 3
+      seasonalityStrength: 0.08
+      costingMethod: FIFO
+      targetMargin: 0.3
+      baseReturnRate: 0.008
+      elasticityMin: -2.5
+      elasticityMax: -1.0
+  - departmentId: beauty
+    name: Beauty & Personal Care
+    categories:
+    - categoryId: beauty-skincare
+      name: Skin Care
+      taxCategory: beauty
+      catalogFamily: beauty-skincare
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.1
+      costingMethod: FIFO
+      targetMargin: 0.48
+      baseReturnRate: 0.025
+      elasticityMin: -2.3
+      elasticityMax: -0.8
+    - categoryId: beauty-haircare
+      name: Hair Care
+      taxCategory: beauty
+      catalogFamily: beauty-haircare
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 7
+      seasonalityStrength: 0.08
+      costingMethod: FIFO
+      targetMargin: 0.45
+      baseReturnRate: 0.02
+      elasticityMin: -2.4
+      elasticityMax: -0.9
+    - categoryId: beauty-cosmetics
+      name: Cosmetics
+      taxCategory: beauty
+      catalogFamily: beauty-cosmetics
+      optionDimensions:
+      - color
+      - format
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.22
+      costingMethod: FIFO
+      targetMargin: 0.55
+      baseReturnRate: 0.035
+      elasticityMin: -2.2
+      elasticityMax: -0.75
+    - categoryId: beauty-grooming
+      name: Grooming
+      taxCategory: beauty
+      catalogFamily: beauty-grooming
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 6
+      seasonalityStrength: 0.08
+      costingMethod: WAC
+      targetMargin: 0.39
+      baseReturnRate: 0.035
+      elasticityMin: -2.0
+      elasticityMax: -0.65
+  - departmentId: health
+    name: Health & Wellness
+    categories:
+    - categoryId: health-vitamins
+      name: Vitamins & Supplements
+      taxCategory: health
+      catalogFamily: health-vitamins
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.15
+      costingMethod: FIFO
+      targetMargin: 0.38
+      baseReturnRate: 0.012
+      elasticityMin: -2.0
+      elasticityMax: -0.7
+    - categoryId: health-otc
+      name: Over-the-Counter
+      taxCategory: health
+      catalogFamily: health-otc
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.3
+      costingMethod: FIFO
+      targetMargin: 0.32
+      baseReturnRate: 0.006
+      elasticityMin: -1.7
+      elasticityMax: -0.5
+    - categoryId: health-first-aid
+      name: First Aid
+      taxCategory: health
+      catalogFamily: health-first-aid
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 7
+      seasonalityStrength: 0.06
+      costingMethod: FIFO
+      targetMargin: 0.36
+      baseReturnRate: 0.008
+      elasticityMin: -1.9
+      elasticityMax: -0.6
+    - categoryId: health-wellness
+      name: Nutrition & Wellness
+      taxCategory: health
+      catalogFamily: health-wellness
+      optionDimensions:
+      - packSize
+      - flavour
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.18
+      costingMethod: FIFO
+      targetMargin: 0.35
+      baseReturnRate: 0.008
+      elasticityMin: -2.2
+      elasticityMax: -0.8
+  - departmentId: sports
+    name: Sports & Outdoors
+    categories:
+    - categoryId: sports-fitness
+      name: Fitness
+      taxCategory: sports
+      catalogFamily: sports-fitness
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.28
+      costingMethod: WAC
+      targetMargin: 0.38
+      baseReturnRate: 0.07
+      elasticityMin: -2.0
+      elasticityMax: -0.65
+    - categoryId: sports-outdoor
+      name: Outdoor Recreation
+      taxCategory: sports
+      catalogFamily: sports-outdoor
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 6
+      seasonalityStrength: 0.35
+      costingMethod: WAC
+      targetMargin: 0.42
+      baseReturnRate: 0.06
+      elasticityMin: -1.9
+      elasticityMax: -0.6
+    - categoryId: sports-team
+      name: Team Sports
+      taxCategory: sports
+      catalogFamily: sports-team
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 7
+      seasonalityStrength: 0.25
+      costingMethod: WAC
+      targetMargin: 0.36
+      baseReturnRate: 0.045
+      elasticityMin: -1.8
+      elasticityMax: -0.55
+    - categoryId: sports-yoga
+      name: Yoga
+      taxCategory: sports
+      catalogFamily: sports-yoga
+      optionDimensions:
+      - color
+      - size
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.2
+      costingMethod: WAC
+      targetMargin: 0.45
+      baseReturnRate: 0.04
+      elasticityMin: -2.1
+      elasticityMax: -0.7
+  - departmentId: toys-baby
+    name: Toys & Baby
+    categories:
+    - categoryId: toys-building
+      name: Building Toys
+      taxCategory: toys
+      catalogFamily: toys-building
+      optionDimensions:
+      - ageGroup
+      - format
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.48
+      costingMethod: WAC
+      targetMargin: 0.4
+      baseReturnRate: 0.045
+      elasticityMin: -2.2
+      elasticityMax: -0.75
+    - categoryId: toys-games
+      name: Games
+      taxCategory: toys
+      catalogFamily: toys-games
+      optionDimensions:
+      - ageGroup
+      - format
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.42
+      costingMethod: WAC
+      targetMargin: 0.39
+      baseReturnRate: 0.035
+      elasticityMin: -2.4
+      elasticityMax: -0.8
+    - categoryId: baby-care
+      name: Baby Care
+      taxCategory: baby
+      catalogFamily: baby-care
+      optionDimensions:
+      - packSize
+      - ageGroup
+      seasonalityPeakMonth: 3
+      seasonalityStrength: 0.05
+      costingMethod: FIFO
+      targetMargin: 0.28
+      baseReturnRate: 0.012
+      elasticityMin: -2.5
+      elasticityMax: -1.0
+    - categoryId: baby-feeding
+      name: Baby Feeding
+      taxCategory: baby
+      catalogFamily: baby-feeding
+      optionDimensions:
+      - packSize
+      - ageGroup
+      seasonalityPeakMonth: 3
+      seasonalityStrength: 0.05
+      costingMethod: FIFO
+      targetMargin: 0.27
+      baseReturnRate: 0.01
+      elasticityMin: -2.3
+      elasticityMax: -0.9
+  - departmentId: books-stationery
+    name: Books & Stationery
+    categories:
+    - categoryId: books-fiction
+      name: Fiction Books
+      taxCategory: books
+      catalogFamily: books-fiction
+      optionDimensions:
+      - format
+      - size
+      seasonalityPeakMonth: 12
+      seasonalityStrength: 0.22
+      costingMethod: FIFO
+      targetMargin: 0.36
+      baseReturnRate: 0.035
+      elasticityMin: -1.9
+      elasticityMax: -0.6
+    - categoryId: books-nonfiction
+      name: Non-fiction Books
+      taxCategory: books
+      catalogFamily: books-nonfiction
+      optionDimensions:
+      - format
+      - size
+      seasonalityPeakMonth: 1
+      seasonalityStrength: 0.18
+      costingMethod: FIFO
+      targetMargin: 0.35
+      baseReturnRate: 0.03
+      elasticityMin: -1.8
+      elasticityMax: -0.55
+    - categoryId: stationery-writing
+      name: Writing Instruments
+      taxCategory: stationery
+      catalogFamily: stationery-writing
+      optionDimensions:
+      - packSize
+      - color
+      seasonalityPeakMonth: 8
+      seasonalityStrength: 0.35
+      costingMethod: FIFO
+      targetMargin: 0.42
+      baseReturnRate: 0.012
+      elasticityMin: -2.5
+      elasticityMax: -0.9
+    - categoryId: stationery-notebooks
+      name: Notebooks
+      taxCategory: stationery
+      catalogFamily: stationery-notebooks
+      optionDimensions:
+      - format
+      - size
+      seasonalityPeakMonth: 8
+      seasonalityStrength: 0.38
+      costingMethod: FIFO
+      targetMargin: 0.4
+      baseReturnRate: 0.015
+      elasticityMin: -2.4
+      elasticityMax: -0.85
+  - departmentId: automotive
+    name: Automotive
+    categories:
+    - categoryId: automotive-car-care
+      name: Car Care
+      taxCategory: automotive
+      catalogFamily: automotive-car-care
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 6
+      seasonalityStrength: 0.12
+      costingMethod: WAC
+      targetMargin: 0.35
+      baseReturnRate: 0.018
+      elasticityMin: -2.0
+      elasticityMax: -0.65
+    - categoryId: automotive-accessories
+      name: Car Accessories
+      taxCategory: automotive
+      catalogFamily: automotive-accessories
+      optionDimensions:
+      - color
+      - compatibility
+      seasonalityPeakMonth: 7
+      seasonalityStrength: 0.1
+      costingMethod: WAC
+      targetMargin: 0.38
+      baseReturnRate: 0.045
+      elasticityMin: -1.9
+      elasticityMax: -0.6
+    - categoryId: automotive-oils
+      name: Oils & Fluids
+      taxCategory: automotive
+      catalogFamily: automotive-oils
+      optionDimensions:
+      - packSize
+      - format
+      seasonalityPeakMonth: 5
+      seasonalityStrength: 0.08
+      costingMethod: FIFO
+      targetMargin: 0.28
+      baseReturnRate: 0.01
+      elasticityMin: -1.8
+      elasticityMax: -0.55
+    - categoryId: automotive-two-wheeler
+      name: Two-wheeler Accessories
+      taxCategory: automotive
+      catalogFamily: automotive-two-wheeler
+      optionDimensions:
+      - color
+      - compatibility
+      seasonalityPeakMonth: 4
+      seasonalityStrength: 0.1
+      costingMethod: WAC
+      targetMargin: 0.34
+      baseReturnRate: 0.035
+      elasticityMin: -1.9
+      elasticityMax: -0.6
+  productTemplates:
+  - productId: apple-iphone-13-in
+    marketId: india-mumbai
+    productCode: APL-IN-IPHONE13
+    title: Apple iPhone 13
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic India retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-mobile
+    basePrice: '79900.00'
+    baseCost: '61000.00'
+    optionDimensions:
+    - color
+    - storage
+    variantDefinitions:
+    - optionValues:
+        color: Black
+        storage: 128 GB
+    - optionValues:
+        color: Blue
+        storage: 256 GB
+    - optionValues:
+        color: White
+        storage: 512 GB
+    launchDate: '2021-09-24'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+  - productId: apple-iphone-14-in
+    marketId: india-mumbai
+    productCode: APL-IN-IPHONE14
+    title: Apple iPhone 14
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic India retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-mobile
+    basePrice: '79900.00'
+    baseCost: '60500.00'
+    optionDimensions:
+    - color
+    - storage
+    variantDefinitions:
+    - optionValues:
+        color: Black
+        storage: 128 GB
+    - optionValues:
+        color: Blue
+        storage: 256 GB
+    - optionValues:
+        color: White
+        storage: 512 GB
+    launchDate: '2022-09-16'
+    discontinueDate: ''
+    successorOfProductCode: APL-IN-IPHONE13
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+  - productId: apple-iphone-15-in
+    marketId: india-mumbai
+    productCode: APL-IN-IPHONE15
+    title: Apple iPhone 15
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic India retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-mobile
+    basePrice: '79900.00'
+    baseCost: '59800.00'
+    optionDimensions:
+    - color
+    - storage
+    variantDefinitions:
+    - optionValues:
+        color: Black
+        storage: 128 GB
+    - optionValues:
+        color: Blue
+        storage: 256 GB
+    - optionValues:
+        color: White
+        storage: 512 GB
+    launchDate: '2023-09-22'
+    discontinueDate: ''
+    successorOfProductCode: APL-IN-IPHONE14
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+  - productId: apple-iphone-16-in
+    marketId: india-mumbai
+    productCode: APL-IN-IPHONE16
+    title: Apple iPhone 16
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic India retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-mobile
+    basePrice: '79900.00'
+    baseCost: '59200.00'
+    optionDimensions:
+    - color
+    - storage
+    variantDefinitions:
+    - optionValues:
+        color: Black
+        storage: 128 GB
+    - optionValues:
+        color: Blue
+        storage: 256 GB
+    - optionValues:
+        color: White
+        storage: 512 GB
+    launchDate: '2024-09-20'
+    discontinueDate: ''
+    successorOfProductCode: APL-IN-IPHONE15
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+  - productId: apple-ipad-air-4-us
+    marketId: us-new-york
+    productCode: APL-US-IPADAIR4
+    title: Apple iPad Air (4th generation)
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic US retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-tablets
+    basePrice: '599.99'
+    baseCost: '455.00'
+    optionDimensions:
+    - storage
+    - connectivity
+    variantDefinitions:
+    - optionValues:
+        storage: 64 GB
+        connectivity: Wi-Fi
+    - optionValues:
+        storage: 256 GB
+        connectivity: Wi-Fi
+    - optionValues:
+        storage: 256 GB
+        connectivity: Wi-Fi + Cellular
+    launchDate: '2020-10-23'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+  - productId: apple-ipad-air-m2-us
+    marketId: us-new-york
+    productCode: APL-US-IPADAIRM2
+    title: Apple iPad Air 11-inch (M2)
+    brand: Apple
+    brandCode: APL
+    description: Real Apple product identity; synthetic US retail economics and demand.
+    departmentId: electronics
+    categoryId: electronics-tablets
+    basePrice: '599.99'
+    baseCost: '452.00'
+    optionDimensions:
+    - storage
+    - connectivity
+    variantDefinitions:
+    - optionValues:
+        storage: 128 GB
+        connectivity: Wi-Fi
+    - optionValues:
+        storage: 256 GB
+        connectivity: Wi-Fi
+    - optionValues:
+        storage: 512 GB
+        connectivity: Wi-Fi
+    launchDate: '2024-05-15'
+    discontinueDate: ''
+    successorOfProductCode: APL-US-IPADAIR4
+    launchProfile: flagship-spike-decay
+    variantLaunchSpreadDays: 0
+customerSegments:
+- segmentId: value-seekers
+  name: Value seekers
+  share: 0.42
+  demandMultiplier: 1.08
+- segmentId: core-loyalists
+  name: Core loyalists
+  share: 0.38
+  demandMultiplier: 1
+- segmentId: premium-convenience
+  name: Premium convenience
+  share: 0.2
+  demandMultiplier: 0.92
+promotions:
+- promotionId: diwali-2019
+  name: Diwali 2019 Sale
+  marketId: india-mumbai
+  startDate: '2019-10-20'
+  endDate: '2019-10-29'
+  storeIds:
+  - mumbai-bandra
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds:
+  - apparel
+  - electronics
+  categoryIds: []
+  customerSegmentIds:
+  - value-seekers
+  - core-loyalists
+  discountPct: 0.12
+  demandMultiplier: 1.32
+- promotionId: holiday-2023-us
+  name: US Holiday 2023 Sale
+  marketId: us-new-york
+  startDate: '2023-11-20'
+  endDate: '2023-11-27'
+  storeIds:
+  - ny-manhattan
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds:
+  - electronics
+  categoryIds: []
+  customerSegmentIds:
+  - value-seekers
+  - core-loyalists
+  discountPct: 0.15
+  demandMultiplier: 1.38
+events:
+- eventId: gfc-in
+  type: demand-shock
+  name: Global financial crisis — India
+  marketId: india-mumbai
+  startDate: '2008-09-15'
+  endDate: '2009-06-30'
+  demandMultiplier: 0.82
+  trafficMultiplier: 0.88
+  costMultiplier: 1.02
+  leadTimeMultiplier: 1.08
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: gfc-us
+  type: demand-shock
+  name: Global financial crisis — US
+  marketId: us-new-york
+  startDate: '2008-09-15'
+  endDate: '2009-06-30'
+  demandMultiplier: 0.72
+  trafficMultiplier: 0.78
+  costMultiplier: 1.03
+  leadTimeMultiplier: 1.1
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: electronics-supply-2011-in
+  type: supply-disruption
+  name: 2011 electronics supply disruption — India
+  marketId: india-mumbai
+  startDate: '2011-03-11'
+  endDate: '2011-11-30'
+  demandMultiplier: 0.94
+  trafficMultiplier: 0.98
+  costMultiplier: 1.12
+  leadTimeMultiplier: 1.65
+  inventoryLossPct: 0.04
+  recoveryShape: linear
+  departmentIds:
+  - electronics
+  categoryIds: []
+  channelIds: []
+- eventId: electronics-supply-2011-us
+  type: supply-disruption
+  name: 2011 electronics supply disruption — US
+  marketId: us-new-york
+  startDate: '2011-03-11'
+  endDate: '2011-11-30'
+  demandMultiplier: 0.94
+  trafficMultiplier: 0.98
+  costMultiplier: 1.12
+  leadTimeMultiplier: 1.65
+  inventoryLossPct: 0.04
+  recoveryShape: linear
+  departmentIds:
+  - electronics
+  categoryIds: []
+  channelIds: []
+- eventId: us-tariffs-2018
+  type: demand-shock
+  name: 2018–2019 electronics tariffs
+  marketId: us-new-york
+  startDate: '2018-07-06'
+  endDate: '2019-12-31'
+  demandMultiplier: 0.96
+  trafficMultiplier: 0.98
+  costMultiplier: 1.18
+  leadTimeMultiplier: 1.2
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds:
+  - electronics
+  categoryIds: []
+  channelIds: []
+- eventId: inflation-in-2021
+  type: demand-shock
+  name: 2021–2022 inflation — India
+  marketId: india-mumbai
+  startDate: '2021-07-01'
+  endDate: '2022-12-31'
+  demandMultiplier: 0.94
+  trafficMultiplier: 0.97
+  costMultiplier: 1.22
+  leadTimeMultiplier: 1.2
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: inflation-us-2021
+  type: demand-shock
+  name: 2021–2022 inflation — US
+  marketId: us-new-york
+  startDate: '2021-07-01'
+  endDate: '2022-12-31'
+  demandMultiplier: 0.92
+  trafficMultiplier: 0.95
+  costMultiplier: 1.25
+  leadTimeMultiplier: 1.2
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: global-supply-2022-in
+  type: supply-disruption
+  name: 2022 global supply and energy shock — India
+  marketId: india-mumbai
+  startDate: '2022-02-24'
+  endDate: '2022-12-31'
+  demandMultiplier: 0.96
+  trafficMultiplier: 0.97
+  costMultiplier: 1.16
+  leadTimeMultiplier: 1.45
+  inventoryLossPct: 0.02
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: global-supply-2022-us
+  type: supply-disruption
+  name: 2022 global supply and energy shock — US
+  marketId: us-new-york
+  startDate: '2022-02-24'
+  endDate: '2022-12-31'
+  demandMultiplier: 0.96
+  trafficMultiplier: 0.97
+  costMultiplier: 1.16
+  leadTimeMultiplier: 1.45
+  inventoryLossPct: 0.02
+  recoveryShape: linear
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+operations:
+  inventory:
+    snapshotCadenceDays: 7
+    replenishmentCycleDays: 14
+    supplierLeadTimeDays: 7
+    supplierLeadTimeJitterDays: 3
+    stockoutSkuRate: 0.08
+    safetyStockUnits: 4
+    replenishmentDemandBufferPct: 0.05
+  fulfillment:
+    splitRate: 0.14
+    processingDelayHours: 4
+  returns:
+    processingRate: 0.9
+    refundFailureRate: 0.05
+  supplyChain:
+    transferCycleDays: 21
+    transferSkuRate: 0.08
+    wasteRate: 0.01
+    supplierDelayRate: 0.12
+    weatherForecastHorizonDays: 7
+  webhook:
+    fixtureSecret: northstar-synthetic-fixture-secret
+    invalidFixtureRate: 0.25
+  features:
+    detailedFulfillment: true
+    returnsAndRefunds: true
+    webhookFixtures: true
+    inventoryStateMatrix: true
+    supplyChain: true
+    warehouseOperations: true
+    transfers: true
+    supplierPlanning: true
+    promotionPlanning: true
+    allocationEvidence: true
+output:
+  rootDirectory: output
+  publicFormats:
+  - parquet
+  - duckdb
+  compression: zstd
+  writeHiddenTruth: true
+  overwrite: false
+pandemics:
+- pandemicId: h1n1-2009
+  name: 2009 H1N1 pandemic
+  pathogen: H1N1 influenza
+  effectMode: synthetic-shock
+  note: Two hygiene/avoidance waves without a general retail lockdown, followed by normalization. Adapted
+    from the retail_ai synthetic extension at market/category granularity.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2009-04-24'
+  endDate: '2010-08-10'
+  phases:
+  - phaseId: h1n1-first-wave
+    name: First wave
+    startDate: '2009-04-24'
+    endDate: '2009-07-15'
+    recoveryShape: triangle
+    demandMultiplier: 1.02
+    trafficMultiplier: 0.96
+    costMultiplier: 1.02
+    leadTimeMultiplier: 1.05
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.94
+      online: 1.08
+    catalogFamilyMultipliers: {}
+  - phaseId: h1n1-second-wave
+    name: Second wave
+    startDate: '2009-08-20'
+    endDate: '2010-01-10'
+    recoveryShape: triangle
+    demandMultiplier: 1.03
+    trafficMultiplier: 0.92
+    costMultiplier: 1.04
+    leadTimeMultiplier: 1.1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.9
+      online: 1.12
+    catalogFamilyMultipliers: {}
+  - phaseId: h1n1-normalization
+    name: Normalization
+    startDate: '2010-01-11'
+    endDate: '2010-08-10'
+    recoveryShape: linear
+    demandMultiplier: 1.01
+    trafficMultiplier: 0.98
+    costMultiplier: 1.01
+    leadTimeMultiplier: 1.02
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}
+- pandemicId: ebola-2014
+  name: 2014 Ebola US concern
+  pathogen: Ebola virus
+  effectMode: observed-no-adjustment
+  note: Timeline annotation only; no broad general-retail effect is imposed. Mirrors retail_ai treatment
+    of the period as observed/no synthetic adjustment.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2014-10-01'
+  endDate: '2014-11-30'
+  phases:
+  - phaseId: ebola-us-concern
+    name: Public concern
+    startDate: '2014-10-01'
+    endDate: '2014-11-30'
+    recoveryShape: step
+    demandMultiplier: 1
+    trafficMultiplier: 1
+    costMultiplier: 1
+    leadTimeMultiplier: 1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}
+- pandemicId: zika-2016
+  name: 2016 Zika concern
+  pathogen: Zika virus
+  effectMode: documented-no-adjustment
+  note: Timeline annotation only because the configured assortment has no directly relevant products.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2016-02-01'
+  endDate: '2016-11-30'
+  phases:
+  - phaseId: zika-concern
+    name: Public concern
+    startDate: '2016-02-01'
+    endDate: '2016-11-30'
+    recoveryShape: step
+    demandMultiplier: 1
+    trafficMultiplier: 1
+    costMultiplier: 1
+    leadTimeMultiplier: 1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}
+- pandemicId: covid-19
+  name: COVID-19 pandemic
+  pathogen: SARS-CoV-2
+  effectMode: synthetic-shock
+  note: Overlapping retailer demand, channel, stockout, supplier, wave and inflation phases. Phase structure
+    is adapted from retail_ai; supply/cost/inventory effects also use the original retail generator scenario
+    model.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2020-02-24'
+  endDate: '2023-06-30'
+  phases:
+  - phaseId: covid-early-stocking
+    name: Early stocking
+    startDate: '2020-02-24'
+    endDate: '2020-03-11'
+    recoveryShape: ramp
+    demandMultiplier: 1.08
+    trafficMultiplier: 0.98
+    costMultiplier: 1.03
+    leadTimeMultiplier: 1.1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.96
+      online: 1.15
+    catalogFamilyMultipliers:
+      home-appliances: 1.12
+      electronics-accessories: 1.1
+  - phaseId: covid-panic-buying
+    name: Panic buying
+    startDate: '2020-03-12'
+    endDate: '2020-04-03'
+    recoveryShape: triangle
+    demandMultiplier: 1.18
+    trafficMultiplier: 1.02
+    costMultiplier: 1.08
+    leadTimeMultiplier: 1.3
+    inventoryLossPct: 0.02
+    departmentMultipliers:
+      electronics: 1.12
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.78
+      online: 1.45
+    catalogFamilyMultipliers:
+      home-appliances: 1.3
+      electronics-accessories: 1.22
+  - phaseId: covid-stockouts
+    name: Stockout trough
+    startDate: '2020-04-04'
+    endDate: '2020-05-15'
+    recoveryShape: linear
+    demandMultiplier: 0.88
+    trafficMultiplier: 0.72
+    costMultiplier: 1.16
+    leadTimeMultiplier: 1.9
+    inventoryLossPct: 0.04
+    departmentMultipliers:
+      electronics: 0.88
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.6
+      online: 1.2
+    catalogFamilyMultipliers:
+      home-appliances: 0.8
+      electronics-accessories: 0.82
+  - phaseId: covid-lockdown-lifestyle
+    name: Lockdown lifestyle and channel shift
+    startDate: '2020-03-20'
+    endDate: '2020-06-15'
+    recoveryShape: step
+    demandMultiplier: 0.82
+    trafficMultiplier: 0.55
+    costMultiplier: 1.1
+    leadTimeMultiplier: 1.55
+    inventoryLossPct: 0.02
+    departmentMultipliers:
+      apparel: 0.58
+      electronics: 1.08
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.36
+      online: 1.8
+    catalogFamilyMultipliers:
+      home-appliances: 1.32
+      electronics-audio: 1.22
+      electronics-tablets: 1.3
+  - phaseId: covid-reopening
+    name: Reopening and recovery
+    startDate: '2020-05-16'
+    endDate: '2020-09-30'
+    recoveryShape: linear
+    demandMultiplier: 1.08
+    trafficMultiplier: 0.84
+    costMultiplier: 1.1
+    leadTimeMultiplier: 1.35
+    inventoryLossPct: 0.01
+    departmentMultipliers:
+      apparel: 0.86
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.78
+      online: 1.28
+    catalogFamilyMultipliers:
+      home-appliances: 1.15
+      electronics-tablets: 1.16
+  - phaseId: covid-home-baseline
+    name: Elevated home baseline
+    startDate: '2020-10-01'
+    endDate: '2021-06-30'
+    recoveryShape: linear
+    demandMultiplier: 1.06
+    trafficMultiplier: 0.9
+    costMultiplier: 1.12
+    leadTimeMultiplier: 1.42
+    inventoryLossPct: 0.01
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.86
+      online: 1.25
+    catalogFamilyMultipliers:
+      home-appliances: 1.18
+      electronics-audio: 1.12
+      electronics-tablets: 1.15
+  - phaseId: covid-supply-disruption
+    name: Global supply disruption
+    startDate: '2020-04-01'
+    endDate: '2021-09-30'
+    recoveryShape: step
+    demandMultiplier: 0.98
+    trafficMultiplier: 0.98
+    costMultiplier: 1.16
+    leadTimeMultiplier: 1.8
+    inventoryLossPct: 0.03
+    departmentMultipliers:
+      electronics: 0.9
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers:
+      electronics-mobile: 0.88
+      electronics-tablets: 0.86
+      electronics-accessories: 0.9
+  - phaseId: covid-delta-wave
+    name: Delta wave
+    startDate: '2021-08-01'
+    endDate: '2021-09-30'
+    recoveryShape: triangle
+    demandMultiplier: 0.96
+    trafficMultiplier: 0.84
+    costMultiplier: 1.08
+    leadTimeMultiplier: 1.35
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.82
+      online: 1.16
+    catalogFamilyMultipliers: {}
+  - phaseId: covid-omicron-wave
+    name: Omicron wave
+    startDate: '2021-12-05'
+    endDate: '2022-02-15'
+    recoveryShape: triangle
+    demandMultiplier: 0.97
+    trafficMultiplier: 0.8
+    costMultiplier: 1.1
+    leadTimeMultiplier: 1.42
+    inventoryLossPct: 0.01
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.78
+      online: 1.2
+    catalogFamilyMultipliers:
+      home-appliances: 1.08
+  - phaseId: covid-inflation-drag
+    name: Inflation-era discretionary drag
+    startDate: '2021-09-01'
+    endDate: '2023-06-30'
+    recoveryShape: step
+    demandMultiplier: 0.94
+    trafficMultiplier: 0.96
+    costMultiplier: 1.18
+    leadTimeMultiplier: 1.28
+    inventoryLossPct: 0
+    departmentMultipliers:
+      apparel: 0.92
+      electronics: 0.96
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}
+- pandemicId: mpox-2022
+  name: 2022 Mpox outbreak
+  pathogen: Mpox virus
+  effectMode: documented-no-adjustment
+  note: Timeline annotation only; no general-retail demand adjustment.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2022-05-15'
+  endDate: '2022-12-31'
+  phases:
+  - phaseId: mpox-outbreak
+    name: Outbreak
+    startDate: '2022-05-15'
+    endDate: '2022-12-31'
+    recoveryShape: step
+    demandMultiplier: 1
+    trafficMultiplier: 1
+    costMultiplier: 1
+    leadTimeMultiplier: 1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}

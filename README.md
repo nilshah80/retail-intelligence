@@ -6,14 +6,14 @@ synthetic scenarios may combine India, the United States, the United Kingdom and
 European representative market (Germany). This monorepo is where the PoC behind the
 `ai_retail_intelligence_dashboard_multicurrency_v6` dashboard will be built.
 
-> **Status:** planning / scaffolding. **No application code yet** — this repo currently holds
-> the specification and orientation docs only. Application code (Python datagen/ingestion/ML,
-> Go API) will be added into the folders below as we start building.
+> **Status:** Phase 1 datagen implemented; downstream ingestion/ML/API/UI remain planned or
+> scaffolded. The independent Python generator and browser Config Builder are runnable now.
 
 ## What this is (and is not)
 
-- **Is:** a fresh, product-oriented PoC targeting the v6 dashboard — Footwear / Apparel /
-  Electronics / Beauty, explicit store and warehouse topology, tenant reporting currency INR,
+- **Is:** a fresh, product-oriented PoC targeting the v6 dashboard — 10 retail departments
+  spanning Apparel, Electronics, Groceries, Home, Beauty, Health, Sports, Toys & Baby,
+  Books & Stationery and Automotive; explicit store and warehouse topology; tenant reporting currency INR,
   and local transaction currencies INR/USD/GBP/EUR.
 - **Is not:** the earlier **M5-based PoC**, which lives separately at `../retail_ai`. That PoC
   is our **reference implementation** — we reuse/adapt its proven Python modules and re-implement
@@ -24,10 +24,17 @@ European representative market (Germany). This monorepo is where the PoC behind 
 **1. Source production vs ingestion.**
 
 - `datagen/` owns its own scenario and source-data specification. Its HTML Config Builder is the
-  only supported authoring surface and exports the complete YAML/JSON run configuration. The
+  only supported authoring surface and exports conventional YAML by default while retaining the
+  complete JSON configuration. The
   generator publishes Shopify-shaped, Business Central-shaped and external/companion source
-  datasets, a source-run manifest and hidden synthetic truth. It never imports or emits
-  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms.
+  datasets in one selected authoritative CSV/Parquet format, one all-source
+  `source-run.duckdb` browsing mirror, a
+  source-run manifest and hidden synthetic truth. The single DuckDB contains restricted truth
+  when truth is enabled and is permissioned accordingly. Datagen never imports or emits
+  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms. Its v8
+  contract includes a tested 2005–2024 preset, opening-incumbent and later product/SKU launches,
+  overlapping predecessor/successor runout with lifecycle promotions, and config-owned phased
+  pandemic/supply disruption.
 - `ingestion/` owns immutable raw landing, Gate A, source profiles/adapters, standardized staging,
   source-neutral transformations, canonical `retail_v2`, Gate B and curated Parquet/DuckDB.
   Missing source timestamps, versions, formats or manifest details are handled or derived here
@@ -108,9 +115,11 @@ the reverse, so `datagen/` can later be lifted into its own repository without t
    source generator and Config Builder; Phase 2 = ingestion/transformation). **`plans/aws/`** —
    the cloud deployment plan (after local works).
 
-## Reference: the M5 PoC (`../retail_ai`)
+## Reference implementations
 
-The spec's `[REUSE]` tags point at modules in `../retail_ai` to copy or re-implement. **We have
-not copied any code yet** — this repo is information-only for now. When we start building, the
-plan is: M5 data-quality/mapping patterns → `ingestion/`; `retail_ai/{features,models,engines}`
-→ `ml/`; `retail_ai/api` design → Go `api/`; `retail_ai/migrations` (Alembic) → `db/`.
+The spec's `[REUSE]` tags point at `../retail_ai` modules to copy or re-implement for downstream
+phases. The datagen implementation separately adapts portable primitives and the rich
+product/variant approach from `../retail-synthetic-data-generator`; its exact reuse decisions are
+recorded in `datagen/REUSE_AUDIT.md`. The remaining plan is: M5 data-quality/mapping patterns →
+`ingestion/`; `retail_ai/{features,models,engines}` → `ml/`; `retail_ai/api` design → Go `api/`;
+`retail_ai/migrations` (Alembic) → `db/`.

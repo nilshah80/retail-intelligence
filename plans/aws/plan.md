@@ -22,7 +22,7 @@ The design is built around config-switched seams so local and AWS run the same l
 
 | Seam | Local | AWS |
 |---|---|---|
-| Object storage (lake, artifacts) | Parquet/DuckDB on disk | **S3** (raw / curated / features / artifacts prefixes) |
+| Object storage (lake, artifacts) | raw source CSV + restricted single-run DuckDB; curated Parquet/DuckDB | **S3** (raw / restricted-evaluation / curated / features / artifacts prefixes) |
 | Data generator | `datagen/` Config Builder artifact + CLI | `datagen` job (**AWS Batch** or **SageMaker Processing**) → S3 raw |
 | Ingestion compute | `ingestion/` Python | **SageMaker Processing** (or ECS/Batch) |
 | ML compute | `ml/` Python features/models/engines | **SageMaker Processing / Training jobs** (or ECS/Batch) |
@@ -48,8 +48,9 @@ pipeline. **Exit:** `terraform apply` stands up an empty, private, encrypted env
 
 ### Phase A1 — Data landing & ingest
 Upload a Config-Builder-generated scenario, run `datagen` to publish Shopify-shaped, Business
-Central-shaped and companion sources to immutable S3 **raw**, and retain its source-run manifest
-and hidden truth outside curated paths. Package `ingestion/` as Python SageMaker Processing jobs:
+Central-shaped and companion CSV/Parquet sources to immutable S3 **raw**, and retain its source-run
+manifest, hidden truth and all-source `source-run.duckdb` in a restricted evaluation prefix
+outside curated paths. Package `ingestion/` as Python SageMaker Processing jobs:
 landing manifest → Gate A → profile/adapter → staging → source-neutral transforms → Gate B →
 curated. Missing source manifests/timestamps/versions are derived from immutable landing evidence
 under the canonical entity's explicit-version or observation-identity policy, or quarantined.
@@ -89,9 +90,11 @@ parity with the Python side; reason-coded evidence blocks remain visible rather 
 empty pricing results. **Exit:** the API serves live artifacts; approve/override audited;
 auth enforced.
 
-### Phase A5 — UI
-Host the front-end on **S3 + CloudFront** (or Amplify), pointed at the API Gateway/ALB endpoint;
-FX display. **Exit:** all screens render live cloud data.
+### Phase A5 — UI deployment
+Deploy the front-end already delivered incrementally by the local vertical slices to **S3 +
+CloudFront** (or Amplify), pointed at the API Gateway/ALB endpoint; this is not the start of UI
+implementation. Configure FX display against the cloud API. **Exit:** all screens render live
+cloud data.
 
 ### Phase A6 — Orchestration & unattended run
 **EventBridge** schedule → **Step Functions** nightly (generate → ingest/transform → ML →

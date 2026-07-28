@@ -3,128 +3,207 @@
 _Companion to `plans/local/plan.md`. Status: `[ ]` not started · `[~]` partial · `[x]` done._
 _All tasks below are **local**, on generated synthetic data, shadow-only._
 
+## Cross-phase UI and demo track `[START EARLY]`
+
+- [ ] Resolve UI framework decision #17 by the end of Phase 1; scaffold the runtime dashboard
+      shell, routing, design tokens and shared market/currency/status components as soon as the
+      first versioned screen/API contract is frozen.
+- [ ] Maintain versioned OpenAPI/read-model contracts and deterministic stub fixtures ahead of
+      each backend capability. Every screen must visibly identify stub data; a phase demo cannot
+      claim a live capability until its accepted artifacts are served by the read-only Go API.
+- [ ] Extend the thin read-only Go API and UI together in Phases 2–5; do not defer all API and UI
+      work to Phases 6–7. Preserve one contract when a screen moves from stub to live data.
+- [ ] Keep incomplete screens behind explicit demo feature flags; never fabricate unavailable
+      metrics, pricing recommendations, margin or workflow state.
+- [ ] Run incremental demo checkpoints:
+      Phase 1 Config Builder → Phase 2 Data Management/quality → Phase 3 Demand Forecast →
+      Phase 4 Inventory/Replenishment → Phase 5 Pricing/Competitor/Promotion → Phase 6 governed
+      approval/override. Phase 7 completes integration and removes remaining core-screen stubs.
+
 ## Phase 1 — Config Builder and synthetic source generation `[FIRST]`
 
 **1.1 Reuse audit and isolation**
-- [ ] Copy only compatible code from `../retail-synthetic-data-generator`; record reused,
+- [x] Copy only compatible code from `../retail-synthetic-data-generator`; record reused,
       adapted and replaced modules.
-- [ ] Reuse/adapt only the portable primitives first: deterministic seed partitioning,
+- [x] Reuse/adapt only the portable primitives first: deterministic seed partitioning,
       source-native Shopify/Business Central ID formats and namespaces, atomic
-      checkpoint/replace, checksumming/manifest logic and the Typer/logging shell. Replace
-      mutable counter-based ID allocation with stable-key allocation.
-- [ ] Redesign the old `RunContext`/run identity, domain checkpoint state, writer dataset
+      checkpoint/replace, checksumming/manifest logic and the CLI/logging shell where compatible.
+      Replace mutable counter-based ID allocation with stable-key allocation.
+- [x] Redesign the old `RunContext`/run identity, domain checkpoint state, writer dataset
       contract, controller orchestration and CLI commands against the new generator-owned
       config and source-data specification. Replace wall-clock-derived run identity with the
       content-derived identity in §9.3 before publishing reproducible runs.
-- [ ] Do not port the old `IdFactory.canonical`, `features/ml_ready`,
+- [x] Do not port the old `IdFactory.canonical`, `features/ml_ready`,
       `crossSystemMapping`, `analyticalExtension`, `mlReady` or fixed authoritative
       `retail.duckdb` publication contract. Hidden truth remains restricted and source-shaped
       Shopify/Business Central/companion publications are authoritative.
-- [ ] Give `datagen/` its own dependency file and generator-owned scenario/source schemas.
+- [x] Give `datagen/` its own dependency file and generator-owned scenario/source schemas.
 - [ ] Resolve Python environment topology decision #38 before creating ingestion/ML package
       lockfiles; `datagen/` remains isolated regardless of that choice.
-- [ ] Enforce that `datagen/` imports no `contracts/`, `ingestion/`, `ml/` or `api/` module.
-- [ ] Remove canonical `retail_v2` publication and canonical terminology from generator outputs.
+- [x] Enforce that `datagen/` imports no `contracts/`, `ingestion/`, `ml/` or `api/` module.
+- [x] Remove canonical `retail_v2` publication and canonical terminology from generator outputs.
 
 **1.2 Config Builder — sole authoring surface**
-- [ ] Move/adapt the existing Config Builder into `datagen/`.
-- [ ] Replace scalar location/warehouse counts with explicit retailer → markets → stores /
+- [x] Move/adapt the existing Config Builder into `datagen/`.
+- [x] Replace scalar location/warehouse counts with explicit retailer → markets → stores /
       online channels → warehouses/DC topology and `serves_locations` relationships.
-- [ ] Support add/edit/remove/reorder for products/categories, markets, legal entities, stores,
+- [x] Support add/edit/remove/reorder for products/categories, markets, legal entities, stores,
       warehouses, channels, source projections, signals, promotions and scenario events.
-- [ ] Configure one or more Shopify shops and Business Central companies; map each source instance
+- [x] Make rich catalog generation a first-class builder contract: generated/hybrid/explicit
+      modes, country catalog-pack metadata, exact sellable-SKU targets, variants per product,
+      SKU prefix/lifecycle controls, opening-incumbent share, category
+      option/seasonality/cost/return/elasticity behavior and complete explicit-product fields.
+- [x] Configure one or more Shopify shops and Business Central companies; map each source instance
       to explicit markets/stores/warehouses and its native currency/tax/legal context.
-- [ ] Expose every config field; remove preset-only hidden `countries`, `currencies`, formats,
+- [x] Expose every config field; remove preset-only hidden `countries`, `currencies`, formats,
       overwrite, execution and event fields.
-- [ ] Add import of builder-generated YAML/JSON and preserve lossless round trips.
-- [ ] Make YAML and JSON semantically identical; display the resolved config and schema version.
-- [ ] Materialize selected locale-pack versions and all resolved locale values into the exported
+- [x] Add import of builder-generated YAML/JSON and preserve lossless round trips.
+- [x] Make YAML and JSON semantically identical; display the resolved config and schema version.
+- [x] Materialize selected locale-pack versions and all resolved locale values into the exported
       run config; record overrides explicitly.
-- [ ] Validate unique IDs, date ranges, topology references, locale availability, timezone/
+- [x] Validate unique IDs, date ranges, topology references, locale availability, timezone/
       currency compatibility, numeric ranges, event scope, enabled output formats and required
       projection settings.
-- [ ] Add presets for India, US and a primary response-rich multi-market Mumbai + New York
-      retailer, a separate `pricing-evidence-sparse` market, plus smaller GB and DE locale
-      validation presets.
-- [ ] Ensure one warehouse may serve many stores and one store may have an approved fulfillment
+- [x] Add India, US, primary response-rich multi-market Mumbai + New York and
+      `pricing-evidence-sparse` presets; validate GB and DE through locale selection and
+      generator tests without adding redundant one-button presets.
+- [x] Ensure one warehouse may serve many stores and one store may have an approved fulfillment
       priority list across warehouses.
 
 **1.3 Locale packs**
-- [ ] Implement data-driven `IN`, `US`, `GB` and `DE` packs; label GB as UK and DE as the PoC
+- [x] Implement data-driven `IN`, `US`, `GB` and `DE` packs; label GB as UK and DE as the PoC
       European representative in the UI.
-- [ ] Define currency/symbol/minor exponent, native price bands/endings, decimal/grouping display
+- [x] Define currency/symbol/minor exponent, native price bands/endings, decimal/grouping display
       metadata and Faker locale.
-- [ ] Define tax basis plus category/jurisdiction rates: India GST/split rule, US state/local
+- [x] Define tax basis plus category/jurisdiction rates: India GST/split rule, US state/local
       sales tax, GB VAT and DE VAT.
-- [ ] Define fiscal defaults, timezone choices, region/state and postcode formats.
-- [ ] Add reviewed holiday/sale-season tables, including dated lunar festivals; never calculate
+- [x] Define fiscal defaults, timezone choices, region/state and postcode formats.
+- [x] Add reviewed holiday/sale-season tables, including dated lunar festivals; never calculate
       Diwali/Eid by approximation.
-- [ ] Define climate profiles and regional seasonality, including Indian monsoon.
-- [ ] Test that locale selection alone resolves all mandatory locale-sensitive defaults, with
+- [x] Define climate profiles and regional seasonality, including Indian monsoon.
+- [x] Test that locale selection alone resolves all mandatory locale-sensitive defaults, with
       explicit documented overrides only.
 
 **1.4 Causal simulation**
-- [ ] Deterministic RNG partitioned by stable business key/time; reproducible independent of
+- [x] Deterministic RNG partitioned by stable business key/time; reproducible independent of
       processing order.
-- [ ] Product/variant/category/assortment generation scoped by market/store.
-- [ ] Per-SKU×store latent demand with day-of-week, trend, locale holiday/seasonality, promotion,
+- [x] Adapt the reference master-data product/variant model and partial option matrices into
+      versioned IN/US/GB/DE rich catalog packs with real brand/product-line reference identities,
+      descriptions, materials, product codes, variant option combinations, sellable SKUs,
+      valid EAN-13/UPC-A barcodes, prices/costs, popularity, elasticity, returns and lifecycle.
+- [x] Expand the normalized default hierarchy to 10 departments and 41 categories, including
+      groceries, and carry family-specific shelf life into receipt/batch expiry evidence.
+- [x] Product/variant/category/assortment generation is market-scoped with exact sellable-SKU
+      targets and deterministic store-specific assortment differences.
+- [x] Support incumbent products at the history boundary plus independently dated later
+      product/variant introductions, discontinuations and predecessor/successor chains; gate
+      inventory, prices, demand and orders by SKU lifecycle.
+- [x] Support flagship spike/decay launches, pre-launch anticipation, successor substitution,
+      overlapping predecessor runout, markdown, clearance and fire-sale phases; never infer that
+      a successor launch itself makes the predecessor unsellable.
+- [x] Generate the full 2005–2024 multi-market preset and verify demand truth covers both
+      boundaries, no order predates SKU launch, and CSV partitions reconcile to the one DuckDB.
+- [x] Per-SKU×store latent demand with day-of-week, trend, locale holiday/seasonality, promotion,
       price elasticity, intermittency and new-product effects.
-- [ ] Expose generator-owned assortment size, price-event frequency, latent-response and noise
+- [x] Adapt config-owned pandemic timelines from `../retail_ai`: H1N1 waves, timeline-only
+      Ebola/Zika/Mpox and overlapping COVID demand/traffic/channel/cost/lead-time/inventory phases;
+      publish timeline, daily signals and hidden causal factors.
+- [x] Expose generator-owned assortment size, price-event frequency, latent-response and noise
       controls; response-rich/sparse presets must not contain downstream ML gate thresholds.
-- [ ] Weather, local events, competitor movement and macro factors affect demand when enabled;
+- [x] Expose optional per-market category-assortment weights in the Config Builder; omitted
+      weights default to uniform and only explicit weights alter generated category depth.
+- [x] Weather, local events, competitor movement and macro factors affect demand when enabled;
       record hidden contribution truth for later driver evaluation.
-- [ ] Inventory-constrained realized sales and a usable demand-location/supply-location link in
+- [x] Inventory-constrained realized sales and a usable demand-location/supply-location link in
       source-native Shopify/BC shapes.
-- [ ] Generate local-currency exact source amounts with locale-correct inclusive/exclusive tax;
+- [x] Generate local-currency exact source amounts with locale-correct inclusive/exclusive tax;
       do not emit canonical paise fields.
 
 **1.5 Source projections and companion feeds**
-- [ ] Shopify-shaped products/variants, locations, orders/lines, basic fulfillment, prices and
+- [x] Shopify-shaped products/variants, locations, orders/lines, detailed fulfillment, prices and
       inventory observations per configured Shopify source instance/market scope.
-- [ ] Business Central-shaped item/location, sales, inventory and finance records needed for the
+- [x] Business Central-shaped item/location, sales, inventory and finance records needed for the
       first forecast/revenue-pricing round-trip, partitioned by configured company/legal entity.
-- [ ] Companion holiday, weather actual/forecast, local-event, promotion, competitor, macro and
+- [x] Close the inventory loop with adaptive SKU/location purchase orders using
+      availability-normalized observed sales, inventory position, pending receipts,
+      lead-time/fill behavior, a Config Builder-owned demand buffer, MOQ and pack size; seed the
+      extraction boundary with optional velocity-weighted opening days of cover; post
+      opening balance, purchase, sale, transfer, waste and adjustment entries to a complete
+      company-scoped item ledger that reconciles to latest inventory.
+- [x] Companion holiday, weather actual/forecast, local-event, promotion, competitor, macro and
       FX datasets; every contextual row carries a generator-owned market key and structured
       market/region/store/channel target, never unqualified `ALL` or a free-form promotion scope.
-- [ ] Document source FX as exact local-currency→retailer-reporting-currency decimal text; do not
+- [x] Document source FX as exact local-currency→retailer-reporting-currency decimal text; do not
       emit binary-float money/rates or assume reporting→local direction.
-- [ ] Source-run manifest: generator/source-spec version, full resolved-config hash, seed/run ID,
+- [x] Source-run manifest: generator/source-spec version, full resolved-config hash, seed/run ID,
       topology, output inventory, row/control totals and content hashes.
-- [ ] Hidden generator-vocabulary truth kept outside public source projections.
-- [ ] Declare and test only formats/compression actually supported by the publisher; ingestion
-      remains responsible for format normalization.
+- [x] Publish `source-schema.json` and the DuckDB `source_schema` table as a generator-owned
+      field dictionary for every logical source dataset.
+- [x] Hidden generator-vocabulary truth kept outside public source projections.
+- [x] Declare and test exactly one authoritative tabular format per run: CSV/uncompressed or
+      Parquet with none/snappy/zstd compression; mirror that selection into one DuckDB.
+- [x] Make `startingDailyOrders` control real order headers by generating transactional unit
+      lines and deterministic multi-line baskets; expose `averageLinesPerOrder` in HTML/config
+      and test achieved daily volume rather than accepting one aggregate line per SKU/day.
+- [x] Make conventional YAML the Config Builder/CLI default and checked-in config format while
+      retaining equivalent JSON import, download and CLI loading.
 
 **1.6 Screen-completeness extensions — non-blocking for first round-trip**
-- [ ] Detailed split fulfillment and fulfillment-status histories.
-- [ ] Requested-vs-processed return evidence and successful/failed refund transactions.
-- [ ] Webhook envelopes plus valid/invalid HMAC fixtures and ID-parity cases.
-- [ ] Full Shopify inventory-state fixture matrix.
-- [ ] Business Central/ERP purchase orders, receipts/cost layers, inbound shipments, batches/
+- [x] Detailed split fulfillment, open/closed fulfillment-order lines and fulfillment-status
+      histories; open line quantities reconcile to causal committed inventory.
+- [x] Requested-vs-processed return evidence and successful/failed refund transactions.
+- [x] Webhook envelopes plus valid/invalid HMAC fixtures and ID-parity cases.
+- [x] Full Shopify inventory-state fixture matrix.
+- [x] Business Central/ERP purchase orders, receipts/cost layers, inbound shipments, batches/
       expiry and supplier performance.
-- [ ] Warehouse capacity/utilization, fill rate, dock-to-stock, blocked stock and delayed-receipt
+- [x] Warehouse capacity/utilization, fill rate, dock-to-stock, blocked stock and delayed-receipt
       observations.
-- [ ] Waste events, inventory ageing inputs and optional ERP↔WMS comparison observations.
-- [ ] Transfer request/order/shipment histories and lane/location evidence.
-- [ ] Supplier capacity confirmation, OTD, lead-time variability, MOQ/pack and budget inputs.
-- [ ] Promotion-SKU/customer-segment depth, basket/order-line histories for bundle/
+- [x] Waste events, inventory ageing inputs and optional ERP↔WMS comparison observations.
+- [x] Transfer request/order/shipment histories and lane/location evidence.
+- [x] Supplier capacity confirmation, OTD, lead-time variability, MOQ/pack and budget inputs.
+- [x] Promotion-SKU/customer-segment depth, basket/order-line histories for bundle/
       cannibalisation tests and realistic competitor-product matching.
-- [ ] Allocation demand requests, supply pools and source fulfillment-location evidence.
-- [ ] Expand publication formats to CSV/Parquet/JSONL/compression variants only when needed.
-- [ ] Verify every dashboard row in `datagen/README.md` is either backed by generated source
+- [x] Allocation demand requests, supply pools and source fulfillment-location evidence.
+- [x] Publish one selected authoritative CSV/Parquet format plus one all-source
+      `source-run.duckdb` mirror; keep JSONL as an ingestion concern when a retailer supplies it.
+- [x] Verify every dashboard row in `datagen/README.md` is either backed by generated source
       evidence or explicitly marked downstream-derived/runtime.
 
 **1.7 Phase exit**
-- [ ] Same config + seed produces identical logical source outputs and manifest hashes.
-- [ ] Builder exports/re-imports equivalent YAML and JSON with no hidden fields.
-- [ ] Mumbai and New York in one retailer produce correct independent money, tax, timezone,
+- [x] Same config + seed produces identical logical source outputs and manifest hashes.
+- [x] Builder defaults to conventional YAML, retains JSON, and exports/re-imports equivalent
+      configurations with no hidden fields.
+- [x] Mumbai and New York in one retailer produce correct independent money, tax, timezone,
       holiday, climate, companion-signal scope and warehouse relationships, including duplicate
       region labels that remain distinct by market.
-- [ ] Response-rich and sparse-evidence presets reproduce their declared assortment, price-event
+- [x] Response-rich and sparse-evidence presets reproduce their declared assortment, price-event
       and noise characteristics without importing or asserting ML acceptance thresholds.
-- [ ] IN/US/GB/DE locale-pack tests pass.
+- [x] IN/US/GB/DE locale-pack tests pass.
+- [x] Execute the prior v7 YAML-first `2021-01-01`–`2026-07-27` high-volume scenario:
+      1,181,043 actual order headers, 2,115,482 realized units, 241/581/2,106 combined
+      min/average/max daily orders, 4,891 zstd-Parquet source objects, generated source schema and
+      one verified DuckDB mirror; measured fill is 98.0191% and all 4,895 manifest objects verify.
+- [x] Execute and verify the v8 real-brand/10-department replacement run for
+      `2021-01-01`–`2026-07-27`, including lifecycle promotion rows and predecessor sales after
+      successor launch: retained run `run-9b53e0a0490d3114` has 1,054,012 orders, 1,886,776
+      units, 30,831,206 rows, 5,091 Parquet objects and one verified/reused DuckDB mirror.
+- [x] Re-measure v8 high-volume realism at 36 SKUs/department across 10 departments
+      (360 SKUs/market): median zero-day share 38.71% IN / 56.72% US; price endings
+      82.44%/82.57%; lifecycle promotion coverage 21.93%/22.19%; post-successor predecessor
+      sales proven for iPhone 13–16; committed quantities reconcile 70/96 to open fulfillment
+      lines; all 315,360 BC snapshots reconcile to ledger movements.
+- [x] Measure the v0.9.2 current-volume opening boundary with a valid disposable 90-day
+      derivative: 28 main-DC opening days, no forced opening stockouts and a 25% observed-demand
+      buffer produce 92.44% fill overall; the March dip is caused by 192 POs still in transit at
+      the artificial extract boundary, not by cold start or the constant COVID step phase.
+- [ ] Execute the complete v0.9.2 `2021-01-01`–`2026-07-27` current-volume run and measure
+      long-horizon fill, elasticity recovery, lifecycle stages, holiday peaks, within-series
+      overdispersion and autocorrelation; the disposable boundary slice is not a substitute.
 - [ ] Shopify, BC and companion outputs land successfully in Phase 2.
-- [ ] The first pricing milestone is explicitly revenue-only; no margin amount/objective is
+- [x] The first pricing milestone is explicitly revenue-only; no margin amount/objective is
       implied unless the optional receipt/cost projection is enabled.
+- [x] **Demo checkpoint 1:** use the Config Builder HTML to create, export, re-import and generate
+      the Mumbai + New York scenario; show locale-correct source outputs and the run manifest.
 
 ## Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
@@ -163,6 +242,9 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       references, input/filter/reject totals and any authenticity evidence the profile requires.
 - [ ] Treat format/compression as adapter concerns; support the declared source formats without
       demanding Parquet/JSONL from every retailer.
+- [ ] Add a datagen-DuckDB PoC profile that discovers tables through the source catalogs,
+      preserves authoritative CSV/Parquet lineage, and excludes every `restricted=true`/`_truth`
+      dataset from ordinary staging and ML.
 
 **2.3 Profiles, adapters and staging**
 - [ ] Copy/adapt M5 `mapped_files` as the profile-driven default normalizer.
@@ -208,6 +290,12 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Extended tests are enabled with the matching Phase-1.6 fixture: fulfillment/return/refund
       histories, HMAC/ID parity, full inventory states, receipts/inbound/batches/suppliers,
       promotion depth and competitor matching.
+- [ ] Freeze common API envelopes plus Data Management/quality read models; implement the initial
+      read-only Go API slice over ingest runs, source coverage, reconciliation and quarantine.
+- [ ] Scaffold the runtime UI using the selected framework and replace its Data Management stubs
+      with the live Phase-2 API slice.
+- [ ] **Demo checkpoint 2:** run Config Builder → source generation → ingestion and show live
+      landing, Gate A/B, coverage, reconciliation and quarantine status in the dashboard.
 - [ ] **Exit:** refs and controls hold; derivations are visible; curated capability-complete
       tables materialize; downstream code is source-neutral.
 
@@ -223,7 +311,12 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Publish per-market WAPE/bias/P50/P90 coverage and require supported-market gates so a large
       market cannot hide a failure elsewhere; calibrate per market when evidence is sufficient.
 - [ ] `forecast_versions`, SHAP `forecast_drivers` (+ competitor/weather groups), confidence.
-- [ ] **Exit:** acceptance gates pass; artifacts fingerprinted. → Demand Forecast screen data.
+- [ ] Extend the read-only Go API with versioned forecast-series, horizon, metric, confidence and
+      driver endpoints; keep market/currency/config fingerprints explicit.
+- [ ] Build the Demand Forecast UI vertical slice against the same contract used by its stub,
+      then switch it to accepted live forecast artifacts without changing the screen contract.
+- [ ] **Demo checkpoint 3 / exit:** acceptance gates pass; artifacts are fingerprinted and the
+      Demand Forecast screen renders live Mumbai + New York P50/P90, accuracy and drivers.
 
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
 - [ ] Reorder / safety-stock (quantile-spread × service level).
@@ -237,7 +330,10 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       conversion before any cross-market ranking/aggregation.
 - [ ] Transfer optimizer; constrained allocation.
 - [ ] Inventory-replay simulator + acceptance; demand-at-risk.
-- [ ] **Exit:** replay + policy holdout pass. → Inventory + Replenishment screens.
+- [ ] Extend the read-only Go API and UI with inventory, demand-at-risk, reorder, transfer and
+      replenishment read models; unavailable extension-only evidence remains visibly unavailable.
+- [ ] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
+      screens render live market/location-scoped outputs.
 
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 - [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.
@@ -258,14 +354,18 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Resolve overlapping promotion merchandise targets by `sku > dept > category`; reject
       conflicting equal-precedence discounts and preserve promotion-scope AND/OR semantics.
 - [ ] Cost-over-time margin (WAC default; FIFO for batch-tracked; cost-as-of).
-- [ ] **Exit:** gates enforced per market; every rec carries market/currency and is guardrail-
-      valid; unavailable margin is omitted, not synthesized. → Pricing / Competitor / Promotion.
+- [ ] Extend the read-only Go API and UI with pricing, price simulation, competitor and promotion
+      read models, including market/department reason-coded `insufficient_evidence`.
+- [ ] **Demo checkpoint 5 / exit:** gates are enforced per market; every recommendation carries
+      market/currency and is guardrail-valid; Pricing/Competitor/Promotion screens render live
+      response-rich and sparse-evidence outcomes; unavailable margin is omitted, not synthesized.
 
 ## Phase 6 — Go API, workflow & governance (`api/`, `db/`)
 - [ ] Alembic migrations (`db/`): reuse M5 workflow tables; add `retail_v2` domain/output tables
       plus `ingest_runs`, reconciliation, quality/quarantine, approved source-mapping config and
       runtime source-crosswalk tables.
-- [ ] Go API serving artifacts (OpenAPI/proto in `contracts/`).
+- [ ] Consolidate and harden the read-only Go API slices delivered in Phases 2–5; keep
+      OpenAPI/proto contracts in `contracts/` and preserve their stub-to-live compatibility.
 - [ ] Make pricing activation/recommendation market and currency explicit; keep consolidated
       reporting amounts separate from local recommendation amounts.
 - [ ] Serve reporting conversions from the shared exact FX contract; never use Shopify
@@ -274,15 +374,19 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Serve-time re-resolve and revalidate the same market policy as Python; staleness 409/503;
       RBAC/auth.
 - [ ] **Fingerprint parity** — Python & Go pass shared golden vectors.
-- [ ] **Exit:** approve/override audited; 409/503 correct; identical fingerprints. → Governance.
+- [ ] Wire approval/override, governance and audit interactions into the already-live UI slices.
+- [ ] **Demo checkpoint 6 / exit:** a planner reviews live demand/inventory/pricing evidence,
+      approves or overrides a draft, and the UI shows the audit row; 409/503 and fingerprints pass.
 
-## Phase 7 — UI (`ui/`)
-- [ ] Pick framework (see `docs/OPEN_DECISIONS.md` #17).
-- [ ] Implement screens against the Go API; multi-currency (FX) display and explicit
-      market/department `insufficient_evidence` pricing state.
+## Phase 7 — UI completion and end-to-end integration (`ui/`)
+- [ ] Complete the remaining core screens and shared responsive/accessibility behavior; do not
+      rebuild the vertical slices already delivered in Phases 2–6.
+- [ ] Verify multi-currency (FX) display and explicit market/department
+      `insufficient_evidence` pricing state across all relevant screens.
 - [ ] Wire interactive what-ifs (scenario/simulation) to the API.
 - [ ] Build rich capture forms the mockup only stubs (§8.3).
-- [ ] **Exit:** every screen renders live API data; no mock paths.
+- [ ] Remove all remaining core-screen stub paths and demo feature flags.
+- [ ] **Exit:** every Phase-2–6 core screen renders live API data; no core mock paths.
 
 ## Phase 8 — Analytics, admin & hardening
 - [ ] Model registry / drift; alerts + data-freshness; data-source management; reports.

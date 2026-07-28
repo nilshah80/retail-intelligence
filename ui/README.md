@@ -8,6 +8,22 @@ reference**, not production code).
 
 **Consumes:** the Go `api/`.
 
+## Incremental delivery
+
+UI work does not wait for the final integration phase. After framework decision #17 and the first
+versioned screen contract are fixed, build the shell and shared market/currency/status components
+in parallel with Phase 2. Each capability phase delivers one demoable vertical slice:
+
+1. Data Management and quality in Phase 2;
+2. Demand Forecast in Phase 3;
+3. Inventory and Replenishment in Phase 4;
+4. Pricing, Competitor Monitor and Promotion Planner in Phase 5;
+5. governed approval/override in Phase 6.
+
+Deterministic stubs may lead implementation, but must be visibly labelled and use exactly the
+same contract as the live endpoint. Phase 7 completes remaining core screens and removes stubs;
+it is not the start of UI development.
+
 **Separate config surface:** the synthetic-scenario Config Builder belongs to `datagen/` and
 exports generator YAML/JSON. It is not part of this runtime dashboard. Runtime Settings,
 guardrails, users and workflow configuration remain API/DB/UI-owned and audited.
