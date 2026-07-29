@@ -8,7 +8,11 @@ from pathlib import Path
 import duckdb
 
 from retail_ingestion.publication import PublicationError, publish_candidate
-from retail_ingestion.quality.gate_b import _b01_schema
+from retail_ingestion.quality.gate_b import (
+    GateBError,
+    _apply_upstream_capability_downgrades,
+    _b01_schema,
+)
 
 
 def test_required_nullable_is_presence_not_non_null() -> None:
@@ -97,3 +101,39 @@ def test_publication_refuses_a_critical_gate_report(tmp_path: Path) -> None:
         assert "not passing" in str(exc)
     else:
         raise AssertionError("critical Gate B report must block publication")
+
+
+def test_gate_a_capability_downgrade_reaches_publication_mask() -> None:
+    merged = _apply_upstream_capability_downgrades(
+        {"data_management": {"available": True}},
+        {
+            "sourceSnapshotId": "snapshot-a",
+            "rules": [
+                {
+                    "ruleId": "A08",
+                    "outcome": "capability_downgrade",
+                    "affectedCapability": "exact_source_reconciliation",
+                    "reasonCode": "SOURCE_CONTROLS_UNAVAILABLE",
+                }
+            ],
+        },
+        source_snapshot_id="snapshot-a",
+    )
+
+    assert merged["exact_source_reconciliation"] == {
+        "available": False,
+        "reasonCode": "SOURCE_CONTROLS_UNAVAILABLE",
+        "evidence": "A08",
+        "sourceGate": "A",
+    }
+
+    try:
+        _apply_upstream_capability_downgrades(
+            {},
+            {"sourceSnapshotId": "snapshot-b", "rules": []},
+            source_snapshot_id="snapshot-a",
+        )
+    except GateBError as exc:
+        assert "snapshot identities differ" in str(exc)
+    else:
+        raise AssertionError("Gate A evidence from another snapshot must be rejected")

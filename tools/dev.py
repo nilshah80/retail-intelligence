@@ -147,9 +147,9 @@ def command_ingest_stage(args: argparse.Namespace) -> int:
         "-m",
         "retail_ingestion.cli",
         args.command,
-        "--execution-profile",
-        args.execution_profile,
     ]
+    if args.command != "finalize":
+        command.extend(["--execution-profile", args.execution_profile])
     if args.command == "land":
         command.extend(
             [
@@ -254,6 +254,19 @@ def command_ingest_stage(args: argparse.Namespace) -> int:
             command.extend(["--work-root", str(args.work_root)])
         if args.publication_root is not None:
             command.extend(["--publication-root", str(args.publication_root)])
+    elif args.command == "finalize":
+        command.extend(
+            [
+                "--work-root",
+                str(args.work_root),
+                "--publication-root",
+                str(args.publication_root),
+                "--evidence-root",
+                str(args.evidence_root),
+            ]
+        )
+        if args.prune_work:
+            command.append("--prune-work")
     return _run(command)
 
 
@@ -333,13 +346,15 @@ def build_parser() -> argparse.ArgumentParser:
         "publish",
         "run",
         "bench",
+        "finalize",
     ):
         stage = subparsers.add_parser(name)
-        stage.add_argument(
-            "--execution-profile",
-            default="safe",
-            choices=("safe", "balanced", "performance", "ultra-performance"),
-        )
+        if name != "finalize":
+            stage.add_argument(
+                "--execution-profile",
+                default="safe",
+                choices=("safe", "balanced", "performance", "ultra-performance"),
+            )
         if name == "land":
             stage.add_argument("--source-root", type=Path, required=True)
             stage.add_argument("--landing-root", type=Path, required=True)
@@ -424,6 +439,11 @@ def build_parser() -> argparse.ArgumentParser:
             stage.add_argument("--temp-root", type=Path, default=None)
             stage.add_argument("--work-root", type=Path, default=None)
             stage.add_argument("--publication-root", type=Path, default=None)
+        elif name == "finalize":
+            stage.add_argument("--work-root", type=Path, required=True)
+            stage.add_argument("--publication-root", type=Path, required=True)
+            stage.add_argument("--evidence-root", type=Path, required=True)
+            stage.add_argument("--prune-work", action="store_true")
 
     return parser
 
@@ -450,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         "publish": command_ingest_stage,
         "run": command_ingest_stage,
         "bench": command_ingest_stage,
+        "finalize": command_ingest_stage,
     }
     try:
         return commands[args.command](args)

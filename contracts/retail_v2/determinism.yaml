@@ -29,7 +29,19 @@ byteEquality:
   otherwise: report_without_semantic_failure
 
 publication:
-  deterministicPartitionAndFileNames: true
+  physicalLayout:
+    profileInvariant: false
+    deterministicWhenPinned:
+      - writer_library
+      - writer_version
+      - execution_profile
+      - partition_keys
+      - file_names
+      - row_order
+      - parquet_row_group_size
+      - compression
+      - encoding
+    rationale: worker-count tuning may change file count and names without changing semantic rows
   deterministicBusinessKeyRowOrder: true
   deterministicQuarantineOrderAndIds: true
   semanticArtifactsExcludeRuntimeMetadata: true

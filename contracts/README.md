@@ -25,7 +25,10 @@ it contains no retailer, source or canonical schema.
   divergent-duplicate quarantine.
 - **Money/FX rules** — sales and sell prices use location operating currency; presentment money is
   audit-only. Reporting FX is exact local/base→reporting/quote `DECIMAL(38,18)` with
-  exponent-aware per-fact `ROUND_HALF_EVEN` and shared Python/Go golden vectors.
+  exponent-aware per-fact `ROUND_HALF_EVEN` and shared Python/Go golden vectors. The shared Python
+  package also owns DuckDB SQL fragments for the same closed exponent map, exact-precision
+  quarantine and integer-only allocation; source-neutral transforms do not carry a separate
+  hard-coded `×100` policy.
 - **Source-profile schema** — source system/schema/snapshot, formats and paths/objects, source and
   canonical grains, keys, mappings, joins, filters, code maps, timezone/business day, currency/
   unit/tax basis, `known_as_of`, event/API authenticity, pre-landing field-projection policy,
@@ -57,7 +60,8 @@ it contains no retailer, source or canonical schema.
   is emitted as a required `T | None`, Go pointer without `omitempty`, and required `T | null`,
   while Gate B separately proves that the source key/column was present.
 - **Determinism contract** — semantic row/control/capability/hash equality is mandatory across
-  execution profiles; byte-identical Parquet is mandatory only under a fully pinned writer.
+  execution profiles; physical file count/names and byte-identical Parquet are mandatory only
+  under a fully pinned writer and execution profile.
 - **API contract** — proto / OpenAPI for the Go ↔ UI (and Go ↔ Python scoring service) surface.
   It remains authoritative when the Go transport is implemented with
   [Aarv](https://github.com/nilshah80/aarv); framework-generated routes/docs must conform to this
@@ -74,5 +78,7 @@ separators. Physical I/O remains native to the implementation.
 The Phase-2 foundation now includes the 53-entity `retail_v2/schema.yaml`, tier and temporal
 contracts, six staging envelopes, source-profile and coverage JSON Schemas, exact Python
 money/FX utilities, `semantic-fingerprint/v1`, guardrail resolution/vectors, determinism policy
-and generated cross-language row types. The Go guardrail/fingerprint consumers, OpenAPI contract
-and remaining ingestion implementation continue under Phase 2.
+and generated cross-language row types. The Go API consumes the same fingerprint vectors and
+serves the authoritative OpenAPI contract. The accepted Phase-2 ingestion slice runs Gate A,
+adapters/staging, canonical transformation, Gate B and publication end to end; later capability
+extensions remain governed by these contracts.

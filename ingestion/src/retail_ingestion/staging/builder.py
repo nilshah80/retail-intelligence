@@ -13,6 +13,11 @@ from typing import Any, Mapping
 
 import duckdb
 from retail_contracts.fingerprint import semantic_fingerprint
+from retail_contracts.money_sql import (
+    allocated_minor_sql,
+    exact_minor_sql,
+    invalid_minor_sql,
+)
 
 from retail_ingestion.adapters import AdapterContext, adapter_for, registered_adapters
 from retail_ingestion.mappings import build_location_crosswalk
@@ -66,6 +71,15 @@ def _build_quarantine(connection: duckdb.DuckDBPyConnection) -> int:
             payload_hash VARCHAR
         )
         """
+    )
+    merchandise_money_invalid = " OR ".join(
+        invalid_minor_sql(field, "currency_code")
+        for field in (
+            "gross_amount_major",
+            "discount_amount_major",
+            "net_amount_major",
+            "tax_amount_major",
+        )
     )
     checks = (
         (
@@ -124,6 +138,46 @@ def _build_quarantine(connection: duckdb.DuckDBPyConnection) -> int:
             "OR qty IS NULL OR unit_cost_major IS NULL OR currency_code IS NULL",
             "INVALID_RECEIPT_ROW",
         ),
+        (
+            "stage_data.shopify_merchandise",
+            "shopify_merchandise",
+            merchandise_money_invalid,
+            "money_precision_loss",
+        ),
+        (
+            "stage_data.shopify_prices",
+            "shopify_prices",
+            invalid_minor_sql("price_major", "currency_code"),
+            "money_precision_loss",
+        ),
+        (
+            "stage_data.bc_receipts",
+            "bc_receipts",
+            invalid_minor_sql("unit_cost_major", "currency_code"),
+            "money_precision_loss",
+        ),
+        (
+            "stage_data.bc_inventory_cost",
+            "bc_inventory_cost",
+            invalid_minor_sql("unit_cost_major", "currency_code"),
+            "money_precision_loss",
+        ),
+        (
+            "stage_data.shopify_adjustment",
+            "shopify_adjustment",
+            "event_type = 'REFUND' AND (NOT money_precision_valid "
+            "OR amount_minor IS NULL OR amount_minor <= 0 "
+            "OR currency_code IS NULL)",
+            "money_precision_loss",
+        ),
+        (
+            "stage_data.shopify_adjustment",
+            "shopify_adjustment",
+            "(event_type = 'RETURN' AND (units IS NULL OR units <= 0 "
+            "OR amount_minor IS NOT NULL OR currency_code IS NOT NULL)) "
+            "OR event_type NOT IN ('RETURN', 'REFUND')",
+            "INVALID_ADJUSTMENT_ROW",
+        ),
     )
     for table, dataset, predicate, reason in checks:
         connection.execute(
@@ -159,12 +213,13 @@ def _create_standardized_views(
         "fulfillment": "shopify_fulfillment",
         "inventory": "bc_inventory",
         "receipt": "bc_receipts",
+        "dimension_signal": "companion_dimension_signal",
         "products": "shopify_products",
         "product_references": "bc_products",
         "locations": "shopify_locations",
         "prices": "shopify_prices",
         "supplier_terms": "bc_supplier_terms",
-        "sales_control": "bc_sales_control",
+        "invoice_sales_control": "bc_sales_control",
         "customer_segment_counts": "shopify_customer_segment_counts",
         "inventory_cost": "bc_inventory_cost",
         "inventory_batches": "bc_inventory_batches",
@@ -181,7 +236,74 @@ def _create_standardized_views(
             f"SELECT * FROM stage_data.{source}"
         )
 
+    fulfilled_units = "least(m.units, f.fulfilled_units)"
+    gross_minor = exact_minor_sql("m.gross_amount_major", "m.currency_code")
+    discount_minor = exact_minor_sql(
+        "m.discount_amount_major", "m.currency_code"
+    )
+    net_minor = exact_minor_sql("m.net_amount_major", "m.currency_code")
+    tax_minor = exact_minor_sql("m.tax_amount_major", "m.currency_code")
     statements = {
+        "sales_control": f"""
+            WITH fulfillment_by_line AS (
+                SELECT
+                    source_instance,
+                    source_sale_id,
+                    source_line_id,
+                    sum(units)::BIGINT AS fulfilled_units,
+                    max(known_as_of) AS known_as_of
+                FROM stage_data.fulfillment
+                GROUP BY source_instance, source_sale_id, source_line_id
+            ),
+            line_facts AS (
+                SELECT
+                    m.source_instance,
+                    m.source_sale_id,
+                    m.source_line_id,
+                    m.currency_code,
+                    m.units::BIGINT AS ordered_units,
+                    {fulfilled_units}::BIGINT AS fulfilled_units,
+                    {gross_minor}::HUGEINT AS gross_minor,
+                    {discount_minor}::HUGEINT AS discount_minor,
+                    {net_minor}::HUGEINT AS net_minor,
+                    {tax_minor}::HUGEINT AS tax_minor,
+                    f.known_as_of
+                FROM stage_data.merchandise AS m
+                JOIN fulfillment_by_line AS f
+                  ON f.source_instance = m.source_instance
+                 AND f.source_sale_id = m.source_sale_id
+                 AND f.source_line_id = m.source_line_id
+                WHERE m.units > 0 AND f.fulfilled_units > 0
+            )
+            SELECT
+                source_instance,
+                source_sale_id,
+                source_line_id,
+                currency_code,
+                fulfilled_units AS units,
+                {
+                    allocated_minor_sql(
+                        "gross_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS gross_minor,
+                {
+                    allocated_minor_sql(
+                        "discount_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS discount_minor,
+                {
+                    allocated_minor_sql(
+                        "net_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS net_minor,
+                {
+                    allocated_minor_sql(
+                        "tax_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS tax_minor,
+                known_as_of
+            FROM line_facts
+        """,
         "store_assortment": """
             SELECT
                 source_system, source_instance, source_schema_version,
@@ -393,8 +515,20 @@ def build_staging(
         memory = max(1, int(execution_profile["memoryLimitGb"]))
         connection.execute(f"SET threads = {threads}")
         connection.execute(f"SET memory_limit = '{memory}GB'")
+        connection.execute("SET TimeZone = 'UTC'")
         catalog.register_metadata(connection)
         context = AdapterContext(connection=connection, catalog=catalog, profile=profile)
+        source_systems = {
+            row.source_system
+            for row in catalog.objects
+            if row.source_system != "generator"
+        }
+        unsupported = sorted(source_systems - set(registered_adapters()))
+        if unsupported:
+            raise StagingError(
+                "no semantic adapter is registered for source system(s): "
+                + ", ".join(unsupported)
+            )
         raw_views: list[str] = []
         staged_tables: list[str] = []
         adapter_versions: dict[str, str] = {}

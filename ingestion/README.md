@@ -1,5 +1,9 @@
 # `ingestion/` — Source ingestion and canonical transformation
 
+For the copy-pasteable repository setup, datagen, landing, stage-by-stage pipeline, retention,
+API and UI sequence, start with the root `README.md`. This file documents the deeper ingestion
+contract and implementation.
+
 **Purpose:** own the complete boundary from immutable source data to curated `retail_v2`:
 
 ```text
@@ -29,10 +33,12 @@ Owned contents:
 - `transforms/` — source-neutral joins, filtering, code mapping, time/money/unit normalization,
   order/refund/fulfillment semantics, inventory rules, aggregation and provenance;
 - `quality/` — Gate A, Gate B, capability evaluation, reconciliation and quarantine;
-- an optional future `tests/oracles/` extension may translate generator-vocabulary hidden
-  controls to expected canonical controls; it must never become a runtime transform or datagen
-  dependency;
+- `tests/oracles/` — evaluation-admin-only, profile-versioned translation of restricted
+  generator truth into expected canonical controls; runtime transforms and datagen never import
+  it;
 - `publication/` — atomic curated Parquet/DuckDB publication.
+- `retention.py` — copies small accepted Gate/publication evidence out of disposable work and
+  only then permits pruning staging/candidate artifacts.
 
 ## Current implementation status
 
@@ -48,7 +54,7 @@ The Phase-2 implementation now includes:
 - A01–A13 Gate-A validation with machine-readable evidence and a public-lane-only reader;
 - format readers for Parquet, CSV, JSONL and JSON, kept separate from source semantics;
 - bounded Shopify, Business Central and companion adapters feeding one standardized staging
-  contract;
+  contract, with publication coverage expressed as capabilities rather than vendor names;
 - source-neutral canonical transforms for the revenue/forecasting slice plus inventory, supplier,
   promotion, competitor and external-signal evidence;
 - B01–B21 Gate-B validation, reason-coded warnings/capability downgrades, exact per-currency
@@ -64,13 +70,34 @@ The full pin is landed as snapshot
 `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`: all 8,644 objects
 were streamed through byte/SHA-256 verification into 8,398 public, 245 restricted-truth and one
 restricted-mirror object. A repeat request under another execution profile was an idempotent replay.
-The retained ultra-performance pipeline publishes 40 canonical entities, 1,314 Parquet objects
+The retained ultra-performance pipeline publishes 40 canonical entities, 1,445 Parquet objects
 and one `retail_v2.duckdb`. It scanned 226,929,388 public rows, opened zero restricted objects and
 reconciled INR and USD gross/net/tax/units with zero differences. Its measured wall time was
-151.369044 seconds: Gate A 6.287349, staging 129.017609, transform 9.934884, Gate B 0.773671 and
-publication 5.355531 seconds. Safe and ultra-performance runs produced the same candidate and
-Gate-B semantic fingerprints. Physical Parquet object count may vary with writer concurrency and
-is deliberately excluded from semantic identity.
+164.820679 seconds: Gate A 6.176781, staging 128.063277, transform 23.463547, Gate B 1.213771 and
+publication 5.903303 seconds under `ultra-performance`. Physical Parquet object count may vary
+with writer concurrency and is deliberately excluded from semantic identity. The 4-GiB,
+single-DuckDB-thread `safe` profile completed the same full history in 333.062388 seconds and
+produced the identical staging, candidate, Gate-B and publication semantic fingerprints; its
+different physical object count is therefore operational rather than semantic.
+
+The accepted curated folder above predates the v1.2 correctness pass and must be republished before
+Phase 3 or a live UI consumes corrected facts. A disposable full-history v1.2 candidate proved:
+
+- canonical sales are successful fulfilled units, not ordered units: 25,159,219 units reconcile
+  exactly to 17,153,375 fulfillment lines (the prior ordered-grain result overstated sales by
+  1,354 units);
+- fulfilled integer-minor gross/net/tax controls reconcile to zero for INR and USD;
+- 476,062 physical returns and 452,327 successful financial refunds remain separate facts, with
+  refund amount carried only by the financial rows;
+- source-observed ATP reconciles after committed, damaged, quality-control, reserved and
+  safety-stock holds; the current extract has a status-derived on-order/in-transit split;
+- 2,228,133 densified historical zero-sales rows remain `landing_backfill`. They cannot honestly be
+  relabelled PIT-safe merely because they were derived inside an active assortment window.
+
+Gate B therefore keeps non-PIT demand and revenue reporting available, while PIT forecasting,
+pricing availability and historical replenishment replay remain capability-downgraded until native
+versioned availability/inbound-status evidence exists. The current-snapshot replenishment inputs
+are valid; historical in-transit status is not reconstructed from a final extract.
 
 The authoritative cross-platform entry point is:
 
@@ -107,6 +134,25 @@ py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\dafa9d422818
 python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4 --work-root ingestion/data/work/run-34b0ff729c8abe09 --publication-root ingestion/data/curated/run-34b0ff729c8abe09 --execution-profile ultra-performance
 ```
 
+After acceptance, retain the small evidence bundle and remove rebuildable staging/candidate work:
+
+```powershell
+# Windows PowerShell
+py -3 tools/dev.py finalize --work-root ingestion\data\work\run-34b0ff729c8abe09 --publication-root ingestion\data\curated\run-34b0ff729c8abe09 --evidence-root ingestion\data\evidence\run-34b0ff729c8abe09 --prune-work
+```
+
+```bash
+# macOS / Linux
+python3 tools/dev.py finalize --work-root ingestion/data/work/run-34b0ff729c8abe09 --publication-root ingestion/data/curated/run-34b0ff729c8abe09 --evidence-root ingestion/data/evidence/run-34b0ff729c8abe09 --prune-work
+```
+
+Production retention is explicit: keep immutable raw landing according to replay/audit policy,
+the curated DuckDB/Parquet publication, retained evidence and benchmark summaries. Standardized
+staging, canonical candidates, spill files and public-only caches are rebuildable work and may be
+pruned after Gate A, Gate B and publication identities reconcile. Never remove raw or a prior
+curated publication merely because a work directory was finalized; production lifecycle/backup
+policy governs those durable layers separately.
+
 The checked-in datagen source profile has the stable filename
 `src/retail_ingestion/profiles/retail_datagen.yaml`. Profile and upstream source-contract
 versions are fields inside the document. Do not encode routine schema versions in filenames;
@@ -131,6 +177,17 @@ bounded adapter registered in `adapters/registry.py`. CSV versus Parquet does no
 adapter. Arbitrary columns cannot be inferred safely: an unrecognized retailer shape stops at
 Gate A or is capability-downgraded until an explicit mapping/adapter exists. This keeps retailer
 differences maintainable and prevents guessed business semantics from leaking into ML.
+
+Business Central is an implemented source adapter, not a platform prerequisite. Profiles declare
+capabilities such as `commerce`, `operations` and `external_signals`, and publication requirements
+name those capabilities—not Shopify/BC source names. SAP, Oracle, a retailer ERP/WMS or a governed
+flat-file operations feed can satisfy `operations` after its bounded adapter is registered and its
+required datasets pass Gate A. A commerce-only retailer may intentionally use a profile whose
+publication tier requires only commerce once that reduced-tier transform/publication contract is
+implemented; today it terminates honestly as `validated_partial`. The current full Phase-2
+profile requires operations and external signals because its canonical publication includes
+inventory, replenishment and external-driver entities. Missing evidence is never replaced with
+zeroes or BC-shaped guesses.
 
 ## Shared execution profiles
 

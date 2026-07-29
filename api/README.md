@@ -1,5 +1,8 @@
 # `api/` — Aarv-based Go API & serving layer
 
+For the complete source generation → ingestion → API → UI sequence on Windows, macOS and Linux,
+start with the root `README.md`. This file documents API-specific behavior and commands.
+
 **Purpose:** serve the Python-produced artifacts to the UI and own the decision/governance layer:
 workflow / HITL (approvals, planner overrides, idempotency, audit), **serve-time guardrail
 re-validation**, staleness handling (409/503), RBAC / auth.
@@ -29,7 +32,8 @@ and `workflow_repository.py` establish the design and rules; the **code is re-im
 **Boundary:** reads Python artifacts + PostgreSQL + the shared guardrail YAMLs in `contracts/`.
 Two hard requirements:
 - **Fingerprint parity** — SHA-256 over canonical JSON must be byte-identical to Python's
-  (see `contracts/`), or lineage checks 409 spuriously.
+  (see `contracts/`), or lineage checks 409 spuriously. The Go implementation lives in
+  `internal/fingerprint` and consumes the same semantic and invalid golden vectors as Python.
 - **Single-sourced thresholds** — read guardrail numbers from `contracts/` YAMLs; never hard-code.
 - **Market-scoped money** — resolve the same `market_id + currency_code` guardrail payload as
   Python; attach market/currency to price activations and recommendations, reject mismatches, and
@@ -67,23 +71,28 @@ refer to the same immutable source snapshot, and exposes:
 - `GET /api/v1/data-management/gates`;
 - `GET /api/v1/data-management/capabilities`;
 - `GET /api/v1/data-management/reconciliation`;
-- `GET /api/v1/data-management/quality-findings`.
+- `GET /api/v1/data-management/quality-findings`;
+- `GET /openapi.yaml` — the authoritative OpenAPI contract;
+- `GET /docs` — interactive Swagger UI;
+- `GET /redoc` — alternate ReDoc documentation.
 
-The stable OpenAPI contract is `../contracts/api/openapi.yaml`. API execution profiles are read
-from the shared `execution/config/profiles.json`; environment overrides are validated before
-`GOMAXPROCS` and HTTP concurrency are applied.
+The stable OpenAPI contract is `../contracts/api/openapi.yaml`; the Aarv OpenAPI UI plugin only
+renders it and is not a second contract source. API execution profiles are read from the shared
+`../execution/src/retail_execution/data/v1/profiles.json`; environment overrides are validated
+before `GOMAXPROCS` and HTTP concurrency are applied.
 
 ```powershell
 # Windows PowerShell
 go test -race ./...
-go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\work\run-34b0ff729c8abe09\gate-a.json -gate-b-report ..\ingestion\data\work\run-34b0ff729c8abe09\gate-b.json -publication-manifest ..\ingestion\data\curated\run-34b0ff729c8abe09\publication-manifest.json -execution-profiles ..\execution\config\profiles.json -execution-profile safe
+go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\evidence\run-34b0ff729c8abe09\gate-a.json -gate-b-report ..\ingestion\data\evidence\run-34b0ff729c8abe09\gate-b.json -publication-manifest ..\ingestion\data\curated\run-34b0ff729c8abe09\publication-manifest.json -execution-profiles ..\execution\src\retail_execution\data\v1\profiles.json -execution-profile safe -openapi-spec ..\contracts\api\openapi.yaml
 ```
 
 ```bash
 # macOS / Linux
 go test -race ./...
-go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/work/run-34b0ff729c8abe09/gate-a.json -gate-b-report ../ingestion/data/work/run-34b0ff729c8abe09/gate-b.json -publication-manifest ../ingestion/data/curated/run-34b0ff729c8abe09/publication-manifest.json -execution-profiles ../execution/config/profiles.json -execution-profile safe
+go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/evidence/run-34b0ff729c8abe09/gate-a.json -gate-b-report ../ingestion/data/evidence/run-34b0ff729c8abe09/gate-b.json -publication-manifest ../ingestion/data/curated/run-34b0ff729c8abe09/publication-manifest.json -execution-profiles ../execution/src/retail_execution/data/v1/profiles.json -execution-profile safe -openapi-spec ../contracts/api/openapi.yaml
 ```
 
 Run these commands from `api/`. The server never substitutes sample values when accepted
-artifacts are absent or inconsistent.
+artifacts are absent or inconsistent. After startup, open `http://127.0.0.1:8080/docs` for
+Swagger, `http://127.0.0.1:8080/redoc` for ReDoc, and `http://127.0.0.1:5173` for the React UI.

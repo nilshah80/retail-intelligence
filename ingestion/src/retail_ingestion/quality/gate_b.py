@@ -90,6 +90,35 @@ def _downgrade(
     )
 
 
+def _apply_upstream_capability_downgrades(
+    capability_mask: Mapping[str, Any],
+    upstream_gate_a: Mapping[str, Any] | None,
+    *,
+    source_snapshot_id: str,
+) -> dict[str, Any]:
+    merged = dict(capability_mask)
+    if upstream_gate_a is None:
+        return merged
+    if upstream_gate_a.get("sourceSnapshotId") != source_snapshot_id:
+        raise GateBError("Gate A and canonical candidate snapshot identities differ")
+    for rule in upstream_gate_a.get("rules", []):
+        if rule.get("outcome") != "capability_downgrade":
+            continue
+        capability = rule.get("affectedCapability")
+        reason_code = rule.get("reasonCode")
+        if not isinstance(capability, str) or not capability:
+            raise GateBError("Gate A capability downgrade has no affectedCapability")
+        if not isinstance(reason_code, str) or not reason_code:
+            raise GateBError("Gate A capability downgrade has no reasonCode")
+        merged[capability] = {
+            "available": False,
+            "reasonCode": reason_code,
+            "evidence": rule.get("ruleId"),
+            "sourceGate": "A",
+        }
+    return merged
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -222,6 +251,7 @@ def run_gate_b(
     staging_database: str | Path,
     *,
     execution_profile: Mapping[str, Any],
+    upstream_gate_a: Mapping[str, Any] | None = None,
 ) -> GateBReport:
     candidate = Path(candidate_database).expanduser().resolve()
     staging = Path(staging_database).expanduser().resolve()
@@ -280,13 +310,96 @@ def run_gate_b(
             b03_errors.append(
                 f"assortment_calendar: {invalid_assortment} inverted windows"
             )
+        non_positive_prices = _scalar(
+            connection,
+            """
+            SELECT count(*) FROM canonical_data.sell_prices
+            WHERE net_price <= 0 OR regular_price <= 0
+               OR (promo_price IS NOT NULL AND promo_price <= 0)
+            """,
+        )
+        if non_positive_prices:
+            b03_errors.append(
+                f"sell_prices: {non_positive_prices} non-positive price rows"
+            )
+        active_date_count, missing_active_dates = connection.execute(
+            """
+            WITH active_dates AS (
+                SELECT DISTINCT
+                    assortment.sku_id,
+                    assortment.store_id,
+                    assortment.channel_id,
+                    calendar.date
+                FROM canonical_data.assortment_calendar AS assortment
+                JOIN canonical_data.stores AS stores
+                  ON stores.store_id = assortment.store_id
+                JOIN canonical_data.calendar AS calendar
+                  ON calendar.market_id = stores.market_id
+                 AND calendar.date >= assortment.active_from
+                 AND (
+                        assortment.active_to IS NULL
+                        OR calendar.date <= assortment.active_to
+                     )
+            )
+            SELECT
+                count(*)::BIGINT,
+                count(*) FILTER (WHERE sales.sku_id IS NULL)::BIGINT
+            FROM active_dates
+            LEFT JOIN canonical_data.sales AS sales
+              ON sales.sku_id = active_dates.sku_id
+             AND sales.store_id = active_dates.store_id
+             AND sales.channel_id = active_dates.channel_id
+             AND sales.date = active_dates.date
+             AND sales.sales_version = 1
+            """
+        ).fetchone()
+        if missing_active_dates:
+            b03_errors.append(
+                f"sales: {missing_active_dates} active assortment dates are absent"
+            )
+        sales_outside_assortment = _scalar(
+            connection,
+            """
+            SELECT count(*)
+            FROM canonical_data.sales AS sales
+            WHERE sales.units > 0
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM canonical_data.assortment_calendar AS assortment
+                    WHERE assortment.sku_id = sales.sku_id
+                      AND assortment.store_id = sales.store_id
+                      AND assortment.channel_id = sales.channel_id
+                      AND sales.date >= assortment.active_from
+                      AND (
+                            assortment.active_to IS NULL
+                            OR sales.date <= assortment.active_to
+                          )
+              )
+            """,
+        )
+        if sales_outside_assortment:
+            b03_errors.append(
+                f"sales: {sales_outside_assortment} positive rows outside assortment"
+            )
+        zero_sales_rows = _scalar(
+            connection,
+            "SELECT count(*) FROM canonical_data.sales WHERE units = 0",
+        )
         rules.append(
-            _critical("B03", "units/assortment-window validation failed", b03_errors)
+            _critical(
+                "B03",
+                "sales density/price/assortment validation failed",
+                b03_errors,
+            )
             if b03_errors
             else _pass(
                 "B03",
-                "non-negative sales and active assortment windows pass",
-                dateGapPolicy="evaluated_inside_assortment_only",
+                "active assortment dates are dense and sales/prices are valid",
+                dateGapPolicy="distinct_daily_row_inside_active_assortment_v1",
+                activeAssortmentDates=int(active_date_count),
+                missingActiveDates=int(missing_active_dates),
+                zeroSalesRows=zero_sales_rows,
+                positiveSalesOutsideAssortment=sales_outside_assortment,
             )
         )
 
@@ -354,16 +467,124 @@ def run_gate_b(
             b06_errors.append(
                 f"stock_snapshots: {inventory_invalid} bucket/ATP violations"
             )
+        source_atp_mismatch = _scalar(
+            connection,
+            """
+            SELECT count(*)
+            FROM canonical_data.stock_snapshots AS canonical
+            JOIN stage.stage_data.inventory AS source
+              ON canonical.sku_id = concat(
+                    source.market_id, ':', source.sku_source_key
+                 )
+             AND canonical.snapshot_date = source.snapshot_date
+            JOIN stage.stage_data.location_crosswalk AS crosswalk
+              ON crosswalk.source_system = source.source_system
+             AND crosswalk.market_id = source.market_id
+             AND crosswalk.source_location_key = source.location_source_key
+             AND canonical.location_id = concat(
+                    source.market_id, ':', crosswalk.canonical_location_key
+                 )
+            WHERE source.source_observed_atp_units IS NOT NULL
+              AND canonical.atp_units <> source.source_observed_atp_units
+            """,
+        )
+        if source_atp_mismatch:
+            b06_errors.append(
+                "stock_snapshots: "
+                f"{source_atp_mismatch} ATP rows disagree with source observed ATP"
+            )
         rules.append(
             _critical("B06", "inventory bucket/ATP validation failed", b06_errors)
             if b06_errors
             else _pass("B06", "inventory buckets and ATP equation pass")
         )
+        inbound_status_rows = _scalar(
+            connection,
+            """
+            SELECT count(*)
+            FROM stage.stage_data.inbound_shipments
+            WHERE replace(lower(status), ' ', '_') IN (
+                'in_transit', 'dispatched', 'shipped'
+            )
+            """,
+        )
+        incoming_split_mismatch = _scalar(
+            connection,
+            """
+            WITH boundary AS (
+                SELECT market_id, max(snapshot_date) AS snapshot_date
+                FROM stage.stage_data.inventory
+                GROUP BY market_id
+            ),
+            transit AS (
+                SELECT
+                    shipment.market_id,
+                    shipment.sku_source_key,
+                    crosswalk.canonical_location_key,
+                    sum(shipment.qty)::BIGINT AS units
+                FROM stage.stage_data.inbound_shipments AS shipment
+                JOIN stage.stage_data.location_crosswalk AS crosswalk
+                  ON crosswalk.source_system = 'businessCentral'
+                 AND crosswalk.market_id = shipment.market_id
+                 AND crosswalk.source_location_key =
+                     shipment.to_location_source_key
+                WHERE replace(lower(shipment.status), ' ', '_') IN (
+                    'in_transit', 'dispatched', 'shipped'
+                )
+                GROUP BY
+                    shipment.market_id,
+                    shipment.sku_source_key,
+                    crosswalk.canonical_location_key
+            )
+            SELECT count(*)
+            FROM stage.stage_data.inventory AS source
+            JOIN boundary
+              ON boundary.market_id = source.market_id
+             AND boundary.snapshot_date = source.snapshot_date
+            JOIN stage.stage_data.location_crosswalk AS crosswalk
+              ON crosswalk.source_system = source.source_system
+             AND crosswalk.market_id = source.market_id
+             AND crosswalk.source_location_key = source.location_source_key
+            JOIN canonical_data.stock_snapshots AS canonical
+              ON canonical.sku_id = concat(
+                    source.market_id, ':', source.sku_source_key
+                 )
+             AND canonical.location_id = concat(
+                    source.market_id, ':', crosswalk.canonical_location_key
+                 )
+             AND canonical.snapshot_date = source.snapshot_date
+            LEFT JOIN transit
+              ON transit.market_id = source.market_id
+             AND transit.sku_source_key = source.sku_source_key
+             AND transit.canonical_location_key =
+                 crosswalk.canonical_location_key
+            WHERE canonical.in_transit_units <> least(
+                    source.incoming_units, coalesce(transit.units, 0)
+                  )
+               OR canonical.on_order_units <> greatest(
+                    source.incoming_units
+                    - least(
+                        source.incoming_units, coalesce(transit.units, 0)
+                      ),
+                    0
+                  )
+               OR canonical.on_order_units + canonical.in_transit_units
+                    <> source.incoming_units
+            """,
+        )
         rules.append(
-            _pass(
+            _critical(
                 "B07",
-                "on-order and in-transit buckets are disjoint",
-                sourceSplit="incoming retained as on_order; in_transit unavailable",
+                "on-order/in-transit source-status split failed",
+                [f"{incoming_split_mismatch} current snapshot rows mismatch"],
+            )
+            if incoming_split_mismatch
+            else _pass(
+                "B07",
+                "current on-order and in-transit buckets are disjoint",
+                sourceSplit="current_extract_boundary_inbound_status_v1",
+                inTransitSourceRows=inbound_status_rows,
+                historicalStatusVersioned=False,
             )
         )
 
@@ -448,8 +669,43 @@ def run_gate_b(
             if geo_errors
             else _pass("B10", "market-qualified geographic scopes pass")
         )
+        promotion_scope_errors = _scalar(
+            connection,
+            """
+            SELECT count(*)
+            FROM (
+                SELECT
+                    scope.market_id,
+                    scope.promo_id,
+                    scope.scope_row_id,
+                    count(*) AS copies,
+                    bool_or(promo.promo_id IS NULL) AS missing_promotion,
+                    bool_or(
+                        scope.location_id IS NOT NULL
+                        AND NOT starts_with(
+                            scope.location_id, scope.market_id || ':'
+                        )
+                    ) AS cross_market_location
+                FROM canonical_data.promotion_scopes AS scope
+                LEFT JOIN canonical_data.promotions AS promo
+                  ON promo.market_id = scope.market_id
+                 AND promo.promo_id = scope.promo_id
+                GROUP BY
+                    scope.market_id, scope.promo_id, scope.scope_row_id
+            )
+            WHERE copies <> 1
+               OR missing_promotion
+               OR cross_market_location
+            """,
+        )
         rules.append(
-            _pass(
+            _critical(
+                "B11",
+                "promotion-scope validation failed",
+                [f"{promotion_scope_errors} invalid promotion scope rows"],
+            )
+            if promotion_scope_errors
+            else _pass(
                 "B11",
                 "promotion scope rows are unique and market-qualified",
                 scopeRows=_scalar(
@@ -542,15 +798,44 @@ def run_gate_b(
             connection,
             """
             WITH sequenced AS (
-                SELECT sku_id, store_id, channel_id, week_start,
+                SELECT
+                       prices.sku_id,
+                       prices.store_id,
+                       prices.channel_id,
+                       prices.week_start,
                        lead(week_start) OVER (
-                           PARTITION BY sku_id, store_id, channel_id
+                           PARTITION BY
+                               prices.sku_id, prices.store_id, prices.channel_id
                            ORDER BY week_start
-                       ) AS next_week
-                FROM canonical_data.sell_prices
+                       ) AS next_week,
+                       bounds.end_date
+                FROM canonical_data.sell_prices AS prices
+                JOIN canonical_data.stores AS stores
+                  ON stores.store_id = prices.store_id
+                JOIN (
+                    SELECT market_id, max(date) AS end_date
+                    FROM canonical_data.calendar
+                    GROUP BY market_id
+                ) AS bounds
+                  ON bounds.market_id = stores.market_id
             )
-            SELECT count(*) FROM sequenced
-            WHERE next_week - week_start > 180
+            SELECT count(*)
+            FROM sequenced AS prices
+            WHERE EXISTS (
+                SELECT 1
+                FROM canonical_data.assortment_calendar AS assortment
+                WHERE assortment.sku_id = prices.sku_id
+                  AND assortment.store_id = prices.store_id
+                  AND assortment.channel_id = prices.channel_id
+                  AND date_diff(
+                        'day',
+                        greatest(prices.week_start, assortment.active_from),
+                        least(
+                            coalesce(prices.next_week, prices.end_date),
+                            coalesce(assortment.active_to, prices.end_date)
+                        )
+                      ) > 180
+            )
             """,
         )
         rules.append(
@@ -567,9 +852,9 @@ def run_gate_b(
             """
             SELECT
                 currency_code,
-                sum(round(gross_amount_major * 100))::HUGEINT AS gross,
-                sum(round(net_amount_major * 100))::HUGEINT AS net,
-                sum(round(tax_amount_major * 100))::HUGEINT AS tax,
+                sum(gross_minor)::HUGEINT AS gross,
+                sum(net_minor)::HUGEINT AS net,
+                sum(tax_minor)::HUGEINT AS tax,
                 sum(units)::HUGEINT AS units
             FROM stage.stage_data.sales_control
             GROUP BY currency_code ORDER BY currency_code
@@ -621,6 +906,64 @@ def run_gate_b(
             for row in reconciliation
             if any(row["difference"])
         ]
+        fulfillment_mismatches = _scalar(
+            connection,
+            """
+            WITH sales AS (
+                SELECT
+                    sku_id,
+                    store_id,
+                    channel_id,
+                    date,
+                    sum(units)::HUGEINT AS units
+                FROM canonical_data.sales
+                GROUP BY sku_id, store_id, channel_id, date
+            ),
+            fulfillment AS (
+                SELECT
+                    sku_id,
+                    demand_location_id AS store_id,
+                    channel_id,
+                    sale_date AS date,
+                    sum(units)::HUGEINT AS units
+                FROM canonical_data.sales_fulfillments
+                GROUP BY
+                    sku_id, demand_location_id, channel_id, sale_date
+            )
+            SELECT count(*)
+            FROM sales
+            FULL OUTER JOIN fulfillment
+              USING (sku_id, store_id, channel_id, date)
+            WHERE coalesce(sales.units, 0) <> coalesce(fulfillment.units, 0)
+            """,
+        )
+        if fulfillment_mismatches:
+            money_errors.append(
+                f"sales_fulfillments: {fulfillment_mismatches} aggregate mismatches"
+            )
+        overfulfilled_lines = _scalar(
+            connection,
+            """
+            WITH fulfilled AS (
+                SELECT
+                    source_instance,
+                    source_sale_id,
+                    source_line_id,
+                    sum(units)::BIGINT AS units
+                FROM stage.stage_data.fulfillment
+                GROUP BY source_instance, source_sale_id, source_line_id
+            )
+            SELECT count(*)
+            FROM fulfilled
+            JOIN stage.stage_data.merchandise AS merchandise
+              USING (source_instance, source_sale_id, source_line_id)
+            WHERE fulfilled.units > merchandise.units
+            """,
+        )
+        if overfulfilled_lines:
+            money_errors.append(
+                f"fulfillment: {overfulfilled_lines} lines exceed ordered units"
+            )
         rules.append(
             _critical("B16", "exact source/canonical money reconciliation failed", money_errors)
             if money_errors
@@ -628,6 +971,8 @@ def run_gate_b(
                 "B16",
                 "fulfilled units and integer-minor money reconcile exactly",
                 currencies=currencies,
+                fulfillmentAggregateMismatches=fulfillment_mismatches,
+                overfulfilledLines=overfulfilled_lines,
                 aggregationOrder="converted_line_facts_then_summed",
             )
         )
@@ -640,10 +985,41 @@ def run_gate_b(
                 'physical_return',
                 'post_fulfilment_cancellation',
                 'financial_refund'
-            ) OR (units IS NOT NULL AND units < 1)
-               OR (amount IS NOT NULL AND amount < 1)
+            )
+               OR (
+                    event_type = 'physical_return'
+                    AND (
+                        units IS NULL OR units < 1
+                        OR amount IS NOT NULL
+                        OR currency_code IS NOT NULL
+                    )
+               )
+               OR (
+                    event_type = 'financial_refund'
+                    AND (
+                        units IS NOT NULL
+                        OR amount IS NULL OR amount < 1
+                        OR currency_code IS NULL
+                    )
+               )
+               OR (
+                    event_type = 'post_fulfilment_cancellation'
+                    AND units IS NULL
+               )
             """,
         )
+        adjustment_reconciliation = connection.execute(
+            """
+            SELECT
+                event_type,
+                count(*)::BIGINT,
+                coalesce(sum(units), 0)::HUGEINT,
+                coalesce(sum(amount), 0)::HUGEINT
+            FROM canonical_data.sales_adjustments
+            GROUP BY event_type
+            ORDER BY event_type
+            """
+        ).fetchall()
         rules.append(
             _critical(
                 "B17",
@@ -651,7 +1027,19 @@ def run_gate_b(
                 [f"{adjustment_errors} invalid adjustment rows"],
             )
             if adjustment_errors
-            else _pass("B17", "sales adjustment types and magnitudes pass")
+            else _pass(
+                "B17",
+                "physical returns and financial refunds are distinct and valid",
+                controls=[
+                    {
+                        "eventType": row[0],
+                        "rows": int(row[1]),
+                        "units": int(row[2]),
+                        "amountMinor": int(row[3]),
+                    }
+                    for row in adjustment_reconciliation
+                ],
+            )
         )
 
         missing_t2 = sorted(
@@ -702,6 +1090,7 @@ def run_gate_b(
                 "WHERE known_as_of_evidence_grade = 'landing_backfill'",
             )
             for entity in (
+                "sales",
                 "products",
                 "locations",
                 "sell_prices",
@@ -723,7 +1112,7 @@ def run_gate_b(
         else:
             rules.append(_pass("B21", "core PIT series use native availability evidence"))
 
-        capability_mask = {
+        capability_mask: dict[str, Any] = {
             "data_management": {"available": True},
             "revenue_reporting": {
                 "available": not money_errors,
@@ -747,13 +1136,19 @@ def run_gate_b(
             },
             "replenishment": {
                 "available": False,
-                "reasonCode": "INCOMING_NOT_SPLIT_BY_STATUS",
+                "reasonCode": "HISTORICAL_INBOUND_STATUS_NOT_VERSIONED",
+                "currentSnapshotStatusSplitAvailable": not incoming_split_mismatch,
             },
             "competitor_intelligence": {
                 "available": "competitor_prices" in present
                 and "competitor_matches" in present
             },
         }
+        capability_mask = _apply_upstream_capability_downgrades(
+            capability_mask,
+            upstream_gate_a,
+            source_snapshot_id=manifest["sourceSnapshotId"],
+        )
         return GateBReport(
             source_snapshot_id=manifest["sourceSnapshotId"],
             rules=tuple(rules),

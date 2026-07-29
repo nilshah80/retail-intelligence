@@ -3,15 +3,20 @@
 **Purpose:** how the pieces run together locally and in a controlled environment — service
 orchestration and environment/config.
 
+**Timing:** do not add Docker Compose during the current batch-only Phase-2 work. It becomes a
+Phase-6 integration deliverable, when PostgreSQL (workflow/audit), a shared MLflow tracking service,
+the Aarv API and UI must run together. Phase-3 MLflow may use a local file-backed store; PostgreSQL
+is not required until mutable approval/recommendation/governance state exists.
+
 **Planned contents:**
 - `docker-compose` for PostgreSQL, MLflow, the
   [Aarv](https://github.com/nilshah80/aarv)-based Go `api/`, and Python
   `datagen/`/`ingestion/`/`ml/` jobs.
 - Local run instructions and environment/secret configuration.
-- An explicit Python environment/lock strategy: `datagen/` is always isolated; whether
-  independently deployed `ingestion/` and `ml/` use separate or shared governed environments is
-  decision #38 and must be locked before scaffolding their package/workspace boundary. It does
-  not block the independently isolated Phase-1 `datagen/` scaffold.
+- The locked decision #38 Python topology: `datagen/`, `ingestion/` and `ml/` are separate
+  environments/distributions; ingestion and ML both depend on the shared `retail-contracts` and
+  `retail-intelligence-execution` packages. `contracts/` may change meaning, while `execution/`
+  changes throughput only.
 - Install the source-neutral `execution/` resolver into each Python job environment. It supplies
   bounded operational defaults and golden vectors only; it is not a reason to merge the datagen,
   ingestion and ML environments. The Go API implements the same JSON contract natively.

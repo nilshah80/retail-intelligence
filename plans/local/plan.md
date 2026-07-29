@@ -55,9 +55,25 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
   margin and policy enforcement stay within one local currency. Cross-market monetary totals are
   separately derived under the reporting-FX policy and are never causal model inputs.
 - **Demo by vertical slice.** The runtime UI and a thin read-only Go API start when the first
-  versioned screen contract is frozen. Each capability phase replaces its clearly labelled stub
-  with accepted live artifacts; Phases 6–7 add governed interactions and complete integration
-  rather than starting API/UI work for the first time.
+  versioned screen contract is frozen. Test fixtures may precede live artifacts in automated
+  tests, but an incomplete/sample screen is not demoable. Each capability phase ports its
+  reviewed original-HTML page to accepted live artifacts; Phases 6–7 add governed interactions
+  and complete integration rather than starting API/UI work for the first time.
+- **The agreed HTML is the UI contract, not a moodboard.**
+  `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` fixes the visible application
+  shell, navigation hierarchy/order, page titles/subtitles, top filters, currency strip, page
+  composition, labels, table columns, footer KPIs, footer copy, colors, spacing and interaction
+  locations. A phase may replace sample values with correctly defined live API values, but may
+  not redesign, rename, remove or add visible product concepts without explicit review and
+  approval. Engineering vocabulary such as phase numbers, Gate A/B, fingerprints and pipeline
+  internals belongs in diagnostics/API evidence, not in the business UI unless the reference
+  HTML explicitly presents it.
+- **Every visible value has a reviewed data definition.** Before a screen is implemented, create
+  a parity/data map from each HTML element to its live API field or governed calculation,
+  including grain, filters, units/currency, time window, formatting and unavailable behavior.
+  No sample number may be presented as live, and no convenient backend count may be substituted
+  for a differently named business metric. Screenshot/DOM parity at agreed desktop and
+  responsive viewports plus a data-value test is a demo acceptance gate.
 - **Windows/macOS/Linux are equal local targets.** This applies to the Config Builder, contracts
   and code generation, execution resolver, datagen, ingestion, ML, database tooling, Aarv-based
   Go API, UI and developer/deployment commands. Python uses `pathlib`, `tempfile` and
@@ -65,7 +81,8 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
   workflows use cross-platform npm scripts. Make/Bash are optional. Logical manifest paths use
   `/`, physical paths are native, fingerprinted text uses UTF-8/LF, and open handles are closed
   before same-volume atomic promotion. Permission lanes preserve their semantics through native
-  OS capabilities. A layer is not complete until its matrix checks pass on all three OS families.
+  OS capabilities. Local capability work must remain portable; the three-OS blocking matrix is a
+  Phase-7/8 release-hardening gate and is not claimed as active CI today.
 
 ## 3 · Phases (local)
 
@@ -200,14 +217,21 @@ No model/engine code differs by source. Phase 2 has three incremental UI checkpo
 (live coverage, reconciliation and quarantine) and **2C** after Gate B/publication (live
 capability mask and curated status). UI work does not wait for Phase 3.
 
-**Implemented status:** the accepted ten-year source pin now runs through all of the above
-governed boundaries and publishes the Phase-2 capability slice to curated Parquet and one DuckDB.
+**Implemented status:** the accepted ten-year source pin runs through all governed boundaries. A
+full-history disposable candidate has validated the v1.2 corrections for fulfilled sales,
+financial refunds, exact integer money, timezone-stable dates, ATP and current inbound-status
+splitting. The retained curated folder predates that correction and must be republished before
+Phase 3 or the live UI treats it as accepted evidence.
 The stable source-profile filename is `retail_datagen.yaml`; `profileVersion` and
 `sourceSchemaVersion` remain inside the document. Manifest-less retailer drops can be inventoried
 from explicit profile globs, physical CSV/Parquet/JSONL/JSON parsing is shared, and source
 semantics remain isolated in registered adapters. A composite missing Shopify, Business Central
 or companion coverage terminates as `validated_partial` after Gate A and cannot publish or reach
-ML. The Aarv API and React Data Management screen read only accepted evidence.
+ML. The Aarv API reads only accepted evidence. The first React Data Management implementation
+proved API connectivity but is **not an accepted UI deliverable** because it diverges from the
+agreed HTML shell, page structure and business data points. Phase 2 UI acceptance remains open
+until the parity-recovery tasks in `plans/local/tasks.md` pass; this does not invalidate the
+accepted ingestion publication.
 
 ### Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 
@@ -222,6 +246,8 @@ Croston routing for intermittent; baselines + **Forecast Value Add** (WAPE, bias
 `accuracy = 100·(1−WAPE)`); rolling-origin backtest + global and per-market acceptance gates/
 calibration; `forecast_versions`, SHAP-grouped `forecast_drivers` (incl. competitor + weather
 groups), per-series confidence.
+MLflow tracking begins with this first training/backtest slice; local file-backed tracking is
+enough until a shared service is needed.
 
 **Exit criteria:** forecast beats seasonal-naive ≥25%; P90 coverage ∈ [0.85, 0.95]; monotonic
 P50≤P90 globally and for every supported market; artifacts include market/config fingerprints.
@@ -281,6 +307,9 @@ slices delivered in Phases 2–5; workflow/HITL (approvals, planner overrides, i
 market/currency-scoped pricing activations; **serve-time guardrail re-validation** over the same
 resolved market policy; staleness 409/503; RBAC/auth; **fingerprint parity** (Python↔Go golden
 vectors); lineage/audit.
+PostgreSQL enters here for mutable workflow/governance state. Docker Compose enters at this
+integration boundary, when PostgreSQL, shared MLflow, the API and UI need one reproducible stack;
+neither is a prerequisite for Phase-2 batch ingestion.
 
 **Exit criteria:** an approve/override writes an audit row; stale artifact → 409, missing → 503;
 Go and Python produce identical fingerprints on shared vectors. **Demo checkpoint 6:** a planner
@@ -288,15 +317,15 @@ reviews live evidence, approves/overrides a draft and sees its audit record in t
 
 ### Phase 7 — UI completion and end-to-end integration (`ui/`)
 
-**Goal:** complete the dashboard and remove remaining core-screen stubs; UI work has already
+**Goal:** complete the dashboard and remove remaining sample/test-only paths; UI work has already
 advanced with every vertical slice since Phase 2.
 
 **Scope:** complete remaining core screens and shared responsive/accessibility behavior; verify
 multi-currency display (FX); wire interactive what-ifs (scenario/simulation) to the API; build
 rich capture forms where the mockup only stubs them (§8.3 note).
 
-**Exit criteria:** each Phase-2–6 core screen renders live API data; no core mock data paths or
-demo feature flags remain.
+**Exit criteria:** each Phase-2–6 core screen renders live API data and passes its original-HTML
+parity/data gates; no core sample/mock path remains.
 
 ### Phase 8 — Analytics, admin & hardening
 
@@ -317,7 +346,8 @@ datagen source contract and downstream `retail_v2` contract evolve independently
 the Phase-2 adapter boundary. `contracts/` is frozen before Gate-B implementation, but it is not a
 datagen dependency. Resolve UI framework decision #17 by the end of Phase 1. In Phase 2, freeze
 the first screen contracts and start the dashboard shell plus thin read-only Go API; Phases 2–5
-each deliver a demoable live vertical slice without changing its stub contract. `db/` can start
+each deliver a demoable live vertical slice from a reviewed original-HTML parity/data matrix.
+`db/` can start
 once workflow tables are known. Phases 6–7 harden workflows and complete integration rather than
 starting API/UI work. Phase-1 `datagen/` scaffolding may start under its already locked isolated
 boundary; lock Python environment topology (decision #38) before scaffolding the `ingestion/`/

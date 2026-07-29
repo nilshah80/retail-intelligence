@@ -24,10 +24,17 @@ func main() {
 		"execution-profile", "",
 		"named execution profile; RETAIL_EXECUTION_PROFILE then safe are fallbacks",
 	)
+	openAPISpec := flag.String(
+		"openapi-spec", "", "path to the authoritative OpenAPI YAML document",
+	)
 	flag.Parse()
 
-	if *gateA == "" || *gateB == "" || *publication == "" || *profiles == "" {
-		fmt.Fprintln(os.Stderr, "all evidence and execution-profile paths are required")
+	if *gateA == "" || *gateB == "" || *publication == "" ||
+		*profiles == "" || *openAPISpec == "" {
+		fmt.Fprintln(
+			os.Stderr,
+			"all evidence, execution-profile, and OpenAPI paths are required",
+		)
 		os.Exit(2)
 	}
 	profile, err := execution.Load(*profiles, *selected)
@@ -44,7 +51,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := httpapi.New(store, profile).Listen(*address); err != nil {
+	spec, err := os.ReadFile(*openAPISpec)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	app, err := httpapi.New(store, profile, spec)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if err := app.Listen(*address); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

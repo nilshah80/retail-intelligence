@@ -152,6 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_profile_arguments(gate_b_parser)
     gate_b_parser.add_argument("--candidate-database", type=Path, required=True)
     gate_b_parser.add_argument("--staging-database", type=Path, required=True)
+    gate_b_parser.add_argument(
+        "--gate-a-report",
+        type=Path,
+        default=None,
+        help="propagate Gate-A capability downgrades into the publication mask",
+    )
     gate_b_parser.add_argument("--report-path", type=Path, default=None)
 
     publish_parser = subparsers.add_parser(
@@ -205,6 +211,19 @@ def build_parser() -> argparse.ArgumentParser:
     bench_parser.add_argument("--temp-root", type=Path, default=None)
     bench_parser.add_argument("--work-root", type=Path, default=None)
     bench_parser.add_argument("--publication-root", type=Path, default=None)
+
+    finalize_parser = subparsers.add_parser(
+        "finalize",
+        help="Retain accepted Gate evidence and optionally prune disposable work",
+    )
+    finalize_parser.add_argument("--work-root", type=Path, required=True)
+    finalize_parser.add_argument("--publication-root", type=Path, required=True)
+    finalize_parser.add_argument("--evidence-root", type=Path, required=True)
+    finalize_parser.add_argument(
+        "--prune-work",
+        action="store_true",
+        help="remove staging/candidate work only after evidence is retained",
+    )
 
     for name, owner in _PENDING_STAGES.items():
         stage_parser = subparsers.add_parser(name, help=f"[not implemented] {owner}")
@@ -332,10 +351,16 @@ def _cmd_gate_b(args: argparse.Namespace) -> int:
     from .quality import run_gate_b
 
     runtime = _resolved_runtime(args)
+    upstream_gate_a = (
+        json.loads(args.gate_a_report.read_text(encoding="utf-8"))
+        if args.gate_a_report is not None
+        else None
+    )
     report = run_gate_b(
         args.candidate_database,
         args.staging_database,
         execution_profile=runtime.manifest_record(),
+        upstream_gate_a=upstream_gate_a,
     )
     rendered = json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n"
     if args.report_path is not None:
@@ -378,6 +403,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_finalize(args: argparse.Namespace) -> int:
+    from .retention import finalize_publication
+
+    result = finalize_publication(
+        args.work_root,
+        args.publication_root,
+        args.evidence_root,
+        prune_work=args.prune_work,
+    )
+    print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -392,6 +430,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "publish",
         "run",
         "bench",
+        "finalize",
     }:
         try:
             commands = {
@@ -404,6 +443,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "gate-b": _cmd_gate_b,
                 "publish": _cmd_publish,
                 "run": _cmd_run,
+                "finalize": _cmd_finalize,
             }
             return commands[args.command](args)
         except (ProfileValidationError, OSError, ValueError, RuntimeError) as exc:

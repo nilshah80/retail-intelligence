@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from retail_contracts.fingerprint import semantic_fingerprint
 
 from .publication import publish_candidate
+from .profiles import load_source_profile
 from .quality import run_gate_a, run_gate_b
 from .staging import build_staging
 from .transforms import build_canonical_candidate
@@ -57,30 +58,70 @@ def _matching(path: Path, source_snapshot_id: str) -> bool:
         return False
 
 
-_FULL_PUBLICATION_SOURCES = frozenset(
-    {"shopify", "businessCentral", "companion"}
-)
+def _publication_coverage(
+    profile: Mapping[str, Any],
+    inventory: list[Mapping[str, Any]],
+) -> tuple[list[str], list[str], list[str]]:
+    requirements = profile.get("publicationRequirements", {})
+    required = set(requirements.get("requiredCapabilities", []))
+    if not required:
+        raise PipelineError(
+            "source profile must declare publicationRequirements.requiredCapabilities"
+        )
+    available_sources = sorted(
+        {
+            str(row["sourceSystem"])
+            for row in inventory
+            if row.get("sourceSystem") != "generator"
+        }
+    )
+    available_capabilities: set[str] = set()
+    for row in inventory:
+        source_system = str(row.get("sourceSystem", ""))
+        logical_path = str(row.get("logicalPath", ""))
+        if source_system == "generator":
+            continue
+        matches = [
+            instance
+            for instance in profile.get("sourceInstances", [])
+            if instance.get("sourceSystem") == source_system
+            and logical_path.startswith(
+                str(instance.get("logicalPathPrefix", ""))
+            )
+        ]
+        if not matches:
+            matches = [
+                instance
+                for instance in profile.get("sourceInstances", [])
+                if instance.get("sourceSystem") == source_system
+            ]
+        for instance in matches:
+            available_capabilities.update(
+                str(value) for value in instance.get("capabilities", [])
+            )
+    return (
+        sorted(available_capabilities),
+        sorted(required - available_capabilities),
+        available_sources,
+    )
 
 
 def _write_validated_partial(
     work: Path,
     gate_a_payload: Mapping[str, Any],
+    *,
+    available_capabilities: list[str],
+    missing_capabilities: list[str],
+    available_sources: list[str],
 ) -> str:
-    available = sorted(
-        {
-            str(row["sourceSystem"])
-            for row in gate_a_payload.get("datasetInventory", [])
-            if row.get("sourceSystem") != "generator"
-        }
-    )
-    missing = sorted(_FULL_PUBLICATION_SOURCES - set(available))
     payload: dict[str, Any] = {
         "schemaVersion": "retail-ingestion-validated-partial/v1",
         "status": "validated_partial",
         "sourceSnapshotId": gate_a_payload["sourceSnapshotId"],
         "gateASemanticFingerprint": gate_a_payload["semanticFingerprint"],
-        "availableSourceSystems": available,
-        "missingSourceSystems": missing,
+        "availableSourceSystems": available_sources,
+        "availableCapabilities": available_capabilities,
+        "missingCapabilities": missing_capabilities,
         "publicationBlocked": True,
         "reasonCode": "COMPOSITE_SOURCE_COVERAGE_INCOMPLETE",
     }
@@ -109,6 +150,7 @@ def run_pipeline(
     work = Path(work_root).expanduser().resolve()
     publication = Path(publication_root).expanduser().resolve()
     landing = _json(snapshot / "landing-manifest.json")
+    profile = load_source_profile(source_profile)
     source_snapshot_id = str(landing["sourceSnapshotId"])
     work.mkdir(parents=True, exist_ok=True)
     gate_a_path = work / "gate-a.json"
@@ -143,13 +185,20 @@ def run_pipeline(
     if gate_a_payload["status"] != "pass":
         raise PipelineError("Gate A is critical; staging is blocked")
 
-    available_sources = {
-        str(row["sourceSystem"])
-        for row in gate_a_payload.get("datasetInventory", [])
-        if row.get("sourceSystem") != "generator"
-    }
-    if not _FULL_PUBLICATION_SOURCES.issubset(available_sources):
-        partial_fingerprint = _write_validated_partial(work, gate_a_payload)
+    available_capabilities, missing_capabilities, available_sources = (
+        _publication_coverage(
+            profile,
+            list(gate_a_payload.get("datasetInventory", [])),
+        )
+    )
+    if missing_capabilities:
+        partial_fingerprint = _write_validated_partial(
+            work,
+            gate_a_payload,
+            available_capabilities=available_capabilities,
+            missing_capabilities=missing_capabilities,
+            available_sources=available_sources,
+        )
         return PipelineResult(
             source_snapshot_id=source_snapshot_id,
             work_root=work,
@@ -196,6 +245,7 @@ def run_pipeline(
             candidate_path,
             staging_path,
             execution_profile=execution_profile,
+            upstream_gate_a=gate_a_payload,
         )
         gate_b_payload = gate_b.as_dict()
         gate_b_path.write_text(

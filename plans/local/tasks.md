@@ -5,22 +5,54 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 
 ## Cross-phase UI and demo track `[START EARLY]`
 
-- [x] UI framework decision #17 is recorded (React + Vite + TypeScript + Tailwind); the runtime
-      dashboard shell, design tokens and Phase-2 Data Management components are implemented
-      against the first stable-filename, internally versioned API contract.
-- [~] Maintain internally versioned OpenAPI/read-model contracts and deterministic stub fixtures ahead of
-      each backend capability. Every screen must visibly identify stub data; a phase demo cannot
-      claim a live capability until its accepted artifacts are served by the read-only Go API.
-      Phase 2 is live; later capability contracts land in their owning phases.
+- [~] UI framework decision #17 is recorded (React + Vite + TypeScript + Tailwind). The initial
+      Phase-2 screen proved live API connectivity, but its shell/design is rejected as a demo
+      baseline because it does not follow the agreed HTML. Do not describe Phase-2 UI as
+      complete until the parity gates below pass.
+- [ ] Treat `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` as a strict,
+      review-controlled UI contract—not visual inspiration. Preserve its application width,
+      navy/light color system, typography hierarchy, left-navigation groups/order/icons/
+      submenus, top title/subtitle and filter order, display-currency strip, page composition,
+      labels, table columns, bottom KPI strip and branded footer. Any deviation requires explicit
+      approval before implementation.
+- [ ] Record the only currently approved omissions: **Add Data Source**, **Upload Sample Data**
+      and **Run Validation** may be omitted for now, and the sidebar user card/User Management
+      navigation/destination may be omitted until users/RBAC are implemented. These exceptions do not permit
+      changing any other navigation, header, content, footer, color or spacing contract.
+- [ ] Remove internal delivery language from the product UI: no “Phase 2”, “Phase 3”, “Phase 4”,
+      “Phase 5”, “governed ingestion”, source snapshot hashes, implementation status or roadmap
+      badges in the normal business experience. Keep such evidence in API/Swagger, tests,
+      development diagnostics or a separately approved technical view.
+- [ ] Before coding each page, produce a parity/data matrix with one row per visible HTML element:
+      reference selector/text, required behavior, API field or governed calculation, canonical
+      grain, filter context, unit/currency, time window, formatting, loading/error/empty behavior
+      and implementation/test status. Review that matrix before changing React code.
+- [ ] Never reuse a nearby backend count under a reference UI label. Implement the exact business
+      definition or mark the element unavailable in the reviewed data matrix; never invent,
+      relabel or silently approximate data. Sample/stub values must not appear in a live demo.
+- [ ] Build the shared HTML shell once before the next vertical slice: full left navigation,
+      topbar filters, currency strip, common content container, seven-item footer KPI strip and
+      page footer. All phase screens reuse this shell; phases may not independently redesign it.
+- [ ] Add automated parity gates: reference and React screenshots at agreed desktop and
+      responsive viewports, DOM assertions for navigation/order/text/table columns, design-token
+      assertions for the approved palette/layout, and API fixture assertions for every displayed
+      value. Require a human screenshot review before each demo checkpoint.
+- [~] Maintain internally versioned OpenAPI/read-model contracts and deterministic fixtures ahead
+      of each backend capability. Fixtures are for tests only and cannot make a demo screen look
+      live. A phase demo cannot claim a live capability until accepted artifacts are served by
+      the read-only Go API and every visible value passes its data-map assertion.
 - [~] Extend the thin read-only [Aarv](https://github.com/nilshah80/aarv)-based Go API and UI
       together in Phases 2–5; do not defer all API and UI work to Phases 6–7. Preserve one
-      contract when a screen moves from stub to live data. Phase 2 is complete.
-- [ ] Keep incomplete screens behind explicit demo feature flags; never fabricate unavailable
-      metrics, pricing recommendations, margin or workflow state.
+      contract when a screen moves from test fixture to live data. The ingestion/API portion of
+      Phase 2 is complete; the Phase-2 UI parity correction remains open.
+- [ ] Keep incomplete destination pages non-demoable without altering or annotating the agreed
+      navigation. Never fabricate unavailable metrics, pricing recommendations, margin or
+      workflow state, and never place phase/roadmap labels beside future navigation items.
 - [ ] Run incremental demo checkpoints:
       Phase 1 Config Builder → Phase 2 Data Management/quality → Phase 3 Demand Forecast →
       Phase 4 Inventory/Replenishment → Phase 5 Pricing/Competitor/Promotion → Phase 6 governed
-      approval/override. Phase 7 completes integration and removes remaining core-screen stubs.
+      approval/override. A checkpoint passes only after HTML parity, live-data mapping and human
+      visual review; Phase 7 completes integration rather than redesigning accepted screens.
 
 ## Cross-phase execution profiles `[HARDWARE-SCALED, LOGIC-STABLE]`
 
@@ -55,14 +87,18 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [x] Make the Phase-2 Python foundation and authoritative developer commands portable across
       Windows, macOS and Linux: use `pathlib`, platform-aware virtualenv executables, subprocess
       argument lists and `tools/dev.py`; keep `Makefile`/shell wrappers optional. Run contract,
-      boundary, Phase-2 unit and real isolated-wheel checks in a three-OS CI matrix. Record
-      decision #47.
+      boundary, Phase-2 unit and real isolated-wheel checks locally. Record decision #47; the
+      three-OS CI enforcement remains the explicit Phase-7/8 hardening task below.
 - [x] Apply decision #47 to the Phase-2 local layers: the Aarv-based Go API uses
       `filepath` and portable lock/process primitives; React tooling uses cross-platform npm
-      scripts; the shared developer entry point dispatches Python/Go/Node without Bash. Extend
-      the Windows/macOS/Linux CI matrix with Go race/unit/build and Node typecheck/test/build
-      checks. Future ML/DB layers add their own matrix jobs when they land.
-- [ ] Make the three-OS matrix a blocking Definition of Done for **every** layer, including the
+      scripts; the shared developer entry point dispatches Python/Go/Node without Bash. Local
+      Go race/unit/build and Node typecheck/test/build checks exist; adding those checks to a
+      Windows/macOS/Linux CI matrix is intentionally deferred. Future ML/DB layers add their own
+      portable checks when they land.
+- [ ] At Phase-7/8 hardening, make the three-OS matrix a blocking Definition of Done for **every**
+      completed layer. Do not add or expand GitHub workflows during the current local capability
+      build merely to represent unfinished phases; use `tools/dev.py` and component tests until the
+      corresponding runtime exists. The eventual matrix includes the
       existing datagen suite and Config Builder tests, contract/code generation, execution,
       ingestion, ML native dependencies and deterministic small training fixture, database
       migration upgrade/downgrade, Aarv API and UI. Linux/macOS-only evidence cannot close a
@@ -499,31 +535,84 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       a pinned `github.com/nilshah80/aarv` dependency and implement the initial read-only Go API
       slice over ingest runs, source coverage, reconciliation and quarantine. Keep handlers thin
       and the `contracts/` OpenAPI/read-model definitions authoritative.
-- [x] Scaffold the runtime UI as soon as the screen contract is frozen and connect it to the live
-      Phase-2 API without substituting fake values when evidence is unavailable.
-- [x] **Demo 2A:** show the retained source run, landing inventory, source
-      controls/hashes and Gate-A results live in the dashboard.
-- [x] **Demo 2B:** show live coverage, reconciliation and reason-coded quarantine.
-- [x] **Demo 2C / Phase-2 exit:** show live Gate B, capability mask and curated publication.
-      Evaluation-admin oracle status remains unavailable until that optional extension is built;
-      it is not fabricated. UI work did not wait for Demand Forecasting or Pricing.
-- [x] **Exit:** refs and exact controls hold; derivations are visible; the Gate-B-approved curated
-      slice materializes; downstream transforms and future ML code are source-neutral.
+- [~] The initial React screen is connected to the live Phase-2 API without fake fallback values,
+      but it is not an accepted UI implementation. Replace its invented dark control-room layout
+      only after the reviewed parity/data matrices below are approved; do not patch individual
+      colors or labels onto the rejected structure.
+- [ ] Freeze the **Data Management parity matrix** from the original `#dataManagement` page:
+      title `Data Management`, subtitle `Monitor source systems, data freshness and data quality`;
+      five KPI positions/labels (`Data Freshness`, `Quality Score`, `Connected Sources`,
+      `Rejected Records`, `Last Refresh`); and source table columns (`Source`, `Type`,
+      `Last Refresh`, `Records`, `Quality`, `Status`, `Action`). The three approved toolbar
+      buttons may remain omitted.
+- [ ] Define and review exact live computations for those five KPIs before implementation:
+      freshness observation/cutoff and denominator; quality-score formula and rule weighting;
+      connected-source grain; rejected/quarantined record count and scope; and last-refresh
+      timestamp/relative-time policy. Define source-table row grain, record counts, quality and
+      status from accepted evidence. Do not map source-dataset count, canonical-entity count,
+      curated-object count or capability count into unrelated original labels.
+- [ ] Extend the Data Management OpenAPI/read model only where the reviewed original data points
+      require it. Preserve Gate A/B, reconciliation, capability and fingerprint evidence in the
+      API/Swagger and tests; do not force those engineering panels into the reference business
+      page when the HTML does not contain them.
+- [ ] Rebuild the shared shell to HTML parity before rebuilding Data Management: all reference
+      navigation groups/items and inventory/replenishment submenus in their original order;
+      exact topbar title/subtitle plus Channel, Date, Store, Currency, FX and notification
+      controls; display-currency strip; original content spacing; seven bottom KPI slots; and
+      original page-footer copy. User card/User Management navigation/destination is the only current user
+      exception.
+- [ ] Populate the bottom KPIs (`Total SKUs`, `Active SKUs`, `Stores`, `Channels`,
+      `Forecast Coverage`, `Data Freshness`, `Model Accuracy`) only from reviewed live
+      definitions. Before forecast models exist, do not show mock `Forecast Coverage` or `Model
+      Accuracy`; agree the unavailable presentation without adding phase labels or fabricated
+      values.
+- [ ] **Demo 2A parity gate:** live landing/source evidence is represented only through the
+      reviewed original Data Management KPI/table vocabulary; shared chrome matches the HTML
+      screenshot/DOM baseline.
+- [ ] **Demo 2B parity gate:** live quality, rejection and source-status values reconcile to API
+      evidence and every visible number has a tested definition; no source hashes or Gate jargon
+      are inserted into the business page.
+- [ ] **Demo 2C / UI exit:** Data Management plus shared top/left/bottom shell pass desktop and
+      responsive parity screenshots, DOM/text/column assertions, live-data tests and explicit
+      human visual approval. The evaluation-admin oracle remains test-only.
+- [~] **Phase-2 exit:** ingestion, exact controls and source-neutral transforms are implemented;
+      the corrected ten-year curated republish and the UI parity exit below remain before the
+      phase is demo-complete.
+- [x] Correct the Phase-2 semantic defects found in the deep review: derive realized sales from
+      successful fulfillment lines; reconcile sales units to `sales_fulfillments`; publish
+      physical returns separately from successful financial refunds; use the closed minor-unit
+      map without silent rounding; remove binary-float WAC; pin DuckDB UTC and preserve
+      market-local business dates; reconcile source ATP; and split current on-order/in-transit
+      units from inbound status.
+- [ ] Republish the accepted ten-year pin with Shopify/BC adapter v1.1 and transform v1.2, retain
+      the new Gate/publication evidence, and only then update the API/UI accepted-evidence paths.
+      The disposable validation candidate in `/private/tmp` proves the code but is not a durable
+      accepted publication.
 
 **Post-exit evaluation extensions — useful, but not Phase-3 blockers**
-- [ ] Add golden collision fixtures for the literal region label `West` in India and US,
+- [x] Add golden collision fixtures for the literal region label `West` in India and US,
       similarly named cities, scoped promotions and competitor observations. Gate B already
       enforces market-qualified geographic scope and the accepted pin proves market-wide Diwali;
       this item adds adversarial fixture depth.
-- [ ] Add the evaluation-admin-only, profile-versioned generator hidden-control → canonical
+- [x] Add the evaluation-admin-only, profile-versioned generator hidden-control → canonical
       expected-control oracle. Production transforms, ordinary acceptance and datagen must never
       import it.
-- [ ] Add extension fixtures for webhook/HMAC parity and exhaustive fulfillment/return/refund
+- [x] Add extension fixtures for webhook/HMAC parity and exhaustive fulfillment/return/refund
       status histories. The PoC source pin already covers inventory states,
       receipts/inbound/batches/suppliers, promotions and competitor matching; these fixtures are
       deliberately not required for the core Data Management/revenue/demand publication.
 
 ## Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
+- [x] Land Go/Python `semantic-fingerprint/v1` parity against the shared RFC-8785 golden
+      vectors before Phase 3 emits fingerprinted artifacts.
+- [ ] Resolve the accepted publication's B21 `LANDING_BACKFILL_DEPENDENCY` before enabling
+      point-in-time training. Either ingest native/versioned availability observations for the
+      affected historical sales-zero, assortment, price and supplier facts, or explicitly scope
+      the first model to the already-available non-PIT demand capability. Never relabel business
+      effective dates or landing-time backfills as historically PIT-accurate.
+- [ ] Start MLflow run/metric/artifact tracking with the first deterministic demand
+      training/backtest. A local file-backed store is sufficient in Phase 3; do not require
+      PostgreSQL, a shared MLflow server or Docker Compose for the initial model slice.
 - [ ] Run feature construction, one deterministic training/backtest fixture and artifact
       publication on Windows, macOS and Linux using supported pinned ML wheels. Require identical
       keys/features/acceptance decisions and declared numeric tolerances for model outputs; use
@@ -559,10 +648,18 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] `forecast_versions`, SHAP `forecast_drivers` (+ competitor/weather groups), confidence.
 - [ ] Extend the read-only Go API with versioned forecast-series, horizon, metric, confidence and
       driver endpoints; keep market/currency/config fingerprints explicit.
-- [ ] Build the Demand Forecast UI vertical slice against the same contract used by its stub,
-      then switch it to accepted live forecast artifacts without changing the screen contract.
+- [ ] Before Demand Forecast React work, freeze the parity/data matrix from the original
+      `#demandForecast` page: preserve its toolbar/search/filter positions, KPI labels/order,
+      Forecast vs Actual and driver/quality panels, store-performance section, SKU/store forecast
+      table columns/actions and common top/left/bottom shell. Map every visible value to the
+      accepted forecast artifact grain and filter context.
+- [ ] Build the Demand Forecast vertical slice as a faithful port of that reviewed HTML page,
+      replacing only its sample values with accepted live P50/P90, accuracy, bias, confidence,
+      actuals and drivers. Do not add Phase 3 badges, model-engineering cards or an alternative
+      layout. Pass screenshot/DOM/data parity and human review before Demo 3.
 - [ ] **Demo checkpoint 3 / exit:** acceptance gates pass; artifacts are fingerprinted and the
-      Demand Forecast screen renders live Mumbai + New York P50/P90, accuracy and drivers.
+      HTML-faithful Demand Forecast screen renders live Mumbai + New York P50/P90, accuracy and
+      drivers with no mock or relabelled values.
 
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
 - [ ] Reorder / safety-stock (quantile-spread × service level).
@@ -576,10 +673,21 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       conversion before any cross-market ranking/aggregation.
 - [ ] Transfer optimizer; constrained allocation.
 - [ ] Inventory-replay simulator + acceptance; demand-at-risk.
-- [ ] Extend the read-only Go API and UI with inventory, demand-at-risk, reorder, transfer and
-      replenishment read models; unavailable extension-only evidence remains visibly unavailable.
+- [ ] Freeze reviewed parity/data matrices for the original Inventory Overview and its Store
+      Inventory, Warehouse Inventory, Inventory Ageing, Stock Transfers, Inventory Valuation and
+      Expiry & Waste submenu pages, plus Replenishment Planner and its Suggested Orders, Supplier
+      Planning, Safety Stock, Allocation & Fulfillment and Exceptions submenu pages. Preserve
+      every original KPI/table/control position and the common shell; map each value to
+      location/warehouse/lane-scoped live evidence.
+- [ ] Extend the read-only Go API and build those UI slices from their reviewed matrices with
+      inventory, demand-at-risk, reorder, transfer and replenishment read models. Unavailable
+      evidence follows the approved element-level unavailable behavior; it is not replaced by a
+      new capability panel, phase message or fabricated zero.
+- [ ] Require screenshot/DOM/data parity and human review for each Inventory/Replenishment page
+      before it is included in Demo 4; one accepted page cannot be used as evidence for the other
+      navigation destinations.
 - [ ] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
-      screens render live market/location-scoped outputs.
+      screens preserve the original HTML and render live market/location-scoped outputs.
 
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 - [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.
@@ -600,11 +708,22 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Resolve overlapping promotion merchandise targets by `sku > dept > category`; reject
       conflicting equal-precedence discounts and preserve promotion-scope AND/OR semantics.
 - [ ] Cost-over-time margin (WAC default; FIFO for batch-tracked; cost-as-of).
-- [ ] Extend the read-only Go API and UI with pricing, price simulation, competitor and promotion
-      read models, including market/department reason-coded `insufficient_evidence`.
+- [ ] Freeze separate reviewed parity/data matrices for the original Price Recommendations,
+      Price Simulation, Competitor Monitor and Promotion Planner pages before extending their
+      APIs. Preserve original navigation, filters, KPIs, tabs, charts, tables, action placement,
+      currency formatting and common shell; map every revenue/margin/uplift/stock figure to a
+      governed definition.
+- [ ] Extend the read-only Go API and build each pricing page from its approved matrix, including
+      market/department reason-coded `insufficient_evidence` through the agreed element-level
+      empty/unavailable state. Do not redesign the page around capability metadata, expose Phase
+      5 labels or synthesize margin when cost-as-of is unavailable.
+- [ ] Require screenshot/DOM/data parity and human review for each Pricing/Competitor/Promotion
+      page before Demo 5; exact local-currency symbols/formatting and global display-currency
+      behavior are part of the acceptance test.
 - [ ] **Demo checkpoint 5 / exit:** gates are enforced per market; every recommendation carries
       market/currency and is guardrail-valid; Pricing/Competitor/Promotion screens render live
-      response-rich and sparse-evidence outcomes; unavailable margin is omitted, not synthesized.
+      response-rich and sparse-evidence outcomes in the original UI; unavailable margin follows
+      the reviewed presentation and is not synthesized.
 
 ## Phase 6 — Aarv-based Go API, workflow & governance (`api/`, `db/`)
 - [ ] Keep [Aarv](https://github.com/nilshah80/aarv) limited to the HTTP boundary: pin exact core
@@ -632,6 +751,12 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Alembic migrations (`db/`): reuse M5 workflow tables; add `retail_v2` domain/output tables
       plus `ingest_runs`, reconciliation, quality/quarantine, approved source-mapping config and
       runtime source-crosswalk tables.
+- [ ] Introduce PostgreSQL here for mutable approvals, overrides, recommendation state,
+      idempotency, RBAC and audit. Keep immutable raw/curated/features in Parquet/DuckDB rather
+      than moving the lake into PostgreSQL.
+- [ ] Add Docker Compose at the Phase-6 integration checkpoint, when PostgreSQL, the shared MLflow
+      tracking service, Aarv API and UI must run together. Do not containerize batch-only Phase-2
+      work solely to create infrastructure early.
 - [ ] Consolidate and harden the read-only Go API slices delivered in Phases 2–5; keep
       OpenAPI/proto contracts in `contracts/` and preserve their stub-to-live compatibility.
 - [ ] Make pricing activation/recommendation market and currency explicit; keep consolidated
@@ -641,8 +766,12 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Workflow/HITL: approvals, planner overrides (bounded + reason), idempotency, audit.
 - [ ] Serve-time re-resolve and revalidate the same market policy as Python; staleness 409/503;
       RBAC/auth.
-- [ ] **Fingerprint parity** — Python & Go pass shared golden vectors.
-- [ ] Wire approval/override, governance and audit interactions into the already-live UI slices.
+- [x] **Fingerprint parity** — Python & Go pass shared golden vectors; landed as a Phase-3
+      prerequisite rather than being deferred to this hardening phase.
+- [ ] Add approval/override, governance and audit interactions only at the controls/modals/actions
+      defined by the original HTML parity matrices. If a required governance interaction has no
+      reference location, obtain explicit UI approval before adding it; do not redesign accepted
+      screens or expose implementation-phase language.
 - [ ] **Demo checkpoint 6 / exit:** a planner reviews live demand/inventory/pricing evidence,
       approves or overrides a draft, and the UI shows the audit row; 409/503 and fingerprints pass.
 
@@ -650,17 +779,29 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Run install, lint/typecheck, unit/component tests and production build on Windows, macOS and
       Linux through npm scripts only. Do not use Bash environment assignment, `/` path
       concatenation or case-only filename differences in UI tooling.
-- [ ] Complete the remaining core screens and shared responsive/accessibility behavior; do not
-      rebuild the vertical slices already delivered in Phases 2–6.
+- [ ] Audit every original HTML navigation destination against a checked-in parity/data matrix;
+      complete remaining core screens and shared responsive/accessibility behavior without
+      redesigning accepted Phase-2–6 slices.
+- [ ] Run a whole-application visual audit of the exact left navigation, topbar filters,
+      currency strip, shared content widths, palette, typography, cards/tables, bottom KPI strip
+      and footer across every screen. No page-specific implementation may drift the shared shell.
 - [ ] Verify multi-currency (FX) display and explicit market/department
-      `insufficient_evidence` pricing state across all relevant screens.
+      `insufficient_evidence` pricing state across all relevant screens using the reviewed
+      original element locations, not new global banners or phase cards.
 - [ ] Wire interactive what-ifs (scenario/simulation) to the API.
 - [ ] Build rich capture forms the mockup only stubs (§8.3).
-- [ ] Remove all remaining core-screen stub paths and demo feature flags.
-- [ ] **Exit:** every Phase-2–6 core screen renders live API data; no core mock paths.
+- [ ] Remove all remaining core-screen sample/stub data and demo-only code paths. Navigation may
+      not advertise phase numbers or implementation status.
+- [ ] **Exit:** every Phase-2–6 core screen renders correctly defined live API data, matches the
+      approved HTML screenshots/DOM contract and has explicit human visual acceptance.
 
 ## Phase 8 — Analytics, admin & hardening
-- [ ] Model registry / drift; alerts + data-freshness; data-source management; reports.
+- [ ] Freeze and implement parity/data matrices for the original Performance Insights, Reports &
+      Exports, Alerts & Notifications, Data Management and Model Management destinations before
+      adding their live analytics/admin data. User Management remains omitted until users/RBAC
+      scope is explicitly reopened.
+- [ ] Model registry / drift; alerts + data-freshness; data-source management; reports, rendered
+      through those approved original screens rather than new admin layouts.
 - [ ] Adoption metrics / performance insights (AI-vs-control cohort).
 - [ ] Disclosure guardrails (projections not lift; observational elasticity; synthetic labelling).
 - [ ] At least two client-shaped dialects proving config-only onboarding where existing transforms

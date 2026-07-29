@@ -24,6 +24,23 @@ def _measure(function: Callable[[], Any]) -> tuple[Any, str]:
     return result, format(time.perf_counter() - started, ".6f")
 
 
+def _benchmark_semantic_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Select only profile-invariant benchmark identity fields."""
+
+    stages = payload["stages"]
+    if not isinstance(stages, Mapping):
+        raise ValueError("benchmark stages must be an object")
+    return {
+        "schemaVersion": payload["schemaVersion"],
+        "mode": payload["mode"],
+        "sourceSnapshotId": payload["sourceSnapshotId"],
+        "stageSemanticFingerprints": {
+            str(name): stage["semanticFingerprint"]
+            for name, stage in stages.items()
+        },
+    }
+
+
 def run_full_benchmark(
     snapshot_root: str | Path,
     source_profile: str | Path,
@@ -169,9 +186,12 @@ def run_full_benchmark(
             ),
             ".6f",
         )
-        payload["semanticFingerprint"] = semantic_fingerprint(
-            payload, volatile_pointers=("/executionProfile",)
-        )
+        # The benchmark envelope contains physical/runtime telemetry by design.
+        # Its semantic identity is only the source snapshot plus the governed
+        # stage identities; timings, byte sizes, file counts and the selected
+        # execution profile must not make safe/ultra runs semantically differ.
+        semantic_payload = _benchmark_semantic_payload(payload)
+        payload["semanticFingerprint"] = semantic_fingerprint(semantic_payload)
     destination = Path(report_path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary_report = destination.with_name(f".{destination.name}.tmp")

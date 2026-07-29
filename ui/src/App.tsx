@@ -99,6 +99,9 @@ export default function App() {
 
   const allRules = [...gates.data.gateA.rules, ...gates.data.gateB.rules];
   const findings = allRules.filter((rule) => rule.outcome !== "pass");
+  const criticalViolations = allRules.filter(
+    (rule) => rule.outcome === "critical"
+  ).length;
   return (
     <div className="min-h-screen bg-[#07151d] text-slate-200">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/7 bg-[#081923] p-6 lg:block">
@@ -147,7 +150,7 @@ export default function App() {
                 Source evidence to curated retail facts, with every gate visible.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
-                Shopify, Business Central and companion feeds are landed immutably, adapted independently,
+                Commerce, operations and companion feeds are landed immutably, adapted independently,
                 transformed through one source-neutral contract and reconciled before publication.
               </p>
             </div>
@@ -161,7 +164,11 @@ export default function App() {
             <Metric eyebrow="Source datasets" value={summary.data.sourceDatasetCount.toLocaleString()} note="Profile-classified public datasets" />
             <Metric eyebrow="Canonical entities" value={summary.data.canonicalEntityCount.toLocaleString()} note="Published retail_v2 tables" />
             <Metric eyebrow="Curated objects" value={summary.data.curatedObjectCount.toLocaleString()} note="Partitioned Parquet objects" />
-            <Metric eyebrow="Critical violations" value="0" note={`${findings.length} disclosed warning or downgrade`} />
+            <Metric
+              eyebrow="Critical violations"
+              value={criticalViolations.toLocaleString()}
+              note={`${findings.length} disclosed warning, downgrade or critical outcome`}
+            />
           </section>
 
           <section className="panel">

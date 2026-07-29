@@ -19,7 +19,12 @@ from typing import Any, Mapping
 import duckdb
 from retail_contracts.fingerprint import semantic_fingerprint
 
-TRANSFORM_VERSION = "retail-transform/1.0.0"
+from retail_contracts.money_sql import (
+    allocated_minor_sql,
+    exact_minor_sql,
+)
+
+TRANSFORM_VERSION = "retail-transform/1.2.0"
 TRANSFORM_MANIFEST_VERSION = "retail-ingestion-candidate/v1"
 
 
@@ -90,11 +95,76 @@ def _entity_control(
     }
 
 
+def _densify_sales(connection: duckdb.DuckDBPyConnection) -> None:
+    """Insert explicit zero rows only for missing active assortment dates."""
+
+    connection.execute(
+        """
+        INSERT INTO canonical_data.sales
+        WITH active_dates AS (
+            SELECT
+                a.sku_id,
+                a.store_id,
+                a.channel_id,
+                calendar.date,
+                stores.currency_code,
+                greatest(
+                    a.known_as_of,
+                    timezone(
+                        stores.timezone,
+                        cast(calendar.date + INTERVAL 1 DAY AS TIMESTAMP)
+                    )
+                ) AS known_as_of,
+                a.known_as_of_evidence_grade,
+                row_number() OVER (
+                    PARTITION BY
+                        a.sku_id, a.store_id, a.channel_id, calendar.date
+                    ORDER BY a.known_as_of DESC, a.active_from DESC
+                ) AS active_window_rank
+            FROM canonical_data.assortment_calendar AS a
+            JOIN canonical_data.stores AS stores
+              ON stores.store_id = a.store_id
+            JOIN canonical_data.calendar AS calendar
+              ON calendar.market_id = stores.market_id
+             AND calendar.date >= a.active_from
+             AND (
+                    a.active_to IS NULL
+                    OR calendar.date <= a.active_to
+                 )
+        )
+        SELECT
+            active.sku_id,
+            active.store_id,
+            active.channel_id,
+            active.date,
+            1::INTEGER AS sales_version,
+            0::BIGINT AS units,
+            0::BIGINT AS gross_sales_amount,
+            0::BIGINT AS discount_amount,
+            0::BIGINT AS net_sales_amount,
+            0::BIGINT AS tax_amount,
+            active.currency_code,
+            NULL::BIGINT AS net_price,
+            false::BOOLEAN AS promo_flag,
+            active.known_as_of,
+            active.known_as_of_evidence_grade
+        FROM active_dates AS active
+        ANTI JOIN canonical_data.sales AS observed
+          ON observed.sku_id = active.sku_id
+         AND observed.store_id = active.store_id
+         AND observed.channel_id = active.channel_id
+         AND observed.date = active.date
+         AND observed.sales_version = 1
+        WHERE active.active_window_rank = 1
+        """
+    )
+
+
 def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
     connection.execute("CREATE SCHEMA canonical_data")
 
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.products AS
         SELECT
             concat(market_id, ':', sku_source_key)::VARCHAR AS sku_id,
@@ -111,7 +181,11 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             product_name::VARCHAR AS product_name,
             brand::VARCHAR AS brand,
             NULL::INTEGER AS shelf_life_days,
-            round(reference_price_major * 100)::BIGINT AS reference_cost,
+            {
+                exact_minor_sql(
+                    "reference_price_major", "currency_code"
+                )
+            } AS reference_cost,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.products
@@ -184,31 +258,98 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         GROUP BY market_id, channel_source_key
         """
     )
+    gross_minor = exact_minor_sql("m.gross_amount_major", "m.currency_code")
+    discount_minor = exact_minor_sql(
+        "m.discount_amount_major", "m.currency_code"
+    )
+    net_minor = exact_minor_sql("m.net_amount_major", "m.currency_code")
+    tax_minor = exact_minor_sql("m.tax_amount_major", "m.currency_code")
+    fulfilled_units = "least(m.units, f.fulfilled_units)"
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.sales AS
+        WITH fulfillment_by_line AS (
+            SELECT
+                source_instance,
+                source_sale_id,
+                source_line_id,
+                sum(units)::BIGINT AS fulfilled_units,
+                max(known_as_of) AS known_as_of,
+                arg_max(evidence_grade, known_as_of)::VARCHAR
+                    AS evidence_grade
+            FROM stage.stage_data.fulfillment
+            GROUP BY source_instance, source_sale_id, source_line_id
+        ),
+        fulfilled_line_facts AS (
+            SELECT
+                m.*,
+                m.units::BIGINT AS ordered_units,
+                {fulfilled_units}::BIGINT AS fulfilled_units,
+                {gross_minor}::HUGEINT AS gross_minor,
+                {discount_minor}::HUGEINT AS discount_minor,
+                {net_minor}::HUGEINT AS net_minor,
+                {tax_minor}::HUGEINT AS tax_minor,
+                f.known_as_of AS fulfilled_known_as_of,
+                f.evidence_grade AS fulfilled_evidence_grade
+            FROM stage.stage_data.merchandise AS m
+            JOIN fulfillment_by_line AS f
+              ON f.source_instance = m.source_instance
+             AND f.source_sale_id = m.source_sale_id
+             AND f.source_line_id = m.source_line_id
+            WHERE m.units > 0 AND f.fulfilled_units > 0
+        ),
+        allocated AS (
+            SELECT
+                *,
+                {
+                    allocated_minor_sql(
+                        "gross_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS fulfilled_gross_minor,
+                {
+                    allocated_minor_sql(
+                        "discount_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS fulfilled_discount_minor,
+                {
+                    allocated_minor_sql(
+                        "net_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS fulfilled_net_minor,
+                {
+                    allocated_minor_sql(
+                        "tax_minor", "fulfilled_units", "ordered_units"
+                    )
+                }::BIGINT AS fulfilled_tax_minor
+            FROM fulfilled_line_facts
+        )
         SELECT
             concat(m.market_id, ':', m.sku_source_key)::VARCHAR AS sku_id,
             concat(m.market_id, ':', x.canonical_location_key)::VARCHAR AS store_id,
             concat(m.market_id, ':', m.channel_source_key)::VARCHAR AS channel_id,
             m.business_date::DATE AS date,
             1::INTEGER AS sales_version,
-            sum(units)::BIGINT AS units,
-            sum(round(gross_amount_major * 100))::BIGINT AS gross_sales_amount,
-            sum(round(discount_amount_major * 100))::BIGINT AS discount_amount,
-            sum(round(net_amount_major * 100))::BIGINT AS net_sales_amount,
-            sum(round(tax_amount_major * 100))::BIGINT AS tax_amount,
+            sum(fulfilled_units)::BIGINT AS units,
+            sum(fulfilled_gross_minor)::BIGINT AS gross_sales_amount,
+            sum(fulfilled_discount_minor)::BIGINT AS discount_amount,
+            sum(fulfilled_net_minor)::BIGINT AS net_sales_amount,
+            sum(fulfilled_tax_minor)::BIGINT AS tax_amount,
             m.currency_code::VARCHAR AS currency_code,
-            CASE WHEN sum(units) = 0 THEN 0
-                ELSE round(sum(round(net_amount_major * 100)) / sum(units))
+            CASE WHEN sum(fulfilled_units) = 0 THEN 0
+                ELSE (
+                    sum(fulfilled_net_minor)
+                    + sum(fulfilled_units) // 2
+                ) // sum(fulfilled_units)
             END::BIGINT AS net_price,
             bool_or(
                 promo_source_key IS NOT NULL
                 AND promo_source_key NOT IN ('', '[]')
             )::BOOLEAN AS promo_flag,
-            max(known_as_of) AS known_as_of,
-            'native_processed'::VARCHAR AS known_as_of_evidence_grade
-        FROM stage.stage_data.merchandise AS m
+            max(fulfilled_known_as_of) AS known_as_of,
+            arg_max(
+                fulfilled_evidence_grade, fulfilled_known_as_of
+            )::VARCHAR AS known_as_of_evidence_grade
+        FROM allocated AS m
         JOIN stage.stage_data.location_crosswalk AS x
           ON x.source_system = m.source_system
          AND x.market_id = m.market_id
@@ -237,9 +378,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
                 ELSE 'financial_refund'
             END::VARCHAR AS event_type,
             abs(units)::BIGINT AS units,
-            CASE WHEN amount_major IS NULL THEN NULL
-                ELSE round(amount_major * 100)::BIGINT
-            END AS amount,
+            amount_minor::BIGINT AS amount,
             currency_code::VARCHAR AS currency_code,
             reason_code::VARCHAR AS reason_code,
             known_as_of,
@@ -249,7 +388,8 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
           ON x.source_system = a.source_system
          AND x.market_id = a.market_id
          AND x.source_location_key = a.demand_location_source_key
-        WHERE abs(a.units) > 0
+        WHERE coalesce(abs(a.units), 0) > 0
+           OR coalesce(a.amount_minor, 0) > 0
         """
     )
     connection.execute(
@@ -324,19 +464,21 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         """
     )
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.sell_prices AS
         SELECT
             concat(p.market_id, ':', p.sku_source_key)::VARCHAR AS sku_id,
             s.store_id,
             c.channel_id,
             date_trunc('week', p.effective_date)::DATE AS week_start,
-            round(p.price_major * 100)::BIGINT AS net_price,
-            round(p.price_major * 100)::BIGINT AS regular_price,
+            {exact_minor_sql("p.price_major", "p.currency_code")}
+                AS net_price,
+            {exact_minor_sql("p.price_major", "p.currency_code")}
+                AS regular_price,
             CASE WHEN lower(coalesce(p.price_reason, '')) LIKE '%promo%'
                       OR lower(coalesce(p.price_reason, '')) LIKE '%clear%'
                       OR lower(coalesce(p.price_reason, '')) LIKE '%sale%'
-                THEN round(p.price_major * 100)::BIGINT
+                THEN {exact_minor_sql("p.price_major", "p.currency_code")}
                 ELSE NULL
             END AS promo_price,
             p.currency_code,
@@ -359,30 +501,80 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
     connection.execute(
         """
         CREATE TABLE canonical_data.stock_snapshots AS
+        WITH inventory_boundary AS (
+            SELECT market_id, max(snapshot_date) AS snapshot_date
+            FROM stage.stage_data.inventory
+            GROUP BY market_id
+        ),
+        current_in_transit AS (
+            SELECT
+                s.market_id,
+                s.sku_source_key,
+                x.canonical_location_key,
+                sum(s.qty)::BIGINT AS units
+            FROM stage.stage_data.inbound_shipments AS s
+            JOIN stage.stage_data.location_crosswalk AS x
+              ON x.source_system = 'businessCentral'
+             AND x.market_id = s.market_id
+             AND x.source_location_key = s.to_location_source_key
+            WHERE replace(lower(s.status), ' ', '_') IN (
+                'in_transit', 'dispatched', 'shipped'
+            )
+            GROUP BY s.market_id, s.sku_source_key, x.canonical_location_key
+        )
         SELECT
             concat(i.market_id, ':', i.sku_source_key)::VARCHAR AS sku_id,
             concat(i.market_id, ':', x.canonical_location_key)::VARCHAR
                 AS location_id,
-            snapshot_date::DATE AS snapshot_date,
+            i.snapshot_date::DATE AS snapshot_date,
             on_hand_units::BIGINT AS on_hand_units,
-            incoming_units::BIGINT AS on_order_units,
+            CASE
+                WHEN i.snapshot_date = boundary.snapshot_date
+                THEN greatest(
+                    i.incoming_units
+                    - least(
+                        i.incoming_units,
+                        coalesce(transit.units, 0)
+                    ),
+                    0
+                )
+                ELSE i.incoming_units
+            END::BIGINT AS on_order_units,
             committed_units::BIGINT AS committed_units,
-            (reserved_units + quality_control_units)::BIGINT AS reserved_units,
+            (
+                reserved_units
+                + quality_control_units
+                + safety_stock_units
+            )::BIGINT AS reserved_units,
             damaged_units::BIGINT AS damaged_units,
-            0::BIGINT AS in_transit_units,
+            CASE
+                WHEN i.snapshot_date = boundary.snapshot_date
+                THEN least(
+                    i.incoming_units,
+                    coalesce(transit.units, 0)
+                )
+                ELSE 0
+            END::BIGINT AS in_transit_units,
             greatest(
                 0,
                 on_hand_units - committed_units - reserved_units
-                    - quality_control_units - damaged_units
+                    - quality_control_units - safety_stock_units
+                    - damaged_units
             )::BIGINT AS atp_units,
             'derived_buckets'::VARCHAR AS atp_method,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.inventory AS i
+        JOIN inventory_boundary AS boundary
+          ON boundary.market_id = i.market_id
         JOIN stage.stage_data.location_crosswalk AS x
           ON x.source_system = i.source_system
          AND x.market_id = i.market_id
          AND x.source_location_key = i.location_source_key
+        LEFT JOIN current_in_transit AS transit
+          ON transit.market_id = i.market_id
+         AND transit.sku_source_key = i.sku_source_key
+         AND transit.canonical_location_key = x.canonical_location_key
         """
     )
     connection.execute(
@@ -435,6 +627,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         WHERE coalesce(try_cast(a.active_raw AS BOOLEAN), true)
         """
     )
+    _densify_sales(connection)
     connection.execute(
         """
         CREATE TABLE canonical_data.customer_segments AS
@@ -462,7 +655,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         SELECT
             base_ccy,
             quote_ccy,
-            try_cast(rate_raw AS DECIMAL(38, 12)) AS rate,
+            try_cast(rate_raw AS DECIMAL(38, 18)) AS rate,
             try_cast(rate_date_raw AS DATE) AS rate_date,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
@@ -497,7 +690,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
 
 def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.purchase_receipts AS
         SELECT
             concat(r.market_id, ':', r.source_receipt_id)::VARCHAR AS receipt_id,
@@ -507,7 +700,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             concat(r.market_id, ':', r.supplier_source_key)::VARCHAR AS supplier_id,
             r.receipt_date::DATE AS receipt_date,
             r.qty::BIGINT AS qty,
-            round(unit_cost_major * 100)::BIGINT AS unit_cost,
+            {exact_minor_sql("unit_cost_major", "currency_code")} AS unit_cost,
             currency_code,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
@@ -611,7 +804,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         """
     )
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.competitor_prices AS
         SELECT
             p.market_id, p.competitor_id::VARCHAR AS comp_id,
@@ -627,7 +820,12 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
                 ELSE p.geo_scope_id
             END::VARCHAR AS geo_scope_id,
             try_cast(p.observed_at_raw AS TIMESTAMPTZ) AS observed_at,
-            round(try_cast(p.price_raw AS DECIMAL(38, 6)) * 100)::BIGINT AS price,
+            {
+                exact_minor_sql(
+                    "try_cast(p.price_raw AS DECIMAL(38, 6))",
+                    "p.currency_code",
+                )
+            } AS price,
             p.currency_code,
             coalesce(try_cast(p.available_raw AS BOOLEAN), false) AS in_stock_flag,
             (p.promotion_text IS NOT NULL AND p.promotion_text <> '')::BOOLEAN
@@ -667,7 +865,9 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             try_cast(start_date_raw AS DATE) AS start_date,
             try_cast(end_date_raw AS DATE) AS end_date,
             segment_ids::VARCHAR AS segment_id,
-            CASE WHEN current_date BETWEEN try_cast(start_date_raw AS DATE)
+            CASE WHEN (
+                    SELECT max(date) FROM canonical_data.calendar
+                 ) BETWEEN try_cast(start_date_raw AS DATE)
                 AND try_cast(end_date_raw AS DATE)
                 THEN 'active' ELSE 'historical' END::VARCHAR AS status,
             known_as_of,
@@ -710,30 +910,61 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         """
     )
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.inventory_cost AS
+        WITH cost_layers AS (
+            SELECT
+                c.*,
+                {
+                    exact_minor_sql(
+                        "c.unit_cost_major", "c.currency_code"
+                    )
+                }::HUGEINT AS unit_cost_minor
+            FROM stage.stage_data.inventory_cost AS c
+        ),
+        weighted AS (
+            SELECT
+                c.market_id,
+                c.sku_source_key,
+                x.canonical_location_key,
+                c.as_of_date,
+                c.currency_code,
+                sum(
+                    c.unit_cost_minor * greatest(c.quantity, 0)
+                )::HUGEINT AS weighted_minor,
+                sum(greatest(c.quantity, 0))::HUGEINT AS positive_quantity,
+                sum(c.quantity)::BIGINT AS on_hand_qty,
+                any_value(c.method)::VARCHAR AS method,
+                max(c.known_as_of) AS known_as_of
+            FROM cost_layers AS c
+            JOIN stage.stage_data.location_crosswalk AS x
+              ON x.source_system = c.source_system
+             AND x.market_id = c.market_id
+             AND x.source_location_key = c.location_source_key
+            GROUP BY
+                c.market_id,
+                c.sku_source_key,
+                x.canonical_location_key,
+                c.as_of_date,
+                c.currency_code
+        )
         SELECT
             concat(c.market_id, ':', c.sku_source_key)::VARCHAR AS sku_id,
-            concat(c.market_id, ':', x.canonical_location_key)::VARCHAR
+            concat(c.market_id, ':', c.canonical_location_key)::VARCHAR
                 AS location_id,
             c.as_of_date,
-            round(
-                sum(c.unit_cost_major * greatest(c.quantity, 0))
-                / nullif(sum(greatest(c.quantity, 0)), 0)
-                * 100
-            )::BIGINT AS wac_cost,
+            CASE
+                WHEN c.positive_quantity = 0 THEN NULL
+                ELSE (
+                    c.weighted_minor + c.positive_quantity // 2
+                ) // c.positive_quantity
+            END::BIGINT AS wac_cost,
             c.currency_code,
-            sum(c.quantity)::BIGINT AS on_hand_qty,
-            any_value(c.method)::VARCHAR AS method,
-            max(c.known_as_of) AS known_as_of,
+            c.on_hand_qty,
+            c.method,
+            c.known_as_of,
             'native_posted_available'::VARCHAR AS known_as_of_evidence_grade
-        FROM stage.stage_data.inventory_cost AS c
-        JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = c.source_system
-         AND x.market_id = c.market_id
-         AND x.source_location_key = c.location_source_key
-        GROUP BY c.market_id, c.sku_source_key, x.canonical_location_key,
-                 c.as_of_date, c.currency_code
+        FROM weighted AS c
         """
     )
     connection.execute(
@@ -1028,6 +1259,7 @@ def build_canonical_candidate(
         connection.execute(
             f"SET memory_limit = '{max(1, int(execution_profile['memoryLimitGb']))}GB'"
         )
+        connection.execute("SET TimeZone = 'UTC'")
         connection.execute(
             f"ATTACH {_sql_string(str(source))} AS stage (READ_ONLY)"
         )

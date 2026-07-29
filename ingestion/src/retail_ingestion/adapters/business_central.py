@@ -9,7 +9,7 @@ from .registry import register_adapter
 @register_adapter
 class BusinessCentralAdapter(SourceAdapter):
     source_system = "businessCentral"
-    adapter_version = "business-central-adapter/1.0.0"
+    adapter_version = "business-central-adapter/1.1.0"
     raw_schema = "raw_business_central"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -41,8 +41,12 @@ class BusinessCentralAdapter(SourceAdapter):
                 '{self.adapter_version}'::VARCHAR AS adapter_version,
                 sku::VARCHAR AS sku_source_key,
                 locationCode::VARCHAR AS location_source_key,
-                cast(try_cast(observedAt AS TIMESTAMPTZ) AS DATE)
-                    AS snapshot_date,
+                cast(
+                    timezone(
+                        _business_timezone,
+                        try_cast(observedAt AS TIMESTAMPTZ)
+                    ) AS DATE
+                ) AS snapshot_date,
                 try_cast(inventory AS BIGINT) AS on_hand_units,
                 try_cast(incomingInventory AS BIGINT) AS incoming_units,
                 try_cast(committedInventory AS BIGINT) AS committed_units,
@@ -78,7 +82,12 @@ class BusinessCentralAdapter(SourceAdapter):
                 rl.sku::VARCHAR AS sku_source_key,
                 r.locationCode::VARCHAR AS location_source_key,
                 po.vendorId::VARCHAR AS supplier_source_key,
-                try_cast(r.postingDate AS DATE) AS receipt_date,
+                cast(
+                    timezone(
+                        r._business_timezone,
+                        try_cast(r.postingDate AS TIMESTAMPTZ)
+                    ) AS DATE
+                ) AS receipt_date,
                 try_cast(rl.quantity AS BIGINT) AS qty,
                 try_cast(rl.unitCost AS DECIMAL(38, 6)) AS unit_cost_major,
                 rl.currencyCode::VARCHAR AS currency_code,
@@ -312,8 +321,12 @@ class BusinessCentralAdapter(SourceAdapter):
             SELECT
                 _source_instance AS source_instance, _market_id AS market_id,
                 warehouseId::VARCHAR AS location_source_key,
-                cast(try_cast(observedAt AS TIMESTAMPTZ) AS DATE)
-                    AS snapshot_date,
+                cast(
+                    timezone(
+                        _business_timezone,
+                        try_cast(observedAt AS TIMESTAMPTZ)
+                    ) AS DATE
+                ) AS snapshot_date,
                 try_cast(capacityUnits AS BIGINT) AS capacity_units,
                 try_cast(onHandUnits AS BIGINT) AS used_units,
                 try_cast(blockedUnits AS BIGINT) AS blocked_units,
@@ -329,8 +342,12 @@ class BusinessCentralAdapter(SourceAdapter):
                 _source_instance AS source_instance, _market_id AS market_id,
                 sku::VARCHAR AS sku_source_key,
                 warehouseId::VARCHAR AS location_source_key,
-                cast(try_cast(observedAt AS TIMESTAMPTZ) AS DATE)
-                    AS snapshot_date,
+                cast(
+                    timezone(
+                        _business_timezone,
+                        try_cast(observedAt AS TIMESTAMPTZ)
+                    ) AS DATE
+                ) AS snapshot_date,
                 try_cast(erpOnHand AS BIGINT) AS erp_on_hand_units,
                 try_cast(wmsOnHand AS BIGINT) AS wms_on_hand_units,
                 try_cast(varianceQuantity AS BIGINT) AS difference_units,

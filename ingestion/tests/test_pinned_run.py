@@ -22,7 +22,9 @@ RUN_ROOT = (
     / "run-34b0ff729c8abe09"
 )
 MANIFEST = RUN_ROOT / "source-run-manifest.json"
-PIPELINE_ROOT = REPO_ROOT / "ingestion" / "data" / "work" / "run-34b0ff729c8abe09"
+EVIDENCE_ROOT = (
+    REPO_ROOT / "ingestion" / "data" / "evidence" / "run-34b0ff729c8abe09"
+)
 CURATED_ROOT = (
     REPO_ROOT / "ingestion" / "data" / "curated" / "run-34b0ff729c8abe09"
 )
@@ -113,10 +115,10 @@ def test_phase2_pin_controls_are_exact() -> None:
 @pytest.mark.pinned_run
 def test_phase2_pipeline_gate_and_publication_evidence() -> None:
     gate_a = json.loads(
-        (PIPELINE_ROOT / "gate-a.json").read_text(encoding="utf-8")
+        (EVIDENCE_ROOT / "gate-a.json").read_text(encoding="utf-8")
     )
     gate_b = json.loads(
-        (PIPELINE_ROOT / "gate-b.json").read_text(encoding="utf-8")
+        (EVIDENCE_ROOT / "gate-b.json").read_text(encoding="utf-8")
     )
     publication = json.loads(
         (CURATED_ROOT / "publication-manifest.json").read_text(encoding="utf-8")
@@ -130,10 +132,44 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
     assert next(
         rule for rule in gate_b["rules"] if rule["ruleId"] == "B18"
     )["outcome"] == "pass"
+    b03 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B03")
+    assert b03["outcome"] == "pass"
+    assert b03["evidence"] == {
+        "activeAssortmentDates": 4_565_498,
+        "dateGapPolicy": "distinct_daily_row_inside_active_assortment_v1",
+        "missingActiveDates": 0,
+        "positiveSalesOutsideAssortment": 0,
+        "zeroSalesRows": 2_228_133,
+    }
+    b15 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B15")
+    assert b15["evidence"]["staleIntervals"] == 844
+    b21 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B21")
+    assert b21["evidence"]["affectedEntities"]["sales"] == 2_228_133
+    b16 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B16")
+    assert b16["evidence"]["fulfillmentAggregateMismatches"] == 0
+    assert b16["evidence"]["overfulfilledLines"] == 0
+    b17 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B17")
+    assert b17["evidence"]["controls"] == [
+        {
+            "amountMinor": 458_825_950_637,
+            "eventType": "financial_refund",
+            "rows": 452_327,
+            "units": 0,
+        },
+        {
+            "amountMinor": 0,
+            "eventType": "physical_return",
+            "rows": 476_062,
+            "units": 476_062,
+        },
+    ]
     assert all(
         row["difference"] == [0, 0, 0, 0]
         for row in gate_b["reconciliation"]
     )
     assert len(publication["entityCounts"]) == 40
-    assert len(publication["objects"]) == 1_314
+    assert publication["entityCounts"]["sales"] == 4_565_498
+    object_paths = [row["path"] for row in publication["objects"]]
+    assert len(object_paths) >= len(publication["entityCounts"])
+    assert len(object_paths) == len(set(object_paths))
     assert (CURATED_ROOT / "retail_v2.duckdb").is_file()

@@ -5,11 +5,16 @@ import (
 
 	"github.com/nilshah80/aarv"
 	"github.com/nilshah80/aarv/plugins/cors"
+	openapiui "github.com/nilshah80/aarv/plugins/openapi-ui"
 	"github.com/nilshah80/retail-intelligence/api/internal/execution"
 	"github.com/nilshah80/retail-intelligence/api/internal/readmodel"
 )
 
-func New(store *readmodel.Store, profile execution.Resolved) *aarv.App {
+func New(
+	store *readmodel.Store,
+	profile execution.Resolved,
+	openAPISpec []byte,
+) (*aarv.App, error) {
 	app := aarv.New(aarv.WithBanner(false))
 	permits := make(chan struct{}, profile.API.HTTPConcurrency)
 	app.Use(cors.New(cors.Config{
@@ -47,5 +52,20 @@ func New(store *readmodel.Store, profile execution.Resolved) *aarv.App {
 	app.Get("/api/v1/data-management/quality-findings", func(c *aarv.Context) error {
 		return c.JSON(http.StatusOK, store.QualityFindings())
 	})
-	return app
+	app.Get("/openapi.yaml", func(c *aarv.Context) error {
+		return c.Blob(
+			http.StatusOK,
+			"application/yaml; charset=utf-8",
+			openAPISpec,
+		)
+	})
+	if err := openapiui.Mount(app, openapiui.Config{
+		SpecURL:     "/openapi.yaml",
+		Title:       "Retail Intelligence API",
+		SwaggerPath: "/docs",
+		ReDocPath:   "/redoc",
+	}); err != nil {
+		return nil, err
+	}
+	return app, nil
 }

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from retail_ingestion.readers.catalog import sql_identifier, sql_string
+
 from .base import AdapterContext, SourceAdapter, snake_case
 from .registry import register_adapter
 
@@ -9,8 +11,62 @@ from .registry import register_adapter
 @register_adapter
 class CompanionAdapter(SourceAdapter):
     source_system = "companion"
-    adapter_version = "companion-adapter/1.0.0"
+    adapter_version = "companion-adapter/1.1.0"
     raw_schema = "raw_companion"
+
+    _natural_key_fields = {
+        "allocationDemandRequests": ("requestKey",),
+        "allocationSupplyPools": ("poolKey",),
+        "competitorMatches": ("matchKey",),
+        "competitorPrices": (
+            "competitorId",
+            "competitorSku",
+            "targetType",
+            "targetId",
+            "validDate",
+        ),
+        "customerSegments": ("segmentId",),
+        "fxRates": ("baseCurrency", "quoteCurrency", "rateDate", "rateType"),
+        "holidays": ("date", "name", "targetType", "targetId"),
+        "localEvents": ("eventId",),
+        "macroIndex": ("indexName", "targetType", "targetId", "validDate"),
+        "pandemicSignals": ("validDate", "pandemicIds", "phaseIds"),
+        "pandemicTimeline": ("pandemicId", "phaseId"),
+        "promotionSkus": (
+            "promotionId",
+            "sku",
+            "departmentId",
+            "categoryId",
+            "effectiveFrom",
+        ),
+        "promotions": ("promotionId",),
+        "storeAssortment": ("sku", "storeKey", "validFrom"),
+        "weatherActuals": ("targetType", "targetId", "validDate"),
+        "weatherForecasts": (
+            "provider",
+            "targetType",
+            "targetId",
+            "issuedAt",
+            "validDate",
+        ),
+    }
+    _effective_fields = {
+        "allocationDemandRequests": "requestDate",
+        "allocationSupplyPools": "snapshotDate",
+        "competitorMatches": "effectiveFrom",
+        "competitorPrices": "validDate",
+        "fxRates": "rateDate",
+        "holidays": "date",
+        "localEvents": "startDate",
+        "macroIndex": "validDate",
+        "pandemicSignals": "validDate",
+        "pandemicTimeline": "startDate",
+        "promotionSkus": "effectiveFrom",
+        "promotions": "startDate",
+        "storeAssortment": "validFrom",
+        "weatherActuals": "validDate",
+        "weatherForecasts": "validDate",
+    }
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
         """Materialize source-typed companion tables with a common envelope.
@@ -35,6 +91,7 @@ class CompanionAdapter(SourceAdapter):
             "weatherActuals": "observedAt",
             "weatherForecasts": "issuedAt",
         }
+        staged_datasets: dict[str, str] = {}
         for ref in context.catalog.for_source(self.source_system):
             if ref.artifact_format not in {"parquet", "csv"}:
                 continue
@@ -83,6 +140,120 @@ class CompanionAdapter(SourceAdapter):
                 """
             )
             created.append(f"stage_data.{stage_name}")
+            staged_datasets[dataset] = stage_name
+
+        signal_selects: list[str] = []
+        common_columns = {
+            "source_system",
+            "source_instance",
+            "source_schema_version",
+            "source_snapshot_id",
+            "native_snapshot_id",
+            "market_id",
+            "known_as_of",
+            "evidence_grade",
+            "row_provenance",
+            "raw_object_hash",
+            "profile_version",
+            "adapter_version",
+            "raw_object_path",
+        }
+        for dataset, stage_name in sorted(staged_datasets.items()):
+            columns = tuple(
+                str(row[0])
+                for row in con.execute(
+                    f"DESCRIBE stage_data.{sql_identifier(stage_name)}"
+                ).fetchall()
+            )
+            business_columns = tuple(
+                column for column in columns if column not in common_columns
+            )
+            if not business_columns:
+                continue
+            payload_fields = ", ".join(
+                f"{sql_identifier(column)} := {sql_identifier(column)}"
+                for column in business_columns
+            )
+            payload = f"to_json(struct_pack({payload_fields}))"
+            key_fields = self._natural_key_fields.get(dataset, business_columns)
+            missing_keys = sorted(set(key_fields) - set(columns))
+            if missing_keys:
+                raise RuntimeError(
+                    f"dimension signal key fields are absent for {dataset}: "
+                    + ", ".join(missing_keys)
+                )
+            natural_key = "concat_ws('|', source_instance, " + ", ".join(
+                [sql_string(dataset)]
+                + [
+                    f"coalesce(cast({sql_identifier(field)} AS VARCHAR), '')"
+                    for field in key_fields
+                ]
+            ) + ")"
+            effective_field = self._effective_fields.get(dataset)
+            effective_at = (
+                f"coalesce(try_cast({sql_identifier(effective_field)} "
+                "AS TIMESTAMPTZ), known_as_of)"
+                if effective_field
+                else "known_as_of"
+            )
+            geo_scope_type = (
+                "cast(targetType AS VARCHAR)"
+                if {"targetType", "targetId"} <= set(columns)
+                else "NULL::VARCHAR"
+            )
+            geo_scope_id = (
+                "cast(targetId AS VARCHAR)"
+                if {"targetType", "targetId"} <= set(columns)
+                else "NULL::VARCHAR"
+            )
+            if dataset == "promotionSkus":
+                merch_scope_type = (
+                    "CASE WHEN nullif(sku, '') IS NOT NULL THEN 'sku' "
+                    "WHEN nullif(departmentId, '') IS NOT NULL THEN 'dept' "
+                    "ELSE 'category' END::VARCHAR"
+                )
+                merch_scope_id = (
+                    "coalesce(nullif(sku, ''), nullif(departmentId, ''), "
+                    "categoryId)::VARCHAR"
+                )
+            elif "sku" in columns:
+                merch_scope_type = "'sku'::VARCHAR"
+                merch_scope_id = "cast(sku AS VARCHAR)"
+            else:
+                merch_scope_type = "NULL::VARCHAR"
+                merch_scope_id = "NULL::VARCHAR"
+            channel_source_key = (
+                "cast(channelId AS VARCHAR)"
+                if "channelId" in columns
+                else "NULL::VARCHAR"
+            )
+            signal_selects.append(
+                f"""
+                SELECT
+                    source_system, source_instance, source_schema_version,
+                    source_snapshot_id, native_snapshot_id,
+                    sha256({natural_key})::VARCHAR AS native_record_id,
+                    market_id, known_as_of, evidence_grade, row_provenance,
+                    raw_object_hash, profile_version, adapter_version,
+                    {sql_string(dataset)}::VARCHAR AS entity_kind,
+                    {natural_key}::VARCHAR AS natural_key,
+                    {effective_at} AS effective_at,
+                    {payload}::JSON AS payload,
+                    {geo_scope_type} AS geo_scope_type,
+                    {geo_scope_id} AS geo_scope_id,
+                    {merch_scope_type} AS merch_scope_type,
+                    {merch_scope_id} AS merch_scope_id,
+                    {channel_source_key} AS channel_source_key,
+                    raw_object_path
+                FROM stage_data.{sql_identifier(stage_name)}
+                """
+            )
+        if signal_selects:
+            con.execute(
+                "CREATE OR REPLACE TABLE stage_data.companion_dimension_signal AS "
+                + " UNION ALL ".join(signal_selects)
+            )
+            created.append("stage_data.companion_dimension_signal")
         return tuple(created)
 
 

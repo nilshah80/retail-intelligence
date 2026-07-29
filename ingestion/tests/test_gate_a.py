@@ -76,8 +76,12 @@ def _write_profile(
                 "marketId": "fixture-market",
                 "currencyCode": "USD",
                 "timezone": "UTC",
+                "capabilities": ["commerce"],
             }
         ],
+        "publicationRequirements": {
+            "requiredCapabilities": ["commerce"]
+        },
         "authenticity": {"mode": "not_required_for_snapshot"},
         "datasets": datasets,
     }

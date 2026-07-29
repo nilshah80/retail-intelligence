@@ -34,36 +34,44 @@ sourceInstances:
     marketId: india-mumbai
     currencyCode: INR
     timezone: Asia/Kolkata
+    capabilities: [commerce]
   - sourceSystem: shopify
     sourceInstance: northstar-us
     logicalPathPrefix: shopify/northstar-us/
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
+    capabilities: [commerce]
   - sourceSystem: businessCentral
     sourceInstance: bc-northstar-in
     logicalPathPrefix: business-central/bc-northstar-in/
     marketId: india-mumbai
     currencyCode: INR
     timezone: Asia/Kolkata
+    capabilities: [operations]
   - sourceSystem: businessCentral
     sourceInstance: bc-northstar-us
     logicalPathPrefix: business-central/bc-northstar-us/
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
+    capabilities: [operations]
   - sourceSystem: companion
     sourceInstance: india-mumbai
     logicalPathPrefix: companion/india-mumbai/
     marketId: india-mumbai
     currencyCode: INR
     timezone: Asia/Kolkata
+    capabilities: [external_signals]
   - sourceSystem: companion
     sourceInstance: us-new-york
     logicalPathPrefix: companion/us-new-york/
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
+    capabilities: [external_signals]
+publicationRequirements:
+  requiredCapabilities: [commerce, operations, external_signals]
 authenticity:
   mode: not_required_for_snapshot
 datasets:

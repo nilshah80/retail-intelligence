@@ -43,6 +43,26 @@ def test_shopify_only_stops_as_validated_partial(
             as_dict=lambda: gate_payload,
         ),
     )
+    monkeypatch.setattr(
+        pipeline,
+        "load_source_profile",
+        lambda *args, **kwargs: {
+            "publicationRequirements": {
+                "requiredCapabilities": [
+                    "commerce",
+                    "operations",
+                    "external_signals",
+                ]
+            },
+            "sourceInstances": [
+                {
+                    "sourceSystem": "shopify",
+                    "logicalPathPrefix": "shopify/store/",
+                    "capabilities": ["commerce"],
+                }
+            ],
+        },
+    )
 
     def must_not_run(*args, **kwargs):
         raise AssertionError("partial source coverage must not enter staging")
@@ -65,5 +85,60 @@ def test_shopify_only_stops_as_validated_partial(
         (work / "validated-partial.json").read_text(encoding="utf-8")
     )
     assert evidence["availableSourceSystems"] == ["shopify"]
-    assert evidence["missingSourceSystems"] == ["businessCentral", "companion"]
+    assert evidence["availableCapabilities"] == ["commerce"]
+    assert evidence["missingCapabilities"] == [
+        "external_signals",
+        "operations",
+    ]
     assert evidence["publicationBlocked"] is True
+
+
+def test_alternate_erp_can_satisfy_operations_capability() -> None:
+    profile = {
+        "publicationRequirements": {
+            "requiredCapabilities": [
+                "commerce",
+                "operations",
+                "external_signals",
+            ]
+        },
+        "sourceInstances": [
+            {
+                "sourceSystem": "shopify",
+                "logicalPathPrefix": "shopify/store/",
+                "capabilities": ["commerce"],
+            },
+            {
+                "sourceSystem": "sap",
+                "logicalPathPrefix": "sap/company/",
+                "capabilities": ["operations"],
+            },
+            {
+                "sourceSystem": "weatherVendor",
+                "logicalPathPrefix": "external/weather/",
+                "capabilities": ["external_signals"],
+            },
+        ],
+    }
+    inventory = [
+        {
+            "sourceSystem": "shopify",
+            "logicalPath": "shopify/store/orders",
+        },
+        {
+            "sourceSystem": "sap",
+            "logicalPath": "sap/company/inventory",
+        },
+        {
+            "sourceSystem": "weatherVendor",
+            "logicalPath": "external/weather/daily",
+        },
+    ]
+
+    available, missing, sources = pipeline._publication_coverage(
+        profile, inventory
+    )
+
+    assert available == ["commerce", "external_signals", "operations"]
+    assert missing == []
+    assert sources == ["sap", "shopify", "weatherVendor"]

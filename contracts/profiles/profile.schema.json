@@ -18,7 +18,8 @@
     "mappingReferences",
     "sourceInstances",
     "authenticity",
-    "datasets"
+    "datasets",
+    "publicationRequirements"
   ],
   "properties": {
     "schemaVersion": {"const": "retail-source-profile/v1"},
@@ -120,7 +121,8 @@
           "logicalPathPrefix",
           "marketId",
           "currencyCode",
-          "timezone"
+          "timezone",
+          "capabilities"
         ],
         "properties": {
           "sourceSystem": {"type": "string", "minLength": 1},
@@ -128,7 +130,32 @@
           "logicalPathPrefix": {"type": "string", "minLength": 1},
           "marketId": {"type": "string", "minLength": 1},
           "currencyCode": {"type": "string", "pattern": "^[A-Z]{3}$"},
-          "timezone": {"type": "string", "minLength": 1}
+          "timezone": {"type": "string", "minLength": 1},
+          "capabilities": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          }
+        }
+      }
+    },
+    "publicationRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredCapabilities"],
+      "properties": {
+        "requiredCapabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
         }
       }
     },

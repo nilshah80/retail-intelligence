@@ -56,4 +56,7 @@ allowed model floating-point tolerance is explicit and tested rather than assume
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.
 
-_No code yet — information only._
+The isolated package and import-boundary test are scaffolded. Model, feature and engine
+implementation begins in Phase 3 after the required curated capability mask is accepted. The
+current publication enables non-PIT demand work but does not claim point-in-time training
+eligibility for backfilled availability evidence.

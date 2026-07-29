@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from retail_contracts.money_sql import (
+    exact_minor_sql,
+    invalid_minor_sql,
+)
+
 from .base import AdapterContext, SourceAdapter
 from .registry import register_adapter
 
@@ -9,7 +14,7 @@ from .registry import register_adapter
 @register_adapter
 class ShopifyAdapter(SourceAdapter):
     source_system = "shopify"
-    adapter_version = "shopify-adapter/1.0.0"
+    adapter_version = "shopify-adapter/1.1.0"
     raw_schema = "raw_shopify"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -214,6 +219,7 @@ class ShopifyAdapter(SourceAdapter):
                 '{self.adapter_version}'::VARCHAR AS adapter_version,
                 fl.id::VARCHAR AS source_fulfillment_line_id,
                 f.orderId::VARCHAR AS source_sale_id,
+                fl.orderLineId::VARCHAR AS source_line_id,
                 fl.sku::VARCHAR AS sku_source_key,
                 o.locationId::VARCHAR AS demand_location_source_key,
                 o.channelId::VARCHAR AS channel_source_key,
@@ -240,55 +246,206 @@ class ShopifyAdapter(SourceAdapter):
             JOIN raw_shopify.orders AS o
               ON o.id = f.orderId
              AND o._source_instance = f._source_instance
+            WHERE upper(f.status) = 'SUCCESS'
             """
         )
 
+        refund_amount = "try_cast(tx.amount AS DECIMAL(38, 6))"
+        refund_minor = exact_minor_sql(refund_amount, "tx.currencyCode")
+        refund_money_invalid = invalid_minor_sql(
+            refund_amount, "tx.currencyCode"
+        )
         con.execute(
             f"""
             CREATE OR REPLACE TABLE stage_data.shopify_adjustment AS
-            SELECT
-                'shopify'::VARCHAR AS source_system,
-                rl._source_instance AS source_instance,
-                '{source_schema_version}'::VARCHAR AS source_schema_version,
-                '{snapshot_id}'::VARCHAR AS source_snapshot_id,
-                {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
-                rl.id::VARCHAR AS native_record_id,
-                rl._market_id AS market_id,
-                coalesce(
-                    try_cast(r.processedAt AS TIMESTAMPTZ),
-                    try_cast(r.requestedAt AS TIMESTAMPTZ)
-                ) AS known_as_of,
-                'native_processed'::VARCHAR AS evidence_grade,
-                'SHOPIFY_ACTUAL'::VARCHAR AS row_provenance,
-                rl._raw_object_hash AS raw_object_hash,
-                '{profile_version}'::VARCHAR AS profile_version,
-                '{self.adapter_version}'::VARCHAR AS adapter_version,
-                rl.id::VARCHAR AS source_event_id,
-                r.id::VARCHAR AS source_parent_event_id,
-                r.orderId::VARCHAR AS source_sale_id,
-                rl.sku::VARCHAR AS sku_source_key,
-                o.locationId::VARCHAR AS demand_location_source_key,
-                o.channelId::VARCHAR AS channel_source_key,
-                cast(try_cast(o.createdAt AS TIMESTAMPTZ) AS DATE) AS sale_date,
-                cast(
+            WITH physical_returns AS (
+                SELECT
+                    'shopify'::VARCHAR AS source_system,
+                    rl._source_instance AS source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    concat(rl.id, ':physical')::VARCHAR AS native_record_id,
+                    rl._market_id AS market_id,
                     coalesce(
                         try_cast(r.processedAt AS TIMESTAMPTZ),
                         try_cast(r.requestedAt AS TIMESTAMPTZ)
-                    ) AS DATE
-                ) AS event_date,
-                'RETURN'::VARCHAR AS event_type,
-                -try_cast(rl.processedQuantity AS BIGINT) AS units,
-                NULL::DECIMAL(38, 6) AS amount_major,
-                o.currencyCode::VARCHAR AS currency_code,
-                r.reason::VARCHAR AS reason_code,
-                rl._raw_object_path AS raw_object_path
-            FROM raw_shopify.return_lines AS rl
-            JOIN raw_shopify.returns AS r
-              ON r.id = rl.returnId
-             AND r._source_instance = rl._source_instance
-            JOIN raw_shopify.orders AS o
-              ON o.id = r.orderId
-             AND o._source_instance = r._source_instance
+                    ) AS known_as_of,
+                    'native_processed'::VARCHAR AS evidence_grade,
+                    'SHOPIFY_ACTUAL'::VARCHAR AS row_provenance,
+                    rl._raw_object_hash AS raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    concat(rl.id, ':physical')::VARCHAR AS source_event_id,
+                    r.id::VARCHAR AS source_parent_event_id,
+                    r.orderId::VARCHAR AS source_sale_id,
+                    rl.sku::VARCHAR AS sku_source_key,
+                    o.locationId::VARCHAR AS demand_location_source_key,
+                    o.channelId::VARCHAR AS channel_source_key,
+                    cast(
+                        timezone(
+                            o._business_timezone,
+                            try_cast(o.createdAt AS TIMESTAMPTZ)
+                        ) AS DATE
+                    ) AS sale_date,
+                    cast(
+                        timezone(
+                            o._business_timezone,
+                            coalesce(
+                                try_cast(r.processedAt AS TIMESTAMPTZ),
+                                try_cast(r.requestedAt AS TIMESTAMPTZ)
+                            )
+                        ) AS DATE
+                    ) AS event_date,
+                    'RETURN'::VARCHAR AS event_type,
+                    try_cast(rl.processedQuantity AS BIGINT) AS units,
+                    NULL::BIGINT AS amount_minor,
+                    NULL::DECIMAL(38, 6) AS amount_major,
+                    NULL::VARCHAR AS currency_code,
+                    true::BOOLEAN AS money_precision_valid,
+                    r.reason::VARCHAR AS reason_code,
+                    rl._raw_object_path AS raw_object_path
+                FROM raw_shopify.return_lines AS rl
+                JOIN raw_shopify.returns AS r
+                  ON r.id = rl.returnId
+                 AND r._source_instance = rl._source_instance
+                JOIN raw_shopify.orders AS o
+                  ON o.id = r.orderId
+                 AND o._source_instance = r._source_instance
+                WHERE try_cast(rl.processedQuantity AS BIGINT) > 0
+            ),
+            refund_line_source AS (
+                SELECT
+                    tx._source_instance AS source_instance,
+                    tx._market_id AS market_id,
+                    tx.id::VARCHAR AS transaction_id,
+                    tx.refundId::VARCHAR AS refund_id,
+                    tx.orderId::VARCHAR AS source_sale_id,
+                    tx.processedAt,
+                    tx.currencyCode::VARCHAR AS currency_code,
+                    tx.gateway::VARCHAR AS gateway,
+                    tx._raw_object_hash AS raw_object_hash,
+                    tx._raw_object_path AS raw_object_path,
+                    rf.returnId::VARCHAR AS return_id,
+                    r.reason::VARCHAR AS return_reason,
+                    rl.id::VARCHAR AS return_line_id,
+                    rl.sku::VARCHAR AS sku_source_key,
+                    greatest(
+                        try_cast(rl.processedQuantity AS BIGINT), 0
+                    )::BIGINT AS line_weight,
+                    o.locationId::VARCHAR AS demand_location_source_key,
+                    o.channelId::VARCHAR AS channel_source_key,
+                    o.createdAt,
+                    o._business_timezone,
+                    {refund_minor}::HUGEINT AS total_amount_minor,
+                    NOT ({refund_money_invalid}) AS money_precision_valid
+                FROM raw_shopify.refund_transactions AS tx
+                JOIN raw_shopify.refunds AS rf
+                  ON rf.id = tx.refundId
+                 AND rf._source_instance = tx._source_instance
+                JOIN raw_shopify.returns AS r
+                  ON r.id = rf.returnId
+                 AND r._source_instance = rf._source_instance
+                JOIN raw_shopify.return_lines AS rl
+                  ON rl.returnId = r.id
+                 AND rl._source_instance = r._source_instance
+                JOIN raw_shopify.orders AS o
+                  ON o.id = tx.orderId
+                 AND o._source_instance = tx._source_instance
+                WHERE upper(tx.status) = 'SUCCESS'
+                  AND upper(tx.kind) = 'REFUND'
+                  AND upper(rf.status) = 'SUCCESS'
+                  AND greatest(
+                        try_cast(rl.processedQuantity AS BIGINT), 0
+                      ) > 0
+            ),
+            refund_weighted AS (
+                SELECT
+                    *,
+                    sum(line_weight) OVER (
+                        PARTITION BY source_instance, transaction_id
+                    )::HUGEINT AS total_weight
+                FROM refund_line_source
+            ),
+            refund_base AS (
+                SELECT
+                    *,
+                    (
+                        total_amount_minor * line_weight
+                    ) // total_weight AS base_minor,
+                    (
+                        total_amount_minor * line_weight
+                    ) % total_weight AS remainder_minor
+                FROM refund_weighted
+            ),
+            refund_ranked AS (
+                SELECT
+                    *,
+                    total_amount_minor - sum(base_minor) OVER (
+                        PARTITION BY source_instance, transaction_id
+                    ) AS minor_units_left,
+                    row_number() OVER (
+                        PARTITION BY source_instance, transaction_id
+                        ORDER BY remainder_minor DESC, return_line_id
+                    ) AS remainder_rank
+                FROM refund_base
+            ),
+            financial_refunds AS (
+                SELECT
+                    'shopify'::VARCHAR AS source_system,
+                    source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    concat(transaction_id, ':', return_line_id)::VARCHAR
+                        AS native_record_id,
+                    market_id,
+                    try_cast(processedAt AS TIMESTAMPTZ) AS known_as_of,
+                    'native_processed'::VARCHAR AS evidence_grade,
+                    'SHOPIFY_ACTUAL'::VARCHAR AS row_provenance,
+                    raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    concat(transaction_id, ':', return_line_id)::VARCHAR
+                        AS source_event_id,
+                    refund_id::VARCHAR AS source_parent_event_id,
+                    source_sale_id,
+                    sku_source_key,
+                    demand_location_source_key,
+                    channel_source_key,
+                    cast(
+                        timezone(
+                            _business_timezone,
+                            try_cast(createdAt AS TIMESTAMPTZ)
+                        ) AS DATE
+                    ) AS sale_date,
+                    cast(
+                        timezone(
+                            _business_timezone,
+                            try_cast(processedAt AS TIMESTAMPTZ)
+                        ) AS DATE
+                    ) AS event_date,
+                    'REFUND'::VARCHAR AS event_type,
+                    NULL::BIGINT AS units,
+                    (
+                        base_minor
+                        + CASE
+                            WHEN remainder_rank <= minor_units_left THEN 1
+                            ELSE 0
+                          END
+                    )::BIGINT AS amount_minor,
+                    NULL::DECIMAL(38, 6) AS amount_major,
+                    currency_code,
+                    money_precision_valid,
+                    coalesce(return_reason, gateway)::VARCHAR AS reason_code,
+                    raw_object_path
+                FROM refund_ranked
+            )
+            SELECT
+                * FROM physical_returns
+            UNION ALL BY NAME
+            SELECT
+                * FROM financial_refunds
             """
         )
         con.execute(

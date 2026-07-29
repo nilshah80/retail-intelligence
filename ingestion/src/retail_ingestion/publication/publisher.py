@@ -96,18 +96,10 @@ def _write_gate_controls(
         """
         UPDATE canonical_data.ingest_runs
         SET status = 'pass',
-            canonical_quality_pct = ?,
+            canonical_quality_pct = NULL,
             capability_mask = ?
         """,
-        [
-            round(
-                100
-                * sum(rule["outcome"] != "critical" for rule in report["rules"])
-                / len(report["rules"]),
-                2,
-            ),
-            capability_json,
-        ],
+        [capability_json],
     )
     for rule in report["rules"]:
         if rule["outcome"] not in {"warning", "capability_downgrade"}:
