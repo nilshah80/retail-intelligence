@@ -452,6 +452,8 @@ go run ./cmd/server \
 Available URLs:
 
 - API health: `http://127.0.0.1:8080/healthz`
+- Live Data Management payload: `http://127.0.0.1:8080/api/v1/data-management/dashboard`
+- Live accepted FX rates: `http://127.0.0.1:8080/api/v1/fx/rates`
 - Swagger UI: `http://127.0.0.1:8080/docs`
 - ReDoc: `http://127.0.0.1:8080/redoc`
 - OpenAPI YAML: `http://127.0.0.1:8080/openapi.yaml`
@@ -468,10 +470,18 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/healthz` to the Go service at
-`http://127.0.0.1:8080`; start the API first. The current React screen is a connectivity
-prototype, not a demo-approved Data Management implementation. It must first pass the strict v6
-HTML shell, screen-data and visual-review gates. Demand Forecasting, Inventory/Replenishment and
-Pricing/Promotion then arrive with their owning capability phases, using the same approved shell.
+`http://127.0.0.1:8080`; start the API first. Data Management follows the strict v6 HTML shell
+and screen-data contract, with live accepted-publication values. The three source-management
+buttons and user/User Management UI are the approved current omissions. Forecast Coverage and
+Model Accuracy remain `Not available` until accepted Phase-3 forecast artifacts exist. Demand
+Forecasting, Inventory/Replenishment and Pricing/Promotion arrive with their owning capability
+phases, using the same approved shell.
+
+The live filter model uses canonical markets `india-west` and `us-new-york`, with Mumbai Bandra,
+Pune Koregaon Park, Brooklyn and Manhattan stores. The global Channel filter exposes two
+business types (`E-commerce` and `Store`); market-qualified source/canonical channel instances
+remain internal. Store and Channel selections intersect, so Pune Koregaon Park + E-commerce is a
+valid filter context. Footer `Channels` therefore reports 2, not the four internal instances.
 
 ### 10. Inspect the curated data
 

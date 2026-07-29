@@ -109,6 +109,21 @@
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
+    "locationOverrides": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceInstance", "sourceLocationKey", "city"],
+        "properties": {
+          "sourceInstance": {"type": "string", "minLength": 1},
+          "sourceLocationKey": {"type": "string", "minLength": 1},
+          "city": {"type": "string", "minLength": 1},
+          "canonicalName": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "sourceInstances": {
       "type": "array",
       "minItems": 1,
@@ -128,6 +143,7 @@
           "sourceSystem": {"type": "string", "minLength": 1},
           "sourceInstance": {"type": "string", "minLength": 1},
           "logicalPathPrefix": {"type": "string", "minLength": 1},
+          "sourceMarketId": {"type": "string", "minLength": 1},
           "marketId": {"type": "string", "minLength": 1},
           "currencyCode": {"type": "string", "pattern": "^[A-Z]{3}$"},
           "timezone": {"type": "string", "minLength": 1},

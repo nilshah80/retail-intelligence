@@ -67,6 +67,10 @@ read-only: it loads accepted Gate A, Gate B and publication manifests, verifies 
 refer to the same immutable source snapshot, and exposes:
 
 - `GET /healthz`;
+- `GET /api/v1/data-management/dashboard` — live original-screen KPI, source-table, footer and
+  filter values;
+- `GET /api/v1/fx/rates` — accepted as-of rates from each local/base currency into the retailer
+  reporting currency, preserving exact decimal strings;
 - `GET /api/v1/data-management/summary`;
 - `GET /api/v1/data-management/gates`;
 - `GET /api/v1/data-management/capabilities`;

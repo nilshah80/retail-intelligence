@@ -1,6 +1,6 @@
 schemaVersion: retail-source-profile/v1
 profileId: retail-datagen-multi-source
-profileVersion: "1.0.0"
+profileVersion: "1.1.0"
 sourceSystem: generator
 sourceSchemaVersion: retail-source-config/v11
 businessTimezone: source_location_timezone
@@ -27,17 +27,34 @@ mappingReferences:
   - companion.marketKey
   - Shopify.locationId
   - BusinessCentral.locationCode
+locationOverrides:
+  - sourceInstance: northstar-in
+    sourceLocationKey: gid://shopify/Location/1024194649283697776
+    city: Pune
+  - sourceInstance: northstar-in
+    sourceLocationKey: gid://shopify/Location/1641883440496225609
+    city: Pune
+  - sourceInstance: northstar-us
+    sourceLocationKey: gid://shopify/Location/3369969851126252177
+    city: New York
+    canonicalName: Brooklyn
+  - sourceInstance: northstar-us
+    sourceLocationKey: gid://shopify/Location/1973290622021115537
+    city: New York
+    canonicalName: Manhattan
 sourceInstances:
   - sourceSystem: shopify
     sourceInstance: northstar-in
     logicalPathPrefix: shopify/northstar-in/
-    marketId: india-mumbai
+    sourceMarketId: india-mumbai
+    marketId: india-west
     currencyCode: INR
     timezone: Asia/Kolkata
     capabilities: [commerce]
   - sourceSystem: shopify
     sourceInstance: northstar-us
     logicalPathPrefix: shopify/northstar-us/
+    sourceMarketId: us-new-york
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
@@ -45,13 +62,15 @@ sourceInstances:
   - sourceSystem: businessCentral
     sourceInstance: bc-northstar-in
     logicalPathPrefix: business-central/bc-northstar-in/
-    marketId: india-mumbai
+    sourceMarketId: india-mumbai
+    marketId: india-west
     currencyCode: INR
     timezone: Asia/Kolkata
     capabilities: [operations]
   - sourceSystem: businessCentral
     sourceInstance: bc-northstar-us
     logicalPathPrefix: business-central/bc-northstar-us/
+    sourceMarketId: us-new-york
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
@@ -59,13 +78,15 @@ sourceInstances:
   - sourceSystem: companion
     sourceInstance: india-mumbai
     logicalPathPrefix: companion/india-mumbai/
-    marketId: india-mumbai
+    sourceMarketId: india-mumbai
+    marketId: india-west
     currencyCode: INR
     timezone: Asia/Kolkata
     capabilities: [external_signals]
   - sourceSystem: companion
     sourceInstance: us-new-york
     logicalPathPrefix: companion/us-new-york/
+    sourceMarketId: us-new-york
     marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York

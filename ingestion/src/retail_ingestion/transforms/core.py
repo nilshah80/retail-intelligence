@@ -454,7 +454,9 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             CASE WHEN geo_scope_type = 'MARKET' THEN 'market'
                 ELSE lower(geo_scope_type)
             END::VARCHAR AS geo_scope_type,
-            coalesce(nullif(geo_scope_id, ''), market_id)::VARCHAR AS geo_scope_id,
+            CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
+                ELSE coalesce(nullif(geo_scope_id, ''), market_id)
+            END::VARCHAR AS geo_scope_id,
             try_cast(date_raw AS DATE) AS date,
             event_name::VARCHAR AS event_name,
             event_type::VARCHAR AS event_type,
@@ -716,7 +718,10 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         CREATE TABLE canonical_data.weather_actual AS
         SELECT
             market_id, lower(geo_scope_type)::VARCHAR AS geo_scope_type,
-            geo_scope_id, try_cast(date_raw AS DATE) AS date,
+            CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
+                ELSE geo_scope_id
+            END::VARCHAR AS geo_scope_id,
+            try_cast(date_raw AS DATE) AS date,
             try_cast(temperature_raw AS DECIMAL(18, 4)) AS tavg_c,
             try_cast(precipitation_raw AS DECIMAL(18, 4)) AS precip_mm,
             weather_code, known_as_of,
@@ -729,7 +734,9 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         CREATE TABLE canonical_data.weather_forecast AS
         SELECT
             market_id, lower(geo_scope_type)::VARCHAR AS geo_scope_type,
-            geo_scope_id,
+            CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
+                ELSE geo_scope_id
+            END::VARCHAR AS geo_scope_id,
             cast(try_cast(forecast_date_raw AS TIMESTAMPTZ) AS DATE)
                 AS forecast_date,
             try_cast(target_date_raw AS DATE) AS target_date,
@@ -745,7 +752,10 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         CREATE TABLE canonical_data.local_events AS
         SELECT
             market_id, lower(geo_scope_type)::VARCHAR AS geo_scope_type,
-            geo_scope_id, d.date::DATE AS date, event_name, event_type,
+            CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
+                ELSE geo_scope_id
+            END::VARCHAR AS geo_scope_id,
+            d.date::DATE AS date, event_name, event_type,
             try_cast(expected_impact_raw AS DECIMAL(18, 8)) AS expected_impact,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
@@ -762,7 +772,9 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         CREATE TABLE canonical_data.macro_index AS
         SELECT
             market_id, lower(geo_scope_type)::VARCHAR AS geo_scope_type,
-            geo_scope_id,
+            CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
+                ELSE geo_scope_id
+            END::VARCHAR AS geo_scope_id,
             date_trunc('week', try_cast(valid_date_raw AS DATE))::DATE
                 AS week_start,
             index_name,
@@ -817,6 +829,8 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             CASE
                 WHEN lower(p.geo_scope_type) IN ('store', 'location')
                 THEN concat(p.market_id, ':', x.canonical_location_key)
+                WHEN lower(p.geo_scope_type) = 'market'
+                THEN p.market_id
                 ELSE p.geo_scope_id
             END::VARCHAR AS geo_scope_id,
             try_cast(p.observed_at_raw AS TIMESTAMPTZ) AS observed_at,

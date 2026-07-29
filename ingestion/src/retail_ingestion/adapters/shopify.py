@@ -6,6 +6,7 @@ from retail_contracts.money_sql import (
     exact_minor_sql,
     invalid_minor_sql,
 )
+from retail_ingestion.readers.catalog import sql_string
 
 from .base import AdapterContext, SourceAdapter
 from .registry import register_adapter
@@ -14,7 +15,7 @@ from .registry import register_adapter
 @register_adapter
 class ShopifyAdapter(SourceAdapter):
     source_system = "shopify"
-    adapter_version = "shopify-adapter/1.1.0"
+    adapter_version = "shopify-adapter/1.2.0"
     raw_schema = "raw_shopify"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -25,6 +26,19 @@ class ShopifyAdapter(SourceAdapter):
         snapshot_id = landing["sourceSnapshotId"]
         native_snapshot_id = landing.get("nativeSnapshotId")
         con.execute("CREATE SCHEMA IF NOT EXISTS stage_data")
+        location_overrides = context.profile.get("locationOverrides", [])
+        override_clauses = " ".join(
+            "WHEN _source_instance = "
+            f"{sql_string(str(row['sourceInstance']))} "
+            f"AND id::VARCHAR = {sql_string(str(row['sourceLocationKey']))} "
+            f"THEN {sql_string(str(row['city']))}"
+            for row in location_overrides
+        )
+        city_sql = (
+            f"CASE {override_clauses} ELSE city END"
+            if override_clauses
+            else "city"
+        )
 
         con.execute(
             f"""
@@ -164,7 +178,7 @@ class ShopifyAdapter(SourceAdapter):
                 coalesce(nullif(timezone, ''), _business_timezone)::VARCHAR
                     AS timezone,
                 provinceCode::VARCHAR AS region,
-                city::VARCHAR AS city,
+                {city_sql}::VARCHAR AS city,
                 active::VARCHAR AS active_raw,
                 _raw_object_path AS raw_object_path
             FROM raw_shopify.locations

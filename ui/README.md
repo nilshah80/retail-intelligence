@@ -59,11 +59,19 @@ are **new UI work**, not just data wiring (spec §8.3 note).
 
 ## Phase-2 UI status
 
-The current React screen proves live Aarv API connectivity, TanStack Query/Zod validation and
-fail-closed behavior, but it is **not an accepted UI deliverable**. Its dark control-room shell,
-reduced navigation and engineering-oriented panels diverge from the agreed HTML and its Data
-Management data points. The parity-recovery tasks are recorded in `../plans/local/tasks.md`; UI
-implementation must not continue until the Data Management parity/data matrix is reviewed.
+The React Data Management screen uses the original HTML shell, navigation order, top filters,
+currency strip, five KPI positions, source table, seven bottom KPI positions and footer. Its
+screen/data contract is `../contracts/screens/data-management.yaml`. Values come from
+`GET /api/v1/data-management/dashboard`; the UI preserves the shell and fails closed without
+substituting sample data when that endpoint is unavailable or invalid.
+The original `Multi-Currency Configuration` modal reads exact accepted rates from
+`GET /api/v1/fx/rates`; it never uses the fixed demo rates embedded in the HTML.
+The accepted filter model contains canonical markets `india-west` and `us-new-york`,
+four market-qualified stores, and two public channel types: `E-commerce` and `Store`.
+Native market-qualified channel instances stay inside canonical/publication evidence.
+Store and Channel controls keep an intersected selection, such as Pune Koregaon Park
+with E-commerce; the footer counts the two distinct channel types rather than the four
+internal market instances.
 
 The only approved temporary omissions are **Add Data Source**, **Upload Sample Data**, **Run
 Validation**, and user/User Management UI until that scope is implemented. Product UI must not
@@ -77,7 +85,7 @@ Phase 2 and must never be filled with nearby technical counts:
 | KPI family | Data/owning phase |
 |---|---|
 | Data Management: Connected Sources, Rejected Records, Last Refresh | Phase-2 landing, profile, quarantine and ingest evidence |
-| Data Management: Data Freshness, Quality Score | Phase 2, after the reviewed freshness cutoff/denominator and quality-weight formula are frozen |
+| Data Management: Data Freshness, Quality Score | Phase-2 accepted Gate A/B evidence using the frozen screen-contract definitions |
 | Footer: Total SKUs, Active SKUs, Stores, Channels | Phase-2 curated product/location/channel facts |
 | Footer: Forecast Coverage, Model Accuracy | Phase 3 forecast/backtest artifacts; show the approved unavailable state before models exist |
 | Demand Forecast KPIs | Phase 3 |

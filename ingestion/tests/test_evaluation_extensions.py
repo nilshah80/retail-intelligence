@@ -9,6 +9,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from retail_ingestion.profiles import load_source_profile
 
 from .oracles.generator_truth import (
     ORACLE_PROFILE_VERSION,
@@ -37,6 +38,28 @@ CURATED_DATABASE = (
     / "run-34b0ff729c8abe09"
     / "retail_v2.duckdb"
 )
+SOURCE_PROFILE = (
+    REPO_ROOT
+    / "ingestion"
+    / "src"
+    / "retail_ingestion"
+    / "profiles"
+    / "retail_datagen.yaml"
+)
+
+
+def _canonical_market_controls(values: dict[str, int]) -> dict[str, int]:
+    profile = load_source_profile(SOURCE_PROFILE)
+    aliases = {
+        str(instance.get("sourceMarketId", instance["marketId"])): str(
+            instance["marketId"]
+        )
+        for instance in profile["sourceInstances"]
+    }
+    return {
+        aliases.get(market_id, market_id): units
+        for market_id, units in values.items()
+    }
 
 
 def test_geographic_scope_collisions_require_market_qualification() -> None:
@@ -93,9 +116,9 @@ def test_public_fulfillment_control_matches_canonical_realized_sales() -> None:
     assert SOURCE_CONTROL_PROFILE_VERSION == (
         "retail-datagen-public-controls/1.0.0"
     )
-    assert fulfilled_units_by_market(SOURCE_RUN) == actual_units_by_market(
-        CURATED_DATABASE
-    )
+    assert _canonical_market_controls(
+        fulfilled_units_by_market(SOURCE_RUN)
+    ) == actual_units_by_market(CURATED_DATABASE)
 
 
 @pytest.mark.pinned_run

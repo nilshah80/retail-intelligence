@@ -535,59 +535,70 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       a pinned `github.com/nilshah80/aarv` dependency and implement the initial read-only Go API
       slice over ingest runs, source coverage, reconciliation and quarantine. Keep handlers thin
       and the `contracts/` OpenAPI/read-model definitions authoritative.
-- [~] The initial React screen is connected to the live Phase-2 API without fake fallback values,
-      but it is not an accepted UI implementation. Replace its invented dark control-room layout
-      only after the reviewed parity/data matrices below are approved; do not patch individual
-      colors or labels onto the rejected structure.
-- [ ] Freeze the **Data Management parity matrix** from the original `#dataManagement` page:
+- [x] Replace the initial React connectivity prototype with the original HTML shell and
+      Data Management composition, backed only by the live Phase-2 API and without fallback
+      values.
+- [x] Freeze the **Data Management parity matrix** from the original `#dataManagement` page:
       title `Data Management`, subtitle `Monitor source systems, data freshness and data quality`;
       five KPI positions/labels (`Data Freshness`, `Quality Score`, `Connected Sources`,
       `Rejected Records`, `Last Refresh`); and source table columns (`Source`, `Type`,
       `Last Refresh`, `Records`, `Quality`, `Status`, `Action`). The three approved toolbar
       buttons may remain omitted.
-- [ ] Define and review exact live computations for those five KPIs before implementation:
+- [x] Define and review exact live computations for those five KPIs before implementation:
       freshness observation/cutoff and denominator; quality-score formula and rule weighting;
       connected-source grain; rejected/quarantined record count and scope; and last-refresh
       timestamp/relative-time policy. Define source-table row grain, record counts, quality and
       status from accepted evidence. Do not map source-dataset count, canonical-entity count,
       curated-object count or capability count into unrelated original labels.
-- [ ] Extend the Data Management OpenAPI/read model only where the reviewed original data points
+- [x] Extend the Data Management OpenAPI/read model only where the reviewed original data points
       require it. Preserve Gate A/B, reconciliation, capability and fingerprint evidence in the
       API/Swagger and tests; do not force those engineering panels into the reference business
       page when the HTML does not contain them.
-- [ ] Rebuild the shared shell to HTML parity before rebuilding Data Management: all reference
+- [x] Rebuild the shared shell to HTML parity before rebuilding Data Management: all reference
       navigation groups/items and inventory/replenishment submenus in their original order;
       exact topbar title/subtitle plus Channel, Date, Store, Currency, FX and notification
       controls; display-currency strip; original content spacing; seven bottom KPI slots; and
       original page-footer copy. User card/User Management navigation/destination is the only current user
       exception.
-- [ ] Populate the bottom KPIs (`Total SKUs`, `Active SKUs`, `Stores`, `Channels`,
+- [x] Normalize the retained source-native `india-mumbai` identity through the datagen adapter
+      profile to canonical market `india-west`; retain `us-new-york`. Expose Mumbai Bandra, Pune
+      Koregaon Park, Brooklyn and Manhattan as four market-qualified stores, keep native channel
+      instances internal, expose only `E-commerce` and `Store` as the two global channel types,
+      and prove Store + Channel selections intersect (for example Pune Koregaon Park +
+      E-commerce). Footer `Channels` counts distinct channel types and therefore equals 2.
+- [x] Populate the bottom KPIs (`Total SKUs`, `Active SKUs`, `Stores`, `Channels`,
       `Forecast Coverage`, `Data Freshness`, `Model Accuracy`) only from reviewed live
       definitions. Before forecast models exist, do not show mock `Forecast Coverage` or `Model
       Accuracy`; agree the unavailable presentation without adding phase labels or fabricated
       values.
-- [ ] **Demo 2A parity gate:** live landing/source evidence is represented only through the
+- [x] Implement the original `Multi-Currency Configuration` FX modal from accepted,
+      as-of-dated `fx_rates` controls. Preserve rates as exact decimal strings, state the
+      local/base → reporting-currency direction, and never substitute the original fixed demo
+      rates. Cross-screen monetary conversion remains owned by the later reporting/API and UI
+      integration tasks.
+- [x] **Demo 2A parity gate:** live landing/source evidence is represented only through the
       reviewed original Data Management KPI/table vocabulary; shared chrome matches the HTML
       screenshot/DOM baseline.
-- [ ] **Demo 2B parity gate:** live quality, rejection and source-status values reconcile to API
+- [x] **Demo 2B parity gate:** live quality, rejection and source-status values reconcile to API
       evidence and every visible number has a tested definition; no source hashes or Gate jargon
       are inserted into the business page.
-- [ ] **Demo 2C / UI exit:** Data Management plus shared top/left/bottom shell pass desktop and
+- [~] **Demo 2C / UI exit:** Data Management plus shared top/left/bottom shell pass desktop and
       responsive parity screenshots, DOM/text/column assertions, live-data tests and explicit
-      human visual approval. The evaluation-admin oracle remains test-only.
+      human visual approval. Automated checks and side-by-side renders pass; final human visual
+      approval remains. The evaluation-admin oracle remains test-only.
 - [~] **Phase-2 exit:** ingestion, exact controls and source-neutral transforms are implemented;
-      the corrected ten-year curated republish and the UI parity exit below remain before the
-      phase is demo-complete.
+      the corrected ten-year curated republish is accepted. Final human approval of the UI parity
+      exit remains before the phase is demo-complete.
 - [x] Correct the Phase-2 semantic defects found in the deep review: derive realized sales from
       successful fulfillment lines; reconcile sales units to `sales_fulfillments`; publish
       physical returns separately from successful financial refunds; use the closed minor-unit
       map without silent rounding; remove binary-float WAC; pin DuckDB UTC and preserve
       market-local business dates; reconcile source ATP; and split current on-order/in-transit
       units from inbound status.
-- [ ] Republish the accepted ten-year pin with Shopify/BC adapter v1.1 and transform v1.2, retain
+- [x] Republish the accepted ten-year pin with Shopify/BC adapter v1.1 and transform v1.2, retain
       the new Gate/publication evidence, and only then update the API/UI accepted-evidence paths.
-      The disposable validation candidate in `/private/tmp` proves the code but is not a durable
-      accepted publication.
+      The durable accepted publication and retained evidence now post-date the corrected code;
+      rebuildable staging/candidate work and superseded publication copies were removed.
 
 **Post-exit evaluation extensions — useful, but not Phase-3 blockers**
 - [x] Add golden collision fixtures for the literal region label `West` in India and US,

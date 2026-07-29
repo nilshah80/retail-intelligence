@@ -52,9 +52,95 @@ export const reconciliationSchema = z.array(z.object({
   })
 }));
 
+const sourceRowSchema = z.object({
+  sourceSystem: z.string(),
+  name: z.string(),
+  type: z.string(),
+  lastRefreshAt: z.string().datetime(),
+  records: z.number().int().nonnegative(),
+  qualityPct: z.number().min(0).max(100),
+  status: z.enum(["Healthy", "Needs attention"]),
+  action: z.literal("View mapping"),
+  datasetCount: z.number().int().nonnegative(),
+  objectCount: z.number().int().nonnegative()
+});
+
+const storeFilterSchema = z.object({
+  storeId: z.string(),
+  marketId: z.string(),
+  name: z.string(),
+  currencyCode: z.string(),
+  timezone: z.string(),
+  region: z.string(),
+  format: z.string(),
+  city: z.string(),
+  active: z.boolean()
+});
+
+const marketFilterSchema = z.object({
+  marketId: z.string(),
+  name: z.string()
+});
+
+const channelTypeFilterSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  marketIds: z.array(z.string()).min(1)
+});
+
+export const dashboardSchema = z.object({
+  schemaVersion: z.literal("retail-data-management-dashboard/v1"),
+  dataMode: z.literal("live"),
+  kpis: z.object({
+    dataFreshnessPct: z.number().min(0).max(100),
+    qualityScorePct: z.number().min(0).max(100),
+    connectedSources: z.number().int().nonnegative(),
+    rejectedRecords: z.number().int().nonnegative(),
+    lastRefreshAt: z.string().datetime()
+  }),
+  sources: z.array(sourceRowSchema),
+  footer: z.object({
+    totalSkus: z.number().int().nonnegative(),
+    activeSkus: z.number().int().nonnegative(),
+    stores: z.number().int().nonnegative(),
+    channels: z.number().int().nonnegative(),
+    forecastCoveragePct: z.number().min(0).max(100).nullable(),
+    modelAccuracyPct: z.number().min(0).max(100).nullable()
+  }),
+  filters: z.object({
+    dateRange: z.object({
+      start: z.string(),
+      end: z.string()
+    }),
+    markets: z.array(marketFilterSchema),
+    stores: z.array(storeFilterSchema),
+    channelTypes: z.array(channelTypeFilterSchema),
+    currencies: z.array(z.string())
+  })
+});
+
+export const fxSchema = z.object({
+  schemaVersion: z.literal("retail-fx-rates/v1"),
+  dataMode: z.literal("live"),
+  reportingCurrency: z.string().length(3),
+  coverage: z.object({
+    start: z.string(),
+    end: z.string(),
+    observations: z.number().int().positive()
+  }),
+  rates: z.array(z.object({
+    baseCurrency: z.string().length(3),
+    quoteCurrency: z.string().length(3),
+    rate: z.string().regex(/^[0-9]+(?:\.[0-9]+)?$/),
+    rateDate: z.string()
+  })).min(1)
+});
+
 export type DataSummary = z.infer<typeof summarySchema>;
 export type Gates = z.infer<typeof gatesSchema>;
 export type Reconciliation = z.infer<typeof reconciliationSchema>;
+export type Dashboard = z.infer<typeof dashboardSchema>;
+export type FxRates = z.infer<typeof fxSchema>;
 
 async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   const response = await fetch(path, {headers: {Accept: "application/json"}});
@@ -70,3 +156,7 @@ export const loadGates = () =>
   get("/api/v1/data-management/gates", gatesSchema);
 export const loadReconciliation = () =>
   get("/api/v1/data-management/reconciliation", reconciliationSchema);
+export const loadDashboard = () =>
+  get("/api/v1/data-management/dashboard", dashboardSchema);
+export const loadFx = () =>
+  get("/api/v1/fx/rates", fxSchema);

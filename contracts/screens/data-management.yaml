@@ -1,0 +1,171 @@
+schemaVersion: retail-screen-contract/v1
+screenId: dataManagement
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  pageSelector: "#dataManagement"
+  api: contracts/api/openapi.yaml
+dataMode: live_only
+
+approvedOmissions:
+  - Add Data Source
+  - Upload Sample Data
+  - Run Validation
+  - sidebar user card
+  - User Management navigation and destination
+
+shell:
+  brand:
+    title: AI Retail Intelligence
+    subtitle: Dynamic Pricing & Demand Forecasting
+  navigation:
+    preserveReferenceOrder: true
+    activeItem: Data Management
+    phaseOrRoadmapLabelsAllowed: false
+  topbar:
+    title: Data Management
+    subtitle: Monitor source systems, data freshness and data quality
+    controls:
+      - channel
+      - date_range
+      - store
+      - display_currency
+      - fx
+      - notifications
+    filterModel:
+      markets: [india-west, us-new-york]
+      storeGrain: canonical store
+      channelGrain: business channel type
+      channelTypes: [online, store]
+      channelLabels: [E-commerce, Store]
+      intersection: >-
+        Store and channel selections intersect through the selected store's
+        market. Market-qualified channel instances remain internal and are not
+        presented as duplicate global filter choices.
+  currencyStrip:
+    label: "Display Currency:"
+    liveFields: [displayCurrency, displayCurrencyName]
+  fxModal:
+    title: Multi-Currency Configuration
+    api: /api/v1/fx/rates
+    rateDirection: local/base currency to retailer reporting currency
+    exactDecimalStrings: true
+    fallbackRatesAllowed: false
+  footer:
+    left: AI Retail Intelligence — Dynamic Pricing & Demand Forecasting
+    right: Powered by AI • Built for Retail
+
+elements:
+  - selector: '[data-kpi="data-freshness"]'
+    label: Data Freshness
+    apiField: kpis.dataFreshnessPct
+    definition: >
+      100 × distinct represented source systems ÷ distinct expected source
+      systems declared by the accepted source profile, using Gate A A03
+      evidence at the configured extract boundary.
+    grain: accepted publication
+    format: percentage_1dp
+
+  - selector: '[data-kpi="quality-score"]'
+    label: Quality Score
+    apiField: kpis.qualityScorePct
+    definition: >
+      100 × (Gate A A07 input rows − A07 rejected rows − curated quarantine
+      rows) ÷ A07 input rows, bounded to [0, 100]. Warnings and capability
+      downgrades remain visible in quality evidence but do not change this
+      record-weighted data-acceptance score.
+    grain: accepted publication
+    format: percentage_1dp
+
+  - selector: '[data-kpi="connected-sources"]'
+    label: Connected Sources
+    apiField: kpis.connectedSources
+    definition: Distinct non-generator source_system values in Gate A inventory.
+    grain: source system
+    format: integer
+
+  - selector: '[data-kpi="rejected-records"]'
+    label: Rejected Records
+    apiField: kpis.rejectedRecords
+    definition: >
+      Gate A A07 rejectedRows plus curated quarantine_records. These are
+      disjoint pre-adapter and adapter/transformation rejection controls.
+    grain: accepted publication
+    format: integer_grouped
+
+  - selector: '[data-kpi="last-refresh"]'
+    label: Last Refresh
+    apiField: kpis.lastRefreshAt
+    definition: Curated publication manifest publishedAt timestamp.
+    grain: accepted publication
+    format: relative_time
+
+  - selector: '[data-table="sources"]'
+    columns: [Source, Type, Last Refresh, Records, Quality, Status, Action]
+    apiField: sources
+    rowGrain: source_system
+    definitions:
+      Records: Sum of Gate A scannedRows for the source system.
+      Quality: >
+        100 × (records − bounded null-key rows − bounded duplicate-key rows)
+        ÷ records.
+      Status: Healthy only when Gate A passes and source structural quality is at least 95%.
+      Action: >
+        View mapping for a healthy read-only source; exposes live mapped
+        dataset and accepted-object counts. Refresh and Retry are reserved for
+        future operational source states with corresponding write APIs.
+
+  - selector: '[data-footer-kpi="total-skus"]'
+    label: Total SKUs
+    apiField: footer.totalSkus
+    definition: Count of canonical products.
+    format: integer_grouped
+
+  - selector: '[data-footer-kpi="active-skus"]'
+    label: Active SKUs
+    apiField: footer.activeSkus
+    definition: >
+      Distinct assortment_calendar SKU at the maximum canonical calendar date,
+      with active_from on/before and active_to null/on/after that date.
+    format: integer_grouped
+
+  - selector: '[data-footer-kpi="stores"]'
+    label: Stores
+    apiField: footer.stores
+    definition: Count of canonical stores.
+    format: integer_grouped
+
+  - selector: '[data-footer-kpi="channels"]'
+    label: Channels
+    apiField: footer.channels
+    definition: >
+      Count of distinct active business channel types exposed by the global
+      Channel filter. Market-qualified channel instances remain separate in
+      canonical data and publication evidence, but are not exposed as global
+      UI filter choices.
+    format: integer_grouped
+
+  - selector: '[data-footer-kpi="forecast-coverage"]'
+    label: Forecast Coverage
+    apiField: footer.forecastCoveragePct
+    definition: Eligible active SKU/store/channel series with an accepted forecast.
+    unavailableUntil: accepted Phase 3 forecast artifacts
+    unavailablePresentation: Not available
+
+  - selector: '[data-footer-kpi="data-freshness"]'
+    label: Data Freshness
+    apiField: kpis.dataFreshnessPct
+    definition: Same governed value as the primary Data Freshness KPI.
+    format: percentage_1dp
+
+  - selector: '[data-footer-kpi="model-accuracy"]'
+    label: Model Accuracy
+    apiField: footer.modelAccuracyPct
+    definition: Accepted forecast accuracy from Phase 3 evaluation artifacts.
+    unavailableUntil: accepted Phase 3 forecast artifacts
+    unavailablePresentation: Not available
+
+behavior:
+  loading: Preserve shell and show loading text in the content area.
+  error: Preserve shell and state that live data is unavailable; never substitute fixtures.
+  empty: Show zero only when the live governed control is exactly zero.
+  unavailable: Use the literal text Not available; never use a fabricated zero or sample value.

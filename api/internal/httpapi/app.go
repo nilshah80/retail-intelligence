@@ -40,6 +40,12 @@ func New(
 	app.Get("/api/v1/data-management/summary", func(c *aarv.Context) error {
 		return c.JSON(http.StatusOK, store.Summary())
 	})
+	app.Get("/api/v1/data-management/dashboard", func(c *aarv.Context) error {
+		return c.JSON(http.StatusOK, store.Dashboard())
+	})
+	app.Get("/api/v1/fx/rates", func(c *aarv.Context) error {
+		return c.JSON(http.StatusOK, store.FX())
+	})
 	app.Get("/api/v1/data-management/gates", func(c *aarv.Context) error {
 		return c.JSON(http.StatusOK, store.Gates())
 	})

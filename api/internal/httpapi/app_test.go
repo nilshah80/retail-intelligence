@@ -37,7 +37,16 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 		PublicationManifest: fixtureFile(
 			t, directory, "publication.json",
 			`{"sourceSnapshotId":"snapshot-a","semanticFingerprint":"abc",`+
-				`"entityCounts":{"sales":1},"objects":[{}]}`,
+				`"publishedAt":"2026-07-30T00:00:00Z",`+
+				`"entityCounts":{"sales":1,"quarantine_records":0},`+
+				`"businessControls":{"totalSkus":1,"activeSkus":1,`+
+				`"stores":[],"channels":[],"currencies":[],`+
+				`"dateRange":{"start":"2026-01-01","end":"2026-07-30"},`+
+				`"fx":{"reportingCurrency":"INR","coverage":{`+
+				`"start":"2026-01-01","end":"2026-07-30","observations":1},`+
+				`"rates":[]},`+
+				`"forecastCoveragePct":null,"modelAccuracyPct":null},`+
+				`"objects":[{}]}`,
 		),
 	})
 	if err != nil {
@@ -65,6 +74,29 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	if payload["dataMode"] != "live" {
 		t.Fatalf("dataMode = %v", payload["dataMode"])
 	}
+
+	dashboard := aarv.NewTestClient(app).Get(
+		"/api/v1/data-management/dashboard",
+	)
+	dashboard.AssertStatus(t, http.StatusOK)
+	var dashboardPayload map[string]any
+	if err := dashboard.JSON(&dashboardPayload); err != nil {
+		t.Fatal(err)
+	}
+	if dashboardPayload["schemaVersion"] !=
+		"retail-data-management-dashboard/v1" {
+		t.Fatalf("unexpected dashboard contract: %v", dashboardPayload)
+	}
+
+	fx := aarv.NewTestClient(app).Get("/api/v1/fx/rates")
+	fx.AssertStatus(t, http.StatusOK)
+	var fxPayload map[string]any
+	if err := fx.JSON(&fxPayload); err != nil {
+		t.Fatal(err)
+	}
+	if fxPayload["schemaVersion"] != "retail-fx-rates/v1" {
+		t.Fatalf("unexpected FX contract: %v", fxPayload)
+	}
 }
 
 func TestOpenAPIDocumentationRoutes(t *testing.T) {
@@ -83,7 +115,16 @@ func TestOpenAPIDocumentationRoutes(t *testing.T) {
 		PublicationManifest: fixtureFile(
 			t, directory, "publication.json",
 			`{"sourceSnapshotId":"snapshot-a","semanticFingerprint":"abc",`+
-				`"entityCounts":{"sales":1},"objects":[{}]}`,
+				`"publishedAt":"2026-07-30T00:00:00Z",`+
+				`"entityCounts":{"sales":1,"quarantine_records":0},`+
+				`"businessControls":{"totalSkus":1,"activeSkus":1,`+
+				`"stores":[],"channels":[],"currencies":[],`+
+				`"dateRange":{"start":"2026-01-01","end":"2026-07-30"},`+
+				`"fx":{"reportingCurrency":"INR","coverage":{`+
+				`"start":"2026-01-01","end":"2026-07-30","observations":1},`+
+				`"rates":[]},`+
+				`"forecastCoveragePct":null,"modelAccuracyPct":null},`+
+				`"objects":[{}]}`,
 		),
 	})
 	if err != nil {

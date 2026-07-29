@@ -35,36 +35,76 @@ def build_location_crosswalk(
         raise LocationMappingError("source profile requires upstream topology evidence")
     stores = topology.get("stores", [])
     warehouses = topology.get("warehouses", [])
+    market_aliases: dict[str, str] = {}
+    for instance in catalog.profile.get("sourceInstances", []):
+        source_market = str(
+            instance.get("sourceMarketId", instance["marketId"])
+        )
+        canonical_market = str(instance["marketId"])
+        existing = market_aliases.setdefault(source_market, canonical_market)
+        if existing != canonical_market:
+            raise LocationMappingError(
+                f"source market {source_market!r} maps to multiple canonical markets"
+            )
+
+    def canonical_market_id(source_market_id: Any) -> str:
+        source_market = str(source_market_id)
+        try:
+            return market_aliases[source_market]
+        except KeyError as exc:
+            raise LocationMappingError(
+                f"topology market has no profile mapping: {source_market!r}"
+            ) from exc
+
+    canonical_names = {
+        (str(row["sourceInstance"]), str(row["sourceLocationKey"])): str(
+            row["canonicalName"]
+        )
+        for row in catalog.profile.get("locationOverrides", [])
+        if row.get("canonicalName")
+    }
     shopify_locations = connection.execute(
         """
-        SELECT market_id, location_source_key, location_name, location_type
+        SELECT source_instance, market_id, location_source_key,
+               location_name, location_type
         FROM stage_data.shopify_locations
         """
     ).fetchall()
-    by_name: dict[tuple[str, str], tuple[str, str]] = {}
-    for market_id, source_key, name, location_type in shopify_locations:
+    by_name: dict[tuple[str, str], tuple[str, str, str]] = {}
+    for (
+        source_instance,
+        market_id,
+        source_key,
+        name,
+        location_type,
+    ) in shopify_locations:
         key = (str(market_id), str(name).strip().casefold())
         if key in by_name:
             raise LocationMappingError(f"duplicate Shopify location name: {key!r}")
-        by_name[key] = (str(source_key), str(location_type))
+        by_name[key] = (
+            str(source_instance),
+            str(source_key),
+            str(location_type),
+        )
 
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for row in stores:
-        market = str(row["marketId"])
+        market = canonical_market_id(row["marketId"])
         canonical = str(row["storeId"])
         name = str(row["name"])
         match = by_name.get((market, name.strip().casefold()))
         if match is None:
             raise LocationMappingError(f"Shopify store has no name match: {name!r}")
+        canonical_name = canonical_names.get((match[0], match[1]), name)
         rows.extend(
             (
                 (
                     "shopify",
                     market,
-                    match[0],
+                    match[1],
                     canonical,
                     "store",
-                    name,
+                    canonical_name,
                     "upstream_topology_name_match",
                 ),
                 (
@@ -73,27 +113,28 @@ def build_location_crosswalk(
                     canonical,
                     canonical,
                     "store",
-                    name,
+                    canonical_name,
                     "upstream_topology_native_key",
                 ),
             )
         )
     for row in warehouses:
-        market = str(row["marketId"])
+        market = canonical_market_id(row["marketId"])
         canonical = str(row["warehouseId"])
         name = str(row["name"])
         match = by_name.get((market, name.strip().casefold()))
         if match is None:
             raise LocationMappingError(f"Shopify warehouse has no name match: {name!r}")
+        canonical_name = canonical_names.get((match[0], match[1]), name)
         rows.extend(
             (
                 (
                     "shopify",
                     market,
-                    match[0],
+                    match[1],
                     canonical,
                     "dc",
-                    name,
+                    canonical_name,
                     "upstream_topology_name_match",
                 ),
                 (
@@ -102,7 +143,7 @@ def build_location_crosswalk(
                     str(row["businessCentralLocationCode"]),
                     canonical,
                     "dc",
-                    name,
+                    canonical_name,
                     "upstream_topology_bc_code",
                 ),
                 (
@@ -111,7 +152,7 @@ def build_location_crosswalk(
                     canonical,
                     canonical,
                     "dc",
-                    name,
+                    canonical_name,
                     "upstream_topology_native_warehouse_key",
                 ),
                 (
@@ -120,7 +161,7 @@ def build_location_crosswalk(
                     canonical,
                     canonical,
                     "dc",
-                    name,
+                    canonical_name,
                     "upstream_topology_native_key",
                 ),
             )

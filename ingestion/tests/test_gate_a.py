@@ -273,6 +273,9 @@ def test_gate_a_passes_all_thirteen_rules_on_valid_source(tmp_path: Path) -> Non
     assert payload["datasetInventory"][0]["scannedRows"] == 2
     assert payload["executionProfile"]["profile"] == "test-bounded"
     assert payload["semanticFingerprint"]
+    a03 = next(rule for rule in report.rules if rule.rule_id == "A03")
+    assert a03.evidence["expectedSourceSystems"] == ["shopify"]
+    assert a03.evidence["representedSourceSystems"] == ["shopify"]
 
 
 def test_gate_a_rejects_duplicate_declared_source_keys(tmp_path: Path) -> None:

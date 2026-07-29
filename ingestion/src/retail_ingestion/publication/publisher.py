@@ -70,6 +70,14 @@ def _table_names(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
     )
 
 
+def _market_name(market_id: str) -> str:
+    acronyms = {"us": "US", "uk": "UK"}
+    return " ".join(
+        acronyms.get(part, part.capitalize())
+        for part in market_id.split("-")
+    )
+
+
 def _partition_date(entity: str) -> str | None:
     return {
         "sales": "date",
@@ -83,6 +91,135 @@ def _partition_date(entity: str) -> str | None:
         "local_events": "date",
         "macro_index": "week_start",
     }.get(entity)
+
+
+def _business_controls(
+    connection: duckdb.DuckDBPyConnection,
+) -> dict[str, Any]:
+    start_date, end_date = connection.execute(
+        "SELECT min(date), max(date) FROM canonical_data.calendar"
+    ).fetchone()
+    active_skus = connection.execute(
+        """
+        SELECT count(DISTINCT sku_id)
+        FROM canonical_data.assortment_calendar
+        WHERE active_from <= ?
+          AND (active_to IS NULL OR active_to >= ?)
+        """,
+        [end_date, end_date],
+    ).fetchone()[0]
+    stores = [
+        {
+            "storeId": row[0],
+            "marketId": row[1],
+            "currencyCode": row[2],
+            "timezone": row[3],
+            "region": row[4],
+            "format": row[5],
+            "city": row[6],
+            "name": row[7],
+            "active": row[8],
+        }
+        for row in connection.execute(
+            """
+            SELECT
+                stores.store_id,
+                stores.market_id,
+                stores.currency_code,
+                stores.timezone,
+                stores.region,
+                stores.format,
+                stores.city,
+                locations.name,
+                locations.active
+            FROM canonical_data.stores AS stores
+            JOIN canonical_data.locations AS locations
+              ON locations.location_id = stores.store_id
+             AND locations.type = 'store'
+            ORDER BY stores.market_id, stores.store_id
+            """
+        ).fetchall()
+    ]
+    channels = [
+        {
+            "marketId": row[0],
+            "channelId": row[1],
+            "name": row[2],
+            "type": row[3],
+        }
+        for row in connection.execute(
+            """
+            SELECT market_id, channel_id, name, type
+            FROM canonical_data.channels
+            WHERE active
+            ORDER BY market_id, channel_id
+            """
+        ).fetchall()
+    ]
+    markets = [
+        {"marketId": market_id, "name": _market_name(market_id)}
+        for market_id in sorted({row["marketId"] for row in stores})
+    ]
+    observation_count, fx_start, fx_end = connection.execute(
+        """
+        SELECT count(*), min(rate_date), max(rate_date)
+        FROM canonical_data.fx_rates
+        """
+    ).fetchone()
+    latest_rates = [
+        {
+            "baseCurrency": row[0],
+            "quoteCurrency": row[1],
+            "rate": str(row[2]),
+            "rateDate": str(row[3]),
+        }
+        for row in connection.execute(
+            """
+            SELECT base_ccy, quote_ccy, rate, rate_date
+            FROM canonical_data.fx_rates
+            QUALIFY row_number() OVER (
+                PARTITION BY base_ccy, quote_ccy
+                ORDER BY rate_date DESC, known_as_of DESC
+            ) = 1
+            ORDER BY base_ccy, quote_ccy
+            """
+        ).fetchall()
+    ]
+    reporting_currencies = {
+        row["quoteCurrency"] for row in latest_rates
+    }
+    if len(reporting_currencies) != 1:
+        raise PublicationError(
+            "FX business controls require one reporting currency"
+        )
+    return {
+        "asOfDate": str(end_date),
+        "dateRange": {
+            "start": str(start_date),
+            "end": str(end_date),
+        },
+        "totalSkus": int(
+            connection.execute(
+                "SELECT count(*) FROM canonical_data.products"
+            ).fetchone()[0]
+        ),
+        "activeSkus": int(active_skus),
+        "markets": markets,
+        "stores": stores,
+        "channels": channels,
+        "currencies": sorted({row["currencyCode"] for row in stores}),
+        "fx": {
+            "reportingCurrency": reporting_currencies.pop(),
+            "coverage": {
+                "start": str(fx_start),
+                "end": str(fx_end),
+                "observations": int(observation_count),
+            },
+            "rates": latest_rates,
+        },
+        "forecastCoveragePct": None,
+        "modelAccuracyPct": None,
+    }
 
 
 def _write_gate_controls(
@@ -226,6 +363,7 @@ def publish_candidate(
             f"SET memory_limit = '{max(1, int(execution_profile['memoryLimitGb']))}GB'"
         )
         _write_gate_controls(connection, report, published_at=published_at)
+        business_controls = _business_controls(connection)
         tables = _table_names(connection)
         for entity in tables:
             entity_root = parquet_root / entity
@@ -281,6 +419,7 @@ def publish_candidate(
             "capabilityMask": report["capabilityMask"],
             "entityCounts": candidate_manifest["entityCounts"],
             "entityControls": candidate_manifest.get("entityControls", {}),
+            "businessControls": business_controls,
             "duckdb": {
                 "path": "retail_v2.duckdb",
                 "bytes": duckdb_path.stat().st_size,

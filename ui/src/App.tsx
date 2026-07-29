@@ -1,231 +1,750 @@
-import { useQuery } from "@tanstack/react-query";
+import {useEffect, useMemo, useState, type ReactNode} from "react";
+import {useQuery} from "@tanstack/react-query";
 import {
-  loadGates,
-  loadReconciliation,
-  loadSummary,
-  type DataSummary
+  loadDashboard,
+  loadFx,
+  type Dashboard,
+  type FxRates
 } from "./api";
 
-const labels: Record<string, string> = {
-  data_management: "Data management",
-  revenue_reporting: "Revenue reporting",
-  demand_forecast_non_pit: "Demand forecast",
-  point_in_time_forecasting: "PIT forecast",
-  pricing_elasticity: "Pricing elasticity",
-  replenishment: "Replenishment",
-  competitor_intelligence: "Competitor intelligence"
+type SourceRow = Dashboard["sources"][number];
+
+const currencySymbols: Record<string, string> = {
+  INR: "₹",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  AED: "د.إ"
 };
 
-function StatusPill({status}: {status: string}) {
-  const good = status === "pass" || status === "available";
+const currencyNames: Record<string, string> = {
+  INR: "Indian Rupee",
+  USD: "US Dollar",
+  EUR: "Euro",
+  GBP: "Pound Sterling",
+  AED: "UAE Dirham"
+};
+
+const primaryNavigation = [
+  {icon: "⌂", label: "Executive Overview"}
+];
+
+const pricingNavigation = [
+  {icon: "🏷", label: "Price Recommendations"},
+  {icon: "◫", label: "Price Simulation"},
+  {icon: "◉", label: "Competitor Monitor"},
+  {icon: "▣", label: "Promotion Planner"}
+];
+
+const inventoryNavigation = [
+  {icon: "▥", label: "Store Inventory"},
+  {icon: "▦", label: "Warehouse Inventory"},
+  {icon: "◷", label: "Inventory Ageing"},
+  {icon: "⇄", label: "Stock Transfers"},
+  {icon: "₹", label: "Inventory Valuation"},
+  {icon: "⚠", label: "Expiry & Waste"}
+];
+
+const replenishmentNavigation = [
+  {icon: "≣", label: "Suggested Orders"},
+  {icon: "▦", label: "Supplier Planning"},
+  {icon: "◉", label: "Safety Stock"},
+  {icon: "⇢", label: "Allocation & Fulfillment"},
+  {icon: "⚠", label: "Exceptions"}
+];
+
+const analyticsNavigation = [
+  {icon: "⌁", label: "Performance Insights"},
+  {icon: "□", label: "Reports & Exports"},
+  {icon: "♢", label: "Alerts & Notifications"}
+];
+
+const adminNavigation = [
+  {icon: "▦", label: "Data Management"},
+  {icon: "⚙", label: "Model Management"},
+  {icon: "☼", label: "Settings"}
+];
+
+function NavItem({
+  icon,
+  label,
+  active = false
+}: {
+  icon: string;
+  label: string;
+  active?: boolean;
+}) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[.14em] ${
-      good ? "bg-emerald-400/12 text-emerald-300" : "bg-amber-400/12 text-amber-200"
-    }`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${good ? "bg-emerald-300" : "bg-amber-300"}`} />
-      {status.replaceAll("_", " ")}
-    </span>
+    <button
+      className={`nav-item${active ? " active" : ""}`}
+      type="button"
+      aria-current={active ? "page" : undefined}
+    >
+      <span className="nav-ico">{icon}</span>
+      {label}
+    </button>
   );
 }
 
-function Metric({eyebrow, value, note}: {eyebrow: string; value: string; note: string}) {
+function NavigationSection({
+  title,
+  items
+}: {
+  title: string;
+  items: Array<{icon: string; label: string}>;
+}) {
   return (
-    <article className="metric-card">
-      <p className="text-[11px] font-semibold uppercase tracking-[.19em] text-slate-400">{eyebrow}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-sm text-slate-400">{note}</p>
-    </article>
-  );
-}
-
-function CapabilityGrid({summary}: {summary: DataSummary}) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {Object.entries(summary.capabilityMask).map(([name, state]) => (
-        <article key={name} className="rounded-2xl border border-white/7 bg-white/[.025] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-medium text-slate-100">{labels[name] ?? name}</p>
-              <p className="mt-1 text-xs text-slate-500">{name}</p>
-            </div>
-            <StatusPill status={state.available ? "available" : "limited"} />
-          </div>
-          {!state.available && (
-            <p className="mt-4 rounded-xl bg-amber-400/[.07] px-3 py-2 text-xs leading-5 text-amber-100/80">
-              {state.reasonCode ?? state.limitation ?? "Evidence is not sufficient."}
-            </p>
-          )}
-        </article>
+    <div className="nav-section">
+      <div className="nav-title">{title}</div>
+      {items.map((item) => (
+        <NavItem
+          key={item.label}
+          {...item}
+          active={item.label === "Data Management"}
+        />
       ))}
     </div>
   );
 }
 
-function Loading() {
+function NavigationParent({
+  icon,
+  label,
+  open,
+  onToggle,
+  children
+}: {
+  icon: string;
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
   return (
-    <main className="grid min-h-screen place-items-center bg-[#07151d] text-slate-300">
-      <div className="text-center">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-teal-300/20 border-t-teal-300" />
-        <p className="mt-4 text-sm">Loading governed artifacts…</p>
+    <>
+      <button
+        className={`nav-item nav-parent${open ? " open" : ""}`}
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <span>
+          <span className="nav-ico">{icon}</span>
+          {label}
+        </span>
+        <span className="nav-caret">▶</span>
+      </button>
+      <div className={`nav-submenu${open ? " open" : ""}`}>{children}</div>
+    </>
+  );
+}
+
+function Sidebar() {
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [replenishmentOpen, setReplenishmentOpen] = useState(false);
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">🛒</div>
+        <div>
+          <h1>AI Retail Intelligence</h1>
+          <p>Dynamic Pricing &amp;<br />Demand Forecasting</p>
+        </div>
       </div>
-    </main>
+
+      {primaryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+      <NavigationSection title="PRICING" items={pricingNavigation} />
+
+      <div className="nav-section">
+        <div className="nav-title">DEMAND &amp; INVENTORY</div>
+        <NavItem icon="▥" label="Demand Forecast" />
+        <NavigationParent
+          icon="▤"
+          label="Inventory Overview"
+          open={inventoryOpen}
+          onToggle={() => setInventoryOpen((value) => !value)}
+        >
+          {inventoryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+        </NavigationParent>
+        <NavigationParent
+          icon="⇄"
+          label="Replenishment Planner"
+          open={replenishmentOpen}
+          onToggle={() => setReplenishmentOpen((value) => !value)}
+        >
+          {replenishmentNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+        </NavigationParent>
+        <NavItem icon="◇" label="Stock Health" />
+      </div>
+
+      <NavigationSection title="ANALYTICS" items={analyticsNavigation} />
+      <NavigationSection title="ADMIN" items={adminNavigation} />
+    </aside>
+  );
+}
+
+function formatDateRange(start: string, end: string) {
+  const format = (value: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      timeZone: "UTC"
+    }).format(new Date(`${value}T00:00:00Z`));
+  return `${format(start)} – ${format(end)}`;
+}
+
+function relativeTime(value: string, compact = false) {
+  const elapsedMinutes = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(value).getTime()) / 60_000)
+  );
+  if (elapsedMinutes < 1) return compact ? "Now" : "Just now";
+  if (elapsedMinutes < 60) {
+    return compact ? `${elapsedMinutes}m` : `${elapsedMinutes} min ago`;
+  }
+  const hours = Math.floor(elapsedMinutes / 60);
+  if (hours < 24) return compact ? `${hours}h` : `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return compact ? `${days}d` : `${days} days ago`;
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(value));
+}
+
+function formatCount(value: number, compact = false) {
+  return new Intl.NumberFormat("en-US", compact ? {
+    notation: "compact",
+    maximumFractionDigits: 1
+  } : {}).format(value);
+}
+
+function formatPct(value: number | null) {
+  return value === null ? "Not available" : `${value.toFixed(1)}%`;
+}
+
+function storeLabel(store: Dashboard["filters"]["stores"][number]) {
+  return store.name;
+}
+
+function currencyAmount(value: string) {
+  const amount = Number(value);
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 6
+  }).format(amount);
+}
+
+function rateText(rate: FxRates["rates"][number]) {
+  if (rate.baseCurrency === rate.quoteCurrency) {
+    return "Base currency";
+  }
+  const baseSymbol = currencySymbols[rate.baseCurrency] ?? `${rate.baseCurrency} `;
+  const quoteSymbol = currencySymbols[rate.quoteCurrency] ?? `${rate.quoteCurrency} `;
+  return `${baseSymbol}1 = ${quoteSymbol}${currencyAmount(
+    rate.rate
+  )}`;
+}
+
+function displayRateText(currency: string, fx?: FxRates) {
+  if (!fx) return "Loading accepted FX rate…";
+  if (currency === fx.reportingCurrency) {
+    return `Base currency — ${
+      currencyNames[fx.reportingCurrency] ?? fx.reportingCurrency
+    }`;
+  }
+  const rate = fx.rates.find(
+    (row) => row.baseCurrency === currency &&
+      row.quoteCurrency === fx.reportingCurrency
+  );
+  if (!rate) return "No accepted FX rate is available";
+  return `${rateText(rate)} • as of ${formatDateRange(
+    rate.rateDate,
+    rate.rateDate
+  ).split(" – ")[0]}`;
+}
+
+function Topbar({
+  dashboard,
+  currency,
+  onCurrency,
+  onFx
+}: {
+  dashboard?: Dashboard;
+  currency: string;
+  onCurrency: (value: string) => void;
+  onFx: () => void;
+}) {
+  const [storeId, setStoreId] = useState("");
+  const [channelType, setChannelType] = useState("");
+  const selectedStore = dashboard?.filters.stores.find(
+    (store) => store.storeId === storeId
+  );
+  const channelTypes = useMemo(
+    () => (dashboard?.filters.channelTypes ?? []).filter(
+      (channel) => !selectedStore ||
+        channel.marketIds.includes(selectedStore.marketId)
+    ),
+    [dashboard, selectedStore]
+  );
+  const selectStore = (nextStoreId: string) => {
+    setStoreId(nextStoreId);
+    const marketId = dashboard?.filters.stores.find(
+      (store) => store.storeId === nextStoreId
+    )?.marketId;
+    if (channelType && marketId && !dashboard?.filters.channelTypes.some(
+      (channel) => channel.type === channelType &&
+        channel.marketIds.includes(marketId)
+    )) {
+      setChannelType("");
+    }
+  };
+  return (
+    <header className="topbar">
+      <div className="title">
+        <h2>Data Management</h2>
+        <p>Monitor source systems, data freshness and data quality</p>
+      </div>
+      <div className="filters">
+        <select
+          className="filter"
+          aria-label="Channel"
+          value={channelType}
+          onChange={(event) => setChannelType(event.target.value)}
+        >
+          <option value="">All Channels</option>
+          {channelTypes.map((channel) => (
+            <option key={channel.type} value={channel.type}>
+              {channel.name}
+            </option>
+          ))}
+        </select>
+        <input
+          className="filter date-filter"
+          aria-label="Date range"
+          readOnly
+          value={dashboard ? formatDateRange(
+            dashboard.filters.dateRange.start,
+            dashboard.filters.dateRange.end
+          ) : "Loading date range"}
+        />
+        <select
+          className="filter"
+          aria-label="Store"
+          value={storeId}
+          onChange={(event) => selectStore(event.target.value)}
+        >
+          <option value="">All Stores</option>
+          {(dashboard?.filters.stores ?? []).map((store) => (
+            <option key={store.storeId} value={store.storeId}>
+              {storeLabel(store)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="filter"
+          aria-label="Display currency"
+          value={currency}
+          onChange={(event) => onCurrency(event.target.value)}
+        >
+          {(dashboard?.filters.currencies ?? ["INR"]).map((code) => (
+            <option key={code} value={code}>
+              {currencySymbols[code] ?? ""} {code}
+            </option>
+          ))}
+        </select>
+        <button
+          className="filter"
+          type="button"
+          title="Currency settings"
+          onClick={onFx}
+        >
+          FX
+        </button>
+        <button className="filter icon-button" type="button" aria-label="Notifications">🔔</button>
+      </div>
+    </header>
+  );
+}
+
+function FxModal({
+  open,
+  fx,
+  pending,
+  error,
+  onClose
+}: {
+  open: boolean;
+  fx?: FxRates;
+  pending: boolean;
+  error: Error | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="modal-backdrop open"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        aria-labelledby="fx-modal-title"
+        aria-modal="true"
+        className="modal"
+        role="dialog"
+      >
+        <div className="modal-head">
+          <h3 id="fx-modal-title">Multi-Currency Configuration</h3>
+          <button
+            aria-label="Close currency settings"
+            className="modal-close"
+            onClick={onClose}
+            type="button"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="modal-body">
+          {pending && (
+            <div className="modal-state">Loading accepted FX rates…</div>
+          )}
+          {error && (
+            <div className="modal-state modal-error">
+              Live FX rates are unavailable. No fallback rates are displayed.
+            </div>
+          )}
+          {fx && (
+            <>
+              <div className="callout">
+                <strong>Accepted FX rates</strong>
+                <p>
+                  Rates convert each local/base currency into the retailer
+                  reporting currency, {fx.reportingCurrency}. Values are read
+                  from the accepted curated publication.
+                </p>
+              </div>
+              <table className="table fx-table">
+                <thead>
+                  <tr>
+                    <th>Currency</th>
+                    <th>Configured Rate</th>
+                    <th>Rate Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fx.rates.map((rate) => (
+                    <tr key={`${rate.baseCurrency}:${rate.quoteCurrency}`}>
+                      <td>
+                        <strong>{rate.baseCurrency}</strong>
+                      </td>
+                      <td>{rateText(rate)}</td>
+                      <td>{formatDateRange(
+                        rate.rateDate,
+                        rate.rateDate
+                      ).split(" – ")[0]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="fx-coverage">
+                {formatCount(fx.coverage.observations)} accepted daily
+                observations from {fx.coverage.start} through {fx.coverage.end}.
+              </p>
+            </>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="modal-action" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Kpi({
+  name,
+  label,
+  value
+}: {
+  name: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="kpi" data-kpi={name}>
+      <small>{label}</small>
+      <div className="value">{value}</div>
+    </div>
+  );
+}
+
+function SourceTable({sources}: {sources: SourceRow[]}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <div className="card source-card">
+      <div className="table-scroll">
+        <table className="table" data-table="sources">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Type</th>
+              <th>Last Refresh</th>
+              <th>Records</th>
+              <th>Quality</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((source) => (
+              <FragmentRow
+                key={source.sourceSystem}
+                source={source}
+                selected={selected === source.sourceSystem}
+                onToggle={() => setSelected(
+                  selected === source.sourceSystem ? null : source.sourceSystem
+                )}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FragmentRow({
+  source,
+  selected,
+  onToggle
+}: {
+  source: SourceRow;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr>
+        <td><strong>{source.name}</strong></td>
+        <td>{source.type}</td>
+        <td>{relativeTime(source.lastRefreshAt)}</td>
+        <td>{formatCount(source.records, true)}</td>
+        <td>{formatPct(source.qualityPct)}</td>
+        <td>
+          <span className={`badge ${
+            source.status === "Healthy" ? "b-green" : "b-amber"
+          }`}>
+            {source.status}
+          </span>
+        </td>
+        <td>
+          <button className="link-button" type="button" onClick={onToggle}>
+            {selected ? "Hide mapping" : source.action}
+          </button>
+        </td>
+      </tr>
+      {selected && (
+        <tr className="source-detail-row">
+          <td colSpan={7}>
+            <strong>{formatCount(source.datasetCount)} mapped datasets</strong>
+            <span>{formatCount(source.objectCount)} accepted source objects</span>
+            <span>Source key: {source.sourceSystem}</span>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function FooterKpis({dashboard}: {dashboard: Dashboard}) {
+  const values = [
+    ["total-skus", "Total SKUs", formatCount(dashboard.footer.totalSkus)],
+    ["active-skus", "Active SKUs", formatCount(dashboard.footer.activeSkus)],
+    ["stores", "Stores", formatCount(dashboard.footer.stores)],
+    ["channels", "Channels", formatCount(dashboard.footer.channels)],
+    [
+      "forecast-coverage",
+      "Forecast Coverage",
+      formatPct(dashboard.footer.forecastCoveragePct)
+    ],
+    [
+      "data-freshness",
+      "Data Freshness",
+      formatPct(dashboard.kpis.dataFreshnessPct)
+    ],
+    [
+      "model-accuracy",
+      "Model Accuracy",
+      formatPct(dashboard.footer.modelAccuracyPct)
+    ]
+  ];
+  return (
+    <div className="footer-kpis">
+      {values.map(([name, label, value]) => (
+        <div className="footer-kpi" data-footer-kpi={name} key={name}>
+          <span>{label}</span>
+          <strong className={value === "Not available" ? "unavailable" : ""}>
+            {value}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Shell({
+  dashboard,
+  fx,
+  fxPending = false,
+  fxError = null,
+  children
+}: {
+  dashboard?: Dashboard;
+  fx?: FxRates;
+  fxPending?: boolean;
+  fxError?: Error | null;
+  children: ReactNode;
+}) {
+  const [currency, setCurrency] = useState("INR");
+  const [fxOpen, setFxOpen] = useState(false);
+  const availableCurrencies = dashboard?.filters.currencies ?? [];
+  const activeCurrency = availableCurrencies.includes(currency)
+    ? currency
+    : availableCurrencies[0] ?? "INR";
+  return (
+    <div className="app">
+      <Sidebar />
+      <main className="main">
+        <Topbar
+          dashboard={dashboard}
+          currency={activeCurrency}
+          onCurrency={setCurrency}
+          onFx={() => setFxOpen(true)}
+        />
+        <section className="content">
+          <div className="currency-rate-strip">
+            <strong>Display Currency:</strong>
+            <span className="currency-chip">
+              {currencySymbols[activeCurrency] ?? ""} {activeCurrency}
+            </span>
+            <span>
+              {displayRateText(activeCurrency, fx)}
+            </span>
+            <span>
+              All monetary values update across dashboards, tables, modals and exports.
+            </span>
+          </div>
+          {children}
+          {dashboard && <FooterKpis dashboard={dashboard} />}
+          <div className="page-footer">
+            <span>AI Retail Intelligence — Dynamic Pricing &amp; Demand Forecasting</span>
+            <span>Powered by AI • Built for Retail</span>
+          </div>
+        </section>
+      </main>
+      <FxModal
+        open={fxOpen}
+        fx={fx}
+        pending={fxPending}
+        error={fxError}
+        onClose={() => setFxOpen(false)}
+      />
+    </div>
+  );
+}
+
+function DataManagement({dashboard}: {dashboard: Dashboard}) {
+  return (
+    <>
+      <div className="kpi-grid">
+        <Kpi
+          name="data-freshness"
+          label="Data Freshness"
+          value={formatPct(dashboard.kpis.dataFreshnessPct)}
+        />
+        <Kpi
+          name="quality-score"
+          label="Quality Score"
+          value={formatPct(dashboard.kpis.qualityScorePct)}
+        />
+        <Kpi
+          name="connected-sources"
+          label="Connected Sources"
+          value={formatCount(dashboard.kpis.connectedSources)}
+        />
+        <Kpi
+          name="rejected-records"
+          label="Rejected Records"
+          value={formatCount(dashboard.kpis.rejectedRecords)}
+        />
+        <Kpi
+          name="last-refresh"
+          label="Last Refresh"
+          value={relativeTime(dashboard.kpis.lastRefreshAt, true)}
+        />
+      </div>
+      <SourceTable sources={dashboard.sources} />
+    </>
   );
 }
 
 export default function App() {
-  const summary = useQuery({queryKey: ["summary"], queryFn: loadSummary});
-  const gates = useQuery({queryKey: ["gates"], queryFn: loadGates});
-  const reconciliation = useQuery({
-    queryKey: ["reconciliation"],
-    queryFn: loadReconciliation
+  const dashboard = useQuery({
+    queryKey: ["data-management-dashboard"],
+    queryFn: loadDashboard
+  });
+  const fx = useQuery({
+    queryKey: ["fx-rates"],
+    queryFn: loadFx
   });
 
-  if (summary.isPending || gates.isPending || reconciliation.isPending) {
-    return <Loading />;
-  }
-  const error = summary.error ?? gates.error ?? reconciliation.error;
-  if (error || !summary.data || !gates.data || !reconciliation.data) {
+  if (dashboard.isPending) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#07151d] p-8 text-slate-200">
-        <section className="max-w-lg rounded-3xl border border-rose-300/20 bg-rose-300/[.06] p-8">
-          <p className="text-xs font-bold uppercase tracking-[.2em] text-rose-300">Live API unavailable</p>
-          <h1 className="mt-3 text-2xl font-semibold">Data Management could not load.</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-400">{String(error)}</p>
-          <p className="mt-5 text-xs text-slate-500">No stub values are substituted for live evidence.</p>
-        </section>
-      </main>
+      <Shell
+        fx={fx.data}
+        fxPending={fx.isPending}
+        fxError={fx.error}
+      >
+        <div className="state-card">Loading live retail data…</div>
+      </Shell>
     );
   }
-
-  const allRules = [...gates.data.gateA.rules, ...gates.data.gateB.rules];
-  const findings = allRules.filter((rule) => rule.outcome !== "pass");
-  const criticalViolations = allRules.filter(
-    (rule) => rule.outcome === "critical"
-  ).length;
+  if (dashboard.error || !dashboard.data) {
+    return (
+      <Shell
+        fx={fx.data}
+        fxPending={fx.isPending}
+        fxError={fx.error}
+      >
+        <div className="state-card error-state">
+          <strong>Live data is unavailable.</strong>
+          <span>{String(dashboard.error)}</span>
+          <small>No sample or fallback values are displayed.</small>
+        </div>
+      </Shell>
+    );
+  }
   return (
-    <div className="min-h-screen bg-[#07151d] text-slate-200">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/7 bg-[#081923] p-6 lg:block">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-300 font-black text-[#07151d]">RI</div>
-          <div>
-            <p className="font-semibold text-white">Retail Intelligence</p>
-            <p className="text-xs text-slate-500">Control room</p>
-          </div>
-        </div>
-        <nav className="mt-10 space-y-1 text-sm">
-          <a className="nav-active" href="#overview">Data management</a>
-          <span className="nav-muted">Demand forecast <small>Phase 3</small></span>
-          <span className="nav-muted">Inventory <small>Phase 4</small></span>
-          <span className="nav-muted">Pricing <small>Phase 5</small></span>
-        </nav>
-        <div className="absolute bottom-6 left-6 right-6 rounded-2xl border border-teal-300/10 bg-teal-300/[.04] p-4">
-          <p className="text-[10px] font-bold uppercase tracking-[.18em] text-teal-300">Live artifact mode</p>
-          <p className="mt-2 break-all font-mono text-[10px] leading-4 text-slate-500">
-            {summary.data.sourceSnapshotId.slice(0, 24)}…
-          </p>
-        </div>
-      </aside>
-
-      <main className="lg:ml-64">
-        <header className="border-b border-white/7 px-5 py-5 sm:px-8">
-          <div className="mx-auto flex max-w-[1500px] items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[.2em] text-teal-300">Phase 2 · Governed ingestion</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">Data Management</h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusPill status={summary.data.gateBStatus} />
-              <div className="hidden rounded-full border border-white/10 px-4 py-2 text-xs text-slate-400 sm:block">
-                Mumbai · New York
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <div id="overview" className="mx-auto max-w-[1500px] space-y-8 p-5 sm:p-8">
-          <section className="hero-panel">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[.2em] text-teal-200">Accepted retail source run</p>
-              <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                Source evidence to curated retail facts, with every gate visible.
-              </h2>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
-                Commerce, operations and companion feeds are landed immutably, adapted independently,
-                transformed through one source-neutral contract and reconciled before publication.
-              </p>
-            </div>
-            <div className="mt-8 grid gap-3 font-mono text-xs text-slate-400 sm:grid-cols-2">
-              <div className="hash-box"><span>Run</span>{summary.data.nativeSnapshotId}</div>
-              <div className="hash-box"><span>Publication</span>{summary.data.publicationFingerprint.slice(0, 20)}…</div>
-            </div>
-          </section>
-
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric eyebrow="Source datasets" value={summary.data.sourceDatasetCount.toLocaleString()} note="Profile-classified public datasets" />
-            <Metric eyebrow="Canonical entities" value={summary.data.canonicalEntityCount.toLocaleString()} note="Published retail_v2 tables" />
-            <Metric eyebrow="Curated objects" value={summary.data.curatedObjectCount.toLocaleString()} note="Partitioned Parquet objects" />
-            <Metric
-              eyebrow="Critical violations"
-              value={criticalViolations.toLocaleString()}
-              note={`${findings.length} disclosed warning, downgrade or critical outcome`}
-            />
-          </section>
-
-          <section className="panel">
-            <div className="section-heading">
-              <div><p className="kicker">Capability mask</p><h2>What this publication can honestly support</h2></div>
-              <span className="text-xs text-slate-500">Unavailable means evidence-limited, not empty.</span>
-            </div>
-            <CapabilityGrid summary={summary.data} />
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
-            <div className="panel overflow-hidden">
-              <div className="section-heading">
-                <div><p className="kicker">Exact controls</p><h2>Source-to-canonical reconciliation</h2></div>
-                <StatusPill status="pass" />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead><tr className="text-xs uppercase tracking-[.14em] text-slate-500">
-                    <th>Currency</th><th>Gross</th><th>Net</th><th>Tax</th><th>Units</th><th>Difference</th>
-                  </tr></thead>
-                  <tbody>
-                    {reconciliation.data.map((row) => (
-                      <tr key={row.currencyCode} className="border-t border-white/6">
-                        <td className="font-semibold text-white">{row.currencyCode}</td>
-                        <td>{row.canonical.grossMinor.toLocaleString()}</td>
-                        <td>{row.canonical.netMinor.toLocaleString()}</td>
-                        <td>{row.canonical.taxMinor.toLocaleString()}</td>
-                        <td>{row.canonical.units.toLocaleString()}</td>
-                        <td className="font-mono text-emerald-300">{row.difference.every((v) => v === 0) ? "0 / 0 / 0 / 0" : row.difference.join(" / ")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="section-heading">
-                <div><p className="kicker">Gate findings</p><h2>Visible limitations</h2></div>
-              </div>
-              <div className="space-y-3">
-                {findings.map((rule) => (
-                  <article key={rule.ruleId} className="rounded-2xl border border-amber-300/10 bg-amber-300/[.045] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-xs text-amber-200">{rule.ruleId}</span>
-                      <StatusPill status={rule.outcome} />
-                    </div>
-                    <p className="mt-3 text-sm leading-5 text-slate-300">{rule.summary}</p>
-                    {rule.reasonCode && <p className="mt-2 font-mono text-[10px] text-slate-500">{rule.reasonCode}</p>}
-                  </article>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      </main>
-    </div>
+    <Shell
+      dashboard={dashboard.data}
+      fx={fx.data}
+      fxPending={fx.isPending}
+      fxError={fx.error}
+    >
+      <DataManagement dashboard={dashboard.data} />
+    </Shell>
   );
 }

@@ -169,6 +169,113 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
     )
     assert len(publication["entityCounts"]) == 40
     assert publication["entityCounts"]["sales"] == 4_565_498
+    assert publication["businessControls"] == {
+        "activeSkus": 348,
+        "asOfDate": "2026-07-28",
+        "channels": [
+            {
+                "channelId": "india-west:mumbai-online",
+                "marketId": "india-west",
+                "name": "mumbai-online",
+                "type": "online",
+            },
+            {
+                "channelId": "india-west:mumbai-store",
+                "marketId": "india-west",
+                "name": "mumbai-store",
+                "type": "store",
+            },
+            {
+                "channelId": "us-new-york:ny-online",
+                "marketId": "us-new-york",
+                "name": "ny-online",
+                "type": "online",
+            },
+            {
+                "channelId": "us-new-york:ny-store",
+                "marketId": "us-new-york",
+                "name": "ny-store",
+                "type": "store",
+            },
+        ],
+        "currencies": ["INR", "USD"],
+        "dateRange": {"end": "2026-07-28", "start": "2016-07-28"},
+        "fx": {
+            "coverage": {
+                "end": "2026-07-28",
+                "observations": 7306,
+                "start": "2016-07-28",
+            },
+            "rates": [
+                {
+                    "baseCurrency": "INR",
+                    "quoteCurrency": "INR",
+                    "rate": "1.000000000000000000",
+                    "rateDate": "2026-07-28",
+                },
+                {
+                    "baseCurrency": "USD",
+                    "quoteCurrency": "INR",
+                    "rate": "83.000000000000000000",
+                    "rateDate": "2026-07-28",
+                },
+            ],
+            "reportingCurrency": "INR",
+        },
+        "forecastCoveragePct": None,
+        "markets": [
+            {"marketId": "india-west", "name": "India West"},
+            {"marketId": "us-new-york", "name": "US New York"},
+        ],
+        "modelAccuracyPct": None,
+        "stores": [
+            {
+                "active": True,
+                "city": "Mumbai",
+                "currencyCode": "INR",
+                "format": "store",
+                "marketId": "india-west",
+                "name": "Mumbai Bandra",
+                "region": "MH",
+                "storeId": "india-west:mumbai-bandra",
+                "timezone": "Asia/Kolkata",
+            },
+            {
+                "active": True,
+                "city": "Pune",
+                "currencyCode": "INR",
+                "format": "store",
+                "marketId": "india-west",
+                "name": "Pune Koregaon Park",
+                "region": "MH",
+                "storeId": "india-west:pune-koregaon",
+                "timezone": "Asia/Kolkata",
+            },
+            {
+                "active": True,
+                "city": "New York",
+                "currencyCode": "USD",
+                "format": "store",
+                "marketId": "us-new-york",
+                "name": "Brooklyn",
+                "region": "NY",
+                "storeId": "us-new-york:ny-brooklyn",
+                "timezone": "America/New_York",
+            },
+            {
+                "active": True,
+                "city": "New York",
+                "currencyCode": "USD",
+                "format": "store",
+                "marketId": "us-new-york",
+                "name": "Manhattan",
+                "region": "NY",
+                "storeId": "us-new-york:ny-manhattan",
+                "timezone": "America/New_York",
+            },
+        ],
+        "totalSkus": 720,
+    }
     object_paths = [row["path"] for row in publication["objects"]]
     assert len(object_paths) >= len(publication["entityCounts"])
     assert len(object_paths) == len(set(object_paths))

@@ -254,10 +254,12 @@ def validate_openapi(path: Path) -> None:
     expected_paths = {
         "/healthz",
         "/api/v1/data-management/summary",
+        "/api/v1/data-management/dashboard",
         "/api/v1/data-management/gates",
         "/api/v1/data-management/capabilities",
         "/api/v1/data-management/reconciliation",
         "/api/v1/data-management/quality-findings",
+        "/api/v1/fx/rates",
     }
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:

@@ -25,6 +25,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataManagementSummary"
+  /api/v1/data-management/dashboard:
+    get:
+      operationId: dataManagementDashboard
+      responses:
+        "200":
+          description: Original Data Management screen backed by accepted evidence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataManagementDashboard"
   /api/v1/data-management/gates:
     get:
       operationId: qualityGates
@@ -65,8 +75,139 @@ paths:
               schema:
                 type: array
                 items: {type: object}
+  /api/v1/fx/rates:
+    get:
+      operationId: fxRates
+      responses:
+        "200":
+          description: Accepted as-of FX rates into the retailer reporting currency.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FxRates"
 components:
   schemas:
+    FxRates:
+      type: object
+      required: [schemaVersion, dataMode, reportingCurrency, coverage, rates]
+      properties:
+        schemaVersion: {const: retail-fx-rates/v1}
+        dataMode: {const: live}
+        reportingCurrency: {type: string, minLength: 3, maxLength: 3}
+        coverage:
+          type: object
+          required: [start, end, observations]
+          properties:
+            start: {type: string, format: date}
+            end: {type: string, format: date}
+            observations: {type: integer, minimum: 1}
+        rates:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [baseCurrency, quoteCurrency, rate, rateDate]
+            properties:
+              baseCurrency: {type: string, minLength: 3, maxLength: 3}
+              quoteCurrency: {type: string, minLength: 3, maxLength: 3}
+              rate:
+                type: string
+                pattern: '^[0-9]+(\.[0-9]+)?$'
+              rateDate: {type: string, format: date}
+    DataManagementDashboard:
+      type: object
+      required: [schemaVersion, dataMode, kpis, sources, footer, filters]
+      properties:
+        schemaVersion: {const: retail-data-management-dashboard/v1}
+        dataMode: {const: live}
+        kpis:
+          type: object
+          required:
+            - dataFreshnessPct
+            - qualityScorePct
+            - connectedSources
+            - rejectedRecords
+            - lastRefreshAt
+          properties:
+            dataFreshnessPct: {type: number, minimum: 0, maximum: 100}
+            qualityScorePct: {type: number, minimum: 0, maximum: 100}
+            connectedSources: {type: integer, minimum: 0}
+            rejectedRecords: {type: integer, minimum: 0}
+            lastRefreshAt: {type: string, format: date-time}
+        sources:
+          type: array
+          items:
+            type: object
+            required:
+              - sourceSystem
+              - name
+              - type
+              - lastRefreshAt
+              - records
+              - qualityPct
+              - status
+              - action
+              - datasetCount
+              - objectCount
+            properties:
+              sourceSystem: {type: string}
+              name: {type: string}
+              type: {type: string}
+              lastRefreshAt: {type: string, format: date-time}
+              records: {type: integer, minimum: 0}
+              qualityPct: {type: number, minimum: 0, maximum: 100}
+              status: {type: string, enum: [Healthy, Needs attention]}
+              action: {const: View mapping}
+              datasetCount: {type: integer, minimum: 0}
+              objectCount: {type: integer, minimum: 0}
+        footer:
+          type: object
+          required:
+            - totalSkus
+            - activeSkus
+            - stores
+            - channels
+            - forecastCoveragePct
+            - modelAccuracyPct
+          properties:
+            totalSkus: {type: integer, minimum: 0}
+            activeSkus: {type: integer, minimum: 0}
+            stores: {type: integer, minimum: 0}
+            channels: {type: integer, minimum: 0}
+            forecastCoveragePct: {type: [number, "null"], minimum: 0, maximum: 100}
+            modelAccuracyPct: {type: [number, "null"], minimum: 0, maximum: 100}
+        filters:
+          type: object
+          required: [dateRange, markets, stores, channelTypes, currencies]
+          properties:
+            dateRange:
+              type: object
+              required: [start, end]
+              properties:
+                start: {type: string, format: date}
+                end: {type: string, format: date}
+            markets:
+              type: array
+              items:
+                type: object
+                required: [marketId, name]
+                properties:
+                  marketId: {type: string}
+                  name: {type: string}
+            stores: {type: array, items: {type: object}}
+            channelTypes:
+              type: array
+              items:
+                type: object
+                required: [type, name, marketIds]
+                properties:
+                  type: {type: string}
+                  name: {type: string}
+                  marketIds:
+                    type: array
+                    minItems: 1
+                    items: {type: string}
+            currencies: {type: array, items: {type: string}}
     DataManagementSummary:
       type: object
       required:

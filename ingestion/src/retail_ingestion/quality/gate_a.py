@@ -552,19 +552,44 @@ def run_gate_a(
             f"sourceSpecVersion {actual_source_version!r} != profile "
             f"{expected_source_version!r}"
         )
+    expected_source_systems = sorted(
+        {
+            source_system
+            for (source_system, _), declaration in profile_rules.items()
+            if declaration.get("expected", True)
+            and source_system != "generator"
+        }
+    )
+    represented_source_systems = sorted(
+        {
+            source_system
+            for source_system, _ in published_keys
+            if source_system in expected_source_systems
+        }
+    )
+    a03_evidence = {
+        "expectedDatasetCount": sum(
+            declaration.get("expected", True)
+            for declaration in profile_rules.values()
+        ),
+        "expectedSourceSystems": expected_source_systems,
+        "representedSourceSystems": represented_source_systems,
+        "logicalStartDate": start,
+        "logicalEndDate": end,
+    }
     a03_errors = [*missing_expected, *extract_errors]
     rules.append(
-        _critical("A03", "expected dataset/extract-window validation failed", errors=a03_errors)
+        _critical(
+            "A03",
+            "expected dataset/extract-window validation failed",
+            errors=a03_errors,
+            **a03_evidence,
+        )
         if a03_errors
         else _pass(
             "A03",
             "expected datasets and extract window are present",
-            expectedDatasetCount=sum(
-                declaration.get("expected", True)
-                for declaration in profile_rules.values()
-            ),
-            logicalStartDate=start,
-            logicalEndDate=end,
+            **a03_evidence,
         )
     )
 
