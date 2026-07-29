@@ -6,16 +6,15 @@ synthetic scenarios may combine India, the United States, the United Kingdom and
 European representative market (Germany). This monorepo is where the PoC behind the
 `ai_retail_intelligence_dashboard_multicurrency_v6` dashboard will be built.
 
-> **Status:** Phase 1 datagen v0.12.0/source contract v11 is implemented. The accepted ten-year
-> Phase-2 input is `run-34b0ff729c8abe09` (2016-07-28 through 2026-07-28). Phase 2 is active:
-> separate ingestion/ML distributions, cross-platform tooling, the 53-entity machine-readable
-> `retail_v2` foundation, source-profile/staging/coverage contracts, exact money/FX primitives and
-> `semantic-fingerprint/v1`, market/currency guardrails, generated cross-language row types and
-> immutable three-lane landing are implemented. The accepted pin is landed as snapshot
-> `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`; Gate A, adapters,
-> transforms, Gate B and curated publication remain in progress. Shared
-> safe/balanced/performance/ultra-performance profiles
-> change execution only; they do not change scenario or canonical meaning.
+> **Status:** Phase 1 datagen v0.12.0/source contract v11 and the Phase 2 governed ingestion
+> vertical slice are implemented. The accepted ten-year input is
+> `run-34b0ff729c8abe09` (2016-07-28 through 2026-07-28), landed as immutable snapshot
+> `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`. Gate A, bounded
+> Shopify/Business Central/companion adapters, standardized staging, source-neutral transforms,
+> Gate B, exact reconciliation and atomic curated Parquet/DuckDB publication run end to end.
+> The initial Aarv-based Go API and React Data Management screen expose the accepted evidence.
+> Shared safe/balanced/performance/ultra-performance profiles change execution only; they do not
+> change source interpretation, canonical meaning or governed semantic fingerprints.
 
 ## What this is (and is not)
 
@@ -91,7 +90,7 @@ Go, with [Aarv](https://github.com/nilshah80/aarv) as the HTTP web framework. Th
 | `ml/` | Curated-data consumers: features, models, engines and artifacts | Python | reuse + extend M5 PoC |
 | `api/` | Aarv-based API, workflow/HITL, serve-time guardrails, RBAC | Go | reimplement (M5 design) |
 | `datagen/` | Config Builder + source-isolated simulator and Shopify/BC/companion publishers — **extract-ready** | Python | reuse + extend generator PoC |
-| `execution/` | Versioned source-neutral safe/balanced/performance/ultra-performance profile schema, Python resolver and golden vectors shared by Python jobs | Python + JSON | new |
+| `execution/` | Source-neutral safe/balanced/performance/ultra-performance profile schema, Python resolver and golden vectors shared with the native Go resolver | Python + Go + JSON | new |
 | `contracts/` | Canonical `retail_v2`, source-profile/transform spec, fingerprints, guardrails, proto/OpenAPI | — | new |
 | `db/` | PostgreSQL migrations (single owner: Alembic) | — | copy/extend from M5 PoC |
 | `ui/` | Dashboard front-end (the mockup in `docs/` is the target) | React + TypeScript | new |
@@ -169,7 +168,6 @@ No phase is complete until its supported commands and tests pass on `windows-lat
    source-generation, operational-profile and source-to-canonical ownership boundaries.
 6. **`plans/local/plan.md`** + **`plans/local/tasks.md`** — the phased local build (Phase 1 =
    source generator and Config Builder; Phase 2 = ingestion/transformation).
-   **`plans/local/phase2-implementation-plan.md`** is the detailed Phase-2 proposal for review.
    **`plans/aws/`** is the cloud deployment plan (after local works).
 
 ## Reference implementations

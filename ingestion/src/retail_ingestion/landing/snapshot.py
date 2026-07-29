@@ -13,7 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
+import duckdb
 from retail_contracts.fingerprint import semantic_fingerprint
+from retail_ingestion.profiles import load_source_profile
 
 from .snapshot_id import SnapshotIdentityError, source_snapshot_id
 
@@ -61,8 +63,151 @@ class LandingResult:
         }
 
 
-def _read_upstream_manifest(source_root: Path) -> tuple[bytes, dict[str, Any]]:
+def _tabular_rows(path: Path, artifact_format: str) -> int | None:
+    if artifact_format not in {"parquet", "csv", "jsonl", "json"}:
+        return None
+    escaped = str(path).replace("'", "''")
+    relation = {
+        "parquet": f"read_parquet('{escaped}')",
+        "csv": f"read_csv_auto('{escaped}', header=true, all_varchar=true)",
+        "jsonl": (
+            f"read_json_auto('{escaped}', format='newline_delimited')"
+        ),
+        "json": f"read_json_auto('{escaped}', format='auto')",
+    }[artifact_format]
+    connection = duckdb.connect(":memory:")
+    try:
+        return int(
+            connection.execute(f"SELECT count(*) FROM {relation}").fetchone()[0]
+        )
+    except duckdb.Error as exc:
+        raise LandingError(f"cannot count {path}: {exc}") from exc
+    finally:
+        connection.close()
+
+
+def _derive_upstream_manifest(
+    source_root: Path,
+    source_profile: str | Path,
+    *,
+    source_instance: str | None,
+    extract_boundary: str | None,
+) -> tuple[bytes, dict[str, Any]]:
+    profile = load_source_profile(source_profile)
+    declarations = [
+        row
+        for row in profile["datasets"]
+        if row.get("classification") not in {
+            "ignored_by_profile",
+            "unsupported",
+            "restricted_oracle",
+        }
+    ]
+    without_glob = [
+        str(row["datasetId"]) for row in declarations if not row.get("pathGlob")
+    ]
+    if without_glob:
+        raise LandingError(
+            "manifest-less landing requires pathGlob for every included dataset; "
+            f"missing on {without_glob[:20]}"
+        )
+    objects: list[dict[str, Any]] = []
+    matched_paths: set[Path] = set()
+    for declaration in declarations:
+        matches = sorted(
+            path
+            for path in source_root.glob(str(declaration["pathGlob"]))
+            if path.is_file()
+        )
+        if declaration.get("expected", True) and not matches:
+            raise LandingError(
+                f"{declaration['datasetId']}: pathGlob matched no source files"
+            )
+        for path in matches:
+            resolved = path.resolve()
+            if resolved in matched_paths:
+                raise LandingError(
+                    f"{path}: matched by more than one dataset pathGlob"
+                )
+            matched_paths.add(resolved)
+            relative = path.relative_to(source_root).as_posix()
+            raw_hash = hashlib.sha256()
+            byte_count = 0
+            with path.open("rb") as reader:
+                while chunk := reader.read(CHUNK_BYTES):
+                    raw_hash.update(chunk)
+                    byte_count += len(chunk)
+            lane = declaration["permissionLane"]
+            objects.append(
+                {
+                    "path": relative,
+                    "logicalPath": relative,
+                    "bytes": byte_count,
+                    "sha256": raw_hash.hexdigest(),
+                    "rows": _tabular_rows(path, declaration["format"]),
+                    "format": declaration["format"],
+                    "compression": declaration.get("compression", "unknown"),
+                    "sourceSystem": declaration.get(
+                        "sourceSystem", profile["sourceSystem"]
+                    ),
+                    "dataset": declaration["datasetId"],
+                    "restricted": lane != "public",
+                }
+            )
+    unclassified = sorted(
+        path.relative_to(source_root).as_posix()
+        for path in source_root.rglob("*")
+        if path.is_file() and path.resolve() not in matched_paths
+    )
+    if unclassified:
+        raise LandingError(
+            "manifest-less source contains files not classified by pathGlob: "
+            f"{unclassified[:20]}"
+        )
+    window = profile.get("extractWindow", {})
+    manifest = {
+        "manifestVersion": "retail-ingestion-derived-source-manifest/v1",
+        "runId": None,
+        "scenarioId": profile["profileId"],
+        "logicalStartDate": window.get("start"),
+        "logicalEndDate": extract_boundary or window.get("end"),
+        "sourceSpecVersion": profile["sourceSchemaVersion"],
+        "sourceInstance": source_instance or profile["profileId"],
+        "objects": objects,
+        "controlsByCurrency": {},
+        "manifestDerivation": {
+            "method": "profile_path_glob_and_content_scan",
+            "profileId": profile["profileId"],
+            "profileVersion": profile["profileVersion"],
+        },
+    }
+    raw = (
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    return raw, manifest
+
+
+def _read_upstream_manifest(
+    source_root: Path,
+    source_profile: str | Path | None,
+    *,
+    source_instance: str | None,
+    extract_boundary: str | None,
+) -> tuple[bytes, dict[str, Any], str]:
     path = source_root / "source-run-manifest.json"
+    if not path.is_file():
+        if source_profile is None:
+            raise LandingError(
+                "source-run-manifest.json is absent; --source-profile is required "
+                "to derive immutable landing evidence"
+            )
+        raw, value = _derive_upstream_manifest(
+            source_root,
+            source_profile,
+            source_instance=source_instance,
+            extract_boundary=extract_boundary,
+        )
+        return raw, value, "ingestion_derived"
     try:
         raw = path.read_bytes()
         value = json.loads(raw)
@@ -70,7 +215,7 @@ def _read_upstream_manifest(source_root: Path) -> tuple[bytes, dict[str, Any]]:
         raise LandingError(f"cannot read upstream manifest {path}: {exc}") from exc
     if not isinstance(value, dict) or not isinstance(value.get("objects"), list):
         raise LandingError("upstream manifest must be an object with an objects array")
-    return raw, value
+    return raw, value, "source_provided"
 
 
 def _safe_logical_path(value: Any) -> PurePosixPath:
@@ -218,6 +363,7 @@ def land_source_snapshot(
     *,
     source_instance: str | None = None,
     extract_boundary: str | None = None,
+    source_profile: str | Path | None = None,
     execution_profile: Mapping[str, Any] | None = None,
 ) -> LandingResult:
     """Copy one complete source run into an immutable three-lane snapshot."""
@@ -226,7 +372,12 @@ def land_source_snapshot(
     destination = Path(landing_root).expanduser().resolve()
     if not source.is_dir():
         raise LandingError(f"source root does not exist: {source}")
-    raw_manifest, upstream = _read_upstream_manifest(source)
+    raw_manifest, upstream, manifest_origin = _read_upstream_manifest(
+        source,
+        source_profile,
+        source_instance=source_instance,
+        extract_boundary=extract_boundary,
+    )
     retailer = upstream.get("retailer")
     retailer_id = retailer.get("retailerId") if isinstance(retailer, dict) else None
     resolved_source_instance = source_instance or ":".join(
@@ -356,6 +507,7 @@ def land_source_snapshot(
                 "path": "public/upstream/source-run-manifest.json",
                 "bytes": len(raw_manifest),
                 "sha256": upstream_sha256,
+                "origin": manifest_origin,
             },
             "permissionLaneCounts": lane_counts,
             "objects": landed_objects,

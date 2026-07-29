@@ -200,6 +200,15 @@ No model/engine code differs by source. Phase 2 has three incremental UI checkpo
 (live coverage, reconciliation and quarantine) and **2C** after Gate B/publication (live
 capability mask and curated status). UI work does not wait for Phase 3.
 
+**Implemented status:** the accepted ten-year source pin now runs through all of the above
+governed boundaries and publishes the Phase-2 capability slice to curated Parquet and one DuckDB.
+The stable source-profile filename is `retail_datagen.yaml`; `profileVersion` and
+`sourceSchemaVersion` remain inside the document. Manifest-less retailer drops can be inventoried
+from explicit profile globs, physical CSV/Parquet/JSONL/JSON parsing is shared, and source
+semantics remain isolated in registered adapters. A composite missing Shopify, Business Central
+or companion coverage terminates as `validated_partial` after Gate A and cannot publish or reach
+ML. The Aarv API and React Data Management screen read only accepted evidence.
+
 ### Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 
 **Goal:** weekly point-in-time features + the forecaster and its evaluation.

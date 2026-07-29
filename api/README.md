@@ -56,4 +56,34 @@ and OS-specific signal adapters must preserve the same graceful-shutdown contrac
 
 **Spec:** §4.7–4.8 (HITL, lineage), §8 (screens), Architecture note.
 
-_No code yet — information only._
+## Implemented Phase-2 slice
+
+`api/go.mod` pins `github.com/nilshah80/aarv` to `v0.9.6`. The initial server is deliberately
+read-only: it loads accepted Gate A, Gate B and publication manifests, verifies that all three
+refer to the same immutable source snapshot, and exposes:
+
+- `GET /healthz`;
+- `GET /api/v1/data-management/summary`;
+- `GET /api/v1/data-management/gates`;
+- `GET /api/v1/data-management/capabilities`;
+- `GET /api/v1/data-management/reconciliation`;
+- `GET /api/v1/data-management/quality-findings`.
+
+The stable OpenAPI contract is `../contracts/api/openapi.yaml`. API execution profiles are read
+from the shared `execution/config/profiles.json`; environment overrides are validated before
+`GOMAXPROCS` and HTTP concurrency are applied.
+
+```powershell
+# Windows PowerShell
+go test -race ./...
+go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\work\run-34b0ff729c8abe09\gate-a.json -gate-b-report ..\ingestion\data\work\run-34b0ff729c8abe09\gate-b.json -publication-manifest ..\ingestion\data\curated\run-34b0ff729c8abe09\publication-manifest.json -execution-profiles ..\execution\config\profiles.json -execution-profile safe
+```
+
+```bash
+# macOS / Linux
+go test -race ./...
+go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/work/run-34b0ff729c8abe09/gate-a.json -gate-b-report ../ingestion/data/work/run-34b0ff729c8abe09/gate-b.json -publication-manifest ../ingestion/data/curated/run-34b0ff729c8abe09/publication-manifest.json -execution-profiles ../execution/config/profiles.json -execution-profile safe
+```
+
+Run these commands from `api/`. The server never substitutes sample values when accepted
+artifacts are absent or inconsistent.

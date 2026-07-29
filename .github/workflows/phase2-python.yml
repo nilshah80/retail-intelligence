@@ -7,6 +7,8 @@ on:
       - "execution/**"
       - "ingestion/**"
       - "ml/**"
+      - "api/**"
+      - "ui/**"
       - "tools/**"
       - ".github/workflows/**"
   pull_request:
@@ -15,6 +17,8 @@ on:
       - "execution/**"
       - "ingestion/**"
       - "ml/**"
+      - "api/**"
+      - "ui/**"
       - "tools/**"
       - ".github/workflows/**"
 
@@ -51,3 +55,42 @@ jobs:
         run: |
           python tools/dev.py wheels
           python tools/dev.py wheels --offline
+
+  api-go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: api/go.sum
+      - run: go test -race ./...
+      - run: go build ./cmd/server
+
+  ui-node:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

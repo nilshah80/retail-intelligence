@@ -23,6 +23,7 @@ def test_entire_contract_tree_validates() -> None:
         "tiers": 3,
         "stagingEnvelopes": 6,
         "jsonSchemas": 2,
+        "openApiContracts": 1,
         "guardrailVectors": 2,
         "determinismContracts": 1,
     }

@@ -1,5 +1,11 @@
 [
   {
+    "expectedApi": {
+      "backgroundJobWorkers": 2,
+      "dbReadPool": 6,
+      "gomaxprocs": 2,
+      "httpConcurrency": 64
+    },
     "expectedDatagen": {
       "duckdbThreads": 1,
       "marketWorkers": 1,
@@ -11,6 +17,12 @@
     "profile": "safe"
   },
   {
+    "expectedApi": {
+      "backgroundJobWorkers": 8,
+      "dbReadPool": 24,
+      "gomaxprocs": 8,
+      "httpConcurrency": 256
+    },
     "expectedDatagen": {
       "duckdbThreads": 6,
       "marketWorkers": 2,
@@ -47,6 +59,12 @@
     "profile": "custom"
   },
   {
+    "expectedApi": {
+      "backgroundJobWorkers": 16,
+      "dbReadPool": 48,
+      "gomaxprocs": 12,
+      "httpConcurrency": 512
+    },
     "expectedDatagen": {
       "duckdbThreads": 8,
       "marketWorkers": 2,

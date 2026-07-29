@@ -4,7 +4,7 @@ Every one of these is a *locked* decision. They are closed on purpose: an
 implementation that only understands `critical` and `warning` would silently
 mishandle a `capability_downgrade`, and a single collapsed "scope" enum would let
 an Indian region join a US one. See `docs/OPEN_DECISIONS.md` #40, #41, #42 and
-`plans/local/phase2-implementation-plan.md` §7.
+`contracts/retail_v2/schema.yaml`.
 """
 
 from enum import StrEnum

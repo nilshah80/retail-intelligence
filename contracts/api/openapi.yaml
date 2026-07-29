@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: Retail Intelligence API
+  version: 0.1.0
+  description: Read-only Phase 2 data-management and quality API.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Process is ready.
+          content:
+            application/json:
+              schema: {type: object}
+  /api/v1/data-management/summary:
+    get:
+      operationId: dataManagementSummary
+      responses:
+        "200":
+          description: Accepted landing and curated publication summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataManagementSummary"
+  /api/v1/data-management/gates:
+    get:
+      operationId: qualityGates
+      responses:
+        "200":
+          description: Machine-readable Gate A and Gate B reports.
+          content:
+            application/json:
+              schema: {type: object}
+  /api/v1/data-management/capabilities:
+    get:
+      operationId: capabilityMask
+      responses:
+        "200":
+          description: Published capability availability and reason codes.
+          content:
+            application/json:
+              schema: {type: object}
+  /api/v1/data-management/reconciliation:
+    get:
+      operationId: reconciliation
+      responses:
+        "200":
+          description: Exact per-currency source-to-canonical controls.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {type: object}
+  /api/v1/data-management/quality-findings:
+    get:
+      operationId: qualityFindings
+      responses:
+        "200":
+          description: Warnings, capability downgrades and critical findings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {type: object}
+components:
+  schemas:
+    DataManagementSummary:
+      type: object
+      required:
+        - schemaVersion
+        - dataMode
+        - sourceSnapshotId
+        - gateAStatus
+        - gateBStatus
+        - sourceDatasetCount
+        - canonicalEntityCount
+        - curatedObjectCount
+        - publicationFingerprint
+        - capabilityMask
+      properties:
+        schemaVersion: {const: retail-data-management/v1}
+        dataMode: {const: live}
+        sourceSnapshotId: {type: string}
+        nativeSnapshotId: {type: [string, "null"]}
+        gateAStatus: {type: string}
+        gateBStatus: {type: string}
+        sourceDatasetCount: {type: integer, minimum: 0}
+        canonicalEntityCount: {type: integer, minimum: 0}
+        curatedObjectCount: {type: integer, minimum: 0}
+        publicationFingerprint: {type: string}
+        capabilityMask: {type: object}

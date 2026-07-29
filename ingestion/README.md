@@ -22,20 +22,21 @@ Owned contents:
 - `landing/` — immutable snapshots, landing timestamps, hashes and idempotent replay;
 - `profiles/` — declarative source schema, format, field, key, timezone, currency, tax and
   semantic policies for datagen, Shopify, Business Central and other retailer sources;
-- `adapters/` — profile-driven default mapper plus bounded source-specific adapters, all ending at
-  the same staging contract;
+- `readers/` — physical Parquet/CSV/JSONL/JSON access without retailer semantics;
+- `adapters/` — bounded source-specific semantic adapters, all ending at the same staging
+  contract;
 - `staging/` — versioned source-neutral envelopes;
 - `transforms/` — source-neutral joins, filtering, code mapping, time/money/unit normalization,
   order/refund/fulfillment semantics, inventory rules, aggregation and provenance;
 - `quality/` — Gate A, Gate B, capability evaluation, reconciliation and quarantine;
-- `tests/oracles/` — profile-versioned translation from generator-vocabulary hidden controls to
-  expected canonical controls for golden round-trip tests; never a runtime transform or datagen
+- an optional future `tests/oracles/` extension may translate generator-vocabulary hidden
+  controls to expected canonical controls; it must never become a runtime transform or datagen
   dependency;
-- `warehouse/` — atomic curated Parquet/DuckDB publication.
+- `publication/` — atomic curated Parquet/DuckDB publication.
 
 ## Current implementation status
 
-The Phase-2 foundation now includes:
+The Phase-2 implementation now includes:
 
 - a Windows/macOS/Linux CLI and bounded runtime adapter using the shared execution resolver;
 - streaming immutable landing with byte-count/SHA-256 verification;
@@ -44,16 +45,32 @@ The Phase-2 foundation now includes:
 - atomic snapshot promotion into physically separate `public`, `restricted_truth` and
   `restricted_mirror` roots;
 - portable logical-path validation, including Windows-invalid/reserved path rejection;
+- A01–A13 Gate-A validation with machine-readable evidence and a public-lane-only reader;
+- format readers for Parquet, CSV, JSONL and JSON, kept separate from source semantics;
+- bounded Shopify, Business Central and companion adapters feeding one standardized staging
+  contract;
+- source-neutral canonical transforms for the revenue/forecasting slice plus inventory, supplier,
+  promotion, competitor and external-signal evidence;
+- B01–B21 Gate-B validation, reason-coded warnings/capability downgrades, exact per-currency
+  reconciliation and critical-publication refusal;
+- atomic publication to one curated DuckDB plus partitioned Parquet;
+- resumable end-to-end and retained/disposable per-stage benchmark commands;
 - real isolated-wheel and static import-boundary checks;
 - the machine-readable 53-entity contract, exact money/FX/fingerprint utilities, guardrail
-  resolver/vectors and generated Python/Go/TypeScript row types.
+  resolver/vectors and generated Python/Go/TypeScript row types;
+- an Aarv-based read-only Go API and React Data Management dashboard over accepted evidence.
 
 The full pin is landed as snapshot
 `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`: all 8,644 objects
 were streamed through byte/SHA-256 verification into 8,398 public, 245 restricted-truth and one
 restricted-mirror object. A repeat request under another execution profile was an idempotent replay.
-Gate A, source adapters/staging, source-neutral transforms, Gate B and curated publication remain
-the next implementation slices.
+The retained ultra-performance pipeline publishes 40 canonical entities, 1,314 Parquet objects
+and one `retail_v2.duckdb`. It scanned 226,929,388 public rows, opened zero restricted objects and
+reconciled INR and USD gross/net/tax/units with zero differences. Its measured wall time was
+151.369044 seconds: Gate A 6.287349, staging 129.017609, transform 9.934884, Gate B 0.773671 and
+publication 5.355531 seconds. Safe and ultra-performance runs produced the same candidate and
+Gate-B semantic fingerprints. Physical Parquet object count may vary with writer concurrency and
+is deliberately excluded from semantic identity.
 
 The authoritative cross-platform entry point is:
 
@@ -78,9 +95,46 @@ memory maps and DuckDB connections before promotion. Windows-invalid/reserved an
 case-colliding paths fail before copying. Phase 2 is not portable-complete until landing, gates,
 transforms and publication fixtures pass on Windows, macOS and Linux.
 
+Run the retained snapshot through every governed stage:
+
+```powershell
+# Windows PowerShell
+py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4 --work-root ingestion\data\work\run-34b0ff729c8abe09 --publication-root ingestion\data\curated\run-34b0ff729c8abe09 --execution-profile ultra-performance
+```
+
+```bash
+# macOS / Linux
+python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4 --work-root ingestion/data/work/run-34b0ff729c8abe09 --publication-root ingestion/data/curated/run-34b0ff729c8abe09 --execution-profile ultra-performance
+```
+
+The checked-in datagen source profile has the stable filename
+`src/retail_ingestion/profiles/retail_datagen.yaml`. Profile and upstream source-contract
+versions are fields inside the document. Do not encode routine schema versions in filenames;
+create a separate profile only when two semantically different contracts must coexist.
+
+## Reader, profile and adapter boundary
+
+A file format is not a retailer adapter. The layers are intentionally separate:
+
+1. `readers/` opens declared Parquet, CSV, JSONL or JSON objects without interpreting retail
+   meaning.
+2. `profiles/` declares source instances, datasets, keys, grains, currencies, timezones, evidence
+   policies and mapping references. Explicit `pathGlob` declarations let ingestion inventory a
+   retailer drop that does not carry a generator-style manifest.
+3. `adapters/` owns source semantics. Shopify, Business Central and companion adapters translate
+   their native identifiers and fields into the common staging contract.
+4. `staging/` and `transforms/` are source-neutral. They never branch on retailer names or import
+   source-adapter modules.
+
+Onboarding another retailer therefore adds a profile and, only when its semantics differ, one
+bounded adapter registered in `adapters/registry.py`. CSV versus Parquet does not require another
+adapter. Arbitrary columns cannot be inferred safely: an unrecognized retailer shape stops at
+Gate A or is capability-downgraded until an explicit mapping/adapter exists. This keeps retailer
+differences maintainable and prevents guessed business semantics from leaking into ML.
+
 ## Shared execution profiles
 
-Ingestion will install the independent `execution/` Python package already used by datagen.
+Ingestion installs the independent `execution/` Python package already used by datagen.
 Its ingestion namespace resolves bounded scan, transform, partition-write and DuckDB
 worker/thread counts plus memory/spill ceilings. A narrow ingestion adapter owns the actual pools
 and cleanup; no datagen code is imported.

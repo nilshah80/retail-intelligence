@@ -22,6 +22,10 @@ RUN_ROOT = (
     / "run-34b0ff729c8abe09"
 )
 MANIFEST = RUN_ROOT / "source-run-manifest.json"
+PIPELINE_ROOT = REPO_ROOT / "ingestion" / "data" / "work" / "run-34b0ff729c8abe09"
+CURATED_ROOT = (
+    REPO_ROOT / "ingestion" / "data" / "curated" / "run-34b0ff729c8abe09"
+)
 
 
 @pytest.mark.pinned_run
@@ -104,3 +108,32 @@ def test_phase2_pin_controls_are_exact() -> None:
     assert manifest["simulationControls"]["fillRate"] == "0.972567"
     assert manifest["simulationControls"]["orders"] == 9_547_786
     assert manifest["simulationControls"]["orderLines"] == 17_130_980
+
+
+@pytest.mark.pinned_run
+def test_phase2_pipeline_gate_and_publication_evidence() -> None:
+    gate_a = json.loads(
+        (PIPELINE_ROOT / "gate-a.json").read_text(encoding="utf-8")
+    )
+    gate_b = json.loads(
+        (PIPELINE_ROOT / "gate-b.json").read_text(encoding="utf-8")
+    )
+    publication = json.loads(
+        (CURATED_ROOT / "publication-manifest.json").read_text(encoding="utf-8")
+    )
+    assert gate_a["status"] == "pass"
+    assert gate_b["status"] == "pass"
+    assert publication["sourceSnapshotId"] == gate_a["sourceSnapshotId"]
+    assert publication["sourceSnapshotId"] == gate_b["sourceSnapshotId"]
+    assert len(gate_a["datasetInventory"]) == 132
+    assert gate_a["rules"][9]["evidence"]["restrictedObjectsOpened"] == 0
+    assert next(
+        rule for rule in gate_b["rules"] if rule["ruleId"] == "B18"
+    )["outcome"] == "pass"
+    assert all(
+        row["difference"] == [0, 0, 0, 0]
+        for row in gate_b["reconciliation"]
+    )
+    assert len(publication["entityCounts"]) == 40
+    assert len(publication["objects"]) == 1_314
+    assert (CURATED_ROOT / "retail_v2.duckdb").is_file()

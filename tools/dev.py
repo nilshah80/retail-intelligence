@@ -163,6 +163,97 @@ def command_ingest_stage(args: argparse.Namespace) -> int:
             command.extend(["--source-instance", args.source_instance])
         if args.extract_boundary is not None:
             command.extend(["--extract-boundary", args.extract_boundary])
+        if args.source_profile is not None:
+            command.extend(["--source-profile", str(args.source_profile)])
+    elif args.command == "gate-a":
+        command.extend(
+            [
+                "--snapshot-root",
+                str(args.snapshot_root),
+                "--source-profile",
+                str(args.source_profile),
+            ]
+        )
+        if args.metadata_only:
+            command.append("--metadata-only")
+        if args.skip_data_scan:
+            command.append("--skip-data-scan")
+        if args.report_path is not None:
+            command.extend(["--report-path", str(args.report_path)])
+    elif args.command == "stage":
+        command.extend(
+            [
+                "--snapshot-root",
+                str(args.snapshot_root),
+                "--source-profile",
+                str(args.source_profile),
+                "--output-database",
+                str(args.output_database),
+            ]
+        )
+    elif args.command == "transform":
+        command.extend(
+            [
+                "--staging-database",
+                str(args.staging_database),
+                "--candidate-database",
+                str(args.candidate_database),
+            ]
+        )
+    elif args.command == "gate-b":
+        command.extend(
+            [
+                "--candidate-database",
+                str(args.candidate_database),
+                "--staging-database",
+                str(args.staging_database),
+            ]
+        )
+        if args.report_path is not None:
+            command.extend(["--report-path", str(args.report_path)])
+    elif args.command == "publish":
+        command.extend(
+            [
+                "--candidate-database",
+                str(args.candidate_database),
+                "--gate-b-report",
+                str(args.gate_b_report),
+                "--publication-root",
+                str(args.publication_root),
+            ]
+        )
+    elif args.command == "run":
+        command.extend(
+            [
+                "--snapshot-root",
+                str(args.snapshot_root),
+                "--source-profile",
+                str(args.source_profile),
+                "--work-root",
+                str(args.work_root),
+                "--publication-root",
+                str(args.publication_root),
+            ]
+        )
+        if args.rebuild:
+            command.append("--rebuild")
+    elif args.command == "bench":
+        command.extend(
+            [
+                "--snapshot-root",
+                str(args.snapshot_root),
+                "--source-profile",
+                str(args.source_profile),
+                "--report-path",
+                str(args.report_path),
+            ]
+        )
+        if args.temp_root is not None:
+            command.extend(["--temp-root", str(args.temp_root)])
+        if args.work_root is not None:
+            command.extend(["--work-root", str(args.work_root)])
+        if args.publication_root is not None:
+            command.extend(["--publication-root", str(args.publication_root)])
     return _run(command)
 
 
@@ -198,6 +289,21 @@ def command_run_status(_: argparse.Namespace) -> int:
     return 0
 
 
+def command_api_test(_: argparse.Namespace) -> int:
+    return _run(["go", "test", "-race", "./..."], cwd=REPO_ROOT / "api")
+
+
+def command_ui_test(_: argparse.Namespace) -> int:
+    return _run(["npm", "test"], cwd=REPO_ROOT / "ui")
+
+
+def command_ui_build(_: argparse.Namespace) -> int:
+    result = _run(["npm", "run", "typecheck"], cwd=REPO_ROOT / "ui")
+    if result:
+        return result
+    return _run(["npm", "run", "build"], cwd=REPO_ROOT / "ui")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -214,8 +320,20 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("contracts", help="validate machine-readable contracts")
     subparsers.add_parser("config-hash", help="validate the pinned datagen config")
     subparsers.add_parser("run-status", help="show promoted/staging source runs")
+    subparsers.add_parser("api-test", help="run portable Go API race tests")
+    subparsers.add_parser("ui-test", help="run the UI unit tests")
+    subparsers.add_parser("ui-build", help="typecheck and build the UI")
 
-    for name in ("land", "gate-a", "gate-b", "bench"):
+    for name in (
+        "land",
+        "gate-a",
+        "stage",
+        "transform",
+        "gate-b",
+        "publish",
+        "run",
+        "bench",
+    ):
         stage = subparsers.add_parser(name)
         stage.add_argument(
             "--execution-profile",
@@ -227,6 +345,85 @@ def build_parser() -> argparse.ArgumentParser:
             stage.add_argument("--landing-root", type=Path, required=True)
             stage.add_argument("--source-instance", default=None)
             stage.add_argument("--extract-boundary", default=None)
+            stage.add_argument("--source-profile", type=Path, default=None)
+        elif name == "gate-a":
+            stage.add_argument("--snapshot-root", type=Path, required=True)
+            stage.add_argument(
+                "--source-profile",
+                type=Path,
+                default=(
+                    REPO_ROOT
+                    / "ingestion"
+                    / "src"
+                    / "retail_ingestion"
+                    / "profiles"
+                    / "retail_datagen.yaml"
+                ),
+            )
+            stage.add_argument("--metadata-only", action="store_true")
+            stage.add_argument("--skip-data-scan", action="store_true")
+            stage.add_argument("--report-path", type=Path, default=None)
+        elif name == "stage":
+            stage.add_argument("--snapshot-root", type=Path, required=True)
+            stage.add_argument(
+                "--source-profile",
+                type=Path,
+                default=(
+                    REPO_ROOT
+                    / "ingestion"
+                    / "src"
+                    / "retail_ingestion"
+                    / "profiles"
+                    / "retail_datagen.yaml"
+                ),
+            )
+            stage.add_argument("--output-database", type=Path, required=True)
+        elif name == "transform":
+            stage.add_argument("--staging-database", type=Path, required=True)
+            stage.add_argument("--candidate-database", type=Path, required=True)
+        elif name == "gate-b":
+            stage.add_argument("--candidate-database", type=Path, required=True)
+            stage.add_argument("--staging-database", type=Path, required=True)
+            stage.add_argument("--report-path", type=Path, default=None)
+        elif name == "publish":
+            stage.add_argument("--candidate-database", type=Path, required=True)
+            stage.add_argument("--gate-b-report", type=Path, required=True)
+            stage.add_argument("--publication-root", type=Path, required=True)
+        elif name == "run":
+            stage.add_argument("--snapshot-root", type=Path, required=True)
+            stage.add_argument(
+                "--source-profile",
+                type=Path,
+                default=(
+                    REPO_ROOT
+                    / "ingestion"
+                    / "src"
+                    / "retail_ingestion"
+                    / "profiles"
+                    / "retail_datagen.yaml"
+                ),
+            )
+            stage.add_argument("--work-root", type=Path, required=True)
+            stage.add_argument("--publication-root", type=Path, required=True)
+            stage.add_argument("--rebuild", action="store_true")
+        elif name == "bench":
+            stage.add_argument("--snapshot-root", type=Path, required=True)
+            stage.add_argument(
+                "--source-profile",
+                type=Path,
+                default=(
+                    REPO_ROOT
+                    / "ingestion"
+                    / "src"
+                    / "retail_ingestion"
+                    / "profiles"
+                    / "retail_datagen.yaml"
+                ),
+            )
+            stage.add_argument("--report-path", type=Path, required=True)
+            stage.add_argument("--temp-root", type=Path, default=None)
+            stage.add_argument("--work-root", type=Path, default=None)
+            stage.add_argument("--publication-root", type=Path, default=None)
 
     return parser
 
@@ -242,9 +439,16 @@ def main(argv: list[str] | None = None) -> int:
         "contracts": command_contracts,
         "config-hash": command_config_hash,
         "run-status": command_run_status,
+        "api-test": command_api_test,
+        "ui-test": command_ui_test,
+        "ui-build": command_ui_build,
         "land": command_ingest_stage,
         "gate-a": command_ingest_stage,
+        "stage": command_ingest_stage,
+        "transform": command_ingest_stage,
         "gate-b": command_ingest_stage,
+        "publish": command_ingest_stage,
+        "run": command_ingest_stage,
         "bench": command_ingest_stage,
     }
     try:

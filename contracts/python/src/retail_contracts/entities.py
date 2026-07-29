@@ -245,6 +245,37 @@ def validate_json_schema(path: Path) -> None:
     Draft202012Validator.check_schema(document)
 
 
+def validate_openapi(path: Path) -> None:
+    """Validate the stable Phase-2 surface without introducing a second toolchain."""
+
+    document = load_yaml(path)
+    if not str(document.get("openapi", "")).startswith("3.1."):
+        raise ContractValidationError("OpenAPI contract must use 3.1")
+    expected_paths = {
+        "/healthz",
+        "/api/v1/data-management/summary",
+        "/api/v1/data-management/gates",
+        "/api/v1/data-management/capabilities",
+        "/api/v1/data-management/reconciliation",
+        "/api/v1/data-management/quality-findings",
+    }
+    paths = document.get("paths")
+    if not isinstance(paths, Mapping) or set(paths) != expected_paths:
+        raise ContractValidationError("Phase-2 OpenAPI path inventory drifted")
+    operation_ids: list[str] = []
+    for endpoint, methods in paths.items():
+        if not isinstance(methods, Mapping) or "get" not in methods:
+            raise ContractValidationError(f"{endpoint}: GET operation is absent")
+        operation = methods["get"]
+        if not isinstance(operation, Mapping) or not operation.get("operationId"):
+            raise ContractValidationError(f"{endpoint}: operationId is absent")
+        if "200" not in operation.get("responses", {}):
+            raise ContractValidationError(f"{endpoint}: 200 response is absent")
+        operation_ids.append(str(operation["operationId"]))
+    if len(operation_ids) != len(set(operation_ids)):
+        raise ContractValidationError("OpenAPI operationId values must be unique")
+
+
 def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
     contract_root = locate_contract_root(root)
     schema = load_yaml(contract_root / "retail_v2" / "schema.yaml")
@@ -276,7 +307,7 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         != "secondary_unless_writer_fully_pinned"
     ):
         raise ContractValidationError("determinism byte-equality policy drifted")
-    staging = load_yaml(contract_root / "staging" / "staging_v1.yaml")
+    staging = load_yaml(contract_root / "staging" / "staging.yaml")
     if set(staging.get("envelopes", {})) != {
         "merchandise",
         "adjustment",
@@ -285,9 +316,10 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "receipt",
         "dimension_signal",
     }:
-        raise ContractValidationError("staging_v1 must define exactly six envelopes")
+        raise ContractValidationError("staging contract must define exactly six envelopes")
     validate_json_schema(contract_root / "profiles" / "profile.schema.json")
     validate_json_schema(contract_root / "coverage" / "coverage.schema.json")
+    validate_openapi(contract_root / "api" / "openapi.yaml")
     from .fingerprint import canonical_json_bytes
     from .guardrails import resolve_guardrails, resolved_guardrail_fingerprint
 
@@ -318,6 +350,7 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "tiers": len(tiers["tiers"]),
         "stagingEnvelopes": len(staging["envelopes"]),
         "jsonSchemas": 2,
+        "openApiContracts": 1,
         "guardrailVectors": len(guardrail_vectors["vectors"]),
         "determinismContracts": 1,
     }
@@ -333,6 +366,7 @@ __all__ = [
     "locate_contract_root",
     "validate_contract_tree",
     "validate_json_schema",
+    "validate_openapi",
     "validate_retail_v2",
     "validate_tiers",
 ]

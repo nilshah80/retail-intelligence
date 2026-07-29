@@ -83,6 +83,11 @@ PACKAGES = (
             "from retail_ingestion.runtime.profile import resolve_ingestion_runtime; "
             "assert resolve_ingestion_runtime('safe', environment={}).memory_limit_gb == 4"
         ),
+        full_probe=(
+            "from retail_ingestion.cli import build_parser; "
+            "p=build_parser().parse_args(['gate-a','--snapshot-root','.']).source_profile; "
+            "assert p.name == 'retail_datagen.yaml' and p.is_file()"
+        ),
     ),
     Package(
         name="retail-ml",

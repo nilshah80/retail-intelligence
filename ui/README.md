@@ -49,4 +49,22 @@ are **new UI work**, not just data wiring (spec §8.3 note).
 
 **Spec:** §1 (screen inventory), §8 (all screens).
 
-_No code yet — information only._
+## Implemented Phase-2 slice
+
+The Data Management dashboard is live. It fetches the Aarv API through TanStack Query, validates
+responses with Zod and displays source/canonical/object counts, Gate A/B status, capability
+downgrades, exact per-currency reconciliation and quality findings. It does not fall back to
+invented values when the API is unavailable.
+
+The package and script names are cross-platform and contain no shell-specific environment syntax:
+
+```text
+npm ci
+npm run typecheck
+npm test
+npm run build
+npm run dev
+```
+
+During local development Vite proxies `/api` and `/healthz` to `http://127.0.0.1:8080`. Start the
+Go server first, then run `npm run dev` from `ui/` and open `http://127.0.0.1:5173`.

@@ -1,0 +1,397 @@
+schemaVersion: retail-source-profile/v1
+profileId: retail-datagen-multi-source
+profileVersion: "1.0.0"
+sourceSystem: generator
+sourceSchemaVersion: retail-source-config/v11
+businessTimezone: source_location_timezone
+extractWindow:
+  start: "2016-07-28"
+  end: "2026-07-28"
+channelPolicy:
+  mode: native
+assortmentPolicy:
+  mode: native_store_assortment
+money:
+  sourceUnit: major_decimal
+  taxBasis: source_field
+  currencyField: currencyCode
+  taxBasisField: taxesIncluded_or_companyMarketConfiguration.taxBasis
+quantityPolicy:
+  mode: entity_semantics
+  derivationRule: >-
+    Transaction quantities are item counts; measurementUnit/measurementValue and
+    Business Central unitOfMeasureCode preserve pack, weight and volume semantics.
+mappingReferences:
+  - companyMarketConfiguration.marketCode
+  - locations.marketCode
+  - companion.marketKey
+  - Shopify.locationId
+  - BusinessCentral.locationCode
+sourceInstances:
+  - sourceSystem: shopify
+    sourceInstance: northstar-in
+    logicalPathPrefix: shopify/northstar-in/
+    marketId: india-mumbai
+    currencyCode: INR
+    timezone: Asia/Kolkata
+  - sourceSystem: shopify
+    sourceInstance: northstar-us
+    logicalPathPrefix: shopify/northstar-us/
+    marketId: us-new-york
+    currencyCode: USD
+    timezone: America/New_York
+  - sourceSystem: businessCentral
+    sourceInstance: bc-northstar-in
+    logicalPathPrefix: business-central/bc-northstar-in/
+    marketId: india-mumbai
+    currencyCode: INR
+    timezone: Asia/Kolkata
+  - sourceSystem: businessCentral
+    sourceInstance: bc-northstar-us
+    logicalPathPrefix: business-central/bc-northstar-us/
+    marketId: us-new-york
+    currencyCode: USD
+    timezone: America/New_York
+  - sourceSystem: companion
+    sourceInstance: india-mumbai
+    logicalPathPrefix: companion/india-mumbai/
+    marketId: india-mumbai
+    currencyCode: INR
+    timezone: Asia/Kolkata
+  - sourceSystem: companion
+    sourceInstance: us-new-york
+    logicalPathPrefix: companion/us-new-york/
+    marketId: us-new-york
+    currencyCode: USD
+    timezone: America/New_York
+authenticity:
+  mode: not_required_for_snapshot
+datasets:
+  - &staged
+    sourceSystem: businessCentral
+    datasetId: companyMarketConfiguration
+    classification: staged
+    permissionLane: public
+    format: parquet
+    sourceKeys: [companyId]
+    grainFields: [companyId]
+    columnPolicies: []
+  - <<: *staged
+    datasetId: customers
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: inboundShipments
+    sourceKeys: [shipmentId]
+    grainFields: [shipmentId]
+  - <<: *staged
+    datasetId: inventorySnapshots
+    sourceKeys: [locationCode, sku, observedAt]
+    grainFields: [locationCode, sku, observedAt]
+  - <<: *staged
+    datasetId: itemBatches
+    sourceKeys: [batchId]
+    grainFields: [batchId]
+  - <<: *staged
+    datasetId: itemCostLayers
+    sourceKeys: [costLayerId]
+    grainFields: [costLayerId]
+  - <<: *staged
+    datasetId: itemLedgerEntries
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: itemLifecycleEvents
+    sourceKeys: [eventKey]
+    grainFields: [eventKey]
+  - <<: *staged
+    datasetId: itemVariants
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: items
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: locations
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: purchaseOrderLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: purchaseOrders
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: purchasingBudgets
+    sourceKeys: [marketCode, periodMonth]
+    grainFields: [marketCode, periodMonth]
+  - <<: *staged
+    datasetId: salesInvoiceLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: salesInvoices
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: supplierCapacityConfirmations
+    sourceKeys: [vendorId, marketCode, periodMonth]
+    grainFields: [vendorId, marketCode, periodMonth]
+  - <<: *staged
+    datasetId: supplierPerformance
+    sourceKeys: [receiptLineId]
+    grainFields: [receiptLineId]
+  - <<: *staged
+    datasetId: transferOrderLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: transferOrders
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: transferShipments
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: vendorItemTerms
+    sourceKeys: [vendorId, marketCode, categoryId]
+    grainFields: [vendorId, marketCode, categoryId]
+    nullableSourceKeys: [categoryId]
+  - <<: *staged
+    datasetId: vendors
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: warehouseCapacity
+    sourceKeys: [warehouseId, observedAt]
+    grainFields: [warehouseId, observedAt]
+  - <<: *staged
+    datasetId: warehouseReceiptLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: warehouseReceipts
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    datasetId: wasteEvents
+    sourceKeys: [wasteEventId]
+    grainFields: [wasteEventId]
+  - <<: *staged
+    datasetId: wmsInventoryComparisons
+    sourceKeys: [warehouseId, sku, observedAt]
+    grainFields: [warehouseId, sku, observedAt]
+
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: allocationDemandRequests
+    sourceKeys: [requestKey]
+    grainFields: [requestKey]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: allocationSupplyPools
+    sourceKeys: [poolKey]
+    grainFields: [poolKey]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: competitorMatches
+    sourceKeys: [matchKey]
+    grainFields: [matchKey]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: competitorPrices
+    sourceKeys: [marketKey, competitorId, competitorSku, targetType, targetId, validDate, observedAt]
+    grainFields: [marketKey, competitorId, competitorSku, targetType, targetId, validDate, observedAt]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: customerSegments
+    sourceKeys: [segmentId]
+    grainFields: [segmentId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: fxRates
+    sourceKeys: [marketKey, baseCurrency, quoteCurrency, rateType, rateDate]
+    grainFields: [marketKey, baseCurrency, quoteCurrency, rateType, rateDate]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: holidays
+    sourceKeys: [marketKey, date, name]
+    grainFields: [marketKey, date, name, targetType, targetId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: localEvents
+    sourceKeys: [eventId]
+    grainFields: [eventId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: macroIndex
+    sourceKeys: [marketKey, indexName, targetType, targetId, validDate, observedAt]
+    grainFields: [marketKey, indexName, targetType, targetId, validDate, observedAt]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: pandemicSignals
+    sourceKeys: [marketKey, validDate, observedAt]
+    grainFields: [marketKey, validDate, observedAt]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: pandemicTimeline
+    sourceKeys: [marketKey, pandemicId, phaseId]
+    grainFields: [marketKey, pandemicId, phaseId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: promotionSkus
+    sourceKeys: [marketKey, promotionId, sku, categoryId, departmentId]
+    nullableSourceKeys: [sku, categoryId, departmentId]
+    grainFields: [marketKey, promotionId, sku, categoryId, departmentId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: promotions
+    sourceKeys: [marketKey, promotionId]
+    grainFields: [marketKey, promotionId]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: storeAssortment
+    sourceKeys: [marketKey, storeKey, sku, validFrom]
+    grainFields: [marketKey, storeKey, sku, validFrom]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: weatherActuals
+    sourceKeys: [marketKey, targetType, targetId, validDate, observedAt]
+    grainFields: [marketKey, targetType, targetId, validDate, observedAt]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: weatherForecasts
+    sourceKeys: [marketKey, targetType, targetId, validDate, issuedAt, provider]
+    grainFields: [marketKey, targetType, targetId, validDate, issuedAt, provider]
+
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: catalogEvents
+    sourceKeys: [eventKey]
+    grainFields: [eventKey]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: customers
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: fulfillmentLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: fulfillmentOrderLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: fulfillmentOrders
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: fulfillmentStatusHistory
+    sourceKeys: [fulfillmentId, sequence]
+    grainFields: [fulfillmentId, sequence]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: fulfillments
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: inventoryItems
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: inventoryLevels
+    sourceKeys: [inventoryItemId, locationId]
+    grainFields: [inventoryItemId, locationId]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: inventoryQuantities
+    sourceKeys: [inventoryItemId, locationId, name, observedAt]
+    grainFields: [inventoryItemId, locationId, name, observedAt]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: locations
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: orderLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: orders
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: priceHistory
+    sourceKeys: [variantId, effectiveDate]
+    grainFields: [variantId, effectiveDate]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: productVariants
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: products
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: refundTransactions
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: refunds
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: returnLines
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: returns
+    sourceKeys: [id]
+    grainFields: [id]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: taxLines
+    sourceKeys: [orderId, orderLineId, title, rate]
+    grainFields: [orderId, orderLineId, title, rate]
+  - <<: *staged
+    sourceSystem: shopify
+    datasetId: webhookHmacFixtures
+    classification: fixture_only
+    sourceKeys: [fixtureId]
+    grainFields: [fixtureId]
+
+  - &metadata
+    sourceSystem: generator
+    datasetId: resolvedConfig
+    classification: control_only
+    permissionLane: public
+    format: yaml
+    sourceKeys: []
+    grainFields: []
+    columnPolicies: []
+  - <<: *metadata
+    datasetId: resolvedConfigJsonCompatibility
+    format: json
+  - <<: *metadata
+    datasetId: sourceSchema
+    format: json

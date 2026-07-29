@@ -1,5 +1,5 @@
 schemaVersion: retail-staging/v1
-description: Versioned source-neutral envelopes emitted by profiles/adapters.
+description: Source-neutral envelopes emitted by profiles/adapters; version is carried in content.
 
 commonFields:
   source_system: {type: string, required: true}

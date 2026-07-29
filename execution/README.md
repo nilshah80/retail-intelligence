@@ -44,9 +44,11 @@ The machine-readable contract is under
 
 - `profiles.json` contains the four named profiles and reserved layer namespaces;
 - `schema.json` is the active portable validator for datagen, ingestion, ML and API blocks;
-- `golden-vectors.json` locks resolution/override behavior for Python now and Go later.
+- `golden-vectors.json` locks resolution/override behavior for both the Python resolver and the
+  native Go API resolver.
 
-Phase 1 implements the `datagen` adapter. `marketWorkers` runs independent markets in separate
+Phase 1 implements the `datagen` adapter; Phase 2 implements ingestion and API adapters.
+`marketWorkers` runs independent markets in separate
 processes; `partitionWorkers` controls authoritative CSV/Parquet publication;
 `duckdbThreads` controls the single browsing mirror; `memoryLimitGb` bounds DuckDB operations;
 and `spoolChunkRows` bounds each private stream buffer. In

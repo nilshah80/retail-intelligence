@@ -16,6 +16,7 @@ from setuptools.command.build_py import build_py
 
 CONTRACT_ROOT = Path(__file__).resolve().parent.parent
 CONTRACT_DIRECTORIES = (
+    "api",
     "coverage",
     "fingerprints",
     "guardrails",
