@@ -62,7 +62,7 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
 Status markers: `[ ]` not started · `[~]` partial · `[x]` done. Task-level detail lives in
 `plans/local/tasks.md`.
 
-### Phase 1 — Config Builder and synthetic source generation `[FIRST]`
+### Phase 1 — Config Builder and synthetic source generation `[~]`
 
 **Goal:** bring compatible code from `../retail-synthetic-data-generator` into `datagen/`, replace
 its flat US-only scenario with a Config-Builder-authored multi-market source specification, and
@@ -100,6 +100,10 @@ publish source-shaped Shopify, Business Central and companion datasets without i
   configured promotion lift, price elasticity, intermittency/new-product gates, weather,
   local-event, competitor and macro effects; `startingDailyOrders` controls real order headers
   through config-owned average basket lines; enabled signals must actually influence demand.
+- **Customer population:** per-market opening registered customers, annual acquisition,
+  churn/reactivation, guest checkout, opening history and a hard customer/day order cap are all
+  authored in the Config Builder. Shopify guest orders remain source-native; BC uses an explicit
+  market walk-in account. Direct identifiers remain blank by contract.
 - **Context and pricing-evidence presets:** companion signals and promotion targets carry
   generator-owned market plus structured region/store/channel scope. The primary Mumbai+New York
   scenario uses response-rich assortment/price dynamics; a separate sparse preset demonstrates
@@ -111,10 +115,12 @@ publish source-shaped Shopify, Business Central and companion datasets without i
   `source-run.duckdb` browsing mirror,
   a generated source-field dictionary, and a manifest with resolved config/run identity,
   topology, capabilities, row/control totals and hashes; hidden generator-vocabulary truth for
-  evaluation; deterministic replay.
+  evaluation; deterministic replay. Long-horizon projections use bounded private row spools,
+  trailing-window causal state and concurrent independent partition publication. Worker count,
+  spool size and DuckDB memory are runtime-only controls and cannot alter the scenario/run ID.
 - **Screen-completeness fidelity:** config-driven split/status/return/refund/HMAC fixtures, the
   named inventory-state matrix, and receipt/inbound/batch/supplier/competitor-match/warehouse/
-  transfer/allocation evidence are included in source spec v9. Margin-aware pricing remains
+  transfer/allocation evidence are included in source spec v11. Margin-aware pricing remains
   unavailable downstream until the enabled receipt/cost projection passes the ingestion cost
   capability gate.
 - **Operational realism:** adaptive SKU/location replenishment closes the inventory loop using
@@ -134,7 +140,16 @@ identically; IN/US/GB/DE locale tests pass; Mumbai and New York stores produce d
 currency/tax/holiday/signal scope; response-rich and sparse-evidence presets are reproducible; the
 same config/seed reproduces the same logical source run; Phase 2 can land every declared source
 output. No generated file uses `retail_v2` vocabulary by design. **Demo checkpoint 1:** create,
-re-open and generate the Mumbai + New York source run from the Config Builder.
+re-open and generate the Mumbai + New York source run from the Config Builder. Code/test
+acceptance is complete for v0.12.0/v11. The earlier v0.11.0 ten-year
+`run-b8c4cceba05eb61a` was generated under the ultra-performance profile and measured at
+1h26m50.27s and 17.56-GiB peak process RSS, but it predates the v0.12.0 source/realism
+corrections and is benchmark evidence rather than the Phase-2 pin. The v0.11.0 execution-only extension adds a separate
+Config-Builder execution YAML, one shared neutral resolver, deterministic per-market processes,
+independent partition/DuckDB controls and manifest telemetry. Safe/performance/ultra-performance parity is proven
+on the full 90-day showcase; full ten-year ultra evidence is recorded, while equivalent safe and
+performance full runs remain optional comparison evidence. Phase 1 code is complete; a fresh
+v0.12.0/v11 ten-year acceptance run must be pinned before Phase 2 landing begins.
 
 ### Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
@@ -152,11 +167,17 @@ atomically publish curated Parquet + DuckDB and reason-coded quarantine. Canonic
 the derived stores view retain `market_id`, operating currency and timezone. Ingestion tests own
 the versioned generator-truth→canonical expected-control oracle used by golden round trips.
 Canonical contextual feeds preserve market-qualified `geo_scope_*` or structured multi-axis
-promotion scope; observation/reference facts
+promotion scope; public pandemic timeline/signal evidence maps to an explicit `[in]`
+market-disruption observation contract rather than being discarded or confused with hidden
+truth; observation/reference facts
 use natural-key/effective-time/`known_as_of` ordering while cumulative/correctable facts use
 explicit versions. Sales/sell prices use location operating currency, supplier terms have typed
 scope and exact origin semantics, and reporting FX uses the shared direction/precision/rounding
-contract. Freeze the first screen contract—common OpenAPI envelopes plus Data Management/quality
+contract. Ingestion installs the neutral `execution/` Python package and maps its ingestion
+namespace into bounded scan/transform/write workers, DuckDB threads, memory/spill limits and
+partition writers. The resolved profile is recorded in the ingest manifest but excluded from
+landing/canonical fingerprints; safe and ultra-performance profiles must accept/quarantine identical
+rows and controls. Freeze the first screen contract—common OpenAPI envelopes plus Data Management/quality
 read models—and scaffold the runtime dashboard with the selected UI framework and its initial
 read-only Go API slice.
 
@@ -164,15 +185,18 @@ read-only Go API slice.
 reconstruct their declared canonical slices and reconciliations; missing source metadata is
 derived with visible provenance or quarantined; only capability-complete composites receive full
 Gate-B `pass` and curated publication; golden controls match through the ingestion-owned oracle.
-No model/engine code differs by source. **Demo checkpoint 2:** the dashboard renders live ingest
-runs, coverage, Gate A/B, reconciliation and quarantine status.
+No model/engine code differs by source. Phase 2 has three incremental UI checkpoints:
+**2A** after landing/Gate A (live source inventory, controls and Gate A), **2B** after staging
+(live coverage, reconciliation and quarantine) and **2C** after Gate B/publication (live
+capability mask and curated status). UI work does not wait for Phase 3.
 
 ### Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 
 **Goal:** weekly point-in-time features + the forecaster and its evaluation.
 
 **Scope:** weekly PIT feature build (lags/rolling/seasonality, market-local price/promo/calendar
-**+ new competitor/weather/event/macro drivers**) joined through market-qualified scope; use
+**+ new competitor/weather/event/market-disruption/macro drivers**) joined through
+market-qualified scope; use
 dimensionless/local-normalized prices
 for any cross-market forecast pool; LightGBM horizon-quantile **P50/P90, horizons to 26 weeks**,
 Croston routing for intermittent; baselines + **Forecast Value Add** (WAPE, bias,

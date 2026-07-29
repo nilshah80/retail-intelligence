@@ -11,15 +11,38 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-LOCALE_PACK_VERSION = "2026.3"
+LOCALE_PACK_VERSION = "2026.5"
 
 
-def _holiday(date: str, name: str, kind: str = "public") -> dict[str, str]:
-    return {"date": date, "name": name, "kind": kind}
+def _holiday(
+    date: str,
+    name: str,
+    kind: str = "public",
+    retail_behavior: str = "public-holiday",
+) -> dict[str, str]:
+    return {
+        "date": date,
+        "name": name,
+        "kind": kind,
+        "retailBehavior": retail_behavior,
+    }
 
 
-def _fixed(name: str, month: int, day: int, kind: str = "public") -> dict[str, Any]:
-    return {"type": "fixed", "name": name, "month": month, "day": day, "kind": kind}
+def _fixed(
+    name: str,
+    month: int,
+    day: int,
+    kind: str = "public",
+    retail_behavior: str = "public-holiday",
+) -> dict[str, Any]:
+    return {
+        "type": "fixed",
+        "name": name,
+        "month": month,
+        "day": day,
+        "kind": kind,
+        "retailBehavior": retail_behavior,
+    }
 
 
 def _nth(
@@ -28,6 +51,7 @@ def _nth(
     weekday: int,
     occurrence: int,
     kind: str = "public",
+    retail_behavior: str = "public-holiday",
 ) -> dict[str, Any]:
     return {
         "type": "nth-weekday",
@@ -36,6 +60,28 @@ def _nth(
         "weekday": weekday,
         "occurrence": occurrence,
         "kind": kind,
+        "retailBehavior": retail_behavior,
+    }
+
+
+def _nth_offset(
+    name: str,
+    month: int,
+    weekday: int,
+    occurrence: int,
+    offset_days: int,
+    kind: str = "retail-event",
+    retail_behavior: str = "retail-peak",
+) -> dict[str, Any]:
+    return {
+        "type": "nth-weekday-offset",
+        "name": name,
+        "month": month,
+        "weekday": weekday,
+        "occurrence": occurrence,
+        "offsetDays": offset_days,
+        "kind": kind,
+        "retailBehavior": retail_behavior,
     }
 
 
@@ -44,6 +90,7 @@ def _last(
     month: int,
     weekday: int,
     kind: str = "public",
+    retail_behavior: str = "public-holiday",
 ) -> dict[str, Any]:
     return {
         "type": "last-weekday",
@@ -51,15 +98,22 @@ def _last(
         "month": month,
         "weekday": weekday,
         "kind": kind,
+        "retailBehavior": retail_behavior,
     }
 
 
-def _easter(name: str, offset_days: int, kind: str = "public") -> dict[str, Any]:
+def _easter(
+    name: str,
+    offset_days: int,
+    kind: str = "public",
+    retail_behavior: str = "public-holiday",
+) -> dict[str, Any]:
     return {
         "type": "easter-offset",
         "name": name,
         "offsetDays": offset_days,
         "kind": kind,
+        "retailBehavior": retail_behavior,
     }
 
 
@@ -225,8 +279,16 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
             _fixed("Independence Day", 7, 4),
             _nth("Labor Day", 9, 0, 1),
             _fixed("Veterans Day", 11, 11),
-            _nth("Thanksgiving", 11, 3, 4),
-            _fixed("Christmas", 12, 25),
+            _nth(
+                "Thanksgiving",
+                11,
+                3,
+                4,
+                retail_behavior="closed",
+            ),
+            _nth_offset("Black Friday", 11, 3, 4, 1),
+            _nth_offset("Cyber Monday", 11, 3, 4, 4),
+            _fixed("Christmas", 12, 25, retail_behavior="closed"),
         ],
         "holidays": [],
         "saleSeasons": [
@@ -289,7 +351,9 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
             _nth("Early May Bank Holiday", 5, 0, 1),
             _last("Spring Bank Holiday", 5, 0),
             _last("Summer Bank Holiday", 8, 0),
-            _fixed("Christmas", 12, 25),
+            _nth_offset("Black Friday", 11, 3, 4, 1),
+            _nth_offset("Cyber Monday", 11, 3, 4, 4),
+            _fixed("Christmas", 12, 25, retail_behavior="closed"),
             _fixed("Boxing Day", 12, 26),
         ],
         "holidays": [
@@ -353,15 +417,32 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
             "monsoonMonths": [],
         },
         "holidayRules": [
-            _fixed("Neujahr", 1, 1),
-            _easter("Karfreitag", -2),
-            _easter("Ostermontag", 1),
-            _fixed("Tag der Arbeit", 5, 1),
-            _easter("Christi Himmelfahrt", 39),
-            _easter("Pfingstmontag", 50),
-            _fixed("Tag der Deutschen Einheit", 10, 3),
-            _fixed("Erster Weihnachtstag", 12, 25),
-            _fixed("Zweiter Weihnachtstag", 12, 26),
+            _fixed("Neujahr", 1, 1, retail_behavior="closed"),
+            _easter("Karfreitag", -2, retail_behavior="closed"),
+            _easter("Ostermontag", 1, retail_behavior="closed"),
+            _fixed("Tag der Arbeit", 5, 1, retail_behavior="closed"),
+            _easter("Christi Himmelfahrt", 39, retail_behavior="closed"),
+            _easter("Pfingstmontag", 50, retail_behavior="closed"),
+            _fixed(
+                "Tag der Deutschen Einheit",
+                10,
+                3,
+                retail_behavior="closed",
+            ),
+            _nth_offset("Black Friday", 11, 3, 4, 1),
+            _nth_offset("Cyber Monday", 11, 3, 4, 4),
+            _fixed(
+                "Erster Weihnachtstag",
+                12,
+                25,
+                retail_behavior="closed",
+            ),
+            _fixed(
+                "Zweiter Weihnachtstag",
+                12,
+                26,
+                retail_behavior="closed",
+            ),
         ],
         "holidays": [],
         "saleSeasons": [

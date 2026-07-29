@@ -11,6 +11,9 @@ orchestration and environment/config.
   independently deployed `ingestion/` and `ml/` use separate or shared governed environments is
   decision #38 and must be locked before scaffolding their package/workspace boundary. It does
   not block the independently isolated Phase-1 `datagen/` scaffold.
+- Install the source-neutral `execution/` resolver into each Python job environment. It supplies
+  bounded operational defaults and golden vectors only; it is not a reason to merge the datagen,
+  ingestion and ML environments. The Go API implements the same JSON contract natively.
 - Data-flow wiring: `datagen/` source outputs → `ingestion/` raw landing/Gates/transforms →
   curated lake → `ml/` artifacts → `api/`.
 

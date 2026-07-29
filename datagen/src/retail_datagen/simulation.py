@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import math
 import calendar
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal, ROUND_HALF_EVEN
-from typing import Any, Iterable
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_EVEN
+from functools import lru_cache
+from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from .calendar import holidays_for_range
-from .identity import rng, stable_integer
+from .customers import CustomerPopulation
+from .identity import rng, shopify_order_name, stable_integer
 from .lifecycle import lifecycle_adjustment
 from .operations import fulfillment_timestamps
 
@@ -103,6 +106,25 @@ def _active(
         if row["marketId"] == market_id
         and date.fromisoformat(row["startDate"]) <= day
         and date.fromisoformat(row["endDate"]) >= day
+    ]
+
+
+def _recent_promotions(
+    config: dict[str, Any],
+    market: dict[str, Any],
+    day: date,
+) -> list[dict[str, Any]]:
+    """Return post-campaign payback inputs only when the signal is enabled."""
+
+    if not market["signals"]["promotions"]:
+        return []
+    market_id = market["marketId"]
+    return [
+        promotion
+        for promotion in config["promotions"]
+        if promotion["marketId"] == market_id
+        and date.fromisoformat(promotion["endDate"]) < day
+        <= date.fromisoformat(promotion["endDate"]) + timedelta(days=7)
     ]
 
 
@@ -292,32 +314,171 @@ def _temperature(
     climate = market["localePack"]["climate"]
     summer = Decimal(str(climate["summerC"]))
     winter = Decimal(str(climate["winterC"]))
+    peak_day = 125 if climate["profile"] == "tropical-monsoon" else 200
     seasonal = (summer + winter) / 2 + (summer - winter) / 2 * Decimal(
-        str(math.sin((day.timetuple().tm_yday - 80) / 365 * math.tau))
+        str(
+            math.cos(
+                (day.timetuple().tm_yday - peak_day)
+                / 365
+                * math.tau
+            )
+        )
     )
-    temperature = seasonal + Decimal(
-        str(rng(master_seed, "weather", market["marketId"], day).uniform(-2.5, 2.5))
-    )
+    anomaly_weights = tuple(math.exp(-lag / 4.0) for lag in range(14))
+    anomaly_weight_total = sum(anomaly_weights)
+    temperature_anomaly = sum(
+        weight
+        * rng(
+            master_seed,
+            "weather-anomaly",
+            market["marketId"],
+            day - timedelta(days=lag),
+        ).uniform(-3.5, 3.5)
+        for lag, weight in enumerate(anomaly_weights)
+    ) / anomaly_weight_total
+    # Deterministic Gaussian pulses create a few genuine multi-day heat/cold
+    # waves each year instead of independent daily jitter.
+    epoch = day.toordinal() // 14
+    for candidate_epoch in range(epoch - 1, epoch + 2):
+        if (
+            _fraction(
+                master_seed,
+                "temperature-spell-active",
+                market["marketId"],
+                candidate_epoch,
+            )
+            >= 0.12
+        ):
+            continue
+        anchor_ordinal = candidate_epoch * 14 + stable_integer(
+            master_seed,
+            "temperature-spell-anchor",
+            market["marketId"],
+            candidate_epoch,
+            modulo=14,
+        )
+        distance = day.toordinal() - anchor_ordinal
+        direction = (
+            1
+            if stable_integer(
+                master_seed,
+                "temperature-spell-direction",
+                market["marketId"],
+                candidate_epoch,
+                modulo=2,
+            )
+            else -1
+        )
+        amplitude = 4.0 + 3.0 * _fraction(
+            master_seed,
+            "temperature-spell-amplitude",
+            market["marketId"],
+            candidate_epoch,
+        )
+        temperature_anomaly += (
+            direction
+            * amplitude
+            * math.exp(-0.5 * (distance / 3.5) ** 2)
+        )
+    temperature = seasonal + Decimal(str(temperature_anomaly))
     rain_random = rng(master_seed, "rain", market["marketId"], day)
+    active_spell: tuple[date, float] | None = None
+    for lag in range(7):
+        spell_start = day - timedelta(days=lag)
+        if (
+            _fraction(
+                master_seed,
+                "rain-spell-start",
+                market["marketId"],
+                spell_start,
+            )
+            >= 0.055
+        ):
+            continue
+        duration = 2 + stable_integer(
+            master_seed,
+            "rain-spell-duration",
+            market["marketId"],
+            spell_start,
+            modulo=5,
+        )
+        if lag >= duration:
+            continue
+        intensity = 0.7 + 1.3 * _fraction(
+            master_seed,
+            "rain-spell-intensity",
+            market["marketId"],
+            spell_start,
+        )
+        if active_spell is None or intensity > active_spell[1]:
+            active_spell = (spell_start, intensity)
+    wet_spell = active_spell is not None
     profile = climate["profile"]
     if profile == "tropical-monsoon":
-        wet_season = day.month in climate["monsoonMonths"]
-        rain_probability = 0.68 if wet_season else 0.025
+        months = climate["monsoonMonths"]
+        season_start = date(day.year, min(months), 1)
+        season_end = date(
+            day.year,
+            max(months),
+            calendar.monthrange(day.year, max(months))[1],
+        )
+        transition_days = 21
+        if season_start <= day <= season_end:
+            monsoon_intensity = 1.0
+        elif 0 < (season_start - day).days <= transition_days:
+            progress = (
+                transition_days - (season_start - day).days
+            ) / transition_days
+            monsoon_intensity = 0.5 - 0.5 * math.cos(math.pi * progress)
+        elif 0 < (day - season_end).days <= transition_days:
+            progress = (day - season_end).days / transition_days
+            monsoon_intensity = 0.5 + 0.5 * math.cos(math.pi * progress)
+        else:
+            monsoon_intensity = 0.0
+        rain_probability = (
+            0.03
+            + 0.55 * monsoon_intensity
+            + (0.28 if wet_spell else 0.0)
+        )
         precipitation = (
-            Decimal(str(rain_random.gammavariate(1.6, 15.0 if wet_season else 1.2)))
+            Decimal(
+                str(
+                    rain_random.gammavariate(
+                        1.6,
+                        (3.0 + 12.0 * monsoon_intensity)
+                        * (active_spell[1] if active_spell else 1.0),
+                    )
+                )
+            )
             if rain_random.random() < rain_probability
             else Decimal("0")
         )
     elif profile == "temperate-maritime":
+        rain_probability = 0.78 if wet_spell else 0.22
         precipitation = (
-            Decimal(str(rain_random.gammavariate(1.4, 3.2)))
-            if rain_random.random() < 0.42
+            Decimal(
+                str(
+                    rain_random.gammavariate(
+                        1.4,
+                        3.2 * (active_spell[1] if active_spell else 1.0),
+                    )
+                )
+            )
+            if rain_random.random() < rain_probability
             else Decimal("0")
         )
     else:
+        rain_probability = 0.70 if wet_spell else 0.14
         precipitation = (
-            Decimal(str(rain_random.gammavariate(1.3, 3.6)))
-            if rain_random.random() < 0.28
+            Decimal(
+                str(
+                    rain_random.gammavariate(
+                        1.3,
+                        3.6 * (active_spell[1] if active_spell else 1.0),
+                    )
+                )
+            )
+            if rain_random.random() < rain_probability
             else Decimal("0")
         )
     return (
@@ -372,6 +533,61 @@ def _retail_price(
     return value.quantize(MONEY_QUANT, rounding=ROUND_HALF_EVEN)
 
 
+def _promotional_price(
+    regular_price: Decimal,
+    variant: dict[str, Any],
+    market: dict[str, Any],
+    day: date,
+    start: date,
+    end: date,
+    discount_pct: Decimal,
+    promotion_id: str,
+    promotion_type: str,
+    cost_multiplier: Decimal = Decimal("1"),
+) -> Decimal:
+    """Apply one best-price promotion with stable ending and cost guardrails."""
+
+    discounted = regular_price * (Decimal("1") - discount_pct)
+    cost_floor: Decimal | None = None
+    if promotion_type != "fire-sale":
+        base_cost = (
+            variant["_baseCost"]
+            if "_baseCost" in variant
+            else variant["baseCost"]
+        )
+        launch_date = (
+            variant["_launchDate"]
+            if "_launchDate" in variant
+            else variant["launchDate"]
+        )
+        current_cost = _price_for_day(
+            base_cost,
+            market,
+            f"{variant['sku']}:cost",
+            day,
+            start,
+            end,
+            inflation_anchor=date.fromisoformat(launch_date),
+        ) * cost_multiplier
+        cost_floor = (current_cost * Decimal("1.02")).quantize(
+            MONEY_QUANT,
+            rounding=ROUND_CEILING,
+        )
+        discounted = max(discounted, cost_floor)
+    retail_price = _retail_price(
+        discounted,
+        market,
+        variant["sku"],
+        "promotion",
+        promotion_id,
+    )
+    return (
+        max(retail_price, cost_floor)
+        if cost_floor is not None
+        else retail_price
+    )
+
+
 def _inflated_base_price(
     base: Decimal,
     market: dict[str, Any],
@@ -379,6 +595,104 @@ def _inflated_base_price(
     anchor: date,
 ) -> Decimal:
     return base * _inflation_factor(market, day, anchor)
+
+
+@lru_cache(maxsize=200_000)
+def _annual_price_schedule(
+    profile: str,
+    events: int,
+    sku: str,
+    year: int,
+    year_days: int,
+    anchor_year: int,
+) -> tuple[tuple[int, ...], tuple[str, ...]]:
+    """Return one continuous, irregular price-list path for a SKU/year."""
+
+    if events <= 0 or profile == "stable":
+        return ((1,), ("0",))
+    interval = year_days / events
+    event_days: list[int] = [1]
+    if year <= anchor_year:
+        adjustment = Decimal("0")
+    else:
+        prior_year_days = 366 if calendar.isleap(year - 1) else 365
+        _, prior_adjustments = _annual_price_schedule(
+            profile,
+            events,
+            sku,
+            year - 1,
+            prior_year_days,
+            anchor_year,
+        )
+        adjustment = Decimal(prior_adjustments[-1])
+    adjustments: list[str] = [str(adjustment)]
+    prior_day = 1
+    for event_index in range(events):
+        centre = round((event_index + 0.5) * interval)
+        jitter_span = max(1, round(interval * 0.20))
+        jitter = (
+            stable_integer(
+                "price-event-day",
+                sku,
+                year,
+                event_index,
+                modulo=2 * jitter_span + 1,
+            )
+            - jitter_span
+        )
+        event_day = min(
+            year_days,
+            max(prior_day + 1, centre + jitter),
+        )
+        prior_day = event_day
+        draw = stable_integer(
+            "price-event-step",
+            sku,
+            year,
+            event_index,
+            modulo=100,
+        )
+        if profile == "response-rich":
+            # Inflation owns the long-run trend. Regular price-list changes
+            # therefore mean-revert instead of accumulating at the upper
+            # clamp and synchronously falling back every January.
+            downward_threshold = (
+                70
+                if adjustment >= Decimal("0.08")
+                else 20
+                if adjustment <= Decimal("-0.04")
+                else 46
+            )
+            if draw < downward_threshold // 3:
+                step = Decimal("-0.025")
+            elif draw < downward_threshold:
+                step = Decimal("-0.0125")
+            elif draw < downward_threshold + 30:
+                step = Decimal("0.010")
+            elif draw < downward_threshold + 48:
+                step = Decimal("0.020")
+            else:
+                step = Decimal("0.030")
+            adjustment = max(
+                Decimal("-0.08"),
+                min(Decimal("0.12"), adjustment + step),
+            )
+        else:
+            downward_threshold = (
+                65
+                if adjustment >= Decimal("0.04")
+                else 30
+                if adjustment <= Decimal("-0.02")
+                else 48
+            )
+            step = Decimal("-0.010") if draw < downward_threshold else Decimal("0.010")
+            adjustment = max(
+                Decimal("-0.04"),
+                min(Decimal("0.06"), adjustment + step),
+            )
+        event_days.append(event_day)
+        adjustments.append(str(adjustment))
+    return (tuple(event_days), tuple(adjustments))
 
 
 def _price_for_day(
@@ -394,24 +708,20 @@ def _price_for_day(
     dynamics = market["priceDynamics"]
     profile = dynamics["profile"]
     events = dynamics["priceChangeEventsPerSkuPerYear"]
-    if events == 0 or profile == "stable":
-        adjustment = Decimal("0")
-        bucket = 0
-    else:
-        interval = max(1, round(365.2425 / events))
-        phase = stable_integer(sku, "price-cycle-phase", modulo=interval)
-        bucket = ((day - start).days + phase) // interval
-        amplitude = Decimal("0.18") if profile == "response-rich" else Decimal("0.03")
-        adjustments = [
-            -amplitude,
-            -(amplitude / Decimal("2")),
-            Decimal("0"),
-            amplitude / Decimal("2"),
-            amplitude,
-        ]
-        adjustment = adjustments[
-            (bucket + stable_integer(sku, "price-cycle-offset", modulo=5)) % 5
-        ]
+    year_days = 366 if calendar.isleap(day.year) else 365
+    event_days, adjustments = _annual_price_schedule(
+        profile,
+        events,
+        sku,
+        day.year,
+        year_days,
+        (inflation_anchor or start).year,
+    )
+    bucket = max(
+        0,
+        bisect_right(event_days, day.timetuple().tm_yday) - 1,
+    )
+    adjustment = Decimal(adjustments[bucket])
     # Retail price lists carry discrete effective prices. Inflation therefore
     # steps at calendar-year boundaries instead of changing the amount daily.
     nominal = _inflated_base_price(
@@ -427,6 +737,121 @@ def _price_for_day(
         day.year,
         bucket,
     )
+
+
+def _seasonality_raw(
+    peak_month: int,
+    strength: Decimal,
+    day: date,
+) -> Decimal:
+    """Return a continuous asymmetric seasonal curve before normalization."""
+
+    peak_day_of_month = 24 if peak_month == 12 else 15
+    candidate_peaks = [
+        date(year, peak_month, peak_day_of_month)
+        for year in (day.year - 1, day.year, day.year + 1)
+    ]
+    peak_day = min(
+        candidate_peaks,
+        key=lambda candidate: abs((day - candidate).days),
+    )
+    offset_days = (day - peak_day).days
+    if peak_month == 12:
+        # Gift demand builds through 22–24 December, then releases quickly
+        # without the old rectangular, fixed-date step.
+        sigma_days = 30.0 if offset_days < 0 else 5.0
+    else:
+        sigma_days = 55.0 if offset_days < 0 else 24.0
+    bump = math.exp(-0.5 * (offset_days / sigma_days) ** 2)
+    floor = max(
+        Decimal("0.25"),
+        Decimal("1") - strength * Decimal("1.50"),
+    )
+    return floor + strength * Decimal("3") * Decimal(str(bump))
+
+
+@lru_cache(maxsize=2_048)
+def _seasonality_annual_mean(
+    peak_month: int,
+    strength_text: str,
+    year: int,
+) -> Decimal:
+    """Numerically normalize each configured curve to mean one per year."""
+
+    strength = Decimal(strength_text)
+    year_start = date(year, 1, 1)
+    year_days = 366 if calendar.isleap(year) else 365
+    return sum(
+        (
+            _seasonality_raw(
+                peak_month,
+                strength,
+                year_start + timedelta(days=offset),
+            )
+            for offset in range(year_days)
+        ),
+        Decimal("0"),
+    ) / Decimal(year_days)
+
+
+def _seasonality_factor(
+    peak_month: int,
+    strength: Decimal,
+    day: date,
+) -> Decimal:
+    """Return a continuous asymmetric factor whose annual mean is one."""
+
+    raw = _seasonality_raw(peak_month, strength, day)
+    mean = _seasonality_annual_mean(
+        peak_month,
+        str(strength.normalize()),
+        day.year,
+    )
+    return max(Decimal("0.05"), raw / mean)
+
+
+def _holiday_demand_factor(
+    holidays: list[dict[str, str]],
+    *,
+    country_code: str,
+    channel_type: str,
+) -> Decimal:
+    """Apply locale-owned closure/retail behavior without name matching."""
+
+    closure_factors: list[Decimal] = []
+    factors: list[Decimal] = []
+    for holiday in holidays:
+        name = holiday["name"]
+        behavior = holiday.get("retailBehavior", "public-holiday")
+        if behavior == "observance":
+            continue
+        if behavior == "closed":
+            closure_factors.append(
+                Decimal("0.55")
+                if channel_type == "online"
+                else Decimal("0.05")
+            )
+        elif behavior == "retail-peak" and name == "Black Friday":
+            factors.append(Decimal("3.20"))
+        elif behavior == "retail-peak" and name == "Cyber Monday":
+            factors.append(
+                Decimal("2.80")
+                if channel_type == "online"
+                else Decimal("1.35")
+            )
+        else:
+            factors.append(
+                {
+                    "Diwali": Decimal("1.45"),
+                    "Boxing Day": Decimal("2.20"),
+                    "Republic Day": Decimal("1.22"),
+                    "Independence Day": Decimal("1.18"),
+                    "Veterans Day": Decimal("1.08"),
+                }.get(name, Decimal("1.15"))
+            )
+    if closure_factors:
+        return min(closure_factors)
+    return max(factors, default=Decimal("1"))
 
 
 def _tax_rate_for_line(
@@ -552,17 +977,81 @@ def _segment_for_event(
     return config["customerSegments"][-1]
 
 
+def _channel_distribution(
+    master_seed: int,
+    store: dict[str, Any],
+    variant: dict[str, Any],
+    channel_types: dict[str, str],
+    market: dict[str, Any],
+    day: date,
+    start: date,
+    end: date,
+) -> list[tuple[str, Decimal]]:
+    """Return positive channel shares with configured secular online growth."""
+
+    channels = sorted(store["channelIds"])
+    if len(channels) == 1:
+        return [(channels[0], Decimal("1"))]
+    demand = market["demand"]
+    horizon_days = max(1, (end - start).days)
+    progress = Decimal((day - start).days) / Decimal(horizon_days)
+    configured_share = (
+        Decimal(str(demand["onlineShareStart"]))
+        + (
+            Decimal(str(demand["onlineShareEnd"]))
+            - Decimal(str(demand["onlineShareStart"]))
+        )
+        * progress
+    )
+    variation = Decimal(str(demand["onlineShareSkuVariation"]))
+    sku_offset = variation * (
+        Decimal(
+            stable_integer(
+                master_seed,
+                "channel-online-propensity",
+                store["storeId"],
+                variant["sku"],
+                modulo=2_000_001,
+            )
+        )
+        / Decimal("1000000")
+        - Decimal("1")
+    )
+    online_share = max(
+        Decimal("0.01"),
+        min(Decimal("0.95"), configured_share + sku_offset),
+    )
+    type_counts: dict[str, int] = defaultdict(int)
+    for channel_id in channels:
+        type_counts[channel_types[channel_id]] += 1
+    weights: list[Decimal] = []
+    for channel_id in channels:
+        channel_type = channel_types[channel_id]
+        type_share = (
+            online_share
+            if channel_type == "online"
+            else Decimal("1") - online_share
+        )
+        weights.append(
+            type_share
+            / Decimal(type_counts[channel_type])
+        )
+    total = sum(weights, Decimal("0"))
+    return [
+        (channel_id, weight / total)
+        for channel_id, weight in zip(channels, weights, strict=True)
+    ]
+
 def _promotion_applies(
     promotion: dict[str, Any],
     store: dict[str, Any],
     variant: dict[str, Any],
     segment_id: str,
+    channel_id: str,
 ) -> bool:
     if promotion["storeIds"] and store["storeId"] not in promotion["storeIds"]:
         return False
-    if promotion["channelIds"] and not set(store["channelIds"]).intersection(
-        promotion["channelIds"]
-    ):
+    if promotion["channelIds"] and channel_id not in promotion["channelIds"]:
         return False
     if promotion["departmentIds"] and variant["_departmentId"] not in promotion["departmentIds"]:
         return False
@@ -608,6 +1097,35 @@ def _weighted_factor(
     mean_weight: Decimal,
 ) -> Decimal:
     return _portfolio_weight(variant) / mean_weight
+
+
+def _average_active_portfolio_weight(
+    variants: list[dict[str, Any]],
+    period_start: date,
+    period_end: date,
+) -> Decimal:
+    """Return average live assortment weight over one bounded period."""
+
+    period_days = Decimal((period_end - period_start).days + 1)
+    weighted_days = Decimal("0")
+    for variant in variants:
+        active_start = max(
+            period_start,
+            date.fromisoformat(variant["_launchDate"]),
+        )
+        active_end = min(
+            period_end,
+            (
+                date.fromisoformat(variant["_discontinueDate"])
+                if variant["_discontinueDate"]
+                else period_end
+            ),
+        )
+        if active_end < active_start:
+            continue
+        active_days = Decimal((active_end - active_start).days + 1)
+        weighted_days += _portfolio_weight(variant) * active_days
+    return max(Decimal("0.0001"), weighted_days / period_days)
 
 
 def _purchase_quantities(
@@ -712,9 +1230,9 @@ def _add_batch(
     quantity: int,
     manufacture_day: date | None = None,
     expiry_day: date | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     if quantity <= 0:
-        return
+        return None
     shelf_life = variant["_shelfLifeDays"]
     if manufacture_day is None:
         manufacture_day = receipt_day - timedelta(
@@ -738,6 +1256,7 @@ def _add_batch(
     }
     batch_by_key[batch_key] = row
     batches_by_inventory_key[(warehouse_id, variant["sku"])].append(row)
+    return row
 
 
 def _deplete_batches(
@@ -746,12 +1265,14 @@ def _deplete_batches(
     quantity: int,
     *,
     batch_key: str = "",
+    on_exhausted: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Deplete batch balances in FEFO order and return the consumed lot pieces."""
 
     if quantity <= 0:
         return []
-    candidates = batches_by_inventory_key[inventory_key]
+    all_candidates = batches_by_inventory_key[inventory_key]
+    candidates = all_candidates
     if batch_key:
         candidates = [row for row in candidates if row["batchKey"] == batch_key]
     ordered = sorted(
@@ -780,6 +1301,20 @@ def _deplete_batches(
             f"batch balance underflow for {inventory_key}: "
             f"requested {quantity}, missing {remaining}"
         )
+    exhausted = [
+        row
+        for row in all_candidates
+        if row["quantityRemainingAtExtract"] <= 0
+    ]
+    if exhausted:
+        batches_by_inventory_key[inventory_key] = [
+            row
+            for row in all_candidates
+            if row["quantityRemainingAtExtract"] > 0
+        ]
+        if on_exhausted:
+            for row in exhausted:
+                on_exhausted(row)
     return consumed
 
 
@@ -842,6 +1377,7 @@ def _group_baskets(
     config: dict[str, Any],
     master_seed: int,
     line_events: list[dict[str, Any]],
+    customer_population: CustomerPopulation,
 ) -> list[dict[str, Any]]:
     by_store_day: dict[
         tuple[str, date, str, str],
@@ -907,10 +1443,17 @@ def _group_baskets(
             net = sum((event["net"] for event in basket), Decimal("0"))
             tax = sum((event["tax"] for event in basket), Decimal("0"))
             gross = sum((event["gross"] for event in basket), Decimal("0"))
+            market_id = basket[0]["marketId"]
+            customer_key, customer_created_date = customer_population.allocate(
+                market_id,
+                basket[0]["customerSegmentId"],
+                day,
+                order_key,
+            )
             order_headers.append(
                 {
                     "orderKey": order_key,
-                    "marketId": basket[0]["marketId"],
+                    "marketId": market_id,
                     "storeId": store_id,
                     "day": day,
                     "createdAt": min(event["createdAt"] for event in basket),
@@ -922,10 +1465,10 @@ def _group_baskets(
                     "units": sum(event["quantity"] for event in basket),
                     "lineCount": len(basket),
                     "customerSegmentId": basket[0]["customerSegmentId"],
-                    "customerKey": (
-                        f"anonymous:{basket[0]['marketId']}:"
-                        f"{basket[0]['customerSegmentId']}:"
-                        f"{stable_integer(master_seed, 'customer', order_key, modulo=250):03d}"
+                    "customerKey": customer_key,
+                    "customerCreatedDate": customer_created_date,
+                    "bcCustomerKey": (
+                        customer_key or f"walk-in:{market_id}"
                     ),
                     "channelId": basket[0]["channelId"],
                 }
@@ -944,10 +1487,21 @@ def simulate(
     variants_by_market: dict[str, list[dict[str, Any]]],
     start: date,
     end: date,
+    *,
+    spool_factory: Any | None = None,
+    customer_population: CustomerPopulation | None = None,
 ) -> dict[str, Any]:
     """Generate demand, constrained sales, inventory, and contextual source evidence."""
 
     master_seed = config["identity"]["masterSeed"]
+    customer_population = customer_population or CustomerPopulation(
+        config,
+        start,
+        end,
+    )
+
+    def row_stream(name: str) -> Any:
+        return spool_factory(name) if spool_factory else []
     operations = config["operations"]
     inventory_policy = operations["inventory"]
     supply_policy = operations["supplyChain"]
@@ -955,7 +1509,10 @@ def simulate(
         row["channelId"]: row["type"]
         for row in config["channels"]
     }
-    holiday_by_market_and_date = {
+    holiday_by_market_and_date: dict[
+        str,
+        dict[str, list[dict[str, str]]],
+    ] = {
         market_id: {
             holiday["date"]: []
             for holiday in holidays_for_range(market["localePack"], start, end)
@@ -964,9 +1521,7 @@ def simulate(
     }
     for market_id, market in markets.items():
         for holiday in holidays_for_range(market["localePack"], start, end):
-            holiday_by_market_and_date[market_id][holiday["date"]].append(
-                holiday["name"]
-            )
+            holiday_by_market_and_date[market_id][holiday["date"]].append(holiday)
     inventory: dict[tuple[str, str], int] = defaultdict(int)
     variants_by_inventory_key = {
         (warehouse["warehouseId"], variant["sku"]): variant
@@ -978,6 +1533,26 @@ def simulate(
         list[dict[str, Any]],
     ] = defaultdict(list)
     batch_by_key: dict[str, dict[str, Any]] = {}
+    batch_balances = row_stream("simulation-batch-balances")
+    expiry_batches_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
+
+    def finalize_batch(batch: dict[str, Any]) -> None:
+        if batch_by_key.pop(batch["batchKey"], None) is not None:
+            batch_balances.append(dict(batch))
+
+    def schedule_expiry(
+        batch: dict[str, Any] | None,
+        *,
+        earliest: date | None = None,
+    ) -> None:
+        if batch is None or not batch["expiryDate"]:
+            return
+        expiry_event_day = date.fromisoformat(
+            batch["expiryDate"]
+        ) + timedelta(days=1)
+        if earliest is not None:
+            expiry_event_day = max(expiry_event_day, earliest)
+        expiry_batches_by_date[expiry_event_day].append(batch)
     store_variants: dict[str, list[dict[str, Any]]] = {}
     assortment_rows: list[dict[str, Any]] = []
     for store in stores.values():
@@ -990,6 +1565,18 @@ def simulate(
         )
         store_variants[store["storeId"]] = selected
         assortment_rows.extend(rows)
+    annual_portfolio_weight: dict[tuple[str, int], Decimal] = {}
+    for store in stores.values():
+        for year in range(start.year, end.year + 1):
+            period_start = max(start, date(year, 1, 1))
+            period_end = min(end, date(year, 12, 31))
+            annual_portfolio_weight[(store["storeId"], year)] = (
+                _average_active_portfolio_weight(
+                    store_variants[store["storeId"]],
+                    period_start,
+                    period_end,
+                )
+            )
 
     # A source extract normally begins with inventory bought from demand
     # observed before the requested data window. Model that boundary explicitly
@@ -1017,22 +1604,17 @@ def simulate(
         if not active_variants or not cover_warehouses:
             continue
         market = markets[store["marketId"]]
-        mean_weight = max(
-            Decimal("0.0001"),
-            sum(
-                (_portfolio_weight(row) for row in active_variants),
-                Decimal("0"),
-            )
-            / Decimal(len(active_variants)),
-        )
+        portfolio_weight = annual_portfolio_weight[
+            (store["storeId"], start.year)
+        ]
         for variant in active_variants:
             planned_rate = (
                 Decimal(str(market["demand"]["demandLevelScalar"]))
                 * Decimal(str(store["demandScale"]))
                 * Decimal(str(market["demand"]["startingDailyOrders"]))
                 * Decimal(str(market["demand"]["averageLinesPerOrder"]))
-                / Decimal(len(active_variants))
-                * _weighted_factor(variant, mean_weight)
+                * _portfolio_weight(variant)
+                / portfolio_weight
                 * _expected_units_per_line(variant)
             )
             rate_share = planned_rate / Decimal(len(cover_warehouses))
@@ -1073,23 +1655,25 @@ def simulate(
                 )
             inventory[(warehouse["warehouseId"], variant["sku"])] = opening
             if opening:
-                _add_batch(
-                    batches_by_inventory_key,
-                    batch_by_key,
-                    batch_key=(
-                        f"opening:{warehouse['warehouseId']}:{variant['sku']}"
-                    ),
-                    source_type="opening-balance",
-                    source_reference="",
-                    warehouse_id=warehouse["warehouseId"],
-                    variant=variant,
-                    receipt_day=start,
-                    quantity=opening,
+                schedule_expiry(
+                    _add_batch(
+                        batches_by_inventory_key,
+                        batch_by_key,
+                        batch_key=(
+                            f"opening:{warehouse['warehouseId']}:{variant['sku']}"
+                        ),
+                        source_type="opening-balance",
+                        source_reference="",
+                        warehouse_id=warehouse["warehouseId"],
+                        variant=variant,
+                        receipt_day=start,
+                        quantity=opening,
+                    )
                 )
 
     opening_inventory = dict(inventory)
     receipts_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
-    receipt_events: list[dict[str, Any]] = []
+    receipt_events = row_stream("simulation-receipt-events")
     cycle = inventory_policy["replenishmentCycleDays"]
     lead = inventory_policy["supplierLeadTimeDays"]
     jitter = inventory_policy["supplierLeadTimeJitterDays"]
@@ -1103,33 +1687,55 @@ def simulate(
         dict[date, bool],
     ] = defaultdict(dict)
 
-    line_events: list[dict[str, Any]] = []
-    order_headers: list[dict[str, Any]] = []
-    demand_truth: list[dict[str, Any]] = []
-    inventory_observations: list[dict[str, Any]] = []
+    line_events = row_stream("simulation-order-lines")
+    order_headers = row_stream("simulation-orders")
+    demand_truth = row_stream("simulation-demand-truth")
+    inventory_observations = row_stream("simulation-inventory-observations")
     committed_inventory: dict[tuple[str, str], int] = defaultdict(int)
     damaged_inventory: dict[tuple[str, str], int] = defaultdict(int)
     quality_control_inventory: dict[tuple[str, str], int] = defaultdict(int)
     fulfillment_releases_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
     quality_releases_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
     waste_disposals_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
-    transfer_events: list[dict[str, Any]] = []
+    transfer_events = row_stream("simulation-transfer-events")
     transfer_receipts_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
-    inventory_loss_events: list[dict[str, Any]] = []
-    waste_events: list[dict[str, Any]] = []
-    allocation_requests: list[dict[str, Any]] = []
-    supply_pools: list[dict[str, Any]] = []
-    weather_actual: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    weather_forecasts: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    macro_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    competitor_prices: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    competitor_matches: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    pandemic_signals: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    inventory_loss_events = row_stream("simulation-inventory-loss-events")
+    waste_events = row_stream("simulation-waste-events")
+    allocation_requests = row_stream("simulation-allocation-requests")
+    supply_pools = row_stream("simulation-supply-pools")
+    weather_actual = {
+        market_id: row_stream(f"simulation-weather-actual-{market_id}")
+        for market_id in markets
+    }
+    weather_forecasts = {
+        market_id: row_stream(f"simulation-weather-forecasts-{market_id}")
+        for market_id in markets
+    }
+    macro_rows = {
+        market_id: row_stream(f"simulation-macro-{market_id}")
+        for market_id in markets
+    }
+    competitor_prices = {
+        market_id: row_stream(f"simulation-competitor-prices-{market_id}")
+        for market_id in markets
+    }
+    competitor_matches = {
+        market_id: row_stream(f"simulation-competitor-matches-{market_id}")
+        for market_id in markets
+    }
+    competitor_match_keys: dict[str, set[str]] = {
+        market_id: set()
+        for market_id in markets
+    }
+    pandemic_signals = {
+        market_id: row_stream(f"simulation-pandemic-signals-{market_id}")
+        for market_id in markets
+    }
     forecast_horizon = supply_policy["weatherForecastHorizonDays"]
 
     for day in _days(start, end):
-        day_line_start = len(line_events)
-        for release in fulfillment_releases_by_date.get(day, []):
+        daily_lines: list[dict[str, Any]] = []
+        for release in fulfillment_releases_by_date.pop(day, []):
             key = (release["warehouseId"], release["sku"])
             quantity = min(
                 release["quantity"],
@@ -1143,14 +1749,15 @@ def simulate(
                     batches_by_inventory_key,
                     key,
                     quantity,
+                    on_exhausted=finalize_batch,
                 )
-        for release in quality_releases_by_date.get(day, []):
+        for release in quality_releases_by_date.pop(day, []):
             key = (release["warehouseId"], release["sku"])
             quality_control_inventory[key] = max(
                 0,
                 quality_control_inventory[key] - release["quantity"],
             )
-        for disposal in waste_disposals_by_date.get(day, []):
+        for disposal in waste_disposals_by_date.pop(day, []):
             key = (disposal["warehouseId"], disposal["sku"])
             quantity = min(
                 disposal["quantity"],
@@ -1165,6 +1772,7 @@ def simulate(
                 batches_by_inventory_key,
                 key,
                 quantity,
+                on_exhausted=finalize_batch,
             )
             waste_events.append(
                 {
@@ -1177,17 +1785,10 @@ def simulate(
         # Sell-through and transfers consume the earliest-expiring lots first.
         # Anything still free after its sell-by date is posted as expiry waste.
         for batch in sorted(
-            batch_by_key.values(),
-            key=lambda row: (
-                row["expiryDate"] or "9999-12-31",
-                row["batchKey"],
-            ),
+            expiry_batches_by_date.pop(day, []),
+            key=lambda row: row["batchKey"],
         ):
-            if (
-                not batch["expiryDate"]
-                or date.fromisoformat(batch["expiryDate"]) >= day
-                or batch["quantityRemainingAtExtract"] <= 0
-            ):
+            if batch["quantityRemainingAtExtract"] <= 0:
                 continue
             key = (batch["warehouseId"], batch["sku"])
             free_inventory = max(
@@ -1202,12 +1803,14 @@ def simulate(
                 batch["quantityRemainingAtExtract"],
             )
             if not quantity:
+                expiry_batches_by_date[day + timedelta(days=1)].append(batch)
                 continue
             _deplete_batches(
                 batches_by_inventory_key,
                 key,
                 quantity,
                 batch_key=batch["batchKey"],
+                on_exhausted=finalize_batch,
             )
             inventory[key] -= quantity
             waste_events.append(
@@ -1227,6 +1830,8 @@ def simulate(
                     "reason": "expired",
                 }
             )
+            if batch["quantityRemainingAtExtract"] > 0:
+                expiry_batches_by_date[day + timedelta(days=1)].append(batch)
 
         losses: dict[tuple[str, str], tuple[Decimal, list[str]]] = {}
         for warehouse in warehouses.values():
@@ -1281,6 +1886,7 @@ def simulate(
                     batches_by_inventory_key,
                     key,
                     lost,
+                    on_exhausted=finalize_batch,
                 )
                 inventory_loss_events.append(
                     {
@@ -1307,19 +1913,21 @@ def simulate(
                         "causeIds": "|".join(sorted(cause_ids)),
                     }
                 )
-        for receipt in receipts_by_date.get(day, []):
+        for receipt in receipts_by_date.pop(day, []):
             key = (receipt["warehouseId"], receipt["sku"])
             inventory[key] += receipt["quantity"]
-            _add_batch(
-                batches_by_inventory_key,
-                batch_by_key,
-                batch_key=f"batch:{receipt['receiptKey']}",
-                source_type="purchase-receipt",
-                source_reference=receipt["receiptKey"],
-                warehouse_id=receipt["warehouseId"],
-                variant=variants_by_inventory_key[key],
-                receipt_day=day,
-                quantity=receipt["quantity"],
+            schedule_expiry(
+                _add_batch(
+                    batches_by_inventory_key,
+                    batch_by_key,
+                    batch_key=f"batch:{receipt['receiptKey']}",
+                    source_type="purchase-receipt",
+                    source_reference=receipt["receiptKey"],
+                    warehouse_id=receipt["warehouseId"],
+                    variant=variants_by_inventory_key[key],
+                    receipt_day=day,
+                    quantity=receipt["quantity"],
+                )
             )
             damaged_quantity = 0
             if (
@@ -1375,7 +1983,7 @@ def simulate(
                         "quantity": quality_quantity,
                     }
                 )
-        for transfer in transfer_receipts_by_date.get(day, []):
+        for transfer in transfer_receipts_by_date.pop(day, []):
             inventory[(transfer["toWarehouseId"], transfer["sku"])] += transfer[
                 "receivedQuantity"
             ]
@@ -1384,27 +1992,30 @@ def simulate(
                 transfer["_batchTransfers"],
                 start=1,
             ):
-                _add_batch(
-                    batches_by_inventory_key,
-                    batch_by_key,
-                    batch_key=(
-                        f"transfer:{transfer['transferKey']}:{index:03d}:"
-                        f"{source_batch['batchKey']}"
+                schedule_expiry(
+                    _add_batch(
+                        batches_by_inventory_key,
+                        batch_by_key,
+                        batch_key=(
+                            f"transfer:{transfer['transferKey']}:{index:03d}:"
+                            f"{source_batch['batchKey']}"
+                        ),
+                        source_type="transfer-receipt",
+                        source_reference=transfer["transferKey"],
+                        warehouse_id=transfer["toWarehouseId"],
+                        variant=variants_by_inventory_key[destination_key],
+                        receipt_day=day,
+                        quantity=source_batch["quantity"],
+                        manufacture_day=date.fromisoformat(
+                            source_batch["manufactureDate"]
+                        ),
+                        expiry_day=(
+                            date.fromisoformat(source_batch["expiryDate"])
+                            if source_batch["expiryDate"]
+                            else None
+                        ),
                     ),
-                    source_type="transfer-receipt",
-                    source_reference=transfer["transferKey"],
-                    warehouse_id=transfer["toWarehouseId"],
-                    variant=variants_by_inventory_key[destination_key],
-                    receipt_day=day,
-                    quantity=source_batch["quantity"],
-                    manufacture_day=date.fromisoformat(
-                        source_batch["manufactureDate"]
-                    ),
-                    expiry_day=(
-                        date.fromisoformat(source_batch["expiryDate"])
-                        if source_batch["expiryDate"]
-                        else None
-                    ),
+                    earliest=day + timedelta(days=1),
                 )
 
         if (day - start).days % cycle == 0:
@@ -1690,6 +2301,7 @@ def simulate(
                         batches_by_inventory_key,
                         source_key,
                         quantity,
+                        on_exhausted=finalize_batch,
                     )
                     transit_days = 1 + stable_integer(
                         master_seed,
@@ -1739,7 +2351,19 @@ def simulate(
         # transfers, immediately before demand is allocated. Replenishment on
         # later review dates can then distinguish a true zero-sale day from a
         # day censored by unavailable inventory without consulting `_truth/`.
+        expired_history_day = day - timedelta(days=29)
         for key in variants_by_inventory_key:
+            # Replenishment consults a trailing 28-day window only. Retaining
+            # the entire horizon here previously consumed hundreds of MB on a
+            # ten-year run without changing a single decision.
+            available_to_sell_by_day[key].pop(
+                expired_history_day,
+                None,
+            )
+            realized_demand_by_day[key].pop(
+                expired_history_day,
+                None,
+            )
             available_to_sell_by_day[key][day] = (
                 inventory[key]
                 - committed_inventory[key]
@@ -1906,7 +2530,7 @@ def simulate(
                         not variant["_discontinueDate"]
                         or date.fromisoformat(variant["_discontinueDate"]) >= day
                     )
-                ][:30]
+                ]
                 for variant in active_competitor_variants:
                     match_key = f"match:{market_id}:{variant['sku']}"
                     factor = Decimal(
@@ -1960,10 +2584,8 @@ def simulate(
                             "promotionText": "weekly-price-check" if factor < 1 else "",
                         }
                     )
-                    if not any(
-                        row["matchKey"] == match_key
-                        for row in competitor_matches[market_id]
-                    ):
+                    if match_key not in competitor_match_keys[market_id]:
+                        competitor_match_keys[market_id].add(match_key)
                         competitor_matches[market_id].append(
                             {
                                 "matchKey": match_key,
@@ -1988,20 +2610,23 @@ def simulate(
                 [row for row in stores.values() if row["marketId"] == market_id],
                 key=lambda row: row["storeId"],
             )
-            holiday_names = holiday_by_market_and_date[market_id].get(
+            holiday_rows = holiday_by_market_and_date[market_id].get(
                 day.isoformat(),
                 [],
             )
+            holiday_names = [holiday["name"] for holiday in holiday_rows]
             sale_season_ids = _active_sale_seasons(market, day)
             active_promotions = _active(config["promotions"], day, market_id)
+            recent_promotions = _recent_promotions(config, market, day)
             midpoint = (
                 Decimal(str(market["localePack"]["climate"]["summerC"]))
                 + Decimal(str(market["localePack"]["climate"]["winterC"]))
             ) / 2
             for store in market_stores:
+                reference_variants = store_variants[store["storeId"]]
                 variants = [
                     variant
-                    for variant in store_variants[store["storeId"]]
+                    for variant in reference_variants
                     if day >= date.fromisoformat(variant["_launchDate"])
                     and (
                         not variant["_discontinueDate"]
@@ -2010,23 +2635,29 @@ def simulate(
                 ]
                 if not variants:
                     continue
-                mean_weight = max(
-                    Decimal("0.0001"),
-                    sum((_portfolio_weight(row) for row in variants), Decimal("0"))
-                    / Decimal(len(variants)),
-                )
-                for variant in variants:
+                portfolio_weight = annual_portfolio_weight[
+                    (store["storeId"], day.year)
+                ]
+                variant_channels = [
+                    (variant, channel_id, channel_share)
+                    for variant in variants
+                    for channel_id, channel_share in _channel_distribution(
+                        master_seed,
+                        store,
+                        variant,
+                        channel_types,
+                        market,
+                        day,
+                        start,
+                        end,
+                    )
+                ]
+                for variant, channel_id, channel_share in variant_channels:
                     launch_day = date.fromisoformat(variant["_launchDate"])
-                    event_key = f"{store['storeId']}:{day}:{variant['sku']}"
+                    event_key = (
+                        f"{store['storeId']}:{day}:{variant['sku']}:{channel_id}"
+                    )
                     segment = _segment_for_event(config, master_seed, event_key)
-                    channel_id = store["channelIds"][
-                        stable_integer(
-                            master_seed,
-                            "channel",
-                            event_key,
-                            modulo=len(store["channelIds"]),
-                        )
-                    ]
                     event_effect = _event_effect(
                         config,
                         day,
@@ -2070,12 +2701,20 @@ def simulate(
                         day,
                         market["demand"]["newProductRampDays"],
                     )
-                    promotion_factor = lifecycle_effect["offerDemandFactor"]
+                    promotion_candidates: list[dict[str, Any]] = []
                     if lifecycle_effect["offerId"]:
-                        unit_price *= (
-                            Decimal("1") - lifecycle_effect["offerDiscountPct"]
+                        promotion_candidates.append(
+                            {
+                                "promotionId": lifecycle_effect["offerId"],
+                                "promotionType": lifecycle_effect["offerType"],
+                                "discountPct": lifecycle_effect[
+                                    "offerDiscountPct"
+                                ],
+                                "demandMultiplier": lifecycle_effect[
+                                    "offerDemandFactor"
+                                ],
+                            }
                         )
-                        applied_promotions.append(lifecycle_effect["offerId"])
                     for promotion in active_promotions:
                         if (
                             market["signals"]["promotions"]
@@ -2084,26 +2723,105 @@ def simulate(
                                 store,
                                 variant,
                                 segment["segmentId"],
+                                channel_id,
                             )
                         ):
-                            promotion_factor *= Decimal(
-                                str(promotion["demandMultiplier"])
+                            promotion_candidates.append(
+                                {
+                                    "promotionId": promotion["promotionId"],
+                                    "promotionType": promotion.get(
+                                        "promotionType",
+                                        "campaign",
+                                    ),
+                                    "discountPct": Decimal(
+                                        str(promotion["discountPct"])
+                                    ),
+                                    "demandMultiplier": Decimal(
+                                        str(promotion["demandMultiplier"])
+                                    ),
+                                }
                             )
-                            unit_price *= Decimal("1") - Decimal(
-                                str(promotion["discountPct"])
-                            )
-                            applied_promotions.append(promotion["promotionId"])
-                    if applied_promotions:
-                        unit_price = _retail_price(
-                            unit_price,
-                            market,
-                            variant["sku"],
-                            "promotion",
-                            "|".join(applied_promotions),
-                            day,
+                    configured_promotion_lift = Decimal("1")
+                    effective_promotion_lift = Decimal("1")
+                    effective_promotion_discount = Decimal("0")
+                    if promotion_candidates:
+                        selected_promotion = max(
+                            promotion_candidates,
+                            key=lambda promotion: (
+                                promotion["discountPct"],
+                                promotion["promotionId"],
+                            ),
                         )
-                    day_of_week_factor = Decimal(
-                        str(market["demand"]["dayOfWeekFactors"][day.weekday()])
+                        applied_promotions = [
+                            selected_promotion["promotionId"]
+                        ]
+                        configured_promotion_lift = selected_promotion[
+                            "demandMultiplier"
+                        ]
+                        unit_price = _promotional_price(
+                            original_price,
+                            variant,
+                            market,
+                            day,
+                            start,
+                            end,
+                            selected_promotion["discountPct"],
+                            selected_promotion["promotionId"],
+                            selected_promotion["promotionType"],
+                            (
+                                event_effect["cost"]
+                                * pandemic_effect["cost"]
+                            ),
+                        )
+                        effective_promotion_discount = max(
+                            Decimal("0"),
+                            (original_price - unit_price) / original_price,
+                        )
+                        requested_discount = selected_promotion["discountPct"]
+                        realization = (
+                            min(
+                                Decimal("1"),
+                                effective_promotion_discount
+                                / requested_discount,
+                            )
+                            if requested_discount > 0
+                            else Decimal("1")
+                        )
+                        effective_promotion_lift = Decimal("1") + (
+                            configured_promotion_lift - Decimal("1")
+                        ) * realization
+                    promotion_payback_factor = Decimal("1")
+                    for promotion in recent_promotions:
+                        if not _promotion_applies(
+                            promotion,
+                            store,
+                            variant,
+                            segment["segmentId"],
+                            channel_id,
+                        ):
+                            continue
+                        days_after = (
+                            day - date.fromisoformat(promotion["endDate"])
+                        ).days
+                        remaining_share = Decimal(8 - days_after) / Decimal(7)
+                        lift = max(
+                            Decimal("0"),
+                            Decimal(str(promotion["demandMultiplier"]))
+                            - Decimal("1"),
+                        )
+                        payback = min(
+                            Decimal("0.30"),
+                            lift * Decimal("0.18"),
+                        ) * remaining_share
+                        promotion_payback_factor *= Decimal("1") - payback
+                    day_factors = [
+                        Decimal(str(value))
+                        for value in market["demand"]["dayOfWeekFactors"]
+                    ]
+                    day_of_week_factor = (
+                        day_factors[day.weekday()]
+                        * Decimal(7)
+                        / sum(day_factors, Decimal("0"))
                     )
                     trend_factor = Decimal(
                         str(
@@ -2115,34 +2833,17 @@ def simulate(
                     )
                     peak = variant["_seasonalityPeakMonth"]
                     strength = Decimal(str(variant["_seasonalityStrength"]))
-                    peak_day = date(day.year, peak, 15)
-                    year_days = 366 if calendar.isleap(day.year) else 365
-                    seasonal_factor = Decimal("1") + strength * Decimal(
-                        str(
-                            math.cos(
-                                (
-                                    day.timetuple().tm_yday
-                                    - peak_day.timetuple().tm_yday
-                                )
-                                / year_days
-                                * math.tau
-                            )
-                        )
+                    seasonal_factor = _seasonality_factor(
+                        peak,
+                        strength,
+                        day,
                     )
-                    holiday_uplifts = {
-                        "Diwali": Decimal("3.00"),
-                        "Christmas": Decimal("2.35"),
-                        "Thanksgiving": Decimal("3.20"),
-                        "Boxing Day": Decimal("2.20"),
-                        "Republic Day": Decimal("1.22"),
-                        "Independence Day": Decimal("1.18"),
-                        "Veterans Day": Decimal("1.08"),
-                    }
                     holiday_factor = Decimal("1")
                     if holiday_names and market["signals"]["holidays"]:
-                        holiday_factor = max(
-                            holiday_uplifts.get(name, Decimal("1.15"))
-                            for name in holiday_names
+                        holiday_factor = _holiday_demand_factor(
+                            holiday_rows,
+                            country_code=market["countryCode"],
+                            channel_type=channel_types[channel_id],
                         )
                     sale_season_factor = (
                         Decimal("1.08") if sale_season_ids else Decimal("1")
@@ -2230,15 +2931,15 @@ def simulate(
                                     + relative_gap * Decimal("0.50"),
                                 ),
                             )
+                    inflated_reference_price = _inflated_base_price(
+                        variant["_basePrice"],
+                        market,
+                        day,
+                        launch_day,
+                    )
                     price_ratio = max(
                         Decimal("0.01"),
-                        unit_price
-                        / _inflated_base_price(
-                            variant["_basePrice"],
-                            market,
-                            day,
-                            launch_day,
-                        ),
+                        unit_price / inflated_reference_price,
                     )
                     price_factor = Decimal(
                         str(
@@ -2247,6 +2948,29 @@ def simulate(
                                 * math.log(float(price_ratio))
                             )
                         )
+                    )
+                    regular_price_ratio = max(
+                        Decimal("0.01"),
+                        original_price / inflated_reference_price,
+                    )
+                    regular_price_factor = Decimal(
+                        str(
+                            math.exp(
+                                float(variant["_elasticity"])
+                                * math.log(float(regular_price_ratio))
+                            )
+                        )
+                    )
+                    promotion_elasticity_factor = (
+                        price_factor / regular_price_factor
+                        if applied_promotions
+                        else Decimal("1")
+                    )
+                    promotion_factor = (
+                        effective_promotion_lift
+                        / promotion_elasticity_factor
+                        if applied_promotions
+                        else Decimal("1")
                     )
                     new_product_factor = lifecycle_effect["launchFactor"]
                     predecessor_factor = lifecycle_effect["predecessorFactor"]
@@ -2286,8 +3010,9 @@ def simulate(
                         * Decimal(str(store["demandScale"]))
                         * Decimal(str(market["demand"]["startingDailyOrders"]))
                         * Decimal(str(market["demand"]["averageLinesPerOrder"]))
-                        / Decimal(len(variants))
-                        * _weighted_factor(variant, mean_weight)
+                        * _portfolio_weight(variant)
+                        / portfolio_weight
+                        * channel_share
                         * _expected_units_per_line(variant)
                     )
                     total_factor = (
@@ -2297,6 +3022,7 @@ def simulate(
                         * holiday_factor
                         * sale_season_factor
                         * promotion_factor
+                        * promotion_payback_factor
                         * event_factor
                         * pandemic_factor
                         * weather_factor
@@ -2346,6 +3072,7 @@ def simulate(
                             "requestKey": event_key,
                             "marketKey": market_id,
                             "storeKey": store["storeId"],
+                            "channelId": channel_id,
                             "requestDate": day.isoformat(),
                             "sku": variant["sku"],
                             "requestedQuantity": latent_units,
@@ -2359,6 +3086,7 @@ def simulate(
                         {
                             "marketKey": market_id,
                             "storeKey": store["storeId"],
+                            "channelId": channel_id,
                             "date": day.isoformat(),
                             "sku": variant["sku"],
                             "departmentId": variant["_departmentId"],
@@ -2379,7 +3107,22 @@ def simulate(
                             "saleSeasonIds": "|".join(sale_season_ids),
                             "saleSeasonFactor": str(sale_season_factor),
                             "promotionIds": "|".join(applied_promotions),
+                            "configuredPromotionLift": str(
+                                configured_promotion_lift
+                            ),
+                            "effectivePromotionLift": str(
+                                effective_promotion_lift
+                            ),
+                            "effectivePromotionDiscountPct": str(
+                                effective_promotion_discount
+                            ),
+                            "promotionElasticityFactor": str(
+                                promotion_elasticity_factor
+                            ),
                             "promotionFactor": str(promotion_factor),
+                            "promotionPaybackFactor": str(
+                                promotion_payback_factor
+                            ),
                             "eventIds": "|".join(event_effect["eventIds"]),
                             "eventFactor": str(event_factor),
                             "pandemicIds": "|".join(
@@ -2456,7 +3199,7 @@ def simulate(
                         line_event_key = (
                             f"{event_key}:purchase:{purchase_index:05d}"
                         )
-                        line_events.append(
+                        daily_lines.append(
                             {
                                 "eventKey": line_event_key,
                                 "marketId": market_id,
@@ -2515,9 +3258,24 @@ def simulate(
                             }
                         )
 
-        daily_lines = line_events[day_line_start:]
-        daily_orders = _group_baskets(config, master_seed, daily_lines)
-        order_headers.extend(daily_orders)
+        daily_orders = _group_baskets(
+            config,
+            master_seed,
+            daily_lines,
+            customer_population,
+        )
+        source_name_start = len(order_headers)
+        for source_offset, order in enumerate(
+            sorted(
+                daily_orders,
+                key=lambda row: (row["createdAt"], row["orderKey"]),
+            ),
+            start=1,
+        ):
+            order["sourceOrderSequence"] = source_name_start + source_offset
+            order["sourceOrderName"] = shopify_order_name(
+                order["sourceOrderSequence"]
+            )
         order_by_key = {row["orderKey"]: row for row in daily_orders}
         for line in daily_lines:
             order = order_by_key[line["orderKey"]]
@@ -2550,9 +3308,18 @@ def simulate(
                             batches_by_inventory_key,
                             key,
                             quantity,
+                            on_exhausted=finalize_batch,
                         )
                 else:
                     fulfillment_releases_by_date[release_day].append(release)
+        # Both streams use the same deterministic order-key ordering. Commerce
+        # extensions can therefore merge them without a run-sized line lookup.
+        daily_orders.sort(key=lambda row: row["orderKey"])
+        daily_lines.sort(
+            key=lambda row: (row["orderKey"], row["lineNumber"])
+        )
+        order_headers.extend(daily_orders)
+        line_events.extend(daily_lines)
 
         if (day - start).days % inventory_policy["snapshotCadenceDays"] == 0 or day == end:
             for warehouse in sorted(warehouses.values(), key=lambda row: row["warehouseId"]):
@@ -2634,6 +3401,16 @@ def simulate(
                 f"batch/on-hand reconciliation failed for {inventory_key}: "
                 f"{batch_balance} != {on_hand}"
             )
+    for batch in sorted(
+        batch_by_key.values(),
+        key=lambda row: (
+            row["warehouseId"],
+            row["sku"],
+            row["receiptDate"],
+            row["batchKey"],
+        ),
+    ):
+        batch_balances.append(dict(batch))
 
     return {
         "orderLines": line_events,
@@ -2646,15 +3423,7 @@ def simulate(
         "transferEvents": transfer_events,
         "inventoryLossEvents": inventory_loss_events,
         "wasteEvents": waste_events,
-        "batchBalances": sorted(
-            batch_by_key.values(),
-            key=lambda row: (
-                row["warehouseId"],
-                row["sku"],
-                row["receiptDate"],
-                row["batchKey"],
-            ),
-        ),
+        "batchBalances": batch_balances,
         "allocationRequests": allocation_requests,
         "supplyPools": supply_pools,
         "weatherActual": weather_actual,

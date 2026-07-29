@@ -38,6 +38,14 @@ or datagen scenario.
 (Parquet/JSON) plus manifests and **semantic fingerprints** to the lake + PostgreSQL. The Go
 `api/` reads these — it never calls Python in-process.
 
+**Execution boundary:** ML installs the same neutral `execution/` resolver as datagen and
+ingestion, then maps only the `ml` namespace into feature, fold, market/model and trainer thread
+pools. Pools are budgeted to prevent nested oversubscription and bounded batching fails closed on
+memory risk; it never shortens horizons or validation folds silently. Execution values and stage
+telemetry are recorded in the artifact/run manifest but excluded from feature/model/policy
+fingerprints. Fixed RNG/deterministic trainer settings must make safe/ultra-performance outcomes
+equivalent within declared library tolerances.
+
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.
 

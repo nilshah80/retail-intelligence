@@ -22,6 +22,7 @@ The design is built around config-switched seams so local and AWS run the same l
 
 | Seam | Local | AWS |
 |---|---|---|
+| Execution profiles | versioned `execution/` safe/balanced/performance/ultra-performance YAML + layer adapters | same schema/golden vectors mapped to explicit Batch/SageMaker/ECS CPU and memory |
 | Object storage (lake, artifacts) | raw source CSV + restricted single-run DuckDB; curated Parquet/DuckDB | **S3** (raw / restricted-evaluation / curated / features / artifacts prefixes) |
 | Data generator | `datagen/` Config Builder artifact + CLI | `datagen` job (**AWS Batch** or **SageMaker Processing**) → S3 raw |
 | Ingestion compute | `ingestion/` Python | **SageMaker Processing** (or ECS/Batch) |
@@ -45,6 +46,9 @@ Account/org guardrails, VPC (private subnets, VPC endpoints, no public data path
 least-privilege roles, **KMS** CMKs, **S3** buckets (raw/curated/features/artifacts, versioned +
 encrypted), **RDS PostgreSQL**, **Secrets Manager**, IaC skeleton (Terraform/CDK), CI/CD
 pipeline. **Exit:** `terraform apply` stands up an empty, private, encrypted environment.
+Each Python image installs the neutral `execution/` resolver; the Go image implements the same
+schema/golden vectors natively. IaC maps a selected bounded profile to explicit service/job
+resources rather than inferring unbounded concurrency from the instance.
 
 ### Phase A1 — Data landing & ingest
 Upload a Config-Builder-generated scenario, run `datagen` to publish Shopify-shaped, Business

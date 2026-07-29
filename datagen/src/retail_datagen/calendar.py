@@ -35,10 +35,15 @@ def _rule_date(rule: dict[str, Any], year: int) -> date:
         return _easter_sunday(year) + timedelta(days=rule["offsetDays"])
     month = rule["month"]
     weekday = rule["weekday"]
-    if rule_type == "nth-weekday":
+    if rule_type in {"nth-weekday", "nth-weekday-offset"}:
         first = date(year, month, 1)
         offset = (weekday - first.weekday()) % 7
-        return first + timedelta(days=offset + 7 * (rule["occurrence"] - 1))
+        result = first + timedelta(
+            days=offset + 7 * (rule["occurrence"] - 1)
+        )
+        if rule_type == "nth-weekday-offset":
+            result += timedelta(days=rule["offsetDays"])
+        return result
     if rule_type == "last-weekday":
         last = date(year, month, calendar.monthrange(year, month)[1])
         return last - timedelta(days=(last.weekday() - weekday) % 7)
@@ -61,6 +66,7 @@ def holidays_for_range(
                     "date": holiday_day.isoformat(),
                     "name": rule["name"],
                     "kind": rule["kind"],
+                    "retailBehavior": rule["retailBehavior"],
                 }
                 by_date_and_name[(row["date"], row["name"])] = row
         occupied = {
@@ -89,6 +95,9 @@ def holidays_for_range(
                     "date": observed_day.isoformat(),
                     "name": f"{rule['name']} (observed)",
                     "kind": "observed",
+                    # The substitute bank/federal day is calendar evidence,
+                    # not a second retailer closure or retail event.
+                    "retailBehavior": "observance",
                 }
                 by_date_and_name[(row["date"], row["name"])] = row
                 occupied.add(observed_day)

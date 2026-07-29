@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v9
+specVersion: retail-source-config/v11
 identity:
   scenarioId: multi-market-20-year-history
   scenarioVersion: 1.0.0
@@ -71,7 +71,7 @@ markets:
   fxRateToReporting: '1.000000000000000000'
   localePack:
     id: IN
-    version: '2026.3'
+    version: '2026.5'
     label: India
     currency:
       code: INR
@@ -134,220 +134,290 @@ markets:
       month: 1
       day: 26
       kind: public
+      retailBehavior: public-holiday
     - type: fixed
       name: Independence Day
       month: 8
       day: 15
       kind: public
+      retailBehavior: public-holiday
     - type: fixed
       name: Gandhi Jayanti
       month: 10
       day: 2
       kind: public
+      retailBehavior: public-holiday
     - type: fixed
       name: Christmas
       month: 12
       day: 25
       kind: public
+      retailBehavior: public-holiday
     holidays:
     - date: '2005-03-25'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2006-03-15'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2007-03-04'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2008-03-22'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2009-03-11'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2010-03-01'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2011-03-20'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2012-03-08'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2013-03-27'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2014-03-17'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2015-03-06'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2016-03-24'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2017-03-13'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2018-03-02'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2019-03-21'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2020-03-10'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2021-03-29'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2022-03-18'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2023-03-08'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2024-03-25'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2025-03-14'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2026-03-04'
       name: Holi
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2005-11-04'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2006-10-24'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2007-10-13'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2008-10-02'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2009-09-21'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2010-09-11'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2011-08-31'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2012-08-20'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2013-08-09'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2014-07-29'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2015-07-18'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2016-07-07'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2017-06-26'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2018-06-16'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2019-06-05'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2020-05-25'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2021-05-14'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2022-05-03'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2023-04-22'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2024-04-11'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2025-03-31'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2026-03-20'
       name: Eid al-Fitr
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2005-11-01'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2006-10-21'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2007-11-09'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2008-10-28'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2009-10-17'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2010-11-05'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2011-10-26'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2012-11-13'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2013-11-03'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2014-10-23'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2015-11-11'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2016-10-30'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2017-10-19'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2018-11-07'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2019-10-27'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2020-11-14'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2021-11-04'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2022-10-24'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2023-11-12'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2024-10-31'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2025-10-20'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     - date: '2026-11-08'
       name: Diwali
       kind: reviewed-lunar
+      retailBehavior: public-holiday
     saleSeasons:
     - id: diwali-season
       startMonthDay: 10-01
@@ -363,6 +433,9 @@ markets:
     averageLinesPerOrder: 1.8
     demandLevelScalar: 1
     annualGrowthRate: 0.025
+    onlineShareStart: 0.02
+    onlineShareEnd: 0.2
+    onlineShareSkuVariation: 0.04
     noise: 0.12
     intermittencyRate: 0.14
     newProductRampDays: 90
@@ -387,6 +460,14 @@ markets:
     competitor: true
     macro: true
     fx: true
+  customerPopulation:
+    openingRegisteredCustomers: 1000
+    annualNewCustomers: 250
+    annualChurnRate: 0.18
+    annualReactivationRate: 0.06
+    guestCheckoutRate: 0.18
+    openingCustomerHistoryYears: 5
+    maxOrdersPerCustomerPerDay: 2
 - marketId: us-new-york
   name: United States — New York
   countryCode: US
@@ -445,7 +526,7 @@ markets:
   fxRateToReporting: '83.000000000000000000'
   localePack:
     id: US
-    version: '2026.3'
+    version: '2026.5'
     label: United States
     currency:
       code: USD
@@ -509,44 +590,68 @@ markets:
       month: 1
       day: 1
       kind: public
+      retailBehavior: public-holiday
     - type: nth-weekday
       name: Martin Luther King Jr. Day
       month: 1
       weekday: 0
       occurrence: 3
       kind: public
+      retailBehavior: public-holiday
     - type: last-weekday
       name: Memorial Day
       month: 5
       weekday: 0
       kind: public
+      retailBehavior: public-holiday
     - type: fixed
       name: Independence Day
       month: 7
       day: 4
       kind: public
+      retailBehavior: public-holiday
     - type: nth-weekday
       name: Labor Day
       month: 9
       weekday: 0
       occurrence: 1
       kind: public
+      retailBehavior: public-holiday
     - type: fixed
       name: Veterans Day
       month: 11
       day: 11
       kind: public
+      retailBehavior: public-holiday
     - type: nth-weekday
       name: Thanksgiving
       month: 11
       weekday: 3
       occurrence: 4
       kind: public
+      retailBehavior: closed
+    - type: nth-weekday-offset
+      name: Black Friday
+      month: 11
+      weekday: 3
+      occurrence: 4
+      offsetDays: 1
+      kind: retail-event
+      retailBehavior: retail-peak
+    - type: nth-weekday-offset
+      name: Cyber Monday
+      month: 11
+      weekday: 3
+      occurrence: 4
+      offsetDays: 4
+      kind: retail-event
+      retailBehavior: retail-peak
     - type: fixed
       name: Christmas
       month: 12
       day: 25
       kind: public
+      retailBehavior: closed
     holidays: []
     saleSeasons:
     - id: holiday-season
@@ -563,6 +668,9 @@ markets:
     averageLinesPerOrder: 1.8
     demandLevelScalar: 1
     annualGrowthRate: 0.025
+    onlineShareStart: 0.05
+    onlineShareEnd: 0.22
+    onlineShareSkuVariation: 0.04
     noise: 0.12
     intermittencyRate: 0.14
     newProductRampDays: 90
@@ -587,6 +695,14 @@ markets:
     competitor: true
     macro: true
     fx: true
+  customerPopulation:
+    openingRegisteredCustomers: 1000
+    annualNewCustomers: 250
+    annualChurnRate: 0.18
+    annualReactivationRate: 0.06
+    guestCheckoutRate: 0.18
+    openingCustomerHistoryYears: 5
+    maxOrdersPerCustomerPerDay: 2
 legalEntities:
 - legalEntityId: northstar-india
   name: Northstar Retail India Pvt Ltd

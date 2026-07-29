@@ -91,7 +91,7 @@ reference catalog identities in synthetic fixtures.
 
 ## Long-horizon and pandemic scenarios
 
-Source spec v9 supports the locale-pack range `2005-01-01` through `2026-12-31`: up to 22
+Source spec v11 supports the locale-pack range `2005-01-01` through `2026-12-31`: up to 22
 complete calendar years in one run. `configs/multi-market-20-year-history.yaml` is the executable
 2005–2024 preset. It uses monthly physical partitions, compound annual demand growth, discrete
 annual inflation, effective price-change episodes, recurring/reviewed holidays, catalog
@@ -130,10 +130,12 @@ target so a high-volume setting cannot silently collapse to one line per SKU/day
 
 The generator produces, from the same causal simulation:
 
-- Shopify-shaped products, variants, anonymous customers, locations, multi-line orders, tax
+- Shopify-shaped products, variants, direct-identifier-free registered customers plus guest
+  checkouts, locations, multi-line orders, tax
   lines, split fulfillments and status histories, returns/refunds, webhook/HMAC fixtures and the
   named inventory-state matrix at the fidelity enabled by config;
-- Business Central-shaped items, locations, anonymous customers/vendors, sales, inventory,
+- Business Central-shaped items, locations, direct-identifier-free registered/walk-in
+  customers and synthetic vendors, sales, inventory,
   purchase/receipt/cost, inbound/batch, transfer, supplier-planning and warehouse-operation
   extracts at the fidelity enabled by config;
 - external/companion datasets for holidays, weather, local events, promotions, competitors,
@@ -151,7 +153,7 @@ source IDs remain stable content-derived identifiers. Business Central batches p
 generator warehouse key and the native BC location code so consumers can join them directly to
 snapshots and ledger entries.
 
-The v9 PoC return policy deliberately publishes every processed return as `NO_RESTOCK`; no
+The v11 PoC return policy deliberately publishes every processed return as `NO_RESTOCK`; no
 returned unit silently re-enters inventory. Modelling sellable-versus-damaged return disposition
 and the corresponding inventory/ledger postings is a future configurable extension, not implied
 by the current fixtures.
@@ -185,15 +187,69 @@ DuckDB table to its authoritative path, format, compression, row count, content 
 class. It is a lossless, all-text mirror—not a canonical analytical database—and never replaces
 the selected CSV/Parquet source contract.
 
+The run also writes both `resolved-config.yaml` and `resolved-config.json`. YAML is the primary
+human-authored/replay artifact; JSON is the retained compatibility mirror required by the
+YAML+JSON contract. Both are serialized from the same fully resolved in-memory configuration,
+manifest-hashed and expected to be semantically identical. They are run evidence, not retailer
+source datasets, and the JSON file does not create a second scenario or change configuration
+precedence.
+
 Time-bearing datasets are physically partitioned as
 `<logical-dataset>/year=YYYY/month=MM/part.<format>` (or day partitions when selected). The
 manifest keeps both physical `path` and stable `logicalPath`; DuckDB's
 `source_object_catalog` records every part while `source_dataset_catalog` provides one logical
 table, total rows and partition count.
-Long-horizon generation is executable and tested, but the Python simulator still retains causal
-state and projection rows in memory. Use `retail-datagen plan` and size assortments, stores and
-high-volume daily signals to the machine; the 20-year preset is the laptop-oriented baseline,
-not the original generator's deliberately huge stress profile.
+Long-horizon generation uses bounded private row spools rather than retaining source/truth
+projections as Python lists. Only causal state, the current business day, trailing 28-day
+replenishment evidence and bounded row buffers remain resident. Causally independent markets can
+run in separate processes; their order/customer streams are deterministically merged and globally
+renumbered before source projection. Independent month partitions are published concurrently;
+the single DuckDB mirror is assembled in stable source-path order with explicit thread and memory
+ceilings. Runtime controls do not change the config hash, run ID or logical business data:
+
+```bash
+retail-datagen generate -c scenario.yaml \
+  --execution-profile safe
+```
+
+The Config Builder downloads a separate
+`<scenario-id>.execution.yaml` with schema `retail-execution-profile/v1`. The scenario YAML/JSON
+never contains hardware settings. CLI precedence is explicit overrides, then the supplied
+execution document, then its named profile, then `safe`; bounded environment overrides use the
+`RETAIL_DATAGEN_*` variables documented in `execution/README.md`.
+
+`safe` is the default for the 16-GB-available demo machine: one market process, two partition
+workers, one DuckDB thread, a 4-GiB DuckDB ceiling and 10,000-row spools. `balanced` stays on one
+market process with 4/2 workers/threads and an 8-GiB ceiling. `performance` is for the larger
+workstation: two market processes, 8 partition workers, 6 DuckDB threads, a 32-GiB ceiling and
+50,000-row spools. `ultra-performance` targets this 16-core/128-GB workstation with two market
+processes, 16 partition workers, 8 DuckDB threads, a 64-GiB ceiling and 100,000-row spools. It
+does not raise market processes above two because this demo has only two independent markets.
+No profile auto-expands to detected CPU/RAM, and impossible values fail before generation.
+Fine-grained CLI overrides remain available:
+
+```bash
+retail-datagen generate -c scenario.yaml \
+  --execution-profile-file scenario.execution.yaml \
+  --market-workers 1 --workers 2 --duckdb-threads 1 \
+  --memory-limit-gb 4 --spool-chunk-rows 10000
+```
+
+A complete 90-day showcase benchmark generated 78,818 orders plus Parquet and DuckDB in 47.02
+seconds with 648,462,336-byte peak process RSS. A disposable Jan–Mar 2026 derivative of the
+larger 720-SKU/125k-opening-customers-per-market ten-year preset, including its configured
+grand-opening event, generated 123,491 orders in 76.88 seconds with 850,034,688-byte peak RSS.
+The retained ten-year v10 run completed in 6,028.55 seconds with 7,810,482,176-byte
+(7.27-GiB) peak process RSS. This is measured end-to-end, including causal simulation,
+two-worker Parquet publication and the 12,839,563,264-byte DuckDB build; it leaves more than
+8 GiB of the stated 16-GB available budget for the OS and demo services.
+
+Customer behavior is also Config Builder-owned. Each market defines opening registered
+customers, annual acquisition, churn/reactivation, guest-checkout share, opening history years
+and a hard orders-per-customer-per-day cap. The customer master therefore spans pre-run history
+through the extract date instead of creating 750 reusable identities in the first week.
+Shopify guest orders carry an empty customer ID; Business Central projects them to an explicit
+market walk-in account.
 
 ## What locale and topology drive
 
@@ -210,6 +266,18 @@ Market/store/warehouse configuration must drive:
 
 Signals are not decorative: enabled holiday, promotion, weather, local-event, competitor and
 macro factors must affect the latent-demand process so downstream driver pages can recover them.
+The v11 demand process uses a cross-year, mean-reverting regular-price path instead of a repeating
+price sawtooth, mean-normalized weekday and continuous annual-seasonality factors, multi-day
+weather spells, and Config Builder-owned secular online-share growth. Black Friday and Cyber
+Monday are explicit retail events; original-date closures are locale-pack flags and substitute
+observance days do not create duplicate closures. One best-price
+promotion applies at a time, its configured lift is not counted again through elasticity, the
+ending decision remains stable for the offer window, ordinary campaigns respect the same
+price-path and disruption-adjusted cost basis recorded on receipts, and a seven-day payback period
+represents demand pulled forward only when the configured promotion signal is enabled.
+Promotion and promotion-SKU feeds label configured `discountPct` as `planned-offer`; effective
+prices remain observable in public price history and order lines, while hidden truth records the
+effective discount and scales demand lift when a cost floor prevents the full planned reduction.
 Every companion row carries the generator's own stable market key plus a structured
 market/region/store target; `ALL`, `West` or a city name is never published without its market
 namespace. Promotion targeting is structured (market plus optional region/store/channel
@@ -257,7 +325,7 @@ The first pricing round-trip is revenue-objective only. Temporal receipt/cost la
 extension; until enabled and accepted by ingestion, datagen does not imply decision-grade
 margin, margin-floor enforcement or margin optimization.
 
-**Config-driven screen-completeness evidence implemented by source spec v9:**
+**Config-driven screen-completeness evidence implemented by source spec v11:**
 
 - split-fulfillment/status histories and requested-vs-processed return evidence;
 - successful/failed refund transactions and valid/invalid webhook HMAC fixtures;
@@ -270,7 +338,7 @@ margin, margin-floor enforcement or margin optimization.
 
 These remain generator-source features controlled by `operations.features`; canonical
 interpretation and capability acceptance belong to `ingestion/`. Selectable CSV/Parquet plus the
-single DuckDB mirror is the complete v9 publication matrix; JSONL remains an ingestion adapter
+single DuckDB mirror is the complete v11 publication matrix; JSONL remains an ingestion adapter
 concern when a retailer supplies it.
 
 ## Dashboard source-coverage map
@@ -319,7 +387,7 @@ specification. Old canonical/ML-ready publication concepts and the fixed authori
 
 **Spec:** §9.
 
-## Implemented source-spec v9
+## Implemented source-spec v11
 
 The Phase-1 generator is runnable:
 
@@ -441,6 +509,120 @@ datagen/.venv/bin/retail-datagen generate \
   -c datagen/configs/multi-market-20-year-history.yaml
 ```
 
+The Config Builder also exposes a first-class **10-year demo preset** for the retained
+ingestion/ML dataset. It covers `2016-07-28` through `2026-07-28`, uses four stores and four
+warehouse/fulfillment nodes across India and the US, carries 720 sellable SKUs across 10
+departments, and publishes authoritative zstd-Parquet plus one DuckDB mirror. Its configured
+ordinary baseline is 2,400 orders/day across both markets. A planned, pre-stocked regional
+grand-opening event supplies a single extreme-volume day for ingestion and UI testing without
+making every day artificially large.
+
+The preset is the exact YAML contract embedded behind the Config Builder's **10-year demo
+preset** button. `test_builder_presets_match_checked_in_configs` prevents the HTML and YAML from
+drifting:
+
+Its main DCs open with 42 days of node-level cover and the secondary nodes with 14 days. Because
+demand is distributed across the two serving nodes, this is roughly four weeks of network cover,
+not the previous 240-day overstock. A 2% per-node constrained-SKU rate supplies explicit opening
+censoring evidence while ordinary replenishment, disruption and supplier behavior create
+additional dynamic stockouts.
+
+```bash
+datagen/.venv/bin/retail-datagen validate-config \
+  -c datagen/configs/multi-market-10-year-demo.yaml
+
+datagen/.venv/bin/retail-datagen plan \
+  -c datagen/configs/multi-market-10-year-demo.yaml
+
+datagen/.venv/bin/retail-datagen generate \
+  -c datagen/configs/multi-market-10-year-demo.yaml \
+  -o datagen/output \
+  --execution-profile safe
+```
+
+The previously retained v0.11.0/v10 run is reproducible benchmark evidence:
+
+```
+datagen/output/multi-market-10-year-demo/run-b8c4cceba05eb61a
+config hash:   d52f5b629cd43243407618e9884ef25d6ac595933d317dcd6bae63fb83a89f50
+manifest hash: 901741cfac7b94e2208ccbbc0a34e0fd5e298efe31aae7d81805c3054568f6c1
+```
+
+It is not the Phase-2 pin after the v0.12.0/v11 correctness and realism
+corrections. Generate and accept a fresh ten-year run before Phase 2 lands
+source data; do not mix artifacts from the two source contracts.
+
+It completed in 1h26m50.27s using `--execution-profile ultra-performance`
+(`2` market workers, `16` partition writers, `8` DuckDB threads, a `64`-GB DuckDB ceiling and
+`100000`-row spools), with 18,853,019,648-byte (17.56-GiB) peak process RSS. The run
+contains 137 logical datasets, 10,198 authoritative Parquet objects, 297,619,898
+source/truth rows and one 12,938,129,408-byte DuckDB mirror; the complete retained folder uses
+19.45 GiB of allocated disk. Its source totals are Shopify 211,284,407 rows, Business Central 57,623,146,
+companion 3,154,540 and restricted truth 25,557,805.
+
+Each Shopify market has 525,062 direct-identifier-free registered customers with creation
+dates spanning 2011-07-31 through 2026-07-28; each BC company has the same registered
+population plus one explicit walk-in account. India has 464,835 purchasing registered
+customers and 1,066,591 guest orders (18.03%); the US has 462,176 purchasing registered
+customers and 1,041,129 guest orders (18.02%). Registered-customer order-count quantiles
+`p25/p50/p75/p90/p99` are `3/7/14/25/51` in India and `3/7/14/24/50` in the US. The
+maximum is two orders per registered customer per local day, as configured. Shopify and BC
+both have zero orphan customer references, and no customer row contains a direct identifier.
+
+The DuckDB catalogs reconcile 137 datasets, 10,198 Parquet objects and 297,619,898 rows with
+zero mismatch. All 365 restricted objects are under `_truth/`; no truth object is public.
+An identical invocation reverified all manifest sizes/hashes and returned `reused: true` in
+7.52 seconds. No private `.work`, staging directory, temporary DuckDB or WAL remains.
+
+The full v0.11.0 ultra run used 63,820,489,478 temporary work bytes before cleanup and published
+20,848,092,042 bytes across 10,202 manifest objects (10,198 Parquet objects plus four
+generator-owned run artifacts). Its measured stages were 1,126.320 seconds for simulation,
+1,028.355 for extensions, 2,190.984 for source publication, 542.298 for DuckDB and 0.129 for
+catalog finalization. Against the earlier v0.10.0 two-worker/4-GiB full-run measurement of
+1h40m28.55s, ultra reduced wall time by 13m38.28s (13.6%) but raised peak per-process RSS from
+7.27 GiB to 17.56 GiB. Use `safe` on the 16-GB-available demo target; reserve ultra for the
+64-GB-or-larger workstation class.
+
+The v0.9.2/v9 run is historical measurement evidence only:
+
+```
+historical run: run-98abf242ff98ddc0
+config hash: dd4b0d905b3bbe9c8ec0f9a3d8a9cc80d945bc6e41556ad34d518edca0f4874f
+```
+
+Its obsolete local run folder was removed after the v10 replacement passed acceptance. It
+completed in 1h37m43s and contained 137 logical datasets, 9,480 authoritative Parquet
+partitions, 295,522,648 source/truth rows and one 12,614,119,424-byte DuckDB mirror (about 19 GB
+for the complete run). It produced 11,692,994 Shopify orders and 30,761,542 realized units.
+Daily orders have median 2,942, mean 3,200.93, p95 4,961 and a declared grand-opening stress
+maximum of 161,370. The minimum is 410 during the configured April–June 2020 COVID
+lockdown/stockout period, not ordinary baseline traffic. Overall fill is 93.4571% (India 94.30%,
+US 92.65%). Warehouse peak totals remain within capacity: Mumbai 332,131/750,000, Pune
+331,130/500,000, Newark 526,769/750,000 and Brooklyn 117,244/500,000.
+
+The run has 369 published promotion rows, 7 local events, 24 pandemic-phase rows, 162 holidays,
+7,306 weather actuals and 51,142 weather forecasts. All 137 source-schema datasets match the
+DuckDB catalog; the 9,480 catalog objects reconcile to 295,522,648 rows with zero mismatch.
+Real successor tails are present: iPhone 13/14/15/16 sell 14,967/11,057/7,873/3,447 units after
+their successor launches instead of stopping at handover. An identical rerun reverified hashes
+and returned `reused: true` in 9.8 seconds.
+
+It must **not** be pinned for Phase 2: its Shopify/BC customer masters contain only 750 reused
+registered identities per market, all first observed in the opening week, and the old
+non-streaming simulation peaked near 88.5 GB RSS. Generator v0.10.0/source contract v10 changed
+the deterministic run ID, added the explicit population/acquisition model and bounded execution.
+Generator v0.12.0/source contract v11 then superseded that candidate with source-reconciliation
+and forecasting-realism corrections. The next Phase-2 pin must therefore be a fresh accepted
+v11 run, not an in-place repair or rename of either historical run.
+
+The preset fixes `identity.masterSeed`. The generator is deterministic: the same resolved config
+and generator version produce the same config hash, run ID, logical rows and authoritative
+CSV/Parquet object hashes, and an immutable rerun is verified and reused. DuckDB is explicitly a
+non-authoritative mirror: its table/catalog contents are deterministic, while its internal
+physical layout is classified as logical rather than byte determinism. Change `masterSeed`,
+scenario configuration or generator version only when a genuinely different synthetic run is
+required.
+
 The checked-in high-volume scenario covers `2021-01-01` through `2026-07-27`, uses 36 SKUs per
 department across 10 departments (360 per market), starts at 420 orders per store/day
 (840 across the two stores before causal lift), and
@@ -452,8 +634,8 @@ monthly fill of 94.73%, 93.60% and 88.70%. The March reduction is a truncation a
 disposable derivative: 192 March purchase orders remain in transit at its hard extract boundary.
 It is neither a cold-start failure nor a COVID attribution—the configured COVID supply phase is
 a step active across all three months. Those POs can land in April in the full run. Peak
-inventory remained far below capacity. This slice validates the boundary policy but does not
-replace the required full v0.9.2 run:
+inventory remained far below capacity. This slice validates the boundary policy; the selected
+full v0.10.0 ten-year run above is the long-horizon acceptance result:
 
 ```bash
 datagen/.venv/bin/retail-datagen plan \
@@ -488,11 +670,34 @@ different inference or rounding from the authoritative CSV/Parquet object.
 It is setuptools metadata generated by `pip install -e datagen`; it was removed from `src/` and
 `*.egg-info/` is ignored. The active virtual environment may regenerate it locally at any time.
 
-Run the test suite with:
+Run the execution-contract and datagen test suites with:
 
 ```bash
-datagen/.venv/bin/python -m unittest discover -s datagen/tests -v
+PYTHONPATH=execution/src:datagen/src \
+  datagen/.venv/bin/python -m unittest discover -s execution/tests -v
+PYTHONPATH=execution/src:datagen/src \
+  datagen/.venv/bin/python -m unittest discover -s datagen/tests -v
 ```
+
+Re-run the disposable profile benchmark with:
+
+```bash
+PYTHONPATH=execution/src:datagen/src \
+  datagen/.venv/bin/python datagen/tools/benchmark_execution_profiles.py
+```
+
+On the 16-core/128-GB M4 Max, the comparable v0.11.0 90-day showcase measured 47.325 seconds
+under `safe`, 41.778 under `performance` and 41.612 under `ultra-performance`. Ultra was 12.1%
+faster than safe but only 0.4% faster than performance. Simulation measured
+10.519/6.440/6.116 seconds; source publication measured 23.889/21.472/21.542 seconds, showing
+that this two-market run is publication/serial-stage constrained once performance is selected.
+All profiles produced the same run ID, 534 byte-deterministic object hashes and reconciliation
+controls. Largest observed per-process RSS was 582,336,512 / 1,065,992,192 / 1,398,489,088
+bytes; this is not concurrent aggregate RSS. CPU utilization was 110.39% / 144.57% / 164.07%.
+The benchmark removed all disposable outputs. The v0.11.0 ultra run documented above remains
+the comparable full-run benchmark. The next Phase-2 input must be generated by v0.12.0/v11;
+changing only an execution profile will not change that new run's scenario config hash or
+logical source contract.
 
 What remains outside datagen Phase 1 is downstream landing/adaptation, canonical transformations,
 ML outputs and runtime/UI workflows. Datagen does not generate forecasts, recommendations,

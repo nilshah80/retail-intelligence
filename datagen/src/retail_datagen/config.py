@@ -348,6 +348,18 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                     value = demand.get(field)
                     if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
                         errors.append(f"{path}.demand.{field} must be a non-negative number")
+                for field in (
+                    "onlineShareStart",
+                    "onlineShareEnd",
+                    "onlineShareSkuVariation",
+                ):
+                    _number_between(
+                        demand.get(field),
+                        f"{path}.demand.{field}",
+                        errors,
+                        0,
+                        1,
+                    )
                 _number_between(
                     demand.get("intermittencyRate"),
                     f"{path}.demand.intermittencyRate",
@@ -374,6 +386,33 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                     errors.append(
                         f"{path}.demand.dayOfWeekFactors must contain seven "
                         "positive Monday-to-Sunday numbers"
+                    )
+            customer_population = market.get("customerPopulation")
+            if not isinstance(customer_population, dict):
+                errors.append(f"{path}.customerPopulation must be an object")
+            else:
+                for field in (
+                    "openingRegisteredCustomers",
+                    "annualNewCustomers",
+                    "openingCustomerHistoryYears",
+                    "maxOrdersPerCustomerPerDay",
+                ):
+                    _positive_int(
+                        customer_population.get(field),
+                        f"{path}.customerPopulation.{field}",
+                        errors,
+                    )
+                for field in (
+                    "annualChurnRate",
+                    "annualReactivationRate",
+                    "guestCheckoutRate",
+                ):
+                    _number_between(
+                        customer_population.get(field),
+                        f"{path}.customerPopulation.{field}",
+                        errors,
+                        0,
+                        1,
                     )
             dynamics = market.get("priceDynamics", {})
             if not isinstance(dynamics, dict):
@@ -1488,7 +1527,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         errors.append("operations.inventory must be an object")
         inventory = {}
     else:
-        # Backward-compatible resolution for v9 configs authored before this
+        # Backward-compatible resolution for early configs authored before this
         # Config Builder control was exposed. New exports always carry it.
         inventory.setdefault("replenishmentDemandBufferPct", 0.05)
     for field in (
@@ -1607,7 +1646,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     if formats not in (["csv", "duckdb"], ["parquet", "duckdb"]):
         errors.append(
             "output.publicFormats must be exactly ['csv', 'duckdb'] or "
-            "['parquet', 'duckdb'] in source spec v9"
+            "['parquet', 'duckdb'] in source spec v11"
         )
     compression = output.get("compression")
     if compression not in SUPPORTED_COMPRESSION:

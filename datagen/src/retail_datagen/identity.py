@@ -64,5 +64,11 @@ def shopify_order_name(source_sequence: int) -> str:
     return f"#{1000 + source_sequence}"
 
 
+def bc_document_number(prefix: str, business_key: str) -> str:
+    """Return one shared BC-shaped document number for cross-feed joins."""
+
+    return f"{prefix}-{stable_integer(business_key, modulo=10**8):08d}"
+
+
 def bc_uuid(resource: str, business_key: str) -> str:
     return str(uuid.uuid5(BC_NAMESPACE, f"{resource}:{business_key}"))

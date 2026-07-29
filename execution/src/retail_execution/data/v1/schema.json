@@ -1,0 +1,171 @@
+{
+  "$id": "https://retail-intelligence.local/execution-profile/v1/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "api": {
+      "additionalProperties": false,
+      "properties": {
+        "backgroundJobWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "dbReadPool": {
+          "maximum": 512,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "gomaxprocs": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "httpConcurrency": {
+          "maximum": 100000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "backgroundJobWorkers",
+        "dbReadPool",
+        "gomaxprocs",
+        "httpConcurrency"
+      ],
+      "type": "object"
+    },
+    "datagen": {
+      "additionalProperties": false,
+      "properties": {
+        "duckdbThreads": {
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "marketWorkers": {
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "memoryLimitGb": {
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "partitionWorkers": {
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "spoolChunkRows": {
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "marketWorkers",
+        "partitionWorkers",
+        "duckdbThreads",
+        "memoryLimitGb",
+        "spoolChunkRows"
+      ],
+      "type": "object"
+    },
+    "ingestion": {
+      "additionalProperties": false,
+      "properties": {
+        "duckdbThreads": {
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "memoryLimitGb": {
+          "maximum": 1024,
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "scanWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "transformWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writeWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "duckdbThreads",
+        "memoryLimitGb",
+        "scanWorkers",
+        "transformWorkers",
+        "writeWorkers"
+      ],
+      "type": "object"
+    },
+    "ml": {
+      "additionalProperties": false,
+      "properties": {
+        "featureWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "foldWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "memoryLimitGb": {
+          "maximum": 1024,
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "modelWorkers": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "threadsPerModel": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "featureWorkers",
+        "foldWorkers",
+        "memoryLimitGb",
+        "modelWorkers",
+        "threadsPerModel"
+      ],
+      "type": "object"
+    },
+    "profile": {
+      "enum": [
+        "safe",
+        "balanced",
+        "performance",
+        "ultra-performance",
+        "custom"
+      ]
+    },
+    "schemaVersion": {
+      "const": "retail-execution-profile/v1"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "datagen"
+  ],
+  "title": "Retail Intelligence execution profile",
+  "type": "object"
+}

@@ -1,0 +1,78 @@
+[
+  {
+    "expectedDatagen": {
+      "duckdbThreads": 1,
+      "marketWorkers": 1,
+      "memoryLimitGb": 4,
+      "partitionWorkers": 2,
+      "spoolChunkRows": 10000
+    },
+    "name": "safe-default",
+    "profile": "safe"
+  },
+  {
+    "expectedDatagen": {
+      "duckdbThreads": 6,
+      "marketWorkers": 2,
+      "memoryLimitGb": 24,
+      "partitionWorkers": 8,
+      "spoolChunkRows": 50000
+    },
+    "name": "performance-explicit-memory-override",
+    "overrides": {
+      "memoryLimitGb": 24
+    },
+    "profile": "performance"
+  },
+  {
+    "document": {
+      "datagen": {
+        "duckdbThreads": 3,
+        "marketWorkers": 1,
+        "memoryLimitGb": 12,
+        "partitionWorkers": 6,
+        "spoolChunkRows": 30000
+      },
+      "profile": "custom",
+      "schemaVersion": "retail-execution-profile/v1"
+    },
+    "expectedDatagen": {
+      "duckdbThreads": 3,
+      "marketWorkers": 1,
+      "memoryLimitGb": 12,
+      "partitionWorkers": 6,
+      "spoolChunkRows": 30000
+    },
+    "name": "custom-document",
+    "profile": "custom"
+  },
+  {
+    "expectedDatagen": {
+      "duckdbThreads": 8,
+      "marketWorkers": 2,
+      "memoryLimitGb": 64,
+      "partitionWorkers": 16,
+      "spoolChunkRows": 100000
+    },
+    "name": "ultra-performance-default",
+    "profile": "ultra-performance"
+  },
+  {
+    "environment": {
+      "RETAIL_DATAGEN_DUCKDB_THREADS": "4",
+      "RETAIL_DATAGEN_MARKET_WORKERS": "2",
+      "RETAIL_DATAGEN_MEMORY_LIMIT_GB": "16",
+      "RETAIL_DATAGEN_PARTITION_WORKERS": "6",
+      "RETAIL_DATAGEN_SPOOL_CHUNK_ROWS": "40000"
+    },
+    "expectedDatagen": {
+      "duckdbThreads": 4,
+      "marketWorkers": 2,
+      "memoryLimitGb": 16,
+      "partitionWorkers": 6,
+      "spoolChunkRows": 40000
+    },
+    "name": "environment-overrides",
+    "profile": "safe"
+  }
+]

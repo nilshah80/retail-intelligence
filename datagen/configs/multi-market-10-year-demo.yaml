@@ -1,12 +1,12 @@
 specVersion: retail-source-config/v11
 identity:
-  scenarioId: multi-market-2021-current-volume
+  scenarioId: multi-market-10-year-demo
   scenarioVersion: 1.0.0
-  scenarioName: Mumbai and New York high-volume retail history through 2026-07-27
-  masterSeed: 20210101
+  scenarioName: Northstar multi-store 10-year ingestion and intelligence demo
+  masterSeed: 20260728
 time:
-  startDate: '2021-01-01'
-  endDate: '2026-07-27'
+  startDate: '2016-07-28'
+  endDate: '2026-07-28'
   generationPartition: month
 retailer:
   retailerId: retailer-demo
@@ -429,12 +429,12 @@ markets:
     skusPerDepartment: 36
     variantsPerProduct: 3
   demand:
-    startingDailyOrders: 420
+    startingDailyOrders: 1200
     averageLinesPerOrder: 1.8
     demandLevelScalar: 1
     annualGrowthRate: 0.035
-    onlineShareStart: 0.12
-    onlineShareEnd: 0.23
+    onlineShareStart: 0.04
+    onlineShareEnd: 0.21
     onlineShareSkuVariation: 0.04
     noise: 0.12
     intermittencyRate: 0.04
@@ -461,8 +461,8 @@ markets:
     macro: true
     fx: true
   customerPopulation:
-    openingRegisteredCustomers: 30000
-    annualNewCustomers: 15000
+    openingRegisteredCustomers: 125000
+    annualNewCustomers: 40000
     annualChurnRate: 0.18
     annualReactivationRate: 0.06
     guestCheckoutRate: 0.18
@@ -664,12 +664,12 @@ markets:
     skusPerDepartment: 36
     variantsPerProduct: 3
   demand:
-    startingDailyOrders: 420
+    startingDailyOrders: 1200
     averageLinesPerOrder: 1.8
     demandLevelScalar: 1
     annualGrowthRate: 0.025
-    onlineShareStart: 0.18
-    onlineShareEnd: 0.26
+    onlineShareStart: 0.08
+    onlineShareEnd: 0.24
     onlineShareSkuVariation: 0.04
     noise: 0.12
     intermittencyRate: 0.04
@@ -696,8 +696,8 @@ markets:
     macro: true
     fx: true
   customerPopulation:
-    openingRegisteredCustomers: 30000
-    annualNewCustomers: 15000
+    openingRegisteredCustomers: 125000
+    annualNewCustomers: 40000
     annualChurnRate: 0.18
     annualReactivationRate: 0.06
     guestCheckoutRate: 0.18
@@ -743,7 +743,21 @@ stores:
   addressLine1: Linking Road, Bandra West
   postcode: '400050'
   assortmentCoverage: 0.92
-  demandScale: 1
+  demandScale: 0.65
+- storeId: pune-koregaon
+  name: Pune Koregaon Park
+  marketId: india-mumbai
+  legalEntityId: northstar-india
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  warehousePriority:
+  - pune-overflow
+  - mumbai-dc
+  addressLine1: North Main Road, Koregaon Park
+  postcode: '411001'
+  assortmentCoverage: 0.86
+  demandScale: 0.35
 - storeId: ny-manhattan
   name: New York Manhattan
   marketId: us-new-york
@@ -756,7 +770,21 @@ stores:
   addressLine1: 5th Avenue
   postcode: '10011'
   assortmentCoverage: 0.9
-  demandScale: 1
+  demandScale: 0.65
+- storeId: ny-brooklyn
+  name: New York Brooklyn
+  marketId: us-new-york
+  legalEntityId: northstar-us
+  channelIds:
+  - ny-store
+  - ny-online
+  warehousePriority:
+  - brooklyn-mfc
+  - newark-dc
+  addressLine1: Atlantic Avenue, Brooklyn
+  postcode: '11217'
+  assortmentCoverage: 0.88
+  demandScale: 0.35
 warehouses:
 - warehouseId: mumbai-dc
   name: Mumbai Distribution Centre
@@ -764,33 +792,48 @@ warehouses:
   legalEntityId: northstar-india
   servesLocations:
   - mumbai-bandra
+  - pune-koregaon
   businessCentralLocationCode: MUM-DC
-  capacityUnits: 150000
-  openingStockPerSku: 40
-  replenishmentPackSize: 24
-  openingStockDaysOfCover: 28
+  capacityUnits: 750000
+  openingStockPerSku: 60
+  replenishmentPackSize: 48
+  openingStockDaysOfCover: 42
 - warehouseId: pune-overflow
   name: Pune Overflow Warehouse
   marketId: india-mumbai
   legalEntityId: northstar-india
   servesLocations:
+  - pune-koregaon
   - mumbai-bandra
   businessCentralLocationCode: PUN-OF
-  capacityUnits: 75000
-  openingStockPerSku: 24
-  replenishmentPackSize: 12
-  openingStockDaysOfCover: 0
+  capacityUnits: 500000
+  openingStockPerSku: 40
+  replenishmentPackSize: 36
+  openingStockDaysOfCover: 14
 - warehouseId: newark-dc
   name: Newark Distribution Centre
   marketId: us-new-york
   legalEntityId: northstar-us
   servesLocations:
   - ny-manhattan
+  - ny-brooklyn
   businessCentralLocationCode: NWK-DC
-  capacityUnits: 150000
+  capacityUnits: 750000
+  openingStockPerSku: 60
+  replenishmentPackSize: 48
+  openingStockDaysOfCover: 42
+- warehouseId: brooklyn-mfc
+  name: Brooklyn Micro Fulfillment Centre
+  marketId: us-new-york
+  legalEntityId: northstar-us
+  servesLocations:
+  - ny-brooklyn
+  - ny-manhattan
+  businessCentralLocationCode: BKL-MFC
+  capacityUnits: 500000
   openingStockPerSku: 40
-  replenishmentPackSize: 24
-  openingStockDaysOfCover: 28
+  replenishmentPackSize: 36
+  openingStockDaysOfCover: 14
 sourceInstances:
   shopify:
   - shopId: northstar-in
@@ -798,11 +841,13 @@ sourceInstances:
     marketId: india-mumbai
     storeIds:
     - mumbai-bandra
+    - pune-koregaon
   - shopId: northstar-us
     shopDomain: northstar-us.myshopify.com
     marketId: us-new-york
     storeIds:
     - ny-manhattan
+    - ny-brooklyn
   businessCentral:
   - companyId: bc-northstar-in
     companyName: Northstar India
@@ -815,6 +860,7 @@ sourceInstances:
     legalEntityId: northstar-us
     warehouseIds:
     - newark-dc
+    - brooklyn-mfc
 catalog:
   generation:
     mode: hybrid
@@ -1698,6 +1744,300 @@ customerSegments:
   share: 0.2
   demandMultiplier: 0.92
 promotions:
+- promotionId: northstar-grand-opening-in
+  name: Northstar Regional Grand Opening Mega Sale
+  marketId: india-mumbai
+  startDate: '2016-08-12'
+  endDate: '2016-08-14'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.2
+  demandMultiplier: 2.1
+- promotionId: northstar-grand-opening-us
+  name: Northstar Regional Grand Opening Mega Sale
+  marketId: us-new-york
+  startDate: '2016-08-12'
+  endDate: '2016-08-14'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.2
+  demandMultiplier: 2.1
+- promotionId: back-to-school-2016-us
+  name: US Back-to-School 2016
+  marketId: us-new-york
+  startDate: '2016-08-15'
+  endDate: '2016-09-05'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.12
+  demandMultiplier: 1.38
+- promotionId: diwali-2016
+  name: Diwali 2016 Sale
+  marketId: india-mumbai
+  startDate: '2016-10-25'
+  endDate: '2016-11-03'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.14
+  demandMultiplier: 1.55
+- promotionId: holiday-2016-us
+  name: US Holiday 2016 Sale
+  marketId: us-new-york
+  startDate: '2016-11-21'
+  endDate: '2016-11-28'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.18
+  demandMultiplier: 1.65
+- promotionId: republic-day-2017
+  name: Republic Day 2017 Sale
+  marketId: india-mumbai
+  startDate: '2017-01-20'
+  endDate: '2017-01-27'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.1
+  demandMultiplier: 1.4
+- promotionId: back-to-school-2017-us
+  name: US Back-to-School 2017
+  marketId: us-new-york
+  startDate: '2017-08-15'
+  endDate: '2017-09-05'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.12
+  demandMultiplier: 1.38
+- promotionId: diwali-2017
+  name: Diwali 2017 Sale
+  marketId: india-mumbai
+  startDate: '2017-10-14'
+  endDate: '2017-10-23'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.15
+  demandMultiplier: 1.6
+- promotionId: holiday-2017-us
+  name: US Holiday 2017 Sale
+  marketId: us-new-york
+  startDate: '2017-11-20'
+  endDate: '2017-11-27'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.18
+  demandMultiplier: 1.65
+- promotionId: republic-day-2018
+  name: Republic Day 2018 Sale
+  marketId: india-mumbai
+  startDate: '2018-01-20'
+  endDate: '2018-01-27'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.1
+  demandMultiplier: 1.4
+- promotionId: back-to-school-2018-us
+  name: US Back-to-School 2018
+  marketId: us-new-york
+  startDate: '2018-08-15'
+  endDate: '2018-09-05'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.12
+  demandMultiplier: 1.38
+- promotionId: diwali-2018
+  name: Diwali 2018 Sale
+  marketId: india-mumbai
+  startDate: '2018-11-02'
+  endDate: '2018-11-11'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.16
+  demandMultiplier: 1.65
+- promotionId: holiday-2018-us
+  name: US Holiday 2018 Sale
+  marketId: us-new-york
+  startDate: '2018-11-19'
+  endDate: '2018-11-26'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.18
+  demandMultiplier: 1.65
+- promotionId: republic-day-2019
+  name: Republic Day 2019 Sale
+  marketId: india-mumbai
+  startDate: '2019-01-20'
+  endDate: '2019-01-27'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.1
+  demandMultiplier: 1.4
+- promotionId: back-to-school-2019-us
+  name: US Back-to-School 2019
+  marketId: us-new-york
+  startDate: '2019-08-15'
+  endDate: '2019-09-05'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.12
+  demandMultiplier: 1.38
+- promotionId: diwali-2019
+  name: Diwali 2019 Sale
+  marketId: india-mumbai
+  startDate: '2019-10-22'
+  endDate: '2019-10-31'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.17
+  demandMultiplier: 1.7
+- promotionId: holiday-2019-us
+  name: US Holiday 2019 Sale
+  marketId: us-new-york
+  startDate: '2019-11-25'
+  endDate: '2019-12-02'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.18
+  demandMultiplier: 1.65
+- promotionId: republic-day-2020
+  name: Republic Day 2020 Sale
+  marketId: india-mumbai
+  startDate: '2020-01-20'
+  endDate: '2020-01-27'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.1
+  demandMultiplier: 1.4
+- promotionId: back-to-school-2020-us
+  name: US Back-to-School 2020
+  marketId: us-new-york
+  startDate: '2020-08-15'
+  endDate: '2020-09-05'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.12
+  demandMultiplier: 1.38
+- promotionId: diwali-2020
+  name: Diwali 2020 Sale
+  marketId: india-mumbai
+  startDate: '2020-11-09'
+  endDate: '2020-11-18'
+  storeIds: []
+  channelIds:
+  - mumbai-store
+  - mumbai-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.14
+  demandMultiplier: 1.55
+- promotionId: holiday-2020-us
+  name: US Holiday 2020 Sale
+  marketId: us-new-york
+  startDate: '2020-11-23'
+  endDate: '2020-11-30'
+  storeIds: []
+  channelIds:
+  - ny-store
+  - ny-online
+  departmentIds: []
+  categoryIds: []
+  customerSegmentIds: []
+  discountPct: 0.18
+  demandMultiplier: 1.65
 - promotionId: diwali-2021
   name: Diwali 2021 Sale
   marketId: india-mumbai
@@ -1983,6 +2323,52 @@ promotions:
   discountPct: 0.12
   demandMultiplier: 1.52
 events:
+- eventId: northstar-grand-opening-in
+  type: local-event
+  name: Northstar Regional Grand Opening Demand Surge
+  marketId: india-mumbai
+  startDate: '2016-08-13'
+  endDate: '2016-08-13'
+  demandMultiplier: 22.0
+  trafficMultiplier: 1.05
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: northstar-grand-opening-us
+  type: local-event
+  name: Northstar Regional Grand Opening Demand Surge
+  marketId: us-new-york
+  startDate: '2016-08-13'
+  endDate: '2016-08-13'
+  demandMultiplier: 22.0
+  trafficMultiplier: 1.05
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: us-tariffs-2018
+  type: demand-shock
+  name: 2018–2019 electronics tariffs
+  marketId: us-new-york
+  startDate: '2018-07-06'
+  endDate: '2019-12-31'
+  demandMultiplier: 0.96
+  trafficMultiplier: 0.98
+  costMultiplier: 1.18
+  leadTimeMultiplier: 1.2
+  inventoryLossPct: 0
+  recoveryShape: linear
+  departmentIds:
+  - electronics
+  categoryIds: []
+  channelIds: []
 - eventId: inflation-in-2021
   type: demand-shock
   name: 2021–2022 inflation — India
@@ -2048,9 +2434,9 @@ operations:
     snapshotCadenceDays: 7
     replenishmentCycleDays: 7
     supplierLeadTimeDays: 5
-    supplierLeadTimeJitterDays: 2
-    stockoutSkuRate: 0
-    safetyStockUnits: 6
+    supplierLeadTimeJitterDays: 3
+    stockoutSkuRate: 0.02
+    safetyStockUnits: 8
     replenishmentDemandBufferPct: 0.25
   fulfillment:
     splitRate: 0.14
@@ -2087,6 +2473,31 @@ output:
   writeHiddenTruth: true
   overwrite: false
 pandemics:
+- pandemicId: zika-2016
+  name: 2016 Zika concern
+  pathogen: Zika virus
+  effectMode: documented-no-adjustment
+  note: Timeline annotation only because the configured assortment has no directly relevant products.
+  marketIds:
+  - india-mumbai
+  - us-new-york
+  startDate: '2016-02-01'
+  endDate: '2016-11-30'
+  phases:
+  - phaseId: zika-concern
+    name: Public concern
+    startDate: '2016-02-01'
+    endDate: '2016-11-30'
+    recoveryShape: step
+    demandMultiplier: 1
+    trafficMultiplier: 1
+    costMultiplier: 1
+    leadTimeMultiplier: 1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers: {}
+    catalogFamilyMultipliers: {}
 - pandemicId: covid-19
   name: COVID-19 pandemic
   pathogen: SARS-CoV-2
@@ -2097,12 +2508,108 @@ pandemics:
   marketIds:
   - india-mumbai
   - us-new-york
-  startDate: '2021-01-01'
+  startDate: '2020-02-24'
   endDate: '2023-06-30'
   phases:
+  - phaseId: covid-early-stocking
+    name: Early stocking
+    startDate: '2020-02-24'
+    endDate: '2020-03-11'
+    recoveryShape: ramp
+    demandMultiplier: 1.08
+    trafficMultiplier: 0.98
+    costMultiplier: 1.03
+    leadTimeMultiplier: 1.1
+    inventoryLossPct: 0
+    departmentMultipliers: {}
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.96
+      online: 1.15
+    catalogFamilyMultipliers:
+      home-appliances: 1.12
+      electronics-accessories: 1.1
+  - phaseId: covid-panic-buying
+    name: Panic buying
+    startDate: '2020-03-12'
+    endDate: '2020-04-03'
+    recoveryShape: triangle
+    demandMultiplier: 1.18
+    trafficMultiplier: 1.02
+    costMultiplier: 1.08
+    leadTimeMultiplier: 1.3
+    inventoryLossPct: 0.02
+    departmentMultipliers:
+      electronics: 1.12
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.78
+      online: 1.45
+    catalogFamilyMultipliers:
+      home-appliances: 1.3
+      electronics-accessories: 1.22
+  - phaseId: covid-stockouts
+    name: Stockout trough
+    startDate: '2020-04-04'
+    endDate: '2020-05-15'
+    recoveryShape: linear
+    demandMultiplier: 0.88
+    trafficMultiplier: 0.72
+    costMultiplier: 1.16
+    leadTimeMultiplier: 1.9
+    inventoryLossPct: 0.04
+    departmentMultipliers:
+      electronics: 0.88
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.6
+      online: 1.2
+    catalogFamilyMultipliers:
+      home-appliances: 0.8
+      electronics-accessories: 0.82
+  - phaseId: covid-lockdown-lifestyle
+    name: Lockdown lifestyle and channel shift
+    startDate: '2020-03-20'
+    endDate: '2020-06-15'
+    recoveryShape: step
+    demandMultiplier: 0.82
+    trafficMultiplier: 0.55
+    costMultiplier: 1.1
+    leadTimeMultiplier: 1.55
+    inventoryLossPct: 0.02
+    departmentMultipliers:
+      apparel: 0.58
+      electronics: 1.08
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.36
+      online: 1.8
+    catalogFamilyMultipliers:
+      home-appliances: 1.32
+      electronics-audio: 1.22
+      electronics-tablets: 1.3
+  - phaseId: covid-reopening
+    name: Reopening and recovery
+    startDate: '2020-05-16'
+    endDate: '2020-09-30'
+    recoveryShape: linear
+    demandMultiplier: 1.08
+    trafficMultiplier: 0.84
+    costMultiplier: 1.1
+    leadTimeMultiplier: 1.35
+    inventoryLossPct: 0.01
+    departmentMultipliers:
+      apparel: 0.86
+    categoryMultipliers: {}
+    channelTypeMultipliers:
+      store: 0.78
+      online: 1.28
+    catalogFamilyMultipliers:
+      home-appliances: 1.15
+      electronics-tablets: 1.16
   - phaseId: covid-home-baseline
     name: Elevated home baseline
-    startDate: '2021-01-01'
+    startDate: '2020-10-01'
     endDate: '2021-06-30'
     recoveryShape: linear
     demandMultiplier: 1.06
@@ -2121,7 +2628,7 @@ pandemics:
       electronics-tablets: 1.15
   - phaseId: covid-supply-disruption
     name: Global supply disruption
-    startDate: '2021-01-01'
+    startDate: '2020-04-01'
     endDate: '2021-09-30'
     recoveryShape: step
     demandMultiplier: 0.98

@@ -8,24 +8,34 @@ from __future__ import annotations
 
 import json
 import re
+import resource
+import sys
+import time as runtime_time
 import unicodedata
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_EVEN
+from heapq import merge as heap_merge
+from itertools import chain, groupby
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
+
+from retail_execution import resolve_profile, validate_profile
 
 from . import GENERATOR_VERSION
 from .catalog_packs import build_catalog, catalog_controls
 from .calendar import holidays_for_range
 from .config import validate_config
+from .customers import CustomerPopulation
 from .extensions import (
     build_commerce_extensions,
     build_marketing_extensions,
     build_supply_extensions,
 )
 from .identity import (
+    bc_document_number,
     bc_uuid,
     config_hash,
     run_id,
@@ -34,10 +44,206 @@ from .identity import (
     stable_integer,
 )
 from .lifecycle import lifecycle_adjustment, lifecycle_promotions
+from .spool import RowSpool
 from .writer import SourceWriter, file_sha256
-from .simulation import _price_for_day, simulate
+from .simulation import (
+    _event_effect,
+    _pandemic_effect,
+    _price_for_day,
+    _promotional_price,
+    simulate,
+)
 
 MONEY_QUANT = Decimal("0.01")
+
+_SIMULATION_SEQUENCE_FIELDS = (
+    "demandTruth",
+    "inventoryObservations",
+    "receiptEvents",
+    "transferEvents",
+    "inventoryLossEvents",
+    "wasteEvents",
+    "batchBalances",
+    "allocationRequests",
+    "supplyPools",
+)
+_SIMULATION_MARKET_STREAM_FIELDS = (
+    "weatherActual",
+    "weatherForecasts",
+    "macroRows",
+    "competitorPrices",
+    "competitorMatches",
+    "pandemicSignals",
+)
+
+
+class _ChainedRows:
+    """Repeatable, bounded view over market-local row spools."""
+
+    def __init__(self, streams: Iterable[RowSpool]) -> None:
+        self._streams = tuple(streams)
+
+    def __iter__(self) -> Iterable[dict[str, Any]]:
+        return chain.from_iterable(self._streams)
+
+    def __len__(self) -> int:
+        return sum(len(stream) for stream in self._streams)
+
+    def __bool__(self) -> bool:
+        return any(bool(stream) for stream in self._streams)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        if index != -1:
+            raise TypeError("_ChainedRows supports only [-1] random access")
+        for stream in reversed(self._streams):
+            if stream:
+                return stream[-1]
+        raise IndexError("_ChainedRows index out of range")
+
+
+def _simulate_market(
+    config: dict[str, Any],
+    market_id: str,
+    market: dict[str, Any],
+    stores: dict[str, dict[str, Any]],
+    warehouses: dict[str, dict[str, Any]],
+    variants: list[dict[str, Any]],
+    start: date,
+    end: date,
+    work_directory: str,
+    spool_chunk_rows: int,
+) -> tuple[str, dict[str, Any], list[RowSpool], dict[str, float | int]]:
+    """Run one causally independent market in an isolated process."""
+
+    started = runtime_time.perf_counter()
+    cpu_started = resource.getrusage(resource.RUSAGE_SELF)
+    created_spools: list[RowSpool] = []
+
+    def new_spool(name: str) -> RowSpool:
+        spool = RowSpool(
+            Path(work_directory),
+            f"{market_id}-{name}",
+            chunk_rows=spool_chunk_rows,
+        )
+        created_spools.append(spool)
+        return spool
+
+    result = simulate(
+        config,
+        {market_id: market},
+        stores,
+        warehouses,
+        {market_id: variants},
+        start,
+        end,
+        spool_factory=new_spool,
+        customer_population=CustomerPopulation(config, start, end),
+    )
+    for spool in created_spools:
+        spool.flush()
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return (
+        market_id,
+        result,
+        created_spools,
+        {
+            "wallSeconds": round(runtime_time.perf_counter() - started, 6),
+            "cpuSeconds": round(
+                usage.ru_utime
+                + usage.ru_stime
+                - cpu_started.ru_utime
+                - cpu_started.ru_stime,
+                6,
+            ),
+            "peakRssBytes": (
+                int(usage.ru_maxrss)
+                if sys.platform == "darwin"
+                else int(usage.ru_maxrss) * 1024
+            ),
+        },
+    )
+
+
+def _merge_market_simulations(
+    results_by_market: dict[str, dict[str, Any]],
+    writer: SourceWriter,
+) -> dict[str, Any]:
+    """Merge process-local results without loading run-sized rows into RAM."""
+
+    ordered_results = [
+        results_by_market[market_id]
+        for market_id in sorted(results_by_market)
+    ]
+    merged: dict[str, Any] = {}
+    for field in _SIMULATION_SEQUENCE_FIELDS:
+        merged[field] = _ChainedRows(result[field] for result in ordered_results)
+
+    orders = writer.new_spool("simulation-orders-merged")
+    orders_by_day_and_key = heap_merge(
+        *(iter(result["orders"]) for result in ordered_results),
+        key=lambda row: (row["createdAt"][:10], row["orderKey"]),
+    )
+    source_sequence = 0
+    for _, day_orders_iter in groupby(
+        orders_by_day_and_key,
+        key=lambda row: row["createdAt"][:10],
+    ):
+        day_orders = list(day_orders_iter)
+        for order in sorted(
+            day_orders,
+            key=lambda row: (row["createdAt"], row["orderKey"]),
+        ):
+            source_sequence += 1
+            order["sourceOrderSequence"] = source_sequence
+            order["sourceOrderName"] = shopify_order_name(source_sequence)
+        orders.extend(sorted(day_orders, key=lambda row: row["orderKey"]))
+    merged["orders"] = orders
+
+    # Stream-join the globally sequenced order headers back onto their lines.
+    # The resulting dense number is collision-free at any run size while the
+    # join remains bounded to one current header and line.
+    order_lines = writer.new_spool("simulation-order-lines-merged")
+    order_iterator = iter(orders)
+    current_order = next(order_iterator, None)
+    for line in heap_merge(
+        *(iter(result["orderLines"]) for result in ordered_results),
+        key=lambda row: (row["day"], row["orderKey"], row["lineNumber"]),
+    ):
+        line_key = (line["day"].isoformat(), line["orderKey"])
+        while current_order is not None and (
+            current_order["createdAt"][:10],
+            current_order["orderKey"],
+        ) < line_key:
+            current_order = next(order_iterator, None)
+        if current_order is None or (
+            current_order["createdAt"][:10],
+            current_order["orderKey"],
+        ) != line_key:
+            raise ValueError(
+                f"order line {line['lineKey']!r} has no merged order header"
+            )
+        line["sourceOrderSequence"] = current_order["sourceOrderSequence"]
+        order_lines.append(line)
+    merged["orderLines"] = order_lines
+
+    merged["storeAssortment"] = [
+        row
+        for result in ordered_results
+        for row in result["storeAssortment"]
+    ]
+    for field in ("openingInventory", "finalInventory"):
+        merged[field] = {
+            key: value
+            for result in ordered_results
+            for key, value in result[field].items()
+        }
+    for field in _SIMULATION_MARKET_STREAM_FIELDS:
+        merged[field] = {
+            market_id: stream
+            for result in ordered_results
+            for market_id, stream in result[field].items()
+        }
+    return merged
 
 
 def _days(start: date, end: date) -> Iterable[date]:
@@ -85,10 +291,10 @@ def _allocation_amount(
 
 
 def _manifest_controls(
-    order_events: list[dict[str, Any]],
+    order_events: Iterable[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     controls: dict[str, dict[str, Any]] = {}
-    seen_orders: dict[str, set[str]] = defaultdict(set)
+    prior_order: dict[str, str] = {}
     for event in order_events:
         currency = event["currencyCode"]
         control = controls.setdefault(
@@ -101,9 +307,9 @@ def _manifest_controls(
                 "grossAmount": Decimal("0"),
             },
         )
-        if event["orderKey"] not in seen_orders[currency]:
+        if event["orderKey"] != prior_order.get(currency):
             control["orders"] += 1
-            seen_orders[currency].add(event["orderKey"])
+            prior_order[currency] = event["orderKey"]
         control["units"] += event["quantity"]
         control["netAmount"] += event["net"]
         control["taxAmount"] += event["tax"]
@@ -127,7 +333,9 @@ def _bc_item_ledger_rows(
     simulation: dict[str, Any],
     start: date,
     end: date,
-) -> list[dict[str, Any]]:
+    *,
+    spool_factory: Any | None = None,
+) -> Any:
     """Project every simulated inventory movement into one BC register."""
 
     variants_by_sku = {
@@ -135,8 +343,11 @@ def _bc_item_ledger_rows(
         for warehouse_id in company_warehouse_ids
         for variant in variants_by_market[warehouses[warehouse_id]["marketId"]]
     }
-    rows: list[dict[str, Any]] = []
-
+    rows = (
+        spool_factory("business-central-item-ledger")
+        if spool_factory
+        else []
+    )
     def append(
         *,
         business_key: str,
@@ -193,8 +404,12 @@ def _bc_item_ledger_rows(
                 sku=receipt["sku"],
                 warehouse_id=receipt["warehouseId"],
                 quantity=receipt["quantity"],
-                document_number=(
-                    f"WR-{stable_integer(receipt['warehouseId'], receipt['actualDate'], modulo=99_999_999):08d}"
+                document_number=bc_document_number(
+                    "WR",
+                    (
+                        f"{receipt['warehouseId']}:{receipt['expectedDate']}:"
+                        f"{receipt['brandCode']}:{receipt['actualDate']}"
+                    ),
                 ),
                 product_code=receipt["productCode"],
                 variant_code=receipt["variantCode"],
@@ -208,8 +423,9 @@ def _bc_item_ledger_rows(
                 sku=transfer["sku"],
                 warehouse_id=transfer["fromWarehouseId"],
                 quantity=-transfer["shippedQuantity"],
-                document_number=(
-                    f"TO-{stable_integer(transfer['transferKey'], modulo=99_999_999):08d}"
+                document_number=bc_document_number(
+                    "TO",
+                    transfer["transferKey"],
                 ),
                 product_code=transfer["productCode"],
                 variant_code=transfer["variantCode"],
@@ -225,8 +441,9 @@ def _bc_item_ledger_rows(
                 sku=transfer["sku"],
                 warehouse_id=transfer["toWarehouseId"],
                 quantity=transfer["receivedQuantity"],
-                document_number=(
-                    f"TO-{stable_integer(transfer['transferKey'], modulo=99_999_999):08d}"
+                document_number=bc_document_number(
+                    "TO",
+                    transfer["transferKey"],
                 ),
                 product_code=transfer["productCode"],
                 variant_code=transfer["variantCode"],
@@ -247,9 +464,7 @@ def _bc_item_ledger_rows(
                 sku=event["sku"],
                 warehouse_id=allocation["warehouseId"],
                 quantity=-allocation["quantity"],
-                document_number=(
-                    f"SI-{stable_integer(event['orderKey'], modulo=99_999_999):08d}"
-                ),
+                document_number=f"SI-{event['sourceOrderSequence']:014d}",
                 product_code=event["productCode"],
                 variant_code=event["variantCode"],
             )
@@ -286,21 +501,28 @@ def _bc_item_ledger_rows(
                 product_code=waste["productCode"],
                 variant_code=waste["variantCode"],
             )
-    rows.sort(
-        key=lambda row: (
-            row["postingDate"],
-            row["locationCode"],
-            row["sku"],
-            row["entryType"],
-            row["id"],
-        )
+    sort_key = lambda row: (
+        row["postingDate"],
+        row["locationCode"],
+        row["sku"],
+        row["entryType"],
+        row["id"],
     )
-    for entry_number, row in enumerate(rows, start=1):
-        row["entryNumber"] = entry_number
-    return rows
+    ordered_rows: Iterable[dict[str, Any]]
+    if isinstance(rows, RowSpool):
+        ordered_rows = rows.iter_sorted(key=sort_key)
+    else:
+        ordered_rows = iter(sorted(rows, key=sort_key))
+
+    def numbered_rows() -> Iterable[dict[str, Any]]:
+        for entry_number, row in enumerate(ordered_rows, start=1):
+            yield {**row, "entryNumber": entry_number}
+
+    return numbered_rows()
 
 
 def _price_history_rows(
+    config: dict[str, Any],
     variants: list[dict[str, Any]],
     market: dict[str, Any],
     start: date,
@@ -318,12 +540,28 @@ def _price_history_rows(
         )
         prior: Decimal | None = None
         for day in _days(launch, discontinue):
+            event_cost = _event_effect(
+                config,
+                day,
+                market["marketId"],
+                department_id=variant["_departmentId"],
+                category_id=variant["_categoryId"],
+            )["cost"]
+            pandemic_cost = _pandemic_effect(
+                config,
+                day,
+                market["marketId"],
+                department_id=variant["_departmentId"],
+                category_id=variant["_categoryId"],
+                catalog_family=variant["_catalogFamily"],
+            )["cost"]
             price, lifecycle_phase = _effective_list_price(
                 variant,
                 market,
                 day,
                 start,
                 end,
+                cost_multiplier=event_cost * pandemic_cost,
             )
             if price == prior:
                 continue
@@ -399,6 +637,8 @@ def _effective_list_price(
     day: date,
     start: date,
     end: date,
+    *,
+    cost_multiplier: Decimal = Decimal("1"),
 ) -> tuple[Decimal, str]:
     """Return the effective list price and lifecycle reason for one day."""
 
@@ -425,7 +665,18 @@ def _effective_list_price(
             market["demand"]["newProductRampDays"],
         )
         if effect["offerId"]:
-            price *= Decimal("1") - effect["offerDiscountPct"]
+            price = _promotional_price(
+                price,
+                variant,
+                market,
+                day,
+                start,
+                end,
+                effect["offerDiscountPct"],
+                effect["offerId"],
+                effect["offerType"],
+                cost_multiplier,
+            )
             lifecycle_phase = effect["offerType"]
     return (
         price.quantize(MONEY_QUANT, rounding=ROUND_HALF_EVEN),
@@ -433,10 +684,42 @@ def _effective_list_price(
     )
 
 
-def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str, Any]:
+def generate(
+    config: dict[str, Any],
+    output_root: str | None = None,
+    *,
+    execution_profile: dict[str, Any] | None = None,
+    profile_name: str | None = None,
+    market_workers: int | None = None,
+    workers: int | None = None,
+    duckdb_threads: int | None = None,
+    memory_limit_gb: float | None = None,
+    spool_chunk_rows: int | None = None,
+) -> dict[str, Any]:
     """Generate and atomically publish one deterministic source run."""
 
+    generation_started = runtime_time.perf_counter()
+    cpu_started = resource.getrusage(resource.RUSAGE_SELF)
+    stage_seconds: dict[str, float] = {}
     config = validate_config(config)
+    if execution_profile is None:
+        execution_profile = resolve_profile(
+            profile_name,
+            datagen_overrides={
+                "marketWorkers": market_workers,
+                "partitionWorkers": workers,
+                "duckdbThreads": duckdb_threads,
+                "memoryLimitGb": memory_limit_gb,
+                "spoolChunkRows": spool_chunk_rows,
+            },
+            # Library callers get a hermetic default. The CLI resolves the
+            # process environment explicitly before invoking generate().
+            environment={},
+        )
+    else:
+        execution_profile = dict(execution_profile)
+        validate_profile(execution_profile)
+    datagen_execution = execution_profile["datagen"]
     config_digest = config_hash(config)
     resolved_run_id = run_id(config, GENERATOR_VERSION)
     root = output_root or config["output"]["rootDirectory"]
@@ -448,6 +731,10 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
         generation_partition=config["time"]["generationPartition"],
         source_format=config["output"]["publicFormats"][0],
         compression=config["output"]["compression"],
+        workers=datagen_execution["partitionWorkers"],
+        duckdb_threads=datagen_execution["duckdbThreads"],
+        memory_limit_gb=datagen_execution["memoryLimitGb"],
+        spool_chunk_rows=datagen_execution["spoolChunkRows"],
     )
     if writer.reused:
         manifest_path = writer.target / "source-run-manifest.json"
@@ -492,7 +779,12 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             source_system="generator",
             dataset="resolvedConfigJsonCompatibility",
         )
+        stage_started = runtime_time.perf_counter()
         catalog = build_catalog(config)
+        stage_seconds["catalog"] = round(
+            runtime_time.perf_counter() - stage_started,
+            6,
+        )
         markets = {market["marketId"]: dict(market) for market in config["markets"]}
         for market in markets.values():
             market["_endDate"] = config["time"]["endDate"]
@@ -758,74 +1050,102 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             config,
             variant_rows_by_market,
         )
-        simulation = simulate(
-            config,
-            markets,
-            stores,
-            warehouses,
-            variant_rows_by_market,
-            start,
-            end,
+        stage_started = runtime_time.perf_counter()
+        market_work_root = writer.work_directory / "market-processes"
+        market_work_root.mkdir(parents=True, exist_ok=True)
+        market_arguments = []
+        for market_id in sorted(markets):
+            market_work_directory = market_work_root / market_id
+            market_work_directory.mkdir(parents=True, exist_ok=True)
+            market_arguments.append(
+                (
+                    config,
+                    market_id,
+                    markets[market_id],
+                    {
+                        store_id: store
+                        for store_id, store in stores.items()
+                        if store["marketId"] == market_id
+                    },
+                    {
+                        warehouse_id: warehouse
+                        for warehouse_id, warehouse in warehouses.items()
+                        if warehouse["marketId"] == market_id
+                    },
+                    variant_rows_by_market[market_id],
+                    start,
+                    end,
+                    str(market_work_directory),
+                    datagen_execution["spoolChunkRows"],
+                )
+            )
+        market_results: list[
+            tuple[
+                str,
+                dict[str, Any],
+                list[RowSpool],
+                dict[str, float | int],
+            ]
+        ] = []
+        market_workers = datagen_execution["marketWorkers"]
+        if market_workers == 1:
+            market_results = [
+                _simulate_market(*arguments)
+                for arguments in market_arguments
+            ]
+        else:
+            with ProcessPoolExecutor(max_workers=market_workers) as executor:
+                futures = [
+                    executor.submit(_simulate_market, *arguments)
+                    for arguments in market_arguments
+                ]
+                market_results = [future.result() for future in futures]
+        process_spools = [
+            spool
+            for _, _, spools, _ in market_results
+            for spool in spools
+        ]
+        writer.adopt_spools(process_spools)
+        simulation = _merge_market_simulations(
+            {
+                market_id: result
+                for market_id, result, _, _ in market_results
+            },
+            writer,
+        )
+        customer_population = CustomerPopulation(config, start, end)
+        stage_seconds["simulation"] = round(
+            runtime_time.perf_counter() - stage_started,
+            6,
         )
         order_events = simulation["orderLines"]
         order_headers = simulation["orders"]
-        for source_sequence, order in enumerate(
-            sorted(
-                order_headers,
-                key=lambda row: (row["createdAt"], row["orderKey"]),
-            ),
-            start=1,
-        ):
-            order["sourceOrderName"] = shopify_order_name(source_sequence)
         demand_truth = simulation["demandTruth"]
+        stage_started = runtime_time.perf_counter()
         commerce_extensions = build_commerce_extensions(
             config,
             order_events,
             order_headers,
+            spool_factory=writer.new_spool,
         )
+        order_headers = commerce_extensions["orders"]
         supply_extensions = build_supply_extensions(
             config,
             markets,
             warehouses,
             variant_rows_by_market,
             simulation,
+            spool_factory=writer.new_spool,
         )
         marketing_extensions = build_marketing_extensions(
             config,
             variant_rows_by_market,
             automatic_lifecycle_promotions,
         )
-        successful_refunds_by_order: dict[str, Decimal] = defaultdict(
-            lambda: Decimal("0")
+        stage_seconds["extensions"] = round(
+            runtime_time.perf_counter() - stage_started,
+            6,
         )
-        for refund in commerce_extensions["refunds"]:
-            if refund["status"] == "SUCCESS":
-                successful_refunds_by_order[refund["orderId"]] += Decimal(
-                    refund["totalRefunded"]
-                )
-        fulfillment_orders_by_order: dict[str, int] = defaultdict(int)
-        created_fulfillments_by_order: dict[str, int] = defaultdict(int)
-        for fulfillment_order in commerce_extensions["fulfillmentOrders"]:
-            fulfillment_orders_by_order[fulfillment_order["orderId"]] += 1
-        for fulfillment in commerce_extensions["fulfillments"]:
-            created_fulfillments_by_order[fulfillment["orderId"]] += 1
-        financial_status_by_order: dict[str, str] = {}
-        fulfillment_status_by_order: dict[str, str] = {}
-        for order in order_headers:
-            order_id = shopify_gid("Order", order["orderKey"])
-            refunded = successful_refunds_by_order[order_id]
-            financial_status_by_order[order_id] = (
-                "REFUNDED"
-                if refunded >= order["gross"]
-                else ("PARTIALLY_REFUNDED" if refunded > 0 else "PAID")
-            )
-            expected = fulfillment_orders_by_order[order_id]
-            fulfilled = created_fulfillments_by_order[order_id]
-            fulfillment_status_by_order[order_id] = (
-                "FULFILLED"
-                if expected and fulfilled == expected
-                else ("PARTIALLY_FULFILLED" if fulfilled else "UNFULFILLED")
-            )
         latest_inventory_observation: dict[
             tuple[str, str],
             dict[str, Any],
@@ -865,6 +1185,7 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             writer.write_dataset(
                 f"{shop_dir}/price_history.csv",
                 _price_history_rows(
+                    config,
                     variant_rows_by_market[market_id],
                     market,
                     start,
@@ -931,43 +1252,48 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                 source_system="shopify",
                 dataset="locations",
             )
-            shop_orders = [
-                event
-                for event in order_events
-                if event["marketId"] == market_id and event["storeId"] in shop["storeIds"]
-            ]
-            shop_order_headers = [
-                order
-                for order in order_headers
-                if order["marketId"] == market_id
-                and order["storeId"] in shop["storeIds"]
-            ]
-            customer_headers: dict[str, dict[str, Any]] = {}
-            for order in shop_order_headers:
-                customer_headers.setdefault(
-                    order["customerKey"],
+            shop_store_ids = set(shop["storeIds"])
+
+            def shop_orders() -> Iterable[dict[str, Any]]:
+                return (
+                    event
+                    for event in order_events
+                    if event["marketId"] == market_id
+                    and event["storeId"] in shop_store_ids
+                )
+
+            def shop_order_headers() -> Iterable[dict[str, Any]]:
+                return (
+                    order
+                    for order in order_headers
+                    if order["marketId"] == market_id
+                    and order["storeId"] in shop_store_ids
+                )
+
+            writer.write_dataset(
+                f"{shop_dir}/customers.csv",
+                (
                     {
-                        "id": shopify_gid("Customer", order["customerKey"]),
-                        "syntheticCustomerKey": order["customerKey"],
-                        "segmentId": order["customerSegmentId"],
-                        "createdAt": order["createdAt"],
-                        "state": "ENABLED",
+                        "id": shopify_gid("Customer", row["customerKey"]),
+                        "syntheticCustomerKey": row["customerKey"],
+                        "segmentId": row["segmentId"],
+                        "createdAt": row["createdAt"],
+                        "state": row["state"],
                         "email": "",
                         "phone": "",
                         "firstName": "",
                         "lastName": "",
                         "directIdentifiersPresent": "false",
-                    },
-                )
-            writer.write_dataset(
-                f"{shop_dir}/customers.csv",
-                list(customer_headers.values()),
+                    }
+                    for row in customer_population.records([market_id])
+                    if row["segmentId"] != "walk-in"
+                ),
                 source_system="shopify",
                 dataset="customers",
             )
             writer.write_dataset(
                 f"{shop_dir}/orders.csv",
-                [
+                (
                     {
                         "id": shopify_gid("Order", order["orderKey"]),
                         "name": order["sourceOrderName"],
@@ -982,30 +1308,29 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         ),
                         "totalTax": _money(order["tax"]),
                         "totalPrice": _money(order["gross"]),
-                        "displayFinancialStatus": financial_status_by_order[
-                            shopify_gid("Order", order["orderKey"])
-                        ],
-                        "displayFulfillmentStatus": fulfillment_status_by_order[
-                            shopify_gid("Order", order["orderKey"])
+                        "displayFinancialStatus": order["_financialStatus"],
+                        "displayFulfillmentStatus": order[
+                            "_fulfillmentStatus"
                         ],
                         "locationId": shopify_gid("Location", order["storeId"]),
                         "sourceName": "pos" if "store" in order["channelId"] else "web",
                         "customerSegmentId": order["customerSegmentId"],
-                        "customerId": shopify_gid(
-                            "Customer",
-                            order["customerKey"],
+                        "customerId": (
+                            shopify_gid("Customer", order["customerKey"])
+                            if order["customerKey"]
+                            else ""
                         ),
                         "channelId": order["channelId"],
                         "lineCount": order["lineCount"],
                     }
-                    for order in shop_order_headers
-                ],
+                    for order in shop_order_headers()
+                ),
                 source_system="shopify",
                 dataset="orders",
             )
             writer.write_dataset(
                 f"{shop_dir}/order_lines.csv",
-                [
+                (
                     {
                         "id": shopify_gid("OrderLine", event["lineKey"]),
                         "orderId": shopify_gid("Order", event["orderKey"]),
@@ -1027,8 +1352,8 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "channelId": event["channelId"],
                         "__partitionDate": event["day"].isoformat(),
                     }
-                    for event in shop_orders
-                ],
+                    for event in shop_orders()
+                ),
                 source_system="shopify",
                 dataset="orderLines",
             )
@@ -1065,7 +1390,7 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             if config["operations"]["features"]["inventoryStateMatrix"]:
                 writer.write_dataset(
                     f"{shop_dir}/inventory_quantities.csv",
-                    [
+                    (
                         {
                             "inventoryItemId": next(
                                 variant["inventoryItemId"]
@@ -1094,14 +1419,16 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                             ("safety_stock", "safetyStock"),
                             ("incoming", "incoming"),
                         )
-                    ],
+                    ),
                     source_system="shopify",
                     dataset="inventoryQuantities",
                 )
-            allowed_order_ids = {
-                shopify_gid("Order", order["orderKey"])
-                for order in shop_order_headers
-            }
+            def belongs_to_shop(row: dict[str, Any]) -> bool:
+                return (
+                    row.get("__marketId") == market_id
+                    and row.get("__storeId") in shop_store_ids
+                )
+
             if config["operations"]["features"]["detailedFulfillment"]:
                 for filename, dataset, key in (
                     ("fulfillment_orders.csv", "fulfillmentOrders", "fulfillmentOrders"),
@@ -1118,105 +1445,63 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "fulfillmentStatusHistory",
                     ),
                 ):
-                    rows = commerce_extensions[key]
-                    if key == "fulfillmentOrderLines":
-                        fulfillment_order_ids = {
-                            row["id"]
-                            for row in commerce_extensions["fulfillmentOrders"]
-                            if row["orderId"] in allowed_order_ids
-                        }
-                        rows = [
-                            row
-                            for row in rows
-                            if row["fulfillmentOrderId"] in fulfillment_order_ids
-                        ]
-                    elif key == "fulfillmentStatusHistory":
-                        fulfillment_ids = {
-                            row["id"]
-                            for row in commerce_extensions["fulfillments"]
-                            if row["orderId"] in allowed_order_ids
-                        }
-                        rows = [
-                            row
-                            for row in rows
-                            if row["fulfillmentId"] in fulfillment_ids
-                        ]
-                    elif key == "fulfillmentLines":
-                        fulfillment_ids = {
-                            row["id"]
-                            for row in commerce_extensions["fulfillments"]
-                            if row["orderId"] in allowed_order_ids
-                        }
-                        rows = [
-                            row for row in rows if row["fulfillmentId"] in fulfillment_ids
-                        ]
-                    else:
-                        rows = [
-                            row for row in rows if row["orderId"] in allowed_order_ids
-                        ]
                     writer.write_dataset(
                         f"{shop_dir}/{filename}",
-                        rows,
+                        (
+                            row
+                            for row in commerce_extensions[key]
+                            if belongs_to_shop(row)
+                        ),
                         source_system="shopify",
                         dataset=dataset,
                     )
             writer.write_dataset(
                 f"{shop_dir}/tax_lines.csv",
-                [
+                (
                     row
                     for row in commerce_extensions["taxLines"]
-                    if row["orderId"] in allowed_order_ids
-                ],
+                    if belongs_to_shop(row)
+                ),
                 source_system="shopify",
                 dataset="taxLines",
             )
             if config["operations"]["features"]["returnsAndRefunds"]:
-                allowed_return_ids = {
-                    row["id"]
-                    for row in commerce_extensions["returns"]
-                    if row["orderId"] in allowed_order_ids
-                }
-                allowed_refund_ids = {
-                    row["id"]
-                    for row in commerce_extensions["refunds"]
-                    if row["orderId"] in allowed_order_ids
-                }
                 for filename, dataset, rows in (
                     (
                         "returns.csv",
                         "returns",
-                        [
+                        (
                             row
                             for row in commerce_extensions["returns"]
-                            if row["orderId"] in allowed_order_ids
-                        ],
+                            if belongs_to_shop(row)
+                        ),
                     ),
                     (
                         "return_lines.csv",
                         "returnLines",
-                        [
+                        (
                             row
                             for row in commerce_extensions["returnLines"]
-                            if row["returnId"] in allowed_return_ids
-                        ],
+                            if belongs_to_shop(row)
+                        ),
                     ),
                     (
                         "refunds.csv",
                         "refunds",
-                        [
+                        (
                             row
                             for row in commerce_extensions["refunds"]
-                            if row["orderId"] in allowed_order_ids
-                        ],
+                            if belongs_to_shop(row)
+                        ),
                     ),
                     (
                         "refund_transactions.csv",
                         "refundTransactions",
-                        [
+                        (
                             row
                             for row in commerce_extensions["refundTransactions"]
-                            if row["refundId"] in allowed_refund_ids
-                        ],
+                            if belongs_to_shop(row)
+                        ),
                     ),
                 ):
                     writer.write_dataset(
@@ -1228,11 +1513,11 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             if config["operations"]["features"]["webhookFixtures"]:
                 writer.write_dataset(
                     f"{shop_dir}/webhook_hmac_fixtures.csv",
-                    [
+                    (
                         row
                         for row in commerce_extensions["webhookFixtures"]
                         if row["shopDomain"] == shop["shopDomain"]
-                    ],
+                    ),
                     source_system="shopify",
                     dataset="webhookHmacFixtures",
                 )
@@ -1413,46 +1698,57 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                 source_system="businessCentral",
                 dataset="companyMarketConfiguration",
             )
-            company_orders = [
-                event
-                for event in order_events
-                if event["marketId"] in company_markets
-            ]
-            company_order_headers = [
-                order
-                for order in order_headers
-                if order["marketId"] in company_markets
-            ]
-            company_customers: dict[str, dict[str, Any]] = {}
-            for order in company_order_headers:
-                company_customers.setdefault(
-                    order["customerKey"],
-                    {
-                        "id": bc_uuid("Customer", order["customerKey"]),
-                        "number": (
-                            f"C{stable_integer(order['customerKey'], modulo=10**9):09d}"
+            def company_orders() -> Iterable[dict[str, Any]]:
+                return (
+                    event
+                    for event in order_events
+                    if event["marketId"] in company_markets
+                )
+
+            def company_order_headers() -> Iterable[dict[str, Any]]:
+                return (
+                    order
+                    for order in order_headers
+                    if order["marketId"] in company_markets
+                )
+
+            def company_customers() -> Iterable[dict[str, Any]]:
+                for customer_sequence, row in enumerate(
+                    customer_population.records(company_markets),
+                    start=1,
+                ):
+                    yield {
+                        "id": bc_uuid("Customer", row["customerKey"]),
+                        # Business Central Customer No. is a natural key. A
+                        # dense sequence over deterministic source order is
+                        # collision-free, unlike the previous 9-digit hash.
+                        "number": f"C{customer_sequence:014d}",
+                        "displayName": (
+                            "Walk-in synthetic customer"
+                            if row["segmentId"] == "walk-in"
+                            else "Registered synthetic customer"
                         ),
-                        "displayName": "Anonymous synthetic customer",
-                        "marketCode": order["marketId"],
-                        "segmentCode": order["customerSegmentId"],
+                        "marketCode": row["marketId"],
+                        "segmentCode": row["segmentId"],
+                        "createdAt": row["createdAt"],
                         "email": "",
                         "phoneNumber": "",
-                        "blocked": "false",
+                        "blocked": str(row["state"] != "ENABLED").lower(),
                         "directIdentifiersPresent": "false",
-                    },
-                )
+                    }
+
             writer.write_dataset(
                 f"{company_dir}/customers.csv",
-                list(company_customers.values()),
+                company_customers(),
                 source_system="businessCentral",
                 dataset="customers",
             )
             writer.write_dataset(
                 f"{company_dir}/sales_invoices.csv",
-                [
+                (
                     {
                         "id": bc_uuid("SalesInvoice", order["orderKey"]),
-                        "number": f"SI-{stable_integer(order['orderKey'], modulo=99_999_999):08d}",
+                        "number": f"SI-{order['sourceOrderSequence']:014d}",
                         "externalDocumentNumber": order["sourceOrderName"],
                         "invoiceDate": order["day"].isoformat(),
                         "postingDate": order["day"].isoformat(),
@@ -1464,18 +1760,18 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "customerSegmentCode": order["customerSegmentId"],
                         "customerId": bc_uuid(
                             "Customer",
-                            order["customerKey"],
+                            order["bcCustomerKey"],
                         ),
                         "salesChannelCode": order["channelId"],
                     }
-                    for order in company_order_headers
-                ],
+                    for order in company_order_headers()
+                ),
                 source_system="businessCentral",
                 dataset="salesInvoices",
             )
             writer.write_dataset(
                 f"{company_dir}/sales_invoice_lines.csv",
-                [
+                (
                     {
                         "id": bc_uuid(
                             "SalesInvoiceLine",
@@ -1520,11 +1816,11 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "currencyCode": event["currencyCode"],
                         "__partitionDate": event["day"].isoformat(),
                     }
-                    for event in company_orders
+                    for event in company_orders()
                     for allocation_index, allocation in enumerate(
                         event["allocations"]
                     )
-                ],
+                ),
                 source_system="businessCentral",
                 dataset="salesInvoiceLines",
             )
@@ -1532,19 +1828,20 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                 f"{company_dir}/item_ledger_entries.csv",
                 _bc_item_ledger_rows(
                     company_warehouse_ids,
-                    company_orders,
+                    company_orders(),
                     warehouses,
                     variant_rows_by_market,
                     simulation,
                     start,
                     end,
+                    spool_factory=writer.new_spool,
                 ),
                 source_system="businessCentral",
                 dataset="itemLedgerEntries",
             )
             writer.write_dataset(
                 f"{company_dir}/inventory_snapshots.csv",
-                [
+                (
                     {
                         "locationCode": warehouses[observation["warehouseKey"]][
                             "businessCentralLocationCode"
@@ -1562,7 +1859,7 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                     }
                     for observation in simulation["inventoryObservations"]
                     if observation["warehouseKey"] in company_warehouse_ids
-                ],
+                ),
                 source_system="businessCentral",
                 dataset="inventorySnapshots",
             )
@@ -1712,7 +2009,7 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "fromWarehouseId",
                         "toWarehouseId",
                     )
-                    filtered = [
+                    filtered: Iterable[dict[str, Any]] = (
                         row
                         for row in rows
                         if (
@@ -1738,49 +2035,51 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                                 in company_location_codes
                             )
                         )
-                    ]
+                    )
                     if key == "vendorItemTerms":
-                        filtered = [
+                        filtered = (
                             row for row in rows if row["vendorId"] in allowed_vendor_ids
-                        ]
+                        )
                     elif key == "purchaseOrderLines":
-                        filtered = [
+                        filtered = (
                             row for row in rows if row["documentId"] in allowed_po_ids
-                        ]
+                        )
                     elif key == "inboundShipments":
-                        filtered = [
+                        filtered = (
                             row
                             for row in rows
                             if row["purchaseOrderId"] in allowed_po_ids
-                        ]
+                        )
                     elif key == "warehouseReceiptLines":
-                        filtered = [
+                        filtered = (
                             row
                             for row in rows
                             if row["documentId"] in allowed_receipt_ids
-                        ]
+                        )
                     elif key == "supplierPerformance":
-                        filtered = [
+                        filtered = (
                             row
                             for row in rows
                             if row["receiptLineId"] in allowed_receipt_line_ids
-                        ]
+                        )
                     elif key == "transferOrderLines":
-                        filtered = [
+                        filtered = (
                             row
                             for row in rows
                             if row["documentId"] in allowed_transfer_ids
-                        ]
+                        )
                     elif key == "transferShipments":
-                        filtered = [
+                        filtered = (
                             row
                             for row in rows
                             if row["transferOrderId"] in allowed_transfer_ids
-                        ]
-                    if filtered:
+                        )
+                    filtered_iterator = iter(filtered)
+                    first_filtered = next(filtered_iterator, None)
+                    if first_filtered is not None:
                         writer.write_dataset(
                             f"{company_dir}/{filename}",
-                            filtered,
+                            chain([first_filtered], filtered_iterator),
                             source_system="businessCentral",
                             dataset=dataset,
                         )
@@ -1967,10 +2266,12 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "channelIds": "|".join(promotion["channelIds"]),
                         "departmentIds": "|".join(promotion["departmentIds"]),
                         "categoryIds": "|".join(promotion["categoryIds"]),
+                        "skus": "|".join(promotion.get("_skus", [])),
                         "customerSegmentIds": "|".join(
                             promotion["customerSegmentIds"]
                         ),
                         "discountPct": promotion["discountPct"],
+                        "discountBasis": "planned-offer",
                         "demandMultiplier": promotion["demandMultiplier"],
                         "promotionType": promotion.get(
                             "promotionType",
@@ -1994,8 +2295,10 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                     "channelIds",
                     "departmentIds",
                     "categoryIds",
+                    "skus",
                     "customerSegmentIds",
                     "discountPct",
+                    "discountBasis",
                     "demandMultiplier",
                     "promotionType",
                 ],
@@ -2030,21 +2333,21 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             if config["operations"]["features"]["allocationEvidence"]:
                 writer.write_dataset(
                     f"{companion_dir}/allocation_demand_requests.csv",
-                    [
+                    (
                         row
                         for row in simulation["allocationRequests"]
                         if row["marketKey"] == market_id
-                    ],
+                    ),
                     source_system="companion",
                     dataset="allocationDemandRequests",
                 )
                 writer.write_dataset(
                     f"{companion_dir}/allocation_supply_pools.csv",
-                    [
+                    (
                         row
                         for row in simulation["supplyPools"]
                         if row["marketKey"] == market_id
-                    ],
+                    ),
                     source_system="companion",
                     dataset="allocationSupplyPools",
                 )
@@ -2113,7 +2416,7 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             )
             writer.write_dataset(
                 "_truth/source_event_crosswalk.csv",
-                [
+                (
                     {
                         "eventKey": event["eventKey"],
                         "lineKey": event["lineKey"],
@@ -2139,17 +2442,18 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "__partitionDate": event["day"].isoformat(),
                     }
                     for event in order_events
-                ],
+                ),
                 source_system="hiddenTruth",
                 dataset="sourceEventCrosswalk",
                 restricted=True,
             )
             writer.write_dataset(
                 "_truth/inventory_constraint_truth.csv",
-                [
+                (
                     {
                         "marketKey": row["marketKey"],
                         "storeKey": row["storeKey"],
+                        "channelId": row["channelId"],
                         "date": row["date"],
                         "sku": row["sku"],
                         "latentDemandUnits": row["latentDemandUnits"],
@@ -2157,18 +2461,18 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
                         "lostSalesUnits": row["lostSalesUnits"],
                     }
                     for row in demand_truth
-                ],
+                ),
                 source_system="hiddenTruth",
                 dataset="inventoryConstraintTruth",
                 restricted=True,
             )
             writer.write_dataset(
                 "_truth/competitor_match_truth.csv",
-                [
+                (
                     row
                     for market_rows in simulation["competitorMatches"].values()
                     for row in market_rows
-                ],
+                ),
                 source_system="hiddenTruth",
                 dataset="competitorMatchTruth",
                 restricted=True,
@@ -2176,9 +2480,42 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
 
         writer.write_source_schema()
         writer.write_duckdb_mirror()
+        stage_seconds["sourcePublication"] = float(
+            writer.telemetry["sourcePublicationSeconds"]
+        )
+        stage_seconds["duckdbMirror"] = float(
+            writer.telemetry["duckdbMirrorSeconds"]
+        )
         latent_units = sum(row["latentDemandUnits"] for row in demand_truth)
         realized_units = sum(row["realizedSalesUnits"] for row in demand_truth)
         lost_units = sum(row["lostSalesUnits"] for row in demand_truth)
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        peak_parent_rss_bytes = (
+            int(usage.ru_maxrss)
+            if sys.platform == "darwin"
+            else int(usage.ru_maxrss) * 1024
+        )
+        peak_child_rss_bytes = max(
+            (
+                int(telemetry["peakRssBytes"])
+                for _, _, _, telemetry in market_results
+            ),
+            default=0,
+        )
+        elapsed_before_manifest = (
+            runtime_time.perf_counter() - generation_started
+        )
+        cpu_seconds = (
+            usage.ru_utime
+            + usage.ru_stime
+            - cpu_started.ru_utime
+            - cpu_started.ru_stime
+            + sum(
+                float(telemetry["cpuSeconds"])
+                for _, _, _, telemetry in market_results
+                if datagen_execution["marketWorkers"] > 1
+            )
+        )
         manifest = {
             "manifestVersion": "source-run-manifest/v3",
             "generatorVersion": GENERATOR_VERSION,
@@ -2189,6 +2526,47 @@ def generate(config: dict[str, Any], output_root: str | None = None) -> dict[str
             "runIdentityMethod": "sha256(generatorVersion+sourceSpecVersion+configHash)",
             "configHash": config_digest,
             "masterSeed": config["identity"]["masterSeed"],
+            "executionProfile": {
+                "rowStorage": "bounded-disk-spool",
+                "schemaVersion": execution_profile["schemaVersion"],
+                "profile": execution_profile["profile"],
+                **datagen_execution,
+                "affectsRunIdentity": False,
+            },
+            "executionTelemetry": {
+                "stageWallSeconds": stage_seconds,
+                "elapsedBeforeManifestSeconds": round(elapsed_before_manifest, 6),
+                "cpuProcessSeconds": round(cpu_seconds, 6),
+                "cpuUtilizationPct": round(
+                    cpu_seconds / max(elapsed_before_manifest, 0.000001) * 100,
+                    2,
+                ),
+                "peakProcessRssBytes": max(
+                    peak_parent_rss_bytes,
+                    peak_child_rss_bytes,
+                ),
+                "peakParentRssBytes": peak_parent_rss_bytes,
+                "peakMarketWorkerRssBytes": peak_child_rss_bytes,
+                "datasetsPublished": writer.telemetry["datasetsPublished"],
+                "publishedObjectBytes": sum(
+                    int(source_object["bytes"])
+                    for source_object in writer.objects
+                ),
+                "temporaryWorkBytesBeforeCleanup": writer.work_size_bytes(),
+                "marketWorkerProcessesUsed": min(
+                    datagen_execution["marketWorkers"],
+                    len(markets),
+                ),
+                "marketWorkers": {
+                    market_id: telemetry
+                    for market_id, _, _, telemetry in market_results
+                },
+                "measurementScope": (
+                    "parent and market-worker process metrics; peak RSS is the "
+                    "largest observed process, not concurrent aggregate RSS; "
+                    "operating-system cache is excluded"
+                ),
+            },
             "logicalStartDate": config["time"]["startDate"],
             "logicalEndDate": config["time"]["endDate"],
             "retailer": config["retailer"],

@@ -6,8 +6,12 @@ synthetic scenarios may combine India, the United States, the United Kingdom and
 European representative market (Germany). This monorepo is where the PoC behind the
 `ai_retail_intelligence_dashboard_multicurrency_v6` dashboard will be built.
 
-> **Status:** Phase 1 datagen implemented; downstream ingestion/ML/API/UI remain planned or
-> scaffolded. The independent Python generator and browser Config Builder are runnable now.
+> **Status:** Phase 1 datagen v0.12.0/source contract v11 is implemented. It corrects source
+> reconciliation and forecasting-realism defects found after the measured v0.11.0 ten-year run,
+> so that older run is benchmark evidence rather than the Phase-2 pin. A fresh v0.12.0 ten-year
+> run must pass acceptance and be pinned before ingestion implementation starts. The shared
+> safe/balanced/performance/ultra-performance profiles change execution only; they do not change
+> scenario semantics. Downstream ingestion/ML/API/UI remain planned or scaffolded.
 
 ## What this is (and is not)
 
@@ -31,10 +35,14 @@ European representative market (Germany). This monorepo is where the PoC behind 
   `source-run.duckdb` browsing mirror, a
   source-run manifest and hidden synthetic truth. The single DuckDB contains restricted truth
   when truth is enabled and is permissioned accordingly. Datagen never imports or emits
-  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms. Its v8
+  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms. Its v11
   contract includes a tested 2005–2024 preset, opening-incumbent and later product/SKU launches,
-  overlapping predecessor/successor runout with lifecycle promotions, and config-owned phased
-  pandemic/supply disruption.
+  overlapping predecessor/successor runout with lifecycle promotions, config-owned phased
+  pandemic/supply disruption, and a Config Builder-owned customer population/acquisition model.
+  Long-horizon rows use bounded disk spools, causally independent market processes, concurrent
+  partition publication and bounded DuckDB settings. The Config Builder exports execution YAML
+  separately from scenario YAML/JSON, and execution tuning does not alter scenario identity or
+  business data.
 - `ingestion/` owns immutable raw landing, Gate A, source profiles/adapters, standardized staging,
   source-neutral transformations, canonical `retail_v2`, Gate B and curated Parquet/DuckDB.
   Missing source timestamps, versions, formats or manifest details are handled or derived here
@@ -78,20 +86,23 @@ in-process calls.
 | `ingestion/` | Raw landing, gates, source profiles/adapters, staging, transforms, canonical + curated publication | Python | new + adapt M5 data patterns |
 | `ml/` | Curated-data consumers: features, models, engines and artifacts | Python | reuse + extend M5 PoC |
 | `api/` | API, workflow/HITL, serve-time guardrails, RBAC | Go | reimplement (M5 design) |
-| `datagen/` | Config Builder + independent source simulator and Shopify/BC/companion publishers — **self-contained, extract-ready** | Python | reuse + extend generator PoC |
+| `datagen/` | Config Builder + source-isolated simulator and Shopify/BC/companion publishers — **extract-ready** | Python | reuse + extend generator PoC |
+| `execution/` | Versioned source-neutral safe/balanced/performance/ultra-performance profile schema, Python resolver and golden vectors shared by Python jobs | Python + JSON | new |
 | `contracts/` | Canonical `retail_v2`, source-profile/transform spec, fingerprints, guardrails, proto/OpenAPI | — | new |
 | `db/` | PostgreSQL migrations (single owner: Alembic) | — | copy/extend from M5 PoC |
 | `ui/` | Dashboard front-end (the mockup in `docs/` is the target) | TBD | new |
 | `deploy/` | docker-compose / infra | — | new |
 
-**Extraction rule for `datagen/`:** it is self-contained and does not import `contracts/`,
-`ingestion/`, `ml/` or `api/`. Ingestion depends on the published datagen source contract, never
-the reverse, so `datagen/` can later be lifted into its own repository without taking
+**Extraction rule for `datagen/`:** it does not import `contracts/`, `ingestion/`, `ml/` or
+`api/`. Its only monorepo-level dependency is the independently installable, business-neutral
+`execution/` package. Ingestion depends on the published datagen source contract, never the
+reverse, so `datagen/` can later be lifted with that small operational package without taking
 `retail_v2` with it.
 
 ## Tech stack
 
-- **Python** — `datagen/`, `ingestion/` and `ml/` (LightGBM, statsmodels, pandas/DuckDB). Adapt
+- **Python** — `execution/`, `datagen/`, `ingestion/` and `ml/` (LightGBM, statsmodels,
+  pandas/DuckDB). Adapt
   the M5 `mapped_files`/quality patterns into `ingestion/`; copy/adapt its `features/`, `models/`,
   and `engines/` into `ml/`.
 - **Go** — `api/` (serving, workflow/HITL, guardrail re-validation, staleness 409/503, RBAC).
@@ -109,11 +120,12 @@ the reverse, so `datagen/` can later be lifted into its own repository without t
 3. **`docs/ai_retail_intelligence_dashboard_multicurrency_v6.html`** — the target UI; open in a
    browser to see every screen the PoC must populate.
 4. **`docs/OPEN_DECISIONS.md`** — decisions to lock before/while building.
-5. **`datagen/README.md`** + **`ingestion/README.md`** — the exact source-generation and
-   source-to-canonical ownership boundary.
+5. **`datagen/README.md`** + **`execution/README.md`** + **`ingestion/README.md`** — the exact
+   source-generation, operational-profile and source-to-canonical ownership boundaries.
 6. **`plans/local/plan.md`** + **`plans/local/tasks.md`** — the phased local build (Phase 1 =
-   source generator and Config Builder; Phase 2 = ingestion/transformation). **`plans/aws/`** —
-   the cloud deployment plan (after local works).
+   source generator and Config Builder; Phase 2 = ingestion/transformation).
+   **`plans/local/phase2-implementation-plan.md`** is the detailed Phase-2 proposal for review.
+   **`plans/aws/`** is the cloud deployment plan (after local works).
 
 ## Reference implementations
 

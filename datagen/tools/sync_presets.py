@@ -18,10 +18,20 @@ from retail_datagen.locale_packs import LOCALE_PACKS
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXECUTION_PROFILES_PATH = (
+    ROOT.parent
+    / "execution"
+    / "src"
+    / "retail_execution"
+    / "data"
+    / "v1"
+    / "profiles.json"
+)
 PRESETS = {
     "showcasePreset": ROOT / "configs" / "multi-market-showcase.yaml",
     "historyPreset": ROOT / "configs" / "multi-market-20-year-history.yaml",
     "volumePreset": ROOT / "configs" / "multi-market-2021-current-volume.yaml",
+    "demoDecadePreset": ROOT / "configs" / "multi-market-10-year-demo.yaml",
 }
 
 LIFECYCLE = {
@@ -269,12 +279,44 @@ def _sync_yaml(path: Path) -> None:
         market["assortment"]["skusPerDepartment"] = (
             12 if "20-year-history" in path.name else 36
         )
+        market["customerPopulation"] = {
+            "openingRegisteredCustomers": 5_000,
+            "annualNewCustomers": 10_000,
+            "annualChurnRate": 0.18,
+            "annualReactivationRate": 0.06,
+            "guestCheckoutRate": 0.18,
+            "openingCustomerHistoryYears": 5,
+            "maxOrdersPerCustomerPerDay": 2,
+        }
         if "multi-market-showcase" in path.name:
             market["demand"]["startingDailyOrders"] = 420
             market["priceDynamics"]["priceChangeEventsPerSkuPerYear"] = 36
         elif "2021-current-volume" in path.name:
             market["demand"]["startingDailyOrders"] = 420
             market["priceDynamics"]["priceChangeEventsPerSkuPerYear"] = 12
+        elif "10-year-demo" in path.name:
+            market["demand"]["startingDailyOrders"] = 1_200
+            market["priceDynamics"]["priceChangeEventsPerSkuPerYear"] = 12
+            market["customerPopulation"].update(
+                {
+                    "openingRegisteredCustomers": 125_000,
+                    "annualNewCustomers": 40_000,
+                }
+            )
+        elif "20-year-history" in path.name:
+            market["customerPopulation"].update(
+                {
+                    "openingRegisteredCustomers": 1_000,
+                    "annualNewCustomers": 250,
+                }
+            )
+        if "2021-current-volume" in path.name:
+            market["customerPopulation"].update(
+                {
+                    "openingRegisteredCustomers": 30_000,
+                    "annualNewCustomers": 15_000,
+                }
+            )
     for warehouse in config["warehouses"]:
         warehouse["openingStockDaysOfCover"] = 0
     config["operations"]["inventory"]["replenishmentDemandBufferPct"] = 0.05
@@ -306,6 +348,29 @@ def _sync_yaml(path: Path) -> None:
             warehouse["openingStockDaysOfCover"] = (
                 0 if "overflow" in warehouse["warehouseId"] else 28
             )
+    if "10-year-demo" in path.name:
+        inventory = config["operations"]["inventory"]
+        inventory["snapshotCadenceDays"] = 7
+        inventory["replenishmentCycleDays"] = 7
+        inventory["supplierLeadTimeDays"] = 5
+        inventory["supplierLeadTimeJitterDays"] = 3
+        inventory["stockoutSkuRate"] = 0.02
+        inventory["safetyStockUnits"] = 8
+        inventory["replenishmentDemandBufferPct"] = 0.25
+        warehouse_controls = {
+            "mumbai-dc": (750_000, 60, 48, 42),
+            "pune-overflow": (500_000, 40, 36, 14),
+            "newark-dc": (750_000, 60, 48, 42),
+            "brooklyn-mfc": (500_000, 40, 36, 14),
+        }
+        for warehouse in config["warehouses"]:
+            capacity, opening_floor, pack, opening_cover = warehouse_controls[
+                warehouse["warehouseId"]
+            ]
+            warehouse["capacityUnits"] = capacity
+            warehouse["openingStockPerSku"] = opening_floor
+            warehouse["replenishmentPackSize"] = pack
+            warehouse["openingStockDaysOfCover"] = opening_cover
     if generation["mode"] == "hybrid":
         config["catalog"]["productTemplates"] = _real_lifecycle_templates(
             config["time"]["endDate"]
@@ -335,6 +400,22 @@ def main() -> None:
     html = html_path.read_text(encoding="utf-8")
     html = _replace_json_script(html, "localePacks", LOCALE_PACKS)
     html = _replace_json_script(html, "catalogPacks", CATALOG_PACK_METADATA)
+    execution_contract = json.loads(
+        EXECUTION_PROFILES_PATH.read_text(encoding="utf-8")
+    )
+    builder_execution_profiles = {
+        profile_name: {
+            "schemaVersion": profile["schemaVersion"],
+            "profile": profile_name,
+            "datagen": profile["datagen"],
+        }
+        for profile_name, profile in execution_contract.items()
+    }
+    html = _replace_json_script(
+        html,
+        "executionProfiles",
+        builder_execution_profiles,
+    )
     for element_id, path in PRESETS.items():
         html = _replace_json_script(html, element_id, load_config(path))
     html = re.sub(

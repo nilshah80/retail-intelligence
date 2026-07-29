@@ -1,0 +1,126 @@
+{
+  "balanced": {
+    "api": {
+      "backgroundJobWorkers": 4,
+      "dbReadPool": 12,
+      "gomaxprocs": 4,
+      "httpConcurrency": 128
+    },
+    "datagen": {
+      "duckdbThreads": 2,
+      "marketWorkers": 1,
+      "memoryLimitGb": 8,
+      "partitionWorkers": 4,
+      "spoolChunkRows": 25000
+    },
+    "ingestion": {
+      "duckdbThreads": 2,
+      "memoryLimitGb": 8,
+      "scanWorkers": 4,
+      "transformWorkers": 4,
+      "writeWorkers": 4
+    },
+    "ml": {
+      "featureWorkers": 4,
+      "foldWorkers": 2,
+      "memoryLimitGb": 12,
+      "modelWorkers": 2,
+      "threadsPerModel": 2
+    },
+    "profile": "balanced",
+    "schemaVersion": "retail-execution-profile/v1"
+  },
+  "performance": {
+    "api": {
+      "backgroundJobWorkers": 8,
+      "dbReadPool": 24,
+      "gomaxprocs": 8,
+      "httpConcurrency": 256
+    },
+    "datagen": {
+      "duckdbThreads": 6,
+      "marketWorkers": 2,
+      "memoryLimitGb": 32,
+      "partitionWorkers": 8,
+      "spoolChunkRows": 50000
+    },
+    "ingestion": {
+      "duckdbThreads": 8,
+      "memoryLimitGb": 32,
+      "scanWorkers": 8,
+      "transformWorkers": 8,
+      "writeWorkers": 8
+    },
+    "ml": {
+      "featureWorkers": 8,
+      "foldWorkers": 4,
+      "memoryLimitGb": 48,
+      "modelWorkers": 4,
+      "threadsPerModel": 4
+    },
+    "profile": "performance",
+    "schemaVersion": "retail-execution-profile/v1"
+  },
+  "ultra-performance": {
+    "api": {
+      "backgroundJobWorkers": 16,
+      "dbReadPool": 48,
+      "gomaxprocs": 12,
+      "httpConcurrency": 512
+    },
+    "datagen": {
+      "duckdbThreads": 8,
+      "marketWorkers": 2,
+      "memoryLimitGb": 64,
+      "partitionWorkers": 16,
+      "spoolChunkRows": 100000
+    },
+    "ingestion": {
+      "duckdbThreads": 12,
+      "memoryLimitGb": 64,
+      "scanWorkers": 16,
+      "transformWorkers": 12,
+      "writeWorkers": 12
+    },
+    "ml": {
+      "featureWorkers": 12,
+      "foldWorkers": 6,
+      "memoryLimitGb": 64,
+      "modelWorkers": 6,
+      "threadsPerModel": 4
+    },
+    "profile": "ultra-performance",
+    "schemaVersion": "retail-execution-profile/v1"
+  },
+  "safe": {
+    "api": {
+      "backgroundJobWorkers": 2,
+      "dbReadPool": 6,
+      "gomaxprocs": 2,
+      "httpConcurrency": 64
+    },
+    "datagen": {
+      "duckdbThreads": 1,
+      "marketWorkers": 1,
+      "memoryLimitGb": 4,
+      "partitionWorkers": 2,
+      "spoolChunkRows": 10000
+    },
+    "ingestion": {
+      "duckdbThreads": 1,
+      "memoryLimitGb": 4,
+      "scanWorkers": 2,
+      "transformWorkers": 2,
+      "writeWorkers": 2
+    },
+    "ml": {
+      "featureWorkers": 2,
+      "foldWorkers": 1,
+      "memoryLimitGb": 8,
+      "modelWorkers": 1,
+      "threadsPerModel": 2
+    },
+    "profile": "safe",
+    "schemaVersion": "retail-execution-profile/v1"
+  }
+}

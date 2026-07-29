@@ -33,6 +33,19 @@ Planned contents:
   dependency;
 - `warehouse/` — atomic curated Parquet/DuckDB publication.
 
+## Shared execution profiles
+
+Ingestion will install the independent `execution/` Python package already used by datagen.
+Its ingestion namespace resolves bounded scan, transform, partition-write and DuckDB
+worker/thread counts plus memory/spill ceilings. A narrow ingestion adapter owns the actual pools
+and cleanup; no datagen code is imported.
+
+The selected execution YAML is operational input, not a source profile or canonical contract.
+The resolved non-secret values and stage telemetry belong in the ingest manifest, but not in raw
+content hashes, canonical fingerprints or capability decisions. Safe and ultra-performance runs over
+the same landing snapshot must produce identical accepted/quarantined keys, controls, Gate A/B
+outcomes and canonical hashes.
+
 ## Source-tolerance rule
 
 Actual retailers do not all supply `known_as_of`, availability versions, source manifests,
@@ -56,7 +69,8 @@ profile when defensible, but a client-actual capability may impose stricter evid
 
 ## Datagen source-format and DuckDB profile
 
-Datagen v5 publishes one authoritative tabular format per run—CSV or Parquet—and a single
+Datagen source contract v11 publishes one authoritative tabular format per run—CSV or
+Parquet—and a single
 `source-run.duckdb` mirror. Gate A must support both authoritative formats. For the PoC it may
 also use a dedicated datagen-DuckDB source profile to accelerate staging, provided it:
 

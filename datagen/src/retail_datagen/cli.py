@@ -10,6 +10,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from retail_execution import (
+    ProfileValidationError,
+    available_profiles,
+    load_profile_document,
+    named_profiles,
+    resolve_profile,
+)
+
 from . import GENERATOR_VERSION, SOURCE_SPEC_VERSION
 from .catalog_packs import CATALOG_PACK_METADATA, build_catalog, catalog_controls
 from .config import ConfigError, load_config
@@ -18,7 +26,10 @@ from .identity import config_hash, run_id
 from .locale_packs import LOCALE_PACKS
 
 
-def _plan(config: dict[str, Any]) -> dict[str, Any]:
+def _plan(
+    config: dict[str, Any],
+    execution_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     start = date.fromisoformat(config["time"]["startDate"])
     end = date.fromisoformat(config["time"]["endDate"])
     days = (end - start).days + 1
@@ -107,14 +118,32 @@ def _plan(config: dict[str, Any]) -> dict[str, Any]:
             }
             for row in config["pandemics"]
         },
+        "customerPopulationByMarket": {
+            market["marketId"]: {
+                **market["customerPopulation"],
+                "registeredCustomersAtEnd": (
+                    market["customerPopulation"]["openingRegisteredCustomers"]
+                    + int(
+                        market["customerPopulation"]["annualNewCustomers"]
+                        * days
+                        / 365.2425
+                    )
+                ),
+            }
+            for market in config["markets"]
+        },
         "resourceNote": (
-            "Long-horizon runs are partitioned on disk but the current Python "
-            "simulation retains run state and projection rows in memory; size "
-            "assortment/store/signal controls to the available RAM."
+            "Long-horizon rows use bounded disk-backed streams. Runtime "
+            "--workers and --memory-limit-gb controls affect execution only; "
+            "they do not change configHash, runId or generated business data."
             if days >= 3650
             else "Short-horizon run."
         ),
         "publicFormat": config["output"]["publicFormats"],
+        "executionProfile": execution_profile or resolve_profile(
+            "safe",
+            environment={},
+        ),
     }
 
 
@@ -135,13 +164,85 @@ def _parser() -> argparse.ArgumentParser:
 
     plan = commands.add_parser("plan", help="Show a deterministic run estimate.")
     plan.add_argument("-c", "--config", required=True)
+    plan.add_argument(
+        "--execution-profile",
+        choices=available_profiles(),
+        help="Named bounded execution profile (default: safe).",
+    )
+    plan.add_argument(
+        "--execution-profile-file",
+        help="Builder-exported execution-profile YAML/JSON.",
+    )
+    plan.add_argument(
+        "--market-workers",
+        type=int,
+        help="Override causally independent market worker processes.",
+    )
+    plan.add_argument(
+        "--workers",
+        type=int,
+        help="Override concurrent partition workers.",
+    )
+    plan.add_argument(
+        "--duckdb-threads",
+        type=int,
+        help="Override threads used to assemble the single DuckDB mirror.",
+    )
+    plan.add_argument(
+        "--memory-limit-gb",
+        type=float,
+        help="Override total DuckDB working-memory ceiling in GiB.",
+    )
+    plan.add_argument(
+        "--spool-chunk-rows",
+        type=int,
+        help="Override maximum rows buffered by each internal stream.",
+    )
 
     run = commands.add_parser("generate", help="Generate and publish source-shaped data.")
     run.add_argument("-c", "--config", required=True)
     run.add_argument("-o", "--output-root")
+    run.add_argument(
+        "--execution-profile",
+        choices=available_profiles(),
+        help="Named bounded execution profile (default: safe).",
+    )
+    run.add_argument(
+        "--execution-profile-file",
+        help="Builder-exported execution-profile YAML/JSON.",
+    )
+    run.add_argument(
+        "--market-workers",
+        type=int,
+        help="Override causally independent market worker processes.",
+    )
+    run.add_argument(
+        "--workers",
+        type=int,
+        help="Override concurrent partition workers.",
+    )
+    run.add_argument(
+        "--duckdb-threads",
+        type=int,
+        help="Override threads used to assemble the single DuckDB mirror.",
+    )
+    run.add_argument(
+        "--memory-limit-gb",
+        type=float,
+        help="Override total DuckDB working-memory ceiling in GiB.",
+    )
+    run.add_argument(
+        "--spool-chunk-rows",
+        type=int,
+        help="Override maximum rows buffered by each internal stream.",
+    )
 
     commands.add_parser("locales", help="Print supported resolved locale packs.")
     commands.add_parser("catalogs", help="Print supported rich catalog-pack metadata.")
+    commands.add_parser(
+        "execution-profiles",
+        help="Print shared named operational execution profiles.",
+    )
     return parser
 
 
@@ -153,6 +254,9 @@ def main(argv: list[str] | None = None) -> None:
             return
         if args.command == "catalogs":
             _print_json(CATALOG_PACK_METADATA)
+            return
+        if args.command == "execution-profiles":
+            _print_json(named_profiles())
             return
         config = load_config(Path(args.config))
         if args.command == "validate-config":
@@ -166,16 +270,57 @@ def main(argv: list[str] | None = None) -> None:
             )
             return
         if args.command == "plan":
-            _print_json(_plan(config))
+            profile_document = (
+                load_profile_document(args.execution_profile_file)
+                if args.execution_profile_file
+                else None
+            )
+            _print_json(
+                _plan(
+                    config,
+                    resolve_profile(
+                        args.execution_profile,
+                        document=profile_document,
+                        datagen_overrides={
+                            "marketWorkers": args.market_workers,
+                            "partitionWorkers": args.workers,
+                            "duckdbThreads": args.duckdb_threads,
+                            "memoryLimitGb": args.memory_limit_gb,
+                            "spoolChunkRows": args.spool_chunk_rows,
+                        },
+                    ),
+                )
+            )
             return
         if args.command == "generate":
-            result = generate(config, output_root=args.output_root)
+            profile_document = (
+                load_profile_document(args.execution_profile_file)
+                if args.execution_profile_file
+                else None
+            )
+            execution_profile = resolve_profile(
+                args.execution_profile,
+                document=profile_document,
+                datagen_overrides={
+                    "marketWorkers": args.market_workers,
+                    "partitionWorkers": args.workers,
+                    "duckdbThreads": args.duckdb_threads,
+                    "memoryLimitGb": args.memory_limit_gb,
+                    "spoolChunkRows": args.spool_chunk_rows,
+                },
+            )
+            result = generate(
+                config,
+                output_root=args.output_root,
+                execution_profile=execution_profile,
+            )
             _print_json(
                 {
                     "runId": result["runId"],
                     "outputBase": result["outputBase"],
                     "reused": result["reused"],
                     "objects": len(result["manifest"]["objects"]),
+                    "executionProfile": result["manifest"]["executionProfile"],
                     "controlsByCurrency": result["manifest"]["controlsByCurrency"],
                 }
             )
@@ -184,7 +329,7 @@ def main(argv: list[str] | None = None) -> None:
     except ConfigError as exc:
         _print_json({"valid": False, "errors": exc.errors})
         raise SystemExit(2) from exc
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, ProfileValidationError, RuntimeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

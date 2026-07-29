@@ -9,9 +9,15 @@ import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_EVEN
+from itertools import groupby
 from typing import Any
 
-from .identity import bc_uuid, shopify_gid, stable_integer
+from .identity import (
+    bc_document_number,
+    bc_uuid,
+    shopify_gid,
+    stable_integer,
+)
 from .operations import add_hours, fulfillment_timestamps
 
 MONEY_QUANT = Decimal("0.01")
@@ -25,44 +31,89 @@ def _fraction(*parts: Any) -> float:
     return stable_integer(*parts, modulo=1_000_000) / 1_000_000
 
 
+def _allocate_tax_components(
+    total_tax: Decimal,
+    components: list[dict[str, Any]],
+) -> list[Decimal]:
+    """Allocate rounded tax components with an exact final-slice residual."""
+
+    allocated = Decimal("0")
+    result: list[Decimal] = []
+    for index, component in enumerate(components):
+        amount = (
+            total_tax - allocated
+            if index == len(components) - 1
+            else (
+                total_tax * Decimal(component["share"])
+            ).quantize(MONEY_QUANT, rounding=ROUND_HALF_EVEN)
+        )
+        result.append(amount)
+        allocated += amount
+    return result
+
+
 def build_commerce_extensions(
     config: dict[str, Any],
-    order_lines: list[dict[str, Any]],
-    orders: list[dict[str, Any]],
+    order_lines: Any,
+    orders: Any,
+    *,
+    spool_factory: Any | None = None,
 ) -> dict[str, Any]:
     """Build fulfillment, return/refund, tax, and webhook evidence."""
 
     master_seed = config["identity"]["masterSeed"]
     return_policy = config["operations"]["returns"]
-    order_by_key = {row["orderKey"]: row for row in orders}
+    def rows(name: str) -> Any:
+        return spool_factory(name) if spool_factory else []
+
     markets = {row["marketId"]: row for row in config["markets"]}
     extract_end = date.fromisoformat(config["time"]["endDate"])
-    fulfillment_orders: list[dict[str, Any]] = []
-    fulfillment_order_lines: list[dict[str, Any]] = []
-    fulfillments: list[dict[str, Any]] = []
-    fulfillment_lines: list[dict[str, Any]] = []
-    fulfillment_history: list[dict[str, Any]] = []
-    tax_lines: list[dict[str, Any]] = []
-    returns: list[dict[str, Any]] = []
-    return_lines: list[dict[str, Any]] = []
-    refunds: list[dict[str, Any]] = []
-    refund_transactions: list[dict[str, Any]] = []
+    fulfillment_orders = rows("commerce-fulfillment-orders")
+    fulfillment_order_lines = rows("commerce-fulfillment-order-lines")
+    fulfillments = rows("commerce-fulfillments")
+    fulfillment_lines = rows("commerce-fulfillment-lines")
+    fulfillment_history = rows("commerce-fulfillment-history")
+    tax_lines = rows("commerce-tax-lines")
+    returns = rows("commerce-returns")
+    return_lines = rows("commerce-return-lines")
+    refunds = rows("commerce-refunds")
+    refund_transactions = rows("commerce-refund-transactions")
+    fulfillment_summaries = rows("commerce-fulfillment-summaries")
     line_sequence_by_market: dict[str, int] = defaultdict(int)
     refund_sequence_by_market: dict[str, int] = defaultdict(int)
 
-    lines_by_order: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for line in order_lines:
-        lines_by_order[line["orderKey"]].append(line)
+    fixture_orders_by_market: dict[
+        str,
+        list[tuple[dict[str, Any], list[dict[str, Any]]]],
+    ] = defaultdict(list)
+    grouped_lines = iter(groupby(order_lines, key=lambda row: row["orderKey"]))
     for order in orders:
+        try:
+            line_order_key, line_group = next(grouped_lines)
+        except StopIteration as exc:
+            raise RuntimeError(
+                f"missing order lines for {order['orderKey']}"
+            ) from exc
+        if line_order_key != order["orderKey"]:
+            raise RuntimeError(
+                "order/line stream alignment failed: "
+                f"{order['orderKey']} != {line_order_key}"
+            )
+        order_lines_for_order = list(line_group)
+        if len(fixture_orders_by_market[order["marketId"]]) < 12:
+            fixture_orders_by_market[order["marketId"]].append(
+                (order, order_lines_for_order)
+            )
         extract_timestamp = datetime.combine(
             extract_end,
             datetime.max.time(),
             tzinfo=datetime.fromisoformat(order["createdAt"]).tzinfo,
         )
         by_warehouse: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
-        for line in lines_by_order[order["orderKey"]]:
+        for line in order_lines_for_order:
             for allocation in line["allocations"]:
                 by_warehouse[allocation["warehouseId"]].append((line, allocation))
+        created_fulfillment_count = 0
         for warehouse_id, allocated_lines in sorted(by_warehouse.items()):
             fulfillment_order_key = (
                 f"{order['orderKey']}:{warehouse_id}:fulfillment-order"
@@ -107,6 +158,8 @@ def build_commerce_extensions(
                         "Location",
                         warehouse_id,
                     ),
+                    "__marketId": order["marketId"],
+                    "__storeId": order["storeId"],
                 }
             )
             for line, allocation in allocated_lines:
@@ -131,10 +184,13 @@ def build_commerce_extensions(
                         ),
                         "warehouseKey": warehouse_id,
                         "__partitionDate": line["createdAt"][:10],
+                        "__marketId": order["marketId"],
+                        "__storeId": order["storeId"],
                     }
                 )
             if not created_by_extract:
                 continue
+            created_fulfillment_count += 1
             fulfillments.append(
                 {
                     "id": fulfillment_id,
@@ -154,6 +210,8 @@ def build_commerce_extensions(
                     "trackingNumber": (
                         f"SPN{stable_integer(fulfillment_key, modulo=10**12):012d}"
                     ),
+                    "__marketId": order["marketId"],
+                    "__storeId": order["storeId"],
                 }
             )
             for line, allocation in allocated_lines:
@@ -169,6 +227,8 @@ def build_commerce_extensions(
                         "quantity": allocation["quantity"],
                         "warehouseKey": warehouse_id,
                         "__partitionDate": line["createdAt"][:10],
+                        "__marketId": order["marketId"],
+                        "__storeId": order["storeId"],
                     }
                 )
             status_events = [
@@ -192,9 +252,21 @@ def build_commerce_extensions(
                         "status": status,
                         "occurredAt": timestamp,
                         "warehouseKey": warehouse_id,
+                        "__marketId": order["marketId"],
+                        "__storeId": order["storeId"],
                     }
                 )
+        fulfillment_summaries.append(
+            {
+                "orderKey": order["orderKey"],
+                "expected": len(by_warehouse),
+                "created": created_fulfillment_count,
+            }
+        )
 
+    successful_refunds_by_order: dict[str, Decimal] = defaultdict(
+        lambda: Decimal("0")
+    )
     for line in order_lines:
         market = markets[line["marketId"]]
         line_sequence_by_market[line["marketId"]] += 1
@@ -217,8 +289,11 @@ def build_commerce_extensions(
             )
             else market["localePack"]["tax"]["jurisdiction"]
         )
-        for component in components:
-            component_tax = line["tax"] * Decimal(component["share"])
+        for component, component_tax in zip(
+            components,
+            _allocate_tax_components(line["tax"], components),
+            strict=True,
+        ):
             tax_lines.append(
                 {
                     "orderLineId": shopify_gid("OrderLine", line["lineKey"]),
@@ -230,6 +305,8 @@ def build_commerce_extensions(
                     "currencyCode": line["currencyCode"],
                     "jurisdiction": jurisdiction,
                     "__partitionDate": line["createdAt"][:10],
+                    "__marketId": line["marketId"],
+                    "__storeId": line["storeId"],
                 }
             )
         if (
@@ -271,6 +348,8 @@ def build_commerce_extensions(
                 "reason": ["SIZE_TOO_SMALL", "NOT_AS_DESCRIBED", "UNWANTED"][
                     stable_integer(return_key, modulo=3)
                 ],
+                "__marketId": line["marketId"],
+                "__storeId": line["storeId"],
             }
         )
         return_lines.append(
@@ -287,6 +366,8 @@ def build_commerce_extensions(
                 "restockType": "NO_RESTOCK",
                 "restockLocationId": "",
                 "__partitionDate": requested_at[:10],
+                "__marketId": line["marketId"],
+                "__storeId": line["storeId"],
             }
         )
         if not processed:
@@ -313,8 +394,14 @@ def build_commerce_extensions(
                 "totalRefunded": _money(refund_amount if succeeded else Decimal("0")),
                 "currencyCode": line["currencyCode"],
                 "status": "SUCCESS" if succeeded else "FAILED",
+                "__marketId": line["marketId"],
+                "__storeId": line["storeId"],
             }
         )
+        if succeeded:
+            successful_refunds_by_order[
+                shopify_gid("Order", line["orderKey"])
+            ] += refund_amount
         refund_transactions.append(
             {
                 "id": shopify_gid("OrderTransaction", refund_key),
@@ -327,22 +414,55 @@ def build_commerce_extensions(
                 "currencyCode": line["currencyCode"],
                 "processedAt": add_hours(requested_at, 49),
                 "errorCode": "" if succeeded else "PROCESSING_ERROR",
+                "__marketId": line["marketId"],
+                "__storeId": line["storeId"],
             }
         )
 
-    webhook_fixtures: list[dict[str, Any]] = []
+    enriched_orders = rows("commerce-enriched-orders")
+    for order, summary in zip(
+        orders,
+        fulfillment_summaries,
+        strict=True,
+    ):
+        if summary["orderKey"] != order["orderKey"]:
+            raise RuntimeError(
+                "order/fulfillment summary alignment failed: "
+                f"{order['orderKey']} != {summary['orderKey']}"
+            )
+        order_id = shopify_gid("Order", order["orderKey"])
+        refunded = successful_refunds_by_order.get(
+            order_id,
+            Decimal("0"),
+        )
+        expected = summary["expected"]
+        created = summary["created"]
+        enriched_orders.append(
+            {
+                **order,
+                "_financialStatus": (
+                    "REFUNDED"
+                    if refunded >= order["gross"]
+                    else ("PARTIALLY_REFUNDED" if refunded > 0 else "PAID")
+                ),
+                "_fulfillmentStatus": (
+                    "FULFILLED"
+                    if expected and created == expected
+                    else ("PARTIALLY_FULFILLED" if created else "UNFULFILLED")
+                ),
+            }
+        )
+
+    webhook_fixtures = rows("commerce-webhook-fixtures")
     secret = config["operations"]["webhook"]["fixtureSecret"].encode("utf-8")
     invalid_rate = config["operations"]["webhook"]["invalidFixtureRate"]
-    orders_by_market: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for order in orders:
-        orders_by_market[order["marketId"]].append(order)
     fixture_orders = [
-        order
-        for market_id in sorted(orders_by_market)
-        for order in orders_by_market[market_id][:12]
+        order_and_lines
+        for market_id in sorted(fixture_orders_by_market)
+        for order_and_lines in fixture_orders_by_market[market_id]
     ]
     webhook_sequence_by_market: dict[str, int] = defaultdict(int)
-    for index, order in enumerate(fixture_orders):
+    for index, (order, fixture_lines) in enumerate(fixture_orders):
         payload = {
             "id": shopify_gid("Order", order["orderKey"]),
             "name": order["sourceOrderName"],
@@ -355,7 +475,7 @@ def build_commerce_extensions(
                     "sku": line["sku"],
                     "quantity": line["quantity"],
                 }
-                for line in lines_by_order[order["orderKey"]]
+                for line in fixture_lines
             ],
         }
         body = json.dumps(
@@ -410,6 +530,7 @@ def build_commerce_extensions(
         )
 
     return {
+        "orders": enriched_orders,
         "fulfillmentOrders": fulfillment_orders,
         "fulfillmentOrderLines": fulfillment_order_lines,
         "fulfillments": fulfillments,
@@ -430,8 +551,13 @@ def build_supply_extensions(
     warehouses: dict[str, dict[str, Any]],
     variants_by_market: dict[str, list[dict[str, Any]]],
     simulation: dict[str, Any],
-) -> dict[str, list[dict[str, Any]]]:
+    *,
+    spool_factory: Any | None = None,
+) -> dict[str, Any]:
     """Build supplier, receipt, batch, transfer, warehouse, and WMS evidence."""
+
+    def rows(name: str) -> Any:
+        return spool_factory(name) if spool_factory else []
 
     master_seed = config["identity"]["masterSeed"]
     end = date.fromisoformat(config["time"]["endDate"])
@@ -494,13 +620,12 @@ def build_supply_extensions(
             )
 
     po_headers: dict[str, dict[str, Any]] = {}
-    po_lines: list[dict[str, Any]] = []
+    po_lines = rows("supply-purchase-order-lines")
     inbound_shipments: dict[str, dict[str, Any]] = {}
     receipt_headers: dict[str, dict[str, Any]] = {}
-    receipt_lines: list[dict[str, Any]] = []
-    cost_layers: list[dict[str, Any]] = []
-    batches: list[dict[str, Any]] = []
-    supplier_performance: list[dict[str, Any]] = []
+    receipt_lines = rows("supply-warehouse-receipt-lines")
+    cost_layers = rows("supply-item-cost-layers")
+    supplier_performance = rows("supply-supplier-performance")
     po_line_sequence: dict[str, int] = defaultdict(int)
     for receipt in simulation["receiptEvents"]:
         vendor_key = f"supplier:{receipt['marketId']}:{receipt['brandCode']}"
@@ -529,6 +654,9 @@ def build_supply_extensions(
             },
         )
         po_line_sequence[po_key] += 10_000
+        received_quantity = (
+            receipt["quantity"] if receipt["status"] == "Received" else 0
+        )
         po_lines.append(
             {
                 "id": bc_uuid("PurchaseOrderLine", receipt["receiptKey"]),
@@ -539,11 +667,9 @@ def build_supply_extensions(
                 "variantCode": receipt["variantCode"],
                 "sku": receipt["sku"],
                 "orderedQuantity": receipt["orderedQuantity"],
-                "receivedQuantity": (
-                    receipt["quantity"] if receipt["status"] == "Received" else 0
-                ),
+                "receivedQuantity": received_quantity,
                 "outstandingQuantity": (
-                    0 if receipt["status"] == "Received" else receipt["quantity"]
+                    receipt["orderedQuantity"] - received_quantity
                 ),
                 "directUnitCost": _money(receipt["unitCost"]),
                 "currencyCode": receipt["currencyCode"],
@@ -573,7 +699,7 @@ def build_supply_extensions(
             receipt_key,
             {
                 "id": bc_uuid("WarehouseReceipt", receipt_key),
-                "number": f"WR-{stable_integer(receipt_key, modulo=10**8):08d}",
+                "number": bc_document_number("WR", receipt_key),
                 "purchaseOrderId": bc_uuid("PurchaseOrder", po_key),
                 "locationCode": warehouses[receipt["warehouseId"]][
                     "businessCentralLocationCode"
@@ -622,7 +748,7 @@ def build_supply_extensions(
                     date.fromisoformat(receipt["actualDate"])
                     - date.fromisoformat(receipt["orderDate"])
                 ).days,
-                "orderedQuantity": receipt["quantity"],
+                "orderedQuantity": receipt["orderedQuantity"],
                 "receivedQuantity": receipt["quantity"],
                 "fillRate": str(
                     (
@@ -633,37 +759,41 @@ def build_supply_extensions(
             }
         )
 
-    batches = [
-        {
-            "batchId": bc_uuid("ItemBatch", row["batchKey"]),
-            "lotNumber": (
-                f"LOT-{stable_integer(row['batchKey'], modulo=10**10):010d}"
-            ),
-            "sku": row["sku"],
-            "warehouseId": row["warehouseId"],
-            "locationCode": warehouses[row["warehouseId"]][
-                "businessCentralLocationCode"
-            ],
-            "manufactureDate": row["manufactureDate"],
-            "receiptDate": row["receiptDate"],
-            "expiryDate": row["expiryDate"],
-            "quantityReceived": row["quantityReceived"],
-            "quantityRemainingAtExtract": row["quantityRemainingAtExtract"],
-            "sourceType": row["sourceType"],
-            "sourceReference": row["sourceReference"],
-        }
-        for row in simulation["batchBalances"]
-    ]
+    batches = rows("supply-item-batches")
+    for row in simulation["batchBalances"]:
+        batches.append(
+            {
+                "batchId": bc_uuid("ItemBatch", row["batchKey"]),
+                "lotNumber": (
+                    f"LOT-{stable_integer(row['batchKey'], modulo=10**10):010d}"
+                ),
+                "sku": row["sku"],
+                "warehouseId": row["warehouseId"],
+                "locationCode": warehouses[row["warehouseId"]][
+                    "businessCentralLocationCode"
+                ],
+                "manufactureDate": row["manufactureDate"],
+                "receiptDate": row["receiptDate"],
+                "expiryDate": row["expiryDate"],
+                "quantityReceived": row["quantityReceived"],
+                "quantityRemainingAtExtract": row[
+                    "quantityRemainingAtExtract"
+                ],
+                "sourceType": row["sourceType"],
+                "sourceReference": row["sourceReference"],
+            }
+        )
 
-    transfer_orders: list[dict[str, Any]] = []
-    transfer_lines: list[dict[str, Any]] = []
-    transfer_shipments: list[dict[str, Any]] = []
+    transfer_orders = rows("supply-transfer-orders")
+    transfer_lines = rows("supply-transfer-lines")
+    transfer_shipments = rows("supply-transfer-shipments")
     for transfer in simulation["transferEvents"]:
         transfer_orders.append(
             {
                 "id": bc_uuid("TransferOrder", transfer["transferKey"]),
-                "number": (
-                    f"TO-{stable_integer(transfer['transferKey'], modulo=10**8):08d}"
+                "number": bc_document_number(
+                    "TO",
+                    transfer["transferKey"],
                 ),
                 "fromLocationCode": warehouses[transfer["fromWarehouseId"]][
                     "businessCentralLocationCode"
@@ -699,16 +829,18 @@ def build_supply_extensions(
             }
         )
 
-    warehouse_capacity: list[dict[str, Any]] = []
-    wms_comparisons: list[dict[str, Any]] = []
+    warehouse_capacity = rows("supply-warehouse-capacity")
+    wms_comparisons = rows("supply-wms-comparisons")
     observations_by_warehouse_time: dict[
         tuple[str, str],
-        list[dict[str, Any]],
-    ] = defaultdict(list)
+        dict[str, int],
+    ] = defaultdict(lambda: {"onHand": 0, "blocked": 0})
     for observation in simulation["inventoryObservations"]:
-        observations_by_warehouse_time[
+        totals = observations_by_warehouse_time[
             (observation["warehouseKey"], observation["observedAt"])
-        ].append(observation)
+        ]
+        totals["onHand"] += observation["onHand"]
+        totals["blocked"] += observation["blocked"]
         variance = (
             -1
             if _fraction(
@@ -732,12 +864,12 @@ def build_supply_extensions(
                 "comparisonStatus": "mismatch" if variance else "matched",
             }
         )
-    for (warehouse_id, observed_at), observations in sorted(
+    for (warehouse_id, observed_at), totals in sorted(
         observations_by_warehouse_time.items()
     ):
         capacity = warehouses[warehouse_id]["capacityUnits"]
-        on_hand = sum(row["onHand"] for row in observations)
-        blocked = sum(row["blocked"] for row in observations)
+        on_hand = totals["onHand"]
+        blocked = totals["blocked"]
         warehouse_capacity.append(
             {
                 "warehouseId": warehouse_id,
@@ -880,6 +1012,7 @@ def build_marketing_extensions(
                     "departmentId": variant["_departmentId"],
                     "categoryId": variant["_categoryId"],
                     "discountPct": promotion["discountPct"],
+                    "discountBasis": "planned-offer",
                     "effectiveFrom": promotion["startDate"],
                     "effectiveTo": promotion["endDate"],
                 }

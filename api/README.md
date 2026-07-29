@@ -31,6 +31,12 @@ Two hard requirements:
 (`units = p50·(price/price0)^β`, revenue/margin, safety stock); call a Python scoring service only
 for model-backed scoring or the LLM copilot (OPEN — see `docs/OPEN_DECISIONS.md`).
 
+**Execution boundary:** Go implements the shared `retail-execution-profile/v1` schema and golden
+vectors natively; it does not import Python. Its adapter maps the `api` namespace into
+`GOMAXPROCS`, HTTP/background concurrency and PostgreSQL/DuckDB pool limits. Resolved non-secret
+values and saturation telemetry are operational metadata only and cannot alter response values,
+authorization, idempotency, fingerprints or guardrail decisions.
+
 **Spec:** §4.7–4.8 (HITL, lineage), §8 (screens), Architecture note.
 
 _No code yet — information only._

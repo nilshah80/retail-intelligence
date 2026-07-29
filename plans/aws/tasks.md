@@ -15,10 +15,16 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] CI/CD pipeline (build/test/deploy for `datagen/`, `ingestion/`, `ml/`, `api/`).
 - [ ] Build Python job images from the dependency/environment topology locked locally under
       decision #38; never merge the isolated datagen environment into downstream images.
+- [ ] Install the same versioned `execution/` package into each Python job image and run its
+      golden vectors in CI. Map named profiles to explicit Batch/SageMaker CPU/memory requests;
+      never auto-expand from instance size or put hardware controls in scenario/model configs.
 - [ ] **Exit:** `apply` stands up an empty, private, encrypted environment.
 
 ## Phase A1 — Data landing & ingest
 - [ ] Package `datagen/` as a job (AWS Batch or SageMaker Processing).
+- [ ] Pass a separately stored execution-profile YAML to datagen/ingestion jobs; retain the
+      resolved non-secret profile and stage telemetry in job/run manifests. Require the same
+      source and Gate outcomes under safe/ultra-performance before changing the default instance class.
 - [ ] Store the complete Config-Builder YAML/JSON artifact; publish Shopify-shaped, Business
       Central-shaped and companion snapshots plus source-run manifest to versioned S3 **raw**
       prefixes in their selected CSV/Parquet format; keep hidden truth and the single all-source
@@ -54,6 +60,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Response-rich IN+US cloud run reaches ≥25 actually gated series per enabled department in
       each market; sparse preset emits reason-coded `insufficient_evidence`.
 - [ ] Orchestrate with Step Functions / SageMaker Pipelines.
+- [ ] Apply the shared ML execution namespace to feature/fold/model concurrency and trainer
+      threads; prevent nested oversubscription against the explicit job CPU/memory request.
 - [ ] Artifacts + manifests + fingerprints to S3; log MLflow + SageMaker Model Registry.
 - [ ] Forecast acceptance/calibration enforced globally and per supported market in-pipeline.
 - [ ] **Exit:** one-click run yields accepted, fingerprinted forecast artifacts.
@@ -74,6 +82,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 ## Phase A4 — Go API & workflow
 - [ ] Containerize Go `api/`; push to ECR.
 - [ ] ECS Fargate service behind ALB / API Gateway.
+- [ ] Implement the Go resolver against the shared execution schema/golden vectors; map it to
+      `GOMAXPROCS`, HTTP/job concurrency and DB pools within the task CPU/memory allocation.
 - [ ] RDS wiring (workflow, audit, recs); Alembic migrations applied.
 - [ ] Cognito auth + RBAC; map roles/approval tiers.
 - [ ] Serve S3 artifacts with explicit market/currency; re-resolve the same market guardrail

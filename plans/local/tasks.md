@@ -20,6 +20,42 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       Phase 4 Inventory/Replenishment → Phase 5 Pricing/Competitor/Promotion → Phase 6 governed
       approval/override. Phase 7 completes integration and removes remaining core-screen stubs.
 
+## Cross-phase execution profiles `[HARDWARE-SCALED, LOGIC-STABLE]`
+
+- [x] Define a versioned operational execution-profile contract with named `safe`, `balanced`,
+      `performance`, `ultra-performance` and `custom` profiles for datagen, ingestion, ML and API. Keep CPU/thread/
+      process counts, memory ceilings, buffers, connection pools and temporary-work locations
+      separate from scenario, canonical-data, model/policy and API-contract configuration.
+- [x] Put the shared schema, named-profile definitions, override/validation rules and golden
+      vectors under the neutral independently installable `execution/` package—not canonical
+      `contracts/`. Use layer
+      namespaces (`datagen`, `ingestion`, `ml`, `api`) so common fields are consistent without
+      pretending that a process pool, model trainer and Go connection pool have the same
+      lifecycle.
+- [x] Implement one small source-neutral Python execution-profile resolver package now and make
+      datagen consume it. Decision #38 still governs whether ingestion/ML have separate
+      environments, not whether they reuse this independently installable package. Keep it free
+      of retail schema/business logic; do not copy three drifting parsers.
+- [ ] Implement a thin Go resolver in `api/` against the same schema, precedence rules and golden
+      vectors. Share the contract and behavior across Python/Go, not Python runtime code or
+      layer-specific worker/pool implementations.
+- [ ] Give every layer a narrow adapter from the resolved shared profile into its native engine.
+      The Phase-1 datagen adapter is complete for market/partition/DuckDB workers, memory and
+      spools; ingestion scan/transform/write, ML feature/fold/model and API goroutine/replica/
+      connection-pool adapters land in their owning phases. Keep engine ownership and cleanup
+      within that layer.
+- [ ] Make the resolved execution profile visible in each run/build/deployment manifest. Datagen
+      now records its resolved profile and telemetry without affecting run identity; ingestion,
+      ML and API manifests still need the same rule. Exclude hardware tuning from
+      source-run identity, canonical fingerprints and business/model semantics.
+- [x] Establish override precedence (`explicit CLI/env > profile document > selected named
+      profile > safe default`), validate impossible/oversubscribed datagen combinations before
+      work starts, and never infer an unbounded setting from total host RAM/CPU.
+- [ ] Emit per-stage wall time, peak RSS, CPU utilization, worker/thread counts, spill/temp bytes
+      and output bytes in every layer. Datagen telemetry and its disposable safe/performance/
+      ultra-performance
+      benchmark are complete; ingestion, ML and API add their metrics/benchmarks in their phases.
+
 ## Phase 1 — Config Builder and synthetic source generation `[FIRST]`
 
 **1.1 Reuse audit and isolation**
@@ -196,9 +232,74 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       derivative: 28 main-DC opening days, no forced opening stockouts and a 25% observed-demand
       buffer produce 92.44% fill overall; the March dip is caused by 192 POs still in transit at
       the artificial extract boundary, not by cold start or the constant COVID step phase.
-- [ ] Execute the complete v0.9.2 `2021-01-01`–`2026-07-27` current-volume run and measure
-      long-horizon fill, elasticity recovery, lifecycle stages, holiday peaks, within-series
-      overdispersion and autocorrelation; the disposable boundary slice is not a substitute.
+- [x] Measure the v0.9.2 `2016-07-28`–`2026-07-28` Config-Builder run as historical
+      performance/source evidence only, then remove its obsolete local folder after v10
+      acceptance:
+      `run-98abf242ff98ddc0`: 137 datasets, 9,480 authoritative Parquet objects,
+      295,522,648 rows, 11,692,994 orders, 30,761,542 realized units and one verified
+      12,614,119,424-byte DuckDB mirror. Measured fill is 93.4571%; identical regeneration
+      reverified hashes and returned `reused: true`.
+- [x] Replace run-sized Python projection lists with private bounded row spools; prune
+      replenishment evidence to its causal trailing 28-day window; publish independent month
+      partitions with deterministic worker parity; cap DuckDB through runtime controls that do
+      not affect run identity.
+- [x] Replace the 750-identities-per-market order hash with Config Builder-owned opening
+      population, annual acquisition, churn/reactivation, guest checkout, opening history and
+      max-orders-per-customer/day controls. Publish multi-year direct-identifier-free Shopify/BC
+      customer masters and explicit BC walk-in accounts.
+- [x] Verify the v0.10.0 two-worker/4-GiB execution path on the complete 90-day showcase:
+      78,818 orders, 47.02 seconds and 648,462,336-byte peak process RSS, with authoritative
+      bytes equal between one- and two-worker publication.
+- [x] Exercise the larger 720-SKU/125k-opening-customers-per-market profile over Jan–Mar 2026,
+      including its grand-opening event: 123,491 orders, 76.88 seconds and 850,034,688-byte
+      peak RSS with disposable output cleaned automatically.
+- [x] Generate and measure the corrected v0.10.0/v10 predecessor on the
+      16-GB-available demo profile: 1h40m28.55s, 7.27-GiB peak RSS, 10,198 Parquet objects,
+      297,619,898 rows and a 12,839,563,264-byte DuckDB mirror. Customer creation spans
+      2011–2026; guest share is 18.03% IN / 18.02% US; registered-customer order-count
+      `p25/p50/p75/p90/p99` is `3/7/14/25/51` IN and `3/7/14/24/50` US; max customer/day
+      is two and both Shopify/BC orphan counts are zero. This run was superseded and removed
+      when the v0.11.0 ultra run passed acceptance.
+- [x] Extend datagen execution scaling beyond the existing partition workers: add independent
+      `marketWorkers`, `partitionWorkers` and `duckdbThreads` controls while retaining the
+      memory ceiling and spool-chunk limit. Run causally independent markets in separate
+      processes; do not parallelize state transitions within one market/day.
+- [x] Add an **Execution profile** panel to the Config Builder and export a separate
+      execution-profile YAML using the shared contract alongside the scenario YAML. Changing
+      hardware settings must not change the scenario config hash, run ID, logical rows or
+      authoritative Parquet hashes.
+- [x] Add deterministic parity tests across one-worker and multi-process profiles, including
+      stable order/customer/source IDs, object catalogs and reconciliation totals. Prevent nested
+      oversubscription by stage-separating the market process pool, partition thread pool and
+      DuckDB thread pool rather than multiplying all three concurrently.
+- [x] Benchmark the same disposable 90-day showcase under safe, performance and
+      ultra-performance profiles. The comparable three-way run measured 47.325s / 41.778s /
+      41.612s on the 16-core M4 Max: ultra is 12.1% faster than safe but only 0.4% faster than
+      performance for this two-market workload. All 534 authoritative hashes and controls
+      matched, and temporary outputs were removed.
+- [x] Generate and retain the full v0.11.0 ten-year configuration under ultra-performance:
+      `run-b8c4cceba05eb61a`, 1h26m50.27s, 17.56-GiB peak process RSS, 63,820,489,478 temporary
+      work bytes before cleanup, 10,198 Parquet objects, 297,619,898 source rows and a
+      12,938,129,408-byte DuckDB mirror. Immutable reuse verification completed in 7.52s. This
+      run is now benchmark evidence only because it predates v0.12.0/v11 corrections.
+- [x] Resolve the pre-Phase-2 datagen review blockers in v0.12.0/v11: reconcile source tax/PO/
+      receipt/customer/ledger identities, bound partition and batch working state, enforce strict
+      execution profiles, replace periodic price and symmetric-season artifacts, correct retail
+      calendars and promotion attribution/payback, emit true multi-channel SKU-day demand, and
+      keep the Config Builder/YAML presets synchronized. Carry regular-price state across years;
+      normalize continuous annual seasonality to mean one; normalize volume against the annual
+      live assortment; publish collision-free BC invoice numbers; drive online-share start/end/SKU
+      variation from HTML-authored market controls; validate every execution-profile layer from
+      the packaged schema; and keep standalone `pip install -e datagen` working by packaging the
+      shared runtime from its single source. Replace the 10-year preset's 240-day overstock with
+      42/14-day node cover and 2% constrained-SKU evidence.
+- [ ] Generate, accept and pin the full v0.12.0/v11 ten-year configuration before Phase 2
+      landing starts. Record the new run/config/manifest hashes, row/object totals, runtime,
+      process RSS, reconciliation checks and forecast-realism acceptance measurements.
+- [ ] Run equivalent full ten-year v0.11.0 safe and performance measurements only when two
+      additional ~19-GB disposable outputs and multi-hour runs are scheduled. The 90-day parity
+      benchmark already proves logical equivalence; this is optional performance evidence, not a
+      blocker to generating the replacement v0.12.0/v11 source run.
 - [ ] Shopify, BC and companion outputs land successfully in Phase 2.
 - [x] The first pricing milestone is explicitly revenue-only; no margin amount/objective is
       implied unless the optional receipt/cost projection is enabled.
@@ -227,6 +328,9 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Separate entity ownership (`[in]` / `[poc]` / `[cfg]` / `[test]`) from row provenance.
 - [ ] Publish source-profile, coverage/capability, staging, transform, mapping/crosswalk,
       reconciliation and quarantine contracts.
+- [ ] Add a canonical `[in]` market-disruption observation contract for public pandemic
+      timeline/signal evidence so Phase-3 features do not discard configured COVID effects;
+      hidden `_truth` demand factors remain test-only.
 - [ ] Seed guardrail YAMLs (`pricing_rules`, `policy`, `price_response`) and data dictionary;
       implement decision #39 global dimensionless defaults + deterministic market/currency
       resolution, with absolute price/grid/ending rules required per market.
@@ -235,7 +339,17 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Publish shared resolved-policy golden vectors for byte-identical Python/Go validation.
 
 **2.2 Landing and Gate A**
-- [ ] Immutable raw landing with landing time, content hashes and idempotent replay.
+- [x] Select the immutable Phase-2 input as `run-b8c4cceba05eb61a`, config hash
+      `d52f5b629cd43243407618e9884ef25d6ac595933d317dcd6bae63fb83a89f50` and
+      manifest-file SHA-256
+      `901741cfac7b94e2208ccbbc0a34e0fd5e298efe31aae7d81805c3054568f6c1`;
+      never select “latest” or silently regenerate with another seed.
+- [ ] Land that exact run folder into an immutable raw/object-store prefix. Keep public source
+      objects separate from restricted `_truth` and the all-source DuckDB permission lane.
+      `run-98abf242ff98ddc0` remains ineligible because it predates the v10
+      customer-population and bounded-memory contract.
+- [ ] Immutable raw landing with landing time, content hashes and idempotent replay; land public
+      source objects and restricted `_truth`/all-source DuckDB into separate permission lanes.
 - [ ] Accept datagen/retailer-provided manifests when present; otherwise build the ingestion
       manifest, coverage inventory, controls and hashes from landed data/profile.
 - [ ] Gate A validates files/objects, parseability, source keys, extract window, resolved mapping
@@ -290,21 +404,51 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Extended tests are enabled with the matching Phase-1.6 fixture: fulfillment/return/refund
       histories, HMAC/ID parity, full inventory states, receipts/inbound/batches/suppliers,
       promotion depth and competitor matching.
+- [ ] Benchmark full-pin and incremental-month ingestion by stage (wall time, peak RSS,
+      rows/partitions scanned and output bytes); lock performance SLAs from measured evidence,
+      and fail accidental full-history scans where partition pruning is expected.
+- [ ] Apply the shared execution-profile contract to ingestion scan workers, transform workers,
+      DuckDB threads, memory/spill ceilings and partition-write concurrency. Prove safe and
+      ultra-performance profiles produce identical accepted/quarantined row sets, controls, hashes
+      and Gate A/B outcomes; use the common Python resolver rather than an ingestion-only parser.
 - [ ] Freeze common API envelopes plus Data Management/quality read models; implement the initial
       read-only Go API slice over ingest runs, source coverage, reconciliation and quarantine.
-- [ ] Scaffold the runtime UI using the selected framework and replace its Data Management stubs
-      with the live Phase-2 API slice.
-- [ ] **Demo checkpoint 2:** run Config Builder → source generation → ingestion and show live
-      landing, Gate A/B, coverage, reconciliation and quarantine status in the dashboard.
+- [ ] Scaffold the runtime UI as soon as the screen contract is frozen; use visibly labelled
+      deterministic stubs, then replace panels independently with the matching live Phase-2 API
+      slice.
+- [ ] **Demo 2A:** after Gate A, show the retained source run, landing inventory, source
+      controls/hashes and Gate-A results live in the dashboard.
+- [ ] **Demo 2B:** after adapters/staging, add live coverage, reconciliation and reason-coded
+      quarantine while Gate B remains visibly pending.
+- [ ] **Demo 2C / Phase-2 exit:** add live Gate B, capability mask, curated publication and
+      oracle-control status. Do not wait for Demand Forecasting or Pricing to begin this UI work.
 - [ ] **Exit:** refs and controls hold; derivations are visible; curated capability-complete
       tables materialize; downstream code is source-neutral.
 
 ## Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
-- [ ] Weekly PIT feature build (+ competitor/weather/event/macro drivers).
+- [ ] Implement ML execution profiles for feature-build workers, rolling-origin/fold workers,
+      market/model workers, threads per model, memory ceilings and spill/cache paths. Schedule
+      independent markets, series groups and backtest folds concurrently without multiplying
+      nested thread pools beyond the resolved CPU/memory budget; consume the same common Python
+      resolver used by datagen and ingestion.
+- [ ] Separate execution tuning from feature/model/policy specifications and artifact identity.
+      Fix every RNG seed; enable deterministic trainer settings; require equivalent features,
+      predictions, metrics, SHAP group totals and acceptance decisions across safe and
+      ultra-performance profiles (byte-identical artifacts where the library supports it, otherwise
+      declared numeric tolerances).
+- [ ] Record stage-level ML telemetry and benchmark the full pinned-data feature build,
+      rolling-origin backtest and training run on both the 16-GB-available demo profile and a
+      high-performance profile. Fail closed on OOM risk and fall back to bounded batching rather
+      than silently reducing horizons, markets, series or validation folds.
+- [ ] Characterize the retained curated demand series before fitting: lifecycle stages,
+      holiday/event peak ratios, zero-day share, overdispersion and autocorrelation. Treat these
+      as model-routing/evaluation evidence, not as a reason to regenerate the pinned source run.
+- [ ] Weekly PIT feature build (+ competitor/weather/event/market-disruption/macro drivers).
 - [ ] Join market-local calendars by market/calendar key; add market/country features and use
       dimensionless or local-normalized prices rather than raw cross-currency levels.
-- [ ] Join weather/event/macro/promotion/competitor features only by `market_id` plus resolved
-      `geo_scope_*` or structured promotion applicability; assert no unqualified region-only join.
+- [ ] Join weather/event/market-disruption/macro/promotion/competitor features only by
+      `market_id` plus resolved `geo_scope_*` or structured promotion applicability; assert no
+      unqualified region-only join.
 - [ ] LightGBM horizon-quantile P50/P90, **horizons → 26 wk**; Croston routing.
 - [ ] Baselines + FVA; metrics WAPE / bias / `accuracy = 100·(1−WAPE)`.
 - [ ] Rolling-origin backtest + acceptance gates (≥25% vs seasonal-naive; P90 coverage 0.85–0.95; monotonic).
@@ -361,6 +505,19 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       response-rich and sparse-evidence outcomes; unavailable margin is omitted, not synthesized.
 
 ## Phase 6 — Go API, workflow & governance (`api/`, `db/`)
+- [ ] Implement API execution profiles for `GOMAXPROCS`, replica count, HTTP concurrency,
+      PostgreSQL/DuckDB connection pools, background-job workers, queue depth, request/body
+      limits, timeouts and memory budgets. Resolve them from deployment config/environment,
+      never from retailer business configuration or request payloads; use the Go resolver that
+      passes the shared execution-profile golden vectors.
+- [ ] Prevent pool/thread oversubscription across replicas and keep scarce DuckDB writers
+      serialized while allowing bounded concurrent readers. Expose the resolved non-secret
+      profile and saturation/queue/pool metrics through operations telemetry.
+- [ ] Load-test safe, balanced, performance and ultra-performance profiles with the same read, simulation and
+      approval workloads. Require identical response values, fingerprints, authorization,
+      idempotency and guardrail decisions; performance tuning may change latency/throughput only.
+      Publish p50/p95/p99 latency, throughput, error rate, peak RSS/CPU and pool saturation, then
+      set explicit demo and production-like acceptance budgets.
 - [ ] Alembic migrations (`db/`): reuse M5 workflow tables; add `retail_v2` domain/output tables
       plus `ingest_runs`, reconciliation, quality/quarantine, approved source-mapping config and
       runtime source-crosswalk tables.

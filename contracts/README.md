@@ -8,6 +8,10 @@ artifacts derived from it. Raw retailer/platform/datagen schemas do not have to 
 specification and source-run manifest; the profile/adapter in `ingestion/` is the boundary between
 that source contract and this canonical contract.
 
+Hardware/runtime tuning is also deliberately outside this canonical contract. The neutral
+`execution/` package owns versioned execution-profile definitions and Python golden vectors;
+it contains no retailer, source or canonical schema.
+
 **Planned contents:**
 - **`retail_v2` schema** — canonical entity/grain/column definitions (the authoritative version
   of spec §11): versioned sales, exact money, adjustments and demand-to-supply fulfillment facts;

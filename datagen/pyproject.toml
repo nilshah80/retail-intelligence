@@ -1,6 +1,6 @@
 [project]
 name = "retail-intelligence-datagen"
-version = "0.9.2"
+version = "0.12.0"
 description = "Independent multi-market Shopify/Business Central synthetic source generator"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,9 +18,18 @@ retail-datagen = "retail_datagen.cli:main"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = [
+    "retail_datagen",
+    "retail_execution",
+    "retail_execution.data",
+    "retail_execution.data.v1",
+]
+package-dir = {retail_datagen = "src/retail_datagen", retail_execution = "../execution/src/retail_execution"}
+
+[tool.setuptools.package-data]
+retail_execution = ["data/v1/*.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "../execution/src"]
 testpaths = ["tests"]

@@ -4,17 +4,20 @@ import csv
 import base64
 import hashlib
 import hmac
+import io
 import json
 import re
 import tempfile
 import unittest
 from copy import deepcopy
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import duckdb
 
+from retail_execution import named_profiles, resolve_profile
 from retail_datagen.catalog_packs import (
     CATALOG_PACK_METADATA,
     CATALOG_PACKS,
@@ -23,6 +26,9 @@ from retail_datagen.catalog_packs import (
     build_catalog,
 )
 from retail_datagen.config import ConfigError, load_config, validate_config
+from retail_datagen.cli import main as cli_main
+from retail_datagen.customers import CustomerPopulation
+from retail_datagen.extensions import _allocate_tax_components
 from retail_datagen.generator import _effective_list_price, generate
 from retail_datagen.identity import (
     bc_uuid,
@@ -37,10 +43,21 @@ from retail_datagen.lifecycle import (
 )
 from retail_datagen.calendar import holidays_for_range
 from retail_datagen.simulation import (
+    _annual_price_schedule,
+    _average_active_portfolio_weight,
+    _channel_distribution,
+    _holiday_demand_factor,
+    _pandemic_effect,
     _portfolio_weight,
     _price_for_day,
+    _promotional_price,
     _purchase_quantities,
+    _recent_promotions,
+    _seasonality_factor,
+    _temperature,
 )
+from retail_datagen.spool import RowSpool
+from retail_datagen.writer import SourceWriter
 
 DATAGEN_ROOT = Path(__file__).resolve().parents[1]
 SHOWCASE = DATAGEN_ROOT / "configs" / "multi-market-showcase.yaml"
@@ -48,6 +65,7 @@ LONG_HISTORY = DATAGEN_ROOT / "configs" / "multi-market-20-year-history.yaml"
 CURRENT_VOLUME = (
     DATAGEN_ROOT / "configs" / "multi-market-2021-current-volume.yaml"
 )
+DEMO_DECADE = DATAGEN_ROOT / "configs" / "multi-market-10-year-demo.yaml"
 
 
 def dataset_rows(base: Path, logical_path: str) -> list[dict[str, str]]:
@@ -285,7 +303,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_all_locale_packs_define_tax_components_and_operational_defaults(self) -> None:
         for country, pack in LOCALE_PACKS.items():
-            self.assertEqual(pack["version"], "2026.3")
+            self.assertEqual(pack["version"], "2026.5")
             self.assertTrue(pack["tax"]["components"]["intraRegion"])
             self.assertTrue(pack["tax"]["components"]["interRegion"])
             for scope in ("intraRegion", "interRegion"):
@@ -348,6 +366,59 @@ class ConfigTests(unittest.TestCase):
             {"2022-09-16"},
         )
 
+    def test_demo_decade_preset_has_multistore_volume_and_disruptions(self) -> None:
+        config = load_config(DEMO_DECADE)
+        self.assertEqual(config["time"]["startDate"], "2016-07-28")
+        self.assertEqual(config["time"]["endDate"], "2026-07-28")
+        self.assertEqual(len(config["stores"]), 4)
+        self.assertEqual(len(config["warehouses"]), 4)
+        self.assertEqual(
+            {market["demand"]["startingDailyOrders"] for market in config["markets"]},
+            {1_200},
+        )
+        self.assertEqual(
+            sum(
+                market["demand"]["startingDailyOrders"]
+                * sum(
+                    store["demandScale"]
+                    for store in config["stores"]
+                    if store["marketId"] == market["marketId"]
+                )
+                for market in config["markets"]
+            ),
+            2400,
+        )
+        self.assertEqual(
+            {row["pandemicId"] for row in config["pandemics"]},
+            {"zika-2016", "covid-19", "mpox-2022"},
+        )
+        self.assertEqual(
+            {
+                row["marketId"]
+                for row in config["events"]
+                if row["eventId"].startswith("northstar-grand-opening-")
+            },
+            {"india-mumbai", "us-new-york"},
+        )
+        self.assertEqual(
+            {
+                warehouse["warehouseId"]: warehouse[
+                    "openingStockDaysOfCover"
+                ]
+                for warehouse in config["warehouses"]
+            },
+            {
+                "mumbai-dc": 42,
+                "pune-overflow": 14,
+                "newark-dc": 42,
+                "brooklyn-mfc": 14,
+            },
+        )
+        self.assertEqual(
+            config["operations"]["inventory"]["stockoutSkuRate"],
+            0.02,
+        )
+
     def test_builder_locale_packs_match_python_contract(self) -> None:
         html = (DATAGEN_ROOT / "config-builder.html").read_text(encoding="utf-8")
         match = re.search(
@@ -374,6 +445,7 @@ class ConfigTests(unittest.TestCase):
             ("showcasePreset", SHOWCASE),
             ("historyPreset", LONG_HISTORY),
             ("volumePreset", CURRENT_VOLUME),
+            ("demoDecadePreset", DEMO_DECADE),
         ):
             match = re.search(
                 rf'<script id="{element_id}" type="application/json">\s*(.*?)\s*</script>',
@@ -385,6 +457,35 @@ class ConfigTests(unittest.TestCase):
                 json.loads(match.group(1)),
                 load_config(path),
             )
+
+    def test_builder_execution_profiles_match_shared_contract(self) -> None:
+        html = (DATAGEN_ROOT / "config-builder.html").read_text(encoding="utf-8")
+        match = re.search(
+            r'<script id="executionProfiles" type="application/json">\s*(.*?)\s*</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        embedded = json.loads(match.group(1))
+        expected = {
+            profile_name: {
+                "schemaVersion": "retail-execution-profile/v1",
+                "profile": profile_name,
+                "datagen": profile["datagen"],
+            }
+            for profile_name, profile in named_profiles().items()
+        }
+        self.assertEqual(embedded, expected)
+        self.assertIn('id="downloadExecutionYaml"', html)
+        self.assertIn("function executionYamlPayload()", html)
+        self.assertIn(
+            'if(next.schemaVersion==="retail-execution-profile/v1")',
+            html,
+        )
+        self.assertIn(
+            '["safe","balanced","performance","ultra-performance","custom"]',
+            html,
+        )
 
     def test_json_config_remains_supported(self) -> None:
         config = load_config(SHOWCASE)
@@ -400,6 +501,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('src="vendor/js-yaml.min.js"', html)
         self.assertIn("jsyaml.safeDump", html)
         self.assertIn("jsyaml.safeLoad", html)
+        self.assertIn("let cfg = clone(DEMO_DECADE);", html)
 
     def test_builder_exposes_complete_catalog_and_lifecycle_contract(self) -> None:
         html = (DATAGEN_ROOT / "config-builder.html").read_text(encoding="utf-8")
@@ -413,8 +515,34 @@ class ConfigTests(unittest.TestCase):
             "catalog.productTemplates.${index}.launchProfile",
             "catalog.productTemplates.${index}.variantLaunchSpreadDays",
             "categoryAssortmentWeights",
+            "demand.onlineShareStart",
+            "demand.onlineShareEnd",
+            "demand.onlineShareSkuVariation",
         ):
             self.assertIn(path, html)
+
+    def test_builder_owns_customer_population_and_acquisition_controls(self) -> None:
+        html = (DATAGEN_ROOT / "config-builder.html").read_text(encoding="utf-8")
+        for field in (
+            "openingRegisteredCustomers",
+            "annualNewCustomers",
+            "annualChurnRate",
+            "annualReactivationRate",
+            "guestCheckoutRate",
+            "openingCustomerHistoryYears",
+            "maxOrdersPerCustomerPerDay",
+        ):
+            self.assertIn(field, html)
+        config = load_config(DEMO_DECADE)
+        for market in config["markets"]:
+            self.assertEqual(
+                market["customerPopulation"]["openingRegisteredCustomers"],
+                125_000,
+            )
+            self.assertEqual(
+                market["customerPopulation"]["annualNewCustomers"],
+                40_000,
+            )
 
     def test_package_does_not_import_downstream_modules(self) -> None:
         banned = re.compile(r"^\s*(from|import)\s+(contracts|ingestion|ml|api)(\.|\s|$)")
@@ -452,6 +580,545 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(len(names), 100_000)
         self.assertEqual(shopify_order_name(1), "#1001")
         self.assertEqual(shopify_order_name(100_000), "#101000")
+
+
+class DemandRealismTests(unittest.TestCase):
+    def test_tax_component_allocation_reconciles_exactly(self) -> None:
+        for country, total in (("IN", Decimal("53.39")), ("US", Decimal("8.87"))):
+            components = LOCALE_PACKS[country]["tax"]["components"]["intraRegion"]
+            allocations = _allocate_tax_components(total, components)
+            self.assertEqual(sum(allocations, Decimal("0")), total)
+
+    def test_annual_portfolio_denominator_removes_lifecycle_volume_ramp(self) -> None:
+        variants = [
+            {
+                "_launchDate": "2025-01-01",
+                "_discontinueDate": "2025-06-30",
+                "_demandWeight": "1",
+                "_catalogFamily": "toys-games",
+            },
+            {
+                "_launchDate": "2025-07-01",
+                "_discontinueDate": "",
+                "_demandWeight": "1",
+                "_catalogFamily": "toys-games",
+            },
+            {
+                "_launchDate": "2025-01-01",
+                "_discontinueDate": "",
+                "_demandWeight": "2",
+                "_catalogFamily": "toys-games",
+            },
+        ]
+        period_start = date(2025, 1, 1)
+        period_end = date(2025, 12, 31)
+        denominator = _average_active_portfolio_weight(
+            variants,
+            period_start,
+            period_end,
+        )
+        normalized_daily_totals = []
+        for offset in range(365):
+            day = period_start + timedelta(days=offset)
+            normalized_daily_totals.append(
+                sum(
+                    (
+                        _portfolio_weight(variant) / denominator
+                        for variant in variants
+                        if date.fromisoformat(variant["_launchDate"]) <= day
+                        and (
+                            not variant["_discontinueDate"]
+                            or day
+                            <= date.fromisoformat(
+                                variant["_discontinueDate"]
+                            )
+                        )
+                    ),
+                    Decimal("0"),
+                )
+            )
+        self.assertAlmostEqual(
+            float(
+                sum(normalized_daily_totals, Decimal("0"))
+                / Decimal(365)
+            ),
+            1.0,
+            places=12,
+        )
+
+    def test_retail_events_and_closed_holidays_have_opposite_effects(self) -> None:
+        us_holidays = holidays_for_range(
+            LOCALE_PACKS["US"],
+            date(2025, 11, 27),
+            date(2025, 12, 1),
+        )
+        self.assertEqual(
+            {(row["date"], row["name"]) for row in us_holidays},
+            {
+                ("2025-11-27", "Thanksgiving"),
+                ("2025-11-28", "Black Friday"),
+                ("2025-12-01", "Cyber Monday"),
+            },
+        )
+        self.assertLess(
+            _holiday_demand_factor(
+                [
+                    {
+                        "name": "Thanksgiving",
+                        "retailBehavior": "closed",
+                    }
+                ],
+                country_code="US",
+                channel_type="store",
+            ),
+            Decimal("0.10"),
+        )
+        self.assertGreater(
+            _holiday_demand_factor(
+                [
+                    {
+                        "name": "Black Friday",
+                        "retailBehavior": "retail-peak",
+                    }
+                ],
+                country_code="US",
+                channel_type="store",
+            ),
+            Decimal("3"),
+        )
+        christmas = holidays_for_range(
+            LOCALE_PACKS["US"],
+            date(2022, 12, 25),
+            date(2022, 12, 26),
+        )
+        self.assertEqual(
+            {
+                row["name"]: row["retailBehavior"]
+                for row in christmas
+            },
+            {
+                "Christmas": "closed",
+                "Christmas (observed)": "observance",
+            },
+        )
+        german = holidays_for_range(
+            LOCALE_PACKS["DE"],
+            date(2025, 11, 28),
+            date(2025, 12, 25),
+        )
+        self.assertIn(
+            ("Black Friday", "retail-peak"),
+            {
+                (row["name"], row["retailBehavior"])
+                for row in german
+            },
+        )
+        self.assertIn(
+            ("Erster Weihnachtstag", "closed"),
+            {
+                (row["name"], row["retailBehavior"])
+                for row in german
+            },
+        )
+
+    def test_seasonality_is_continuous_mean_one_and_peaks_in_december(self) -> None:
+        year_start = date(2025, 1, 1)
+        values = [
+            (
+                year_start + timedelta(days=offset),
+                _seasonality_factor(
+                    12,
+                    Decimal("0.48"),
+                    year_start + timedelta(days=offset),
+                ),
+            )
+            for offset in range(365)
+        ]
+        self.assertAlmostEqual(
+            float(sum((value for _, value in values), Decimal("0")) / 365),
+            1.0,
+            places=12,
+        )
+        monthly = {
+            month: sum(
+                (value for day, value in values if day.month == month),
+                Decimal("0"),
+            )
+            / sum(1 for day, _ in values if day.month == month)
+            for month in range(1, 13)
+        }
+        self.assertGreater(monthly[12], monthly[11] * Decimal("1.50"))
+        self.assertLess(monthly[1], monthly[11] * Decimal("0.40"))
+        daily_changes = [
+            abs(later - earlier)
+            for (_, earlier), (_, later) in zip(values, values[1:])
+        ]
+        self.assertLess(max(daily_changes), Decimal("0.45"))
+
+    def test_price_changes_are_irregular_sticky_and_bounded(self) -> None:
+        event_days, adjustments = _annual_price_schedule(
+            "response-rich",
+            12,
+            "SKU-PRICE-001",
+            2025,
+            365,
+            2020,
+        )
+        gaps = [
+            later - earlier
+            for earlier, later in zip(event_days, event_days[1:])
+        ]
+        self.assertGreater(len(set(gaps)), 2)
+        self.assertTrue(
+            all(
+                Decimal("-0.08") <= Decimal(value) <= Decimal("0.12")
+                for value in adjustments
+            )
+        )
+        self.assertNotEqual(
+            tuple(adjustments[:5]),
+            ("-0.18", "-0.09", "0", "0.09", "0.18"),
+        )
+        _, next_adjustments = _annual_price_schedule(
+            "response-rich",
+            12,
+            "SKU-PRICE-001",
+            2026,
+            365,
+            2020,
+        )
+        self.assertEqual(next_adjustments[0], adjustments[-1])
+        market = load_config(SHOWCASE)["markets"][1]
+        december_price = _price_for_day(
+            Decimal("100"),
+            market,
+            "SKU-PRICE-001",
+            date(2025, 12, 31),
+            date(2020, 1, 1),
+            date(2026, 12, 31),
+            inflation_anchor=date(2020, 1, 1),
+        )
+        january_price = _price_for_day(
+            Decimal("100"),
+            market,
+            "SKU-PRICE-001",
+            date(2026, 1, 1),
+            date(2020, 1, 1),
+            date(2026, 12, 31),
+            inflation_anchor=date(2020, 1, 1),
+        )
+        self.assertGreater(january_price, december_price * Decimal("0.98"))
+
+    def test_promotional_price_is_stable_and_respects_cost_floor(self) -> None:
+        market = deepcopy(load_config(SHOWCASE)["markets"][1])
+        market["priceDynamics"]["profile"] = "stable"
+        variant = {
+            "sku": "SKU-PROMO-001",
+            "_baseCost": Decimal("70"),
+            "_launchDate": "2024-01-01",
+        }
+        prices = {
+            _promotional_price(
+                Decimal("100"),
+                variant,
+                market,
+                day,
+                date(2025, 1, 1),
+                date(2025, 12, 31),
+                Decimal("0.50"),
+                "fixed-window",
+                "campaign",
+            )
+            for day in (
+                date(2025, 11, 20),
+                date(2025, 11, 24),
+                date(2025, 11, 30),
+            )
+        }
+        self.assertEqual(len(prices), 1)
+        self.assertGreaterEqual(next(iter(prices)), Decimal("71.40"))
+        self.assertLess(
+            _promotional_price(
+                Decimal("100"),
+                variant,
+                market,
+                date(2025, 11, 24),
+                date(2025, 1, 1),
+                date(2025, 12, 31),
+                Decimal("0.50"),
+                "fire-sale",
+                "fire-sale",
+            ),
+            Decimal("71.40"),
+        )
+
+    def test_disabled_promotion_signal_cannot_emit_phantom_payback(self) -> None:
+        config = load_config(DEMO_DECADE)
+        promotion = config["promotions"][0]
+        market = next(
+            row
+            for row in config["markets"]
+            if row["marketId"] == promotion["marketId"]
+        )
+        payback_day = date.fromisoformat(promotion["endDate"]) + timedelta(days=1)
+        self.assertTrue(_recent_promotions(config, market, payback_day))
+        market["signals"]["promotions"] = False
+        self.assertEqual(_recent_promotions(config, market, payback_day), [])
+
+    def test_channel_mix_is_persistent_and_responds_to_online_regimes(self) -> None:
+        store = {
+            "storeId": "store-1",
+            "channelIds": ["online", "store"],
+        }
+        variant = {"sku": "SKU-CHANNEL-001"}
+        channel_types = {"online": "online", "store": "store"}
+        config = load_config(DEMO_DECADE)
+        market = config["markets"][1]
+
+        def distribution(day: date) -> dict[str, Decimal]:
+            return dict(
+                _channel_distribution(
+                    2026,
+                    store,
+                    variant,
+                    channel_types,
+                    market,
+                    day,
+                    date.fromisoformat(config["time"]["startDate"]),
+                    date.fromisoformat(config["time"]["endDate"]),
+                )
+            )
+
+        opening = distribution(date.fromisoformat(config["time"]["startDate"]))
+        closing = distribution(date.fromisoformat(config["time"]["endDate"]))
+        self.assertEqual(sum(opening.values(), Decimal("0")), Decimal("1"))
+        self.assertEqual(sum(closing.values(), Decimal("0")), Decimal("1"))
+        self.assertTrue(all(weight > 0 for weight in opening.values()))
+        self.assertLess(opening["online"], Decimal("0.15"))
+        self.assertGreater(closing["online"], opening["online"] + Decimal("0.15"))
+        shifted_online = _pandemic_effect(
+            config,
+            date(2020, 4, 15),
+            "india-mumbai",
+            channel_type="online",
+        )["traffic"]
+        shifted_store = _pandemic_effect(
+            config,
+            date(2020, 4, 15),
+            "india-mumbai",
+            channel_type="store",
+        )["traffic"]
+        self.assertGreater(
+            shifted_online,
+            shifted_store,
+        )
+
+    def test_weather_has_persistent_temperature_and_rain_spells(self) -> None:
+        market = load_config(DEMO_DECADE)["markets"][0]
+        days = [
+            date(2024, 6, 1) + timedelta(days=offset)
+            for offset in range(120)
+        ]
+        observations = [_temperature(2026, market, day) for day in days]
+        temperatures = [float(row[0]) for row in observations]
+        mean = sum(temperatures) / len(temperatures)
+        numerator = sum(
+            (left - mean) * (right - mean)
+            for left, right in zip(temperatures, temperatures[1:])
+        )
+        denominator = sum((value - mean) ** 2 for value in temperatures)
+        self.assertGreater(numerator / denominator, 0.70)
+        wet = [row[1] > 0 for row in observations]
+        self.assertTrue(
+            any(
+                wet[index] and wet[index + 1] and wet[index + 2]
+                for index in range(len(wet) - 2)
+            )
+        )
+
+
+class CustomerPopulationTests(unittest.TestCase):
+    def test_population_grows_over_time_and_enforces_guest_and_daily_caps(self) -> None:
+        config = deepcopy(load_config(SHOWCASE))
+        start = date(2024, 1, 1)
+        end = date(2025, 12, 31)
+        population = CustomerPopulation(config, start, end)
+        market_id = config["markets"][0]["marketId"]
+        segment_id = config["customerSegments"][0]["segmentId"]
+        allocations = [
+            population.allocate(
+                market_id,
+                segment_id,
+                start,
+                f"order:{index:05d}",
+            )
+            for index in range(4_000)
+        ]
+        self.assertTrue(
+            all(
+                not key or date.fromisoformat(created) <= start
+                for key, created in allocations
+            )
+        )
+        assignments = [key for key, _ in allocations]
+        guests = sum(not key for key in assignments)
+        self.assertGreater(guests, 0)
+        self.assertLess(guests, len(assignments))
+        registered_counts: dict[str, int] = {}
+        for key in assignments:
+            if key:
+                registered_counts[key] = registered_counts.get(key, 0) + 1
+        self.assertLessEqual(
+            max(registered_counts.values()),
+            config["markets"][0]["customerPopulation"][
+                "maxOrdersPerCustomerPerDay"
+            ],
+        )
+
+        records = list(population.records([market_id]))
+        registered = [
+            row for row in records if row["segmentId"] != "walk-in"
+        ]
+        self.assertGreater(
+            len(registered),
+            config["markets"][0]["customerPopulation"][
+                "openingRegisteredCustomers"
+            ],
+        )
+        created_dates = {
+            row["createdAt"][:10]
+            for row in registered
+        }
+        self.assertLess(min(created_dates), start.isoformat())
+        self.assertGreater(max(created_dates), start.isoformat())
+        self.assertEqual(
+            sum(row["segmentId"] == "walk-in" for row in records),
+            1,
+        )
+
+    def test_row_spool_is_repeatable_and_deletes_private_work_state(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            spool = RowSpool(Path(root), "test", chunk_rows=7)
+            same_name = RowSpool(Path(root), "test", chunk_rows=7)
+            self.assertNotEqual(spool.path, same_name.path)
+            expected = [{"value": index} for index in range(25)]
+            spool.extend(expected)
+            self.assertEqual(len(spool), 25)
+            self.assertEqual(list(spool), expected)
+            self.assertEqual(list(spool), expected)
+            self.assertEqual(spool[-1], expected[-1])
+            path = spool.path
+            self.assertTrue(path.is_file())
+            spool.close()
+            self.assertFalse(path.exists())
+            self.assertEqual(len(spool), 0)
+            self.assertFalse(spool)
+            with self.assertRaises(IndexError):
+                _ = spool[-1]
+            same_name.close()
+
+    def test_row_spool_external_sort_is_bounded_and_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            spool = RowSpool(Path(root), "sort", chunk_rows=3)
+            rows = [
+                {"key": key, "sequence": sequence}
+                for sequence, key in enumerate((9, 1, 7, 3, 8, 2, 6, 4, 5, 0))
+            ]
+            spool.extend(rows)
+            self.assertEqual(
+                list(spool.iter_sorted(key=lambda row: row["key"], max_open_runs=2)),
+                sorted(rows, key=lambda row: row["key"]),
+            )
+            spool.close()
+
+
+class CliAndWriterTests(unittest.TestCase):
+    def test_plan_cli_accepts_the_same_execution_overrides_as_generate(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            cli_main(
+                [
+                    "plan",
+                    "-c",
+                    str(SHOWCASE),
+                    "--execution-profile",
+                    "safe",
+                    "--market-workers",
+                    "1",
+                    "--workers",
+                    "3",
+                    "--duckdb-threads",
+                    "2",
+                    "--memory-limit-gb",
+                    "6",
+                    "--spool-chunk-rows",
+                    "12000",
+                ]
+            )
+        self.assertEqual(
+            json.loads(stdout.getvalue())["executionProfile"]["datagen"],
+            {
+                "marketWorkers": 1,
+                "partitionWorkers": 3,
+                "duckdbThreads": 2,
+                "memoryLimitGb": 6.0,
+                "spoolChunkRows": 12000,
+            },
+        )
+
+    def test_cli_rejects_scenario_yaml_as_an_execution_profile(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+            cli_main(
+                [
+                    "plan",
+                    "-c",
+                    str(SHOWCASE),
+                    "--execution-profile-file",
+                    str(SHOWCASE),
+                ]
+            )
+        self.assertEqual(caught.exception.code, 1)
+        self.assertIn("unknown execution profile settings", stderr.getvalue())
+
+    def test_streaming_writer_handles_many_and_blank_date_partitions(self) -> None:
+        with tempfile.TemporaryDirectory() as output_root:
+            writer = SourceWriter(
+                output_root,
+                "writer-test",
+                "run-writer-test",
+                generation_partition="day",
+                source_format="csv",
+                workers=2,
+            )
+            rows = [
+                {
+                    "id": str(offset),
+                    "date": (
+                        ""
+                        if offset == 0
+                        else (
+                            date(2025, 1, 1) + timedelta(days=offset - 1)
+                        ).isoformat()
+                    ),
+                }
+                for offset in range(41)
+            ]
+            writer.write_dataset(
+                "companion/test/events.csv",
+                rows,
+                source_system="companion",
+                dataset="writerTestEvents",
+                fieldnames=("id", "date"),
+            )
+            self.assertEqual(len(writer.objects), 41)
+            self.assertTrue(
+                any(
+                    row["path"] == "companion/test/events.csv"
+                    for row in writer.objects
+                )
+            )
+            writer.abort()
 
 
 class GenerationTests(unittest.TestCase):
@@ -766,6 +1433,9 @@ class GenerationTests(unittest.TestCase):
             {row["promotionType"] for row in offers},
             {"runout-markdown", "clearance", "fire-sale"},
         )
+        self.assertTrue(
+            all(row["_skus"] == [old_variant["sku"]] for row in offers)
+        )
         self.assertEqual(
             runout["offerId"],
             lifecycle_offer_id(
@@ -979,12 +1649,49 @@ class GenerationTests(unittest.TestCase):
                 second["manifest"]["controlsByCurrency"],
             )
             first_objects = {
-                row["path"]: row["sha256"] for row in first["manifest"]["objects"]
+                row["path"]: row["sha256"]
+                for row in first["manifest"]["objects"]
+                if row["contentDeterminism"] == "byte"
             }
             second_objects = {
-                row["path"]: row["sha256"] for row in second["manifest"]["objects"]
+                row["path"]: row["sha256"]
+                for row in second["manifest"]["objects"]
+                if row["contentDeterminism"] == "byte"
             }
             self.assertEqual(first_objects, second_objects)
+            first_duckdb = next(
+                row
+                for row in first["manifest"]["objects"]
+                if row["dataset"] == "sourceRunDuckdb"
+            )
+            second_duckdb = next(
+                row
+                for row in second["manifest"]["objects"]
+                if row["dataset"] == "sourceRunDuckdb"
+            )
+            self.assertEqual(
+                first_duckdb["contentDeterminism"],
+                second_duckdb["contentDeterminism"],
+            )
+            with (
+                duckdb.connect(
+                    str(Path(first["outputBase"]) / first_duckdb["path"]),
+                    read_only=True,
+                ) as first_connection,
+                duckdb.connect(
+                    str(Path(second["outputBase"]) / second_duckdb["path"]),
+                    read_only=True,
+                ) as second_connection,
+            ):
+                catalog_sql = (
+                    "SELECT table_name, logical_path, source_system, dataset, "
+                    "source_rows, partition_count, restricted "
+                    "FROM source_dataset_catalog ORDER BY logical_path"
+                )
+                self.assertEqual(
+                    first_connection.execute(catalog_sql).fetchall(),
+                    second_connection.execute(catalog_sql).fetchall(),
+                )
 
             first_base = Path(first["outputBase"])
             self.assertEqual(
@@ -995,6 +1702,7 @@ class GenerationTests(unittest.TestCase):
                 ),
                 config,
             )
+
             self.assertEqual(
                 load_config(first_base / "resolved-config.yaml"),
                 config,
@@ -1041,6 +1749,22 @@ class GenerationTests(unittest.TestCase):
             )
             self.assertEqual(len(shopify_india), len(bc_india))
             self.assertEqual(
+                len({row["number"] for row in bc_india}),
+                len(bc_india),
+            )
+            india_ledger_sales = {
+                row["documentNumber"]
+                for row in dataset_rows(
+                    first_base,
+                    "business-central/bc-northstar-in/item_ledger_entries.csv",
+                )
+                if row["entryType"] == "Sale"
+            }
+            self.assertLessEqual(
+                india_ledger_sales,
+                {row["number"] for row in bc_india},
+            )
+            self.assertEqual(
                 sum(Decimal(row["totalPrice"]) for row in shopify_india),
                 sum(Decimal(row["totalAmountIncludingTax"]) for row in bc_india),
             )
@@ -1085,6 +1809,93 @@ class GenerationTests(unittest.TestCase):
                 {row["sku"] for row in bc_variants},
             )
             self.assertTrue(all(barcode_is_valid(row["barcode"]) for row in shopify_variants))
+
+    def test_execution_profiles_preserve_authoritative_bytes(self) -> None:
+        config = self._small_config()
+        config["identity"]["scenarioId"] = "test-execution-profile-parity"
+        config["time"]["endDate"] = config["time"]["startDate"]
+        with (
+            tempfile.TemporaryDirectory() as serial_root,
+            tempfile.TemporaryDirectory() as parallel_root,
+            tempfile.TemporaryDirectory() as ultra_root,
+        ):
+            serial = generate(
+                config,
+                serial_root,
+                execution_profile=resolve_profile(
+                    "safe",
+                    datagen_overrides={"partitionWorkers": 1},
+                    environment={},
+                ),
+            )
+            parallel = generate(
+                config,
+                parallel_root,
+                execution_profile=resolve_profile(
+                    "performance",
+                    datagen_overrides={
+                        "memoryLimitGb": 8,
+                        "partitionWorkers": 2,
+                        "duckdbThreads": 2,
+                        "spoolChunkRows": 1000,
+                    },
+                    environment={},
+                ),
+            )
+            ultra = generate(
+                config,
+                ultra_root,
+                execution_profile=resolve_profile(
+                    "ultra-performance",
+                    environment={},
+                ),
+            )
+            self.assertEqual(serial["runId"], parallel["runId"])
+            self.assertEqual(serial["runId"], ultra["runId"])
+            serial_objects = {
+                row["path"]: row["sha256"]
+                for row in serial["manifest"]["objects"]
+                if row["contentDeterminism"] == "byte"
+            }
+            parallel_objects = {
+                row["path"]: row["sha256"]
+                for row in parallel["manifest"]["objects"]
+                if row["contentDeterminism"] == "byte"
+            }
+            ultra_objects = {
+                row["path"]: row["sha256"]
+                for row in ultra["manifest"]["objects"]
+                if row["contentDeterminism"] == "byte"
+            }
+            self.assertEqual(serial_objects, parallel_objects)
+            self.assertEqual(serial_objects, ultra_objects)
+            self.assertEqual(
+                serial["manifest"]["controlsByCurrency"],
+                parallel["manifest"]["controlsByCurrency"],
+            )
+            self.assertEqual(
+                serial["manifest"]["controlsByCurrency"],
+                ultra["manifest"]["controlsByCurrency"],
+            )
+            self.assertEqual(
+                1,
+                serial["manifest"]["executionProfile"]["marketWorkers"],
+            )
+            self.assertEqual(
+                2,
+                parallel["manifest"]["executionProfile"]["marketWorkers"],
+            )
+            self.assertEqual(
+                8,
+                ultra["manifest"]["executionProfile"]["duckdbThreads"],
+            )
+            self.assertFalse(
+                serial["manifest"]["executionProfile"]["affectsRunIdentity"]
+            )
+            self.assertGreater(
+                serial["manifest"]["executionTelemetry"]["peakProcessRssBytes"],
+                0,
+            )
 
     def test_csv_is_retained_as_an_authoritative_output_option(self) -> None:
         config = self._small_config()
@@ -1131,6 +1942,32 @@ class GenerationTests(unittest.TestCase):
                 )
                 self.assertGreaterEqual(len(orders), 50)
                 self.assertLessEqual(len(orders), 250)
+                self.assertTrue(any(not row["customerId"] for row in orders))
+                registered_daily_counts: dict[str, int] = {}
+                for row in orders:
+                    if row["customerId"]:
+                        registered_daily_counts[row["customerId"]] = (
+                            registered_daily_counts.get(row["customerId"], 0)
+                            + 1
+                        )
+                self.assertLessEqual(max(registered_daily_counts.values()), 2)
+                customers = dataset_rows(
+                    base,
+                    f"shopify/{shop_id}/customers.csv",
+                )
+                self.assertGreater(len(customers), 750)
+                self.assertLess(
+                    min(row["createdAt"][:10] for row in customers),
+                    config["time"]["startDate"],
+                )
+                customer_ids = {row["id"] for row in customers}
+                self.assertTrue(
+                    all(
+                        not row["customerId"]
+                        or row["customerId"] in customer_ids
+                        for row in orders
+                    )
+                )
             lines = dataset_rows(
                 base,
                 "shopify/northstar-in/order_lines.csv",
@@ -1138,6 +1975,14 @@ class GenerationTests(unittest.TestCase):
             self.assertTrue(lines)
             self.assertIn("1", {row["quantity"] for row in lines})
             self.assertTrue(any(int(row["quantity"]) > 1 for row in lines))
+            bc_customers = dataset_rows(
+                base,
+                "business-central/bc-northstar-in/customers.csv",
+            )
+            self.assertTrue(
+                any(row["segmentCode"] == "walk-in" for row in bc_customers)
+            )
+            self.assertTrue(all(row["createdAt"] for row in bc_customers))
 
     def test_replenishment_bootstrap_does_not_use_latent_demand_floor(self) -> None:
         config = self._small_config()
@@ -1516,7 +2361,13 @@ class GenerationTests(unittest.TestCase):
 
             demand = dataset_rows(base, "_truth/demand_factors.csv")
             grains = {
-                (row["marketKey"], row["storeKey"], row["date"], row["sku"])
+                (
+                    row["marketKey"],
+                    row["storeKey"],
+                    row["channelId"],
+                    row["date"],
+                    row["sku"],
+                )
                 for row in demand
             }
             self.assertEqual(len(grains), len(demand))
@@ -1530,6 +2381,28 @@ class GenerationTests(unittest.TestCase):
             self.assertGreater(
                 sum(int(row["lostSalesUnits"]) for row in demand),
                 0,
+            )
+            promoted_demand = [
+                row for row in demand if row["promotionIds"]
+            ]
+            self.assertTrue(promoted_demand)
+            self.assertTrue(
+                all(
+                    abs(
+                        Decimal(row["promotionFactor"])
+                        * Decimal(row["promotionElasticityFactor"])
+                        - Decimal(row["effectivePromotionLift"])
+                    )
+                    < Decimal("0.00000000000000000001")
+                    for row in promoted_demand
+                )
+            )
+            self.assertTrue(
+                all(
+                    Decimal(row["effectivePromotionLift"])
+                    <= Decimal(row["configuredPromotionLift"])
+                    for row in promoted_demand
+                )
             )
 
             order_lines = dataset_rows(base, "shopify/northstar-in/order_lines.csv")
@@ -1712,13 +2585,37 @@ class GenerationTests(unittest.TestCase):
                         len({row["id"] for row in rows}),
                     )
 
+                promotion_rows = dataset_rows(
+                    base,
+                    f"companion/{expected_market}/promotions.csv",
+                )
                 published_promotions = {
-                    row["promotionId"]
-                    for row in dataset_rows(
-                        base,
-                        f"companion/{expected_market}/promotions.csv",
-                    )
+                    row["promotionId"] for row in promotion_rows
                 }
+                self.assertTrue(
+                    all(
+                        row["discountBasis"] == "planned-offer"
+                        for row in promotion_rows
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        row["discountBasis"] == "planned-offer"
+                        for row in dataset_rows(
+                            base,
+                            f"companion/{expected_market}/promotion_skus.csv",
+                        )
+                    )
+                )
+                lifecycle_promotion_rows = [
+                    row
+                    for row in promotion_rows
+                    if row["promotionType"]
+                    in {"runout-markdown", "clearance", "fire-sale"}
+                ]
+                self.assertTrue(
+                    all(row["skus"] for row in lifecycle_promotion_rows)
+                )
                 referenced_promotions = {
                     promotion_id
                     for row in shop_order_lines
@@ -1919,6 +2816,14 @@ class GenerationTests(unittest.TestCase):
                     base,
                     f"business-central/{company}/purchase_order_lines.csv",
                 )
+                self.assertTrue(
+                    all(
+                        int(row["orderedQuantity"])
+                        == int(row["receivedQuantity"])
+                        + int(row["outstandingQuantity"])
+                        for row in po_lines
+                    )
+                )
                 items_by_number = {row["number"]: row for row in items}
                 self.assertTrue(
                     all(
@@ -1946,6 +2851,51 @@ class GenerationTests(unittest.TestCase):
                 self.assertEqual(
                     len(ledger),
                     len({row["entryNumber"] for row in ledger}),
+                )
+                ledger_by_entry = sorted(
+                    ledger,
+                    key=lambda row: int(row["entryNumber"]),
+                )
+                self.assertEqual(
+                    [int(row["entryNumber"]) for row in ledger_by_entry],
+                    list(range(1, len(ledger_by_entry) + 1)),
+                )
+                self.assertEqual(
+                    [row["postingDate"] for row in ledger_by_entry],
+                    sorted(row["postingDate"] for row in ledger_by_entry),
+                )
+                receipt_numbers = {
+                    row["number"]
+                    for row in dataset_rows(
+                        base,
+                        f"business-central/{company}/warehouse_receipts.csv",
+                    )
+                }
+                self.assertTrue(
+                    {
+                        row["documentNumber"]
+                        for row in ledger
+                        if row["entryType"] == "Purchase"
+                    }.issubset(receipt_numbers)
+                )
+                bc_customers = dataset_rows(
+                    base,
+                    f"business-central/{company}/customers.csv",
+                )
+                self.assertEqual(
+                    len(bc_customers),
+                    len({row["number"] for row in bc_customers}),
+                )
+                supplier_performance = dataset_rows(
+                    base,
+                    f"business-central/{company}/supplier_performance.csv",
+                )
+                self.assertTrue(
+                    all(
+                        int(row["orderedQuantity"])
+                        >= int(row["receivedQuantity"])
+                        for row in supplier_performance
+                    )
                 )
                 snapshots = dataset_rows(
                     base,

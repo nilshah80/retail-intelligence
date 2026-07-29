@@ -8,11 +8,16 @@ import json
 import os
 import shutil
 import tempfile
+import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
 import yaml
+
+from .spool import RowSpool
 
 INTERNAL_PARTITION_FIELD = "__partitionDate"
 
@@ -153,7 +158,7 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "promotionSkus": (
         "marketKey", "promotionId", "sku", "departmentId", "categoryId",
-        "discountPct", "effectiveFrom", "effectiveTo",
+        "discountPct", "discountBasis", "effectiveFrom", "effectiveTo",
     ),
     "competitorPrices": (
         "marketKey", "targetType", "targetId", "observedAt", "validDate",
@@ -165,7 +170,7 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
         "matchMethod", "matchConfidence", "effectiveFrom", "effectiveTo",
     ),
     "allocationDemandRequests": (
-        "requestKey", "marketKey", "storeKey", "requestDate", "sku",
+        "requestKey", "marketKey", "storeKey", "channelId", "requestDate", "sku",
         "requestedQuantity", "allocatedQuantity", "unallocatedQuantity",
         "warehousePriority", "status",
     ),
@@ -197,6 +202,10 @@ class SourceWriter:
         generation_partition: str = "month",
         source_format: str = "parquet",
         compression: str = "zstd",
+        workers: int = 2,
+        duckdb_threads: int = 1,
+        memory_limit_gb: float = 4.0,
+        spool_chunk_rows: int = 10_000,
     ) -> None:
         root = Path(output_root).expanduser().resolve()
         root.mkdir(parents=True, exist_ok=True)
@@ -206,11 +215,20 @@ class SourceWriter:
         self._generation_partition = generation_partition
         self._source_format = source_format
         self._compression = compression
+        self._workers = max(1, workers)
+        self._duckdb_threads = max(1, duckdb_threads)
+        self._memory_limit_gb = max(0.5, memory_limit_gb)
+        self._spool_chunk_rows = max(1, spool_chunk_rows)
         self.reused = self.target.is_dir() and not overwrite
         self.objects: list[dict[str, Any]] = []
         self.schemas: dict[str, dict[str, Any]] = {}
+        self.telemetry: dict[str, float | int] = {
+            "datasetsPublished": 0,
+            "sourcePublicationSeconds": 0.0,
+            "duckdbMirrorSeconds": 0.0,
+        }
         self._stage: Path | None = None
-        self._parquet_connection: Any | None = None
+        self._spools: list[RowSpool] = []
         if not self.reused:
             self._stage = Path(
                 tempfile.mkdtemp(prefix=f".{run_id}.staging-", dir=self.target.parent)
@@ -224,6 +242,40 @@ class SourceWriter:
         if self._stage is None:
             raise RuntimeError("writer has no active staging directory")
         return self._stage
+
+    @property
+    def work_directory(self) -> Path:
+        work = self._require_stage() / ".work"
+        work.mkdir(parents=True, exist_ok=True)
+        return work
+
+    def new_spool(self, name: str) -> RowSpool:
+        """Create an internal repeatable row stream owned by this run."""
+
+        spool = RowSpool(
+            self.work_directory / "row-spools",
+            name,
+            chunk_rows=self._spool_chunk_rows,
+        )
+        self._spools.append(spool)
+        return spool
+
+    def adopt_spools(self, spools: Iterable[RowSpool]) -> None:
+        """Take cleanup ownership of spools created by market worker processes."""
+
+        self._spools.extend(spools)
+
+    def work_size_bytes(self) -> int:
+        """Measure private spill/temp files before they are removed on promote."""
+
+        if self._stage is None:
+            return 0
+        work = self._stage / ".work"
+        return sum(
+            path.stat().st_size
+            for path in work.rglob("*")
+            if path.is_file()
+        )
 
     def _register(
         self,
@@ -251,6 +303,11 @@ class SourceWriter:
                 "rows": rows,
                 "bytes": path.stat().st_size,
                 "sha256": file_sha256(path),
+                "contentDeterminism": (
+                    "logical"
+                    if dataset == "sourceRunDuckdb"
+                    else "byte"
+                ),
                 "restricted": restricted,
             }
         )
@@ -267,103 +324,21 @@ class SourceWriter:
     ) -> None:
         if self.reused:
             return
+        started = time.perf_counter()
         logical_path = Path(relative_path).with_suffix(
             f".{self._source_format}"
         ).as_posix()
-        materialized = list(rows)
-        if materialized and dataset not in UNPARTITIONED_DATASETS:
-            partition_field = next(
-                (
-                    field
-                    for field in PARTITION_DATE_FIELDS
-                    if all(row.get(field) not in (None, "") for row in materialized)
-                ),
-                None,
-            )
-            if partition_field:
-                partitions: dict[str, list[dict[str, Any]]] = {}
-                for row in materialized:
-                    raw_date = str(row[partition_field])[:10]
-                    try:
-                        parsed = date.fromisoformat(raw_date)
-                    except ValueError as exc:
-                        raise ValueError(
-                            f"{relative_path}.{partition_field} contains "
-                            f"non-ISO date {row[partition_field]!r}"
-                        ) from exc
-                    key = (
-                        parsed.isoformat()
-                        if self._generation_partition == "day"
-                        else f"{parsed.year:04d}-{parsed.month:02d}"
-                    )
-                    partitions.setdefault(key, []).append(row)
-                base = Path(logical_path).with_suffix("").as_posix()
-                for partition, partition_rows in sorted(partitions.items()):
-                    if self._generation_partition == "day":
-                        year, month, day = partition.split("-")
-                        part_path = (
-                            f"{base}/year={year}/month={month}/day={day}/"
-                            f"part.{self._source_format}"
-                        )
-                    else:
-                        year, month = partition.split("-")
-                        part_path = (
-                            f"{base}/year={year}/month={month}/"
-                            f"part.{self._source_format}"
-                        )
-                    self._write_dataset_file(
-                        part_path,
-                        self._strip_internal_fields(partition_rows),
-                        source_system=source_system,
-                        dataset=dataset,
-                        restricted=restricted,
-                        fieldnames=fieldnames,
-                        logical_path=logical_path,
-                    )
-                return
-        self._write_dataset_file(
-            logical_path,
-            self._strip_internal_fields(materialized),
-            source_system=source_system,
-            dataset=dataset,
-            restricted=restricted,
-            fieldnames=fieldnames,
-            logical_path=logical_path,
-        )
-
-    @staticmethod
-    def _strip_internal_fields(
-        rows: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        return [
-            {
-                key: value
-                for key, value in row.items()
-                if not key.startswith("__")
-            }
-            for row in rows
-        ]
-
-    def _write_dataset_file(
-        self,
-        relative_path: str,
-        materialized: list[dict[str, Any]],
-        *,
-        source_system: str,
-        dataset: str,
-        restricted: bool,
-        fieldnames: Iterable[str] | None,
-        logical_path: str,
-    ) -> None:
-        path = self._require_stage() / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        iterator = iter(rows)
+        first = next(iterator, None)
         resolved_fieldnames = sorted(
             {
                 field
                 for field in (fieldnames or EMPTY_DATASET_FIELDS.get(dataset, ()))
                 if not field.startswith("__")
             }.union(
-                {key for row in materialized for key in row},
+                key
+                for key in (first or {})
+                if not key.startswith("__")
             )
         )
         if not resolved_fieldnames:
@@ -385,49 +360,188 @@ class SourceWriter:
         prior_schema = self.schemas.setdefault(logical_path, schema)
         if prior_schema != schema:
             raise ValueError(f"inconsistent schema across partitions for {logical_path}")
-        if self._source_format == "csv":
-            self._write_csv_file(path, materialized, resolved_fieldnames)
-        elif self._source_format == "parquet":
-            self._write_parquet_file(path, materialized, resolved_fieldnames)
-        else:
-            raise ValueError(f"unsupported source format {self._source_format!r}")
-        if restricted:
-            path.chmod(0o600)
-        self._register(
-            path,
-            source_system=source_system,
-            dataset=dataset,
-            rows=len(materialized),
-            restricted=restricted,
-            logical_path=logical_path,
-        )
 
-    @staticmethod
-    def _write_csv_file(
-        path: Path,
-        materialized: list[dict[str, Any]],
-        resolved_fieldnames: list[str],
-    ) -> None:
-        temp = path.with_suffix(path.suffix + ".tmp")
-        with temp.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(
+        partition_field = None
+        if first is not None and dataset not in UNPARTITIONED_DATASETS:
+            partition_field = next(
+                (
+                    field
+                    for field in PARTITION_DATE_FIELDS
+                    if field in resolved_fieldnames
+                ),
+                None,
+            )
+        staged: dict[str, dict[str, Any]] = {}
+        open_states: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        max_open_partition_files = 16
+
+        def close_state(state: dict[str, Any]) -> None:
+            handle = state.get("handle")
+            if handle is None:
+                return
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.close()
+            state["handle"] = None
+            state["writer"] = None
+
+        def ensure_open(
+            partition: str,
+            state: dict[str, Any],
+        ) -> csv.DictWriter:
+            if state.get("handle") is not None:
+                open_states.move_to_end(partition)
+                return state["writer"]
+            while len(open_states) >= max_open_partition_files:
+                _, evicted = open_states.popitem(last=False)
+                close_state(evicted)
+            first_open = not state["initialized"]
+            handle = state["path"].open(
+                "w" if first_open else "a",
+                encoding="utf-8",
+                newline="",
+            )
+            csv_writer = csv.DictWriter(
                 handle,
                 fieldnames=resolved_fieldnames,
                 extrasaction="raise",
                 lineterminator="\n",
             )
-            writer.writeheader()
-            writer.writerows(materialized)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp, path)
+            if first_open:
+                csv_writer.writeheader()
+                state["initialized"] = True
+            state["handle"] = handle
+            state["writer"] = csv_writer
+            open_states[partition] = state
+            return csv_writer
 
-    def _write_parquet_file(
-        self,
-        path: Path,
-        materialized: list[dict[str, Any]],
-        resolved_fieldnames: list[str],
-    ) -> None:
+        def add_row(row: dict[str, Any]) -> None:
+            public_row = {
+                key: value
+                for key, value in row.items()
+                if not key.startswith("__")
+            }
+            unknown = set(public_row).difference(resolved_fieldnames)
+            if unknown:
+                raise ValueError(
+                    f"{relative_path} introduced fields after its first row: "
+                    f"{sorted(unknown)}"
+                )
+            partition = ""
+            if partition_field:
+                raw_date = str(row.get(partition_field, ""))[:10]
+                if raw_date:
+                    try:
+                        parsed = date.fromisoformat(raw_date)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"{relative_path}.{partition_field} contains "
+                            f"non-ISO date {row.get(partition_field)!r}"
+                        ) from exc
+                    partition = (
+                        parsed.isoformat()
+                        if self._generation_partition == "day"
+                        else f"{parsed.year:04d}-{parsed.month:02d}"
+                    )
+            state = staged.get(partition)
+            if state is None:
+                ordinal = len(staged)
+                csv_path = (
+                    self.work_directory
+                    / "dataset-csv"
+                    / f"{self._duckdb_table_name(logical_path)}-{ordinal:05d}.csv"
+                )
+                csv_path.parent.mkdir(parents=True, exist_ok=True)
+                state = {
+                    "path": csv_path,
+                    "handle": None,
+                    "writer": None,
+                    "initialized": False,
+                    "rows": 0,
+                }
+                staged[partition] = state
+            ensure_open(partition, state).writerow(public_row)
+            state["rows"] += 1
+
+        if first is not None:
+            add_row(first)
+            for row in iterator:
+                add_row(row)
+        if not staged:
+            csv_path = (
+                self.work_directory
+                / "dataset-csv"
+                / f"{self._duckdb_table_name(logical_path)}-empty.csv"
+            )
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            staged[""] = {
+                "path": csv_path,
+                "handle": None,
+                "writer": None,
+                "initialized": False,
+                "rows": 0,
+            }
+            ensure_open("", staged[""])
+        for state in list(open_states.values()):
+            close_state(state)
+        open_states.clear()
+
+        def publish(item: tuple[str, dict[str, Any]]) -> tuple[str, int]:
+            partition, state = item
+            if partition:
+                base = Path(logical_path).with_suffix("").as_posix()
+                if self._generation_partition == "day":
+                    year, month, day = partition.split("-")
+                    relative = (
+                        f"{base}/year={year}/month={month}/day={day}/"
+                        f"part.{self._source_format}"
+                    )
+                else:
+                    year, month = partition.split("-")
+                    relative = (
+                        f"{base}/year={year}/month={month}/"
+                        f"part.{self._source_format}"
+                    )
+            else:
+                relative = logical_path
+            output_path = self._require_stage() / relative
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            csv_path = state["path"]
+            if self._source_format == "csv":
+                os.replace(csv_path, output_path)
+            elif self._source_format == "parquet":
+                self._csv_to_parquet(csv_path, output_path)
+                csv_path.unlink(missing_ok=True)
+            else:
+                raise ValueError(f"unsupported source format {self._source_format!r}")
+            if restricted:
+                output_path.chmod(0o600)
+            return relative, state["rows"]
+
+        with ThreadPoolExecutor(max_workers=self._workers) as executor:
+            published = list(executor.map(publish, sorted(staged.items())))
+        for relative, row_count in sorted(published):
+            self._register(
+                self._require_stage() / relative,
+                source_system=source_system,
+                dataset=dataset,
+                rows=row_count,
+                restricted=restricted,
+                logical_path=logical_path,
+            )
+        self.telemetry["datasetsPublished"] = (
+            int(self.telemetry["datasetsPublished"]) + 1
+        )
+        self.telemetry["sourcePublicationSeconds"] = round(
+            float(self.telemetry["sourcePublicationSeconds"])
+            + time.perf_counter()
+            - started,
+            6,
+        )
+
+    def _csv_to_parquet(self, staging_csv: Path, path: Path) -> None:
+        """Convert one staged partition with an isolated, memory-capped worker."""
+
         try:
             import duckdb
         except ModuleNotFoundError as exc:
@@ -435,48 +549,33 @@ class SourceWriter:
                 "Parquet publication requires the datagen DuckDB dependency"
             ) from exc
         temp = path.with_suffix(path.suffix + ".tmp")
-        if self._parquet_connection is None:
-            self._parquet_connection = duckdb.connect()
-        connection = self._parquet_connection
-        connection.execute("DROP TABLE IF EXISTS payload")
-        staging_csv = path.with_suffix(path.suffix + ".source.csv")
-        if materialized:
-            self._write_csv_file(
-                staging_csv,
-                materialized,
-                resolved_fieldnames,
+        connection = duckdb.connect()
+        try:
+            per_worker_gb = max(
+                0.25,
+                self._memory_limit_gb / self._workers,
             )
+            connection.execute(f"SET memory_limit='{per_worker_gb:.3f}GB'")
+            connection.execute("SET threads=1")
             connection.execute(
                 "CREATE TABLE payload AS "
                 "SELECT * FROM read_csv_auto(?, header=true, all_varchar=true, "
                 "sample_size=-1, hive_partitioning=false)",
                 [str(staging_csv)],
             )
-        else:
-            columns = ", ".join(
-                f'"{field.replace(chr(34), chr(34) * 2)}" VARCHAR'
-                for field in resolved_fieldnames
+            compression = (
+                "uncompressed"
+                if self._compression == "none"
+                else self._compression
             )
-            connection.execute(f"CREATE TABLE payload ({columns})")
-        compression = (
-            "uncompressed"
-            if self._compression == "none"
-            else self._compression
-        )
-        output_path = str(temp).replace("'", "''")
-        try:
+            output_path = str(temp).replace("'", "''")
             connection.execute(
                 f"COPY payload TO '{output_path}' "
                 f"(FORMAT PARQUET, COMPRESSION {compression.upper()})"
             )
         finally:
-            staging_csv.unlink(missing_ok=True)
+            connection.close()
         os.replace(temp, path)
-
-    def _close_parquet_connection(self) -> None:
-        if self._parquet_connection is not None:
-            self._parquet_connection.close()
-            self._parquet_connection = None
 
     def write_json(
         self,
@@ -499,6 +598,7 @@ class SourceWriter:
             sort_keys=True,
             indent=2,
             separators=(",", ": "),
+            allow_nan=False,
         )
         with temp.open("w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
@@ -582,7 +682,13 @@ class SourceWriter:
         path = stage / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_suffix(path.suffix + ".tmp")
-        connection = duckdb.connect(str(temp))
+        connection = duckdb.connect(
+            str(temp),
+            config={
+                "memory_limit": f"{self._memory_limit_gb:.3f}GB",
+                "threads": str(self._duckdb_threads),
+            },
+        )
         try:
             connection.execute(
                 """
@@ -715,7 +821,7 @@ class SourceWriter:
 
         if self.reused:
             return
-        self._close_parquet_connection()
+        started = time.perf_counter()
         source_objects = [
             dict(row)
             for row in self.objects
@@ -726,6 +832,10 @@ class SourceWriter:
                 "source-run.duckdb",
                 source_objects,
             )
+        self.telemetry["duckdbMirrorSeconds"] = round(
+            time.perf_counter() - started,
+            6,
+        )
 
     def write_source_schema(self) -> None:
         """Publish the generator-owned field dictionary for this source run."""
@@ -752,7 +862,7 @@ class SourceWriter:
     def promote(self) -> Path:
         if self.reused:
             return self.target
-        self._close_parquet_connection()
+        self.clear_work()
         stage = self._require_stage()
         backup: Path | None = None
         if self.target.exists():
@@ -767,7 +877,14 @@ class SourceWriter:
         return self.target
 
     def abort(self) -> None:
-        self._close_parquet_connection()
+        self.clear_work()
         if self._stage is not None and self._stage.exists():
             shutil.rmtree(self._stage)
             self._stage = None
+
+    def clear_work(self) -> None:
+        for spool in self._spools:
+            spool.close()
+        self._spools = []
+        if self._stage is not None:
+            shutil.rmtree(self._stage / ".work", ignore_errors=True)

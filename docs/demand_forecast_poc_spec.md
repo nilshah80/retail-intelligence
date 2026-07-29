@@ -867,8 +867,9 @@ Both modulate the demand mean via a single multiplier, on synthetic days only:
 
 ### 9.6 Config Builder and multi-market configuration
 
-The HTML Config Builder is the sole supported scenario-authoring surface. Every executable
-setting must be visible/editable, conventional YAML is the default import/export and execution
+The HTML Config Builder is the sole supported source-scenario authoring surface. Every setting
+that changes generated business/source data must be visible/editable, conventional YAML is the
+default import/export and execution
 format, and retained JSON exports must resolve to the same object. The
 builder must import its own exports for lossless editing and must not hide preset-only country,
 currency, format, execution or event fields. The export records each locale-pack ID/version and
@@ -878,7 +879,7 @@ pack was revised later.
 The configuration hierarchy is:
 
 ```yaml
-specVersion: retail-source-config/v9
+specVersion: retail-source-config/v11
 identity: {scenarioId: multi-market-demo, scenarioVersion: 1.0.0, masterSeed: 20260101}
 time: {startDate: 2025-01-01, endDate: 2025-03-31, generationPartition: month}
 retailer: {retailerId: retailer-001, name: Example Retail, reportingCurrency: INR}
@@ -893,6 +894,10 @@ markets:
                  categoryAssortmentWeights: {grocery-staples: 2.0}}
     demand: {startingDailyOrders: 420, averageLinesPerOrder: 1.8,
              dayOfWeekFactors: [0.90, 0.93, 0.97, 1.02, 1.12, 1.28, 1.24]}
+    customerPopulation: {openingRegisteredCustomers: 5000, annualNewCustomers: 10000,
+                         annualChurnRate: 0.18, annualReactivationRate: 0.06,
+                         guestCheckoutRate: 0.18, openingCustomerHistoryYears: 5,
+                         maxOrdersPerCustomerPerDay: 2}
     priceDynamics: {profile: response-rich, priceChangeEventsPerSkuPerYear: 36,
                     annualInflationRate: 0.055, priceEndingAdherence: 0.82}
   - marketId: us
@@ -904,6 +909,10 @@ markets:
     assortment: {skusPerDepartment: 36, variantsPerProduct: 3}
     demand: {startingDailyOrders: 420, averageLinesPerOrder: 1.8,
              dayOfWeekFactors: [0.94, 0.97, 1.00, 1.04, 1.15, 1.22, 1.12]}
+    customerPopulation: {openingRegisteredCustomers: 5000, annualNewCustomers: 10000,
+                         annualChurnRate: 0.18, annualReactivationRate: 0.06,
+                         guestCheckoutRate: 0.18, openingCustomerHistoryYears: 5,
+                         maxOrdersPerCustomerPerDay: 2}
     priceDynamics: {profile: response-rich, priceChangeEventsPerSkuPerYear: 36,
                     annualInflationRate: 0.032, priceEndingAdherence: 0.82}
 stores:
@@ -941,8 +950,25 @@ output: {rootDirectory: output, publicFormats: [parquet, duckdb],
          compression: zstd, writeHiddenTruth: true, overwrite: false}
 ```
 
-This is an abbreviated, readable excerpt; the Config Builder's resolved v9 YAML/JSON—including
+This is an abbreviated, readable excerpt; the Config Builder's resolved v11 YAML/JSON—including
 the complete locale/catalog packs and every operations field—is the executable contract.
+
+`customerPopulation` is required per market and is generator/source vocabulary. It controls
+opening registered accounts, ongoing acquisition, churn/reactivation, guest checkout, how far
+opening account creation dates extend before the extract, and the hard registered-customer/day
+order cap. Customer masters remain direct-identifier-free. Shopify represents guests with no
+customer ID; Business Central uses a declared market walk-in customer. A fixed anonymous pool
+reused across every year is invalid.
+
+Runtime resource controls are not source-scenario settings. The Config Builder exports a
+separate `retail-execution-profile/v1` YAML containing bounded `marketWorkers`,
+`partitionWorkers`, `duckdbThreads`, `memoryLimitGb` and `spoolChunkRows`. The CLI may select a
+named safe/balanced/performance/ultra-performance profile or apply explicit overrides. These settings may change
+elapsed time, process topology and temporary working storage only; they are recorded in the
+manifest but excluded from scenario authoring, config hash and run identity. Market processes
+are restricted to causally independent markets and are deterministically merged before global
+source order numbering. Safe and performance executions must produce byte-identical
+authoritative CSV/Parquet objects and logically identical DuckDB catalogs/tables.
 
 `categoryAssortmentWeights` is an optional per-market map owned by the Config Builder. Values
 are relative category-depth weights; unspecified categories use `1`. Omitting the map preserves
@@ -1000,7 +1026,7 @@ after its discontinuation. A successor launch does not itself discontinue its pr
 builder exposes spike/decay, anticipation, substitution, runout, markdown, clearance and
 fire-sale controls.
 
-Source spec v9 accepts complete date ranges within the materialized locale-pack coverage. The
+Source spec v11 accepts complete date ranges within the materialized locale-pack coverage. The
 current packs cover `2005-01-01` through `2026-12-31` (22 complete years), and the checked-in
 2005–2024 preset exercises the minimum 20-year requirement with monthly partitions, compound
 growth/inflation, ongoing catalog launches/replacements and phased pandemic/supply disruption.
@@ -1034,7 +1060,7 @@ until canonical cost-as-of exists. A generated cost ledger may later enable a cl
 synthetic margin scenario; only provenance-matched client cost can enable a client-actual margin
 objective.
 
-Source spec v9 implements the following as config-driven source fidelity. They remain
+Source spec v11 implements the following as config-driven source fidelity. They remain
 **non-blocking capabilities** for a consumer that only needs the first forecast/revenue-pricing
 round-trip:
 
