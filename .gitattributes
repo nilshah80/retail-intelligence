@@ -1,0 +1,35 @@
+# Normalize repository text so generated code, contracts and fingerprints do not
+# depend on the checkout operating system.
+* text=auto
+
+*.py text eol=lf
+*.go text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.sh text eol=lf
+Makefile text eol=lf
+
+# Declare Windows-native command files explicitly if/when they are added.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never apply text conversion to data/artifact formats.
+*.parquet binary
+*.duckdb binary
+*.db binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.whl binary

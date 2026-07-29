@@ -6,12 +6,16 @@ synthetic scenarios may combine India, the United States, the United Kingdom and
 European representative market (Germany). This monorepo is where the PoC behind the
 `ai_retail_intelligence_dashboard_multicurrency_v6` dashboard will be built.
 
-> **Status:** Phase 1 datagen v0.12.0/source contract v11 is implemented. It corrects source
-> reconciliation and forecasting-realism defects found after the measured v0.11.0 ten-year run,
-> so that older run is benchmark evidence rather than the Phase-2 pin. A fresh v0.12.0 ten-year
-> run must pass acceptance and be pinned before ingestion implementation starts. The shared
-> safe/balanced/performance/ultra-performance profiles change execution only; they do not change
-> scenario semantics. Downstream ingestion/ML/API/UI remain planned or scaffolded.
+> **Status:** Phase 1 datagen v0.12.0/source contract v11 is implemented. The accepted ten-year
+> Phase-2 input is `run-34b0ff729c8abe09` (2016-07-28 through 2026-07-28). Phase 2 is active:
+> separate ingestion/ML distributions, cross-platform tooling, the 53-entity machine-readable
+> `retail_v2` foundation, source-profile/staging/coverage contracts, exact money/FX primitives and
+> `semantic-fingerprint/v1`, market/currency guardrails, generated cross-language row types and
+> immutable three-lane landing are implemented. The accepted pin is landed as snapshot
+> `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`; Gate A, adapters,
+> transforms, Gate B and curated publication remain in progress. Shared
+> safe/balanced/performance/ultra-performance profiles
+> change execution only; they do not change scenario or canonical meaning.
 
 ## What this is (and is not)
 
@@ -54,8 +58,8 @@ European representative market (Germany). This monorepo is where the PoC behind 
   Central branching is allowed in features, models or decision engines.
 
 **3. Python ML + Go API.** ML pipelines are Python; the API/serving/workflow/guardrail layer is
-Go. The boundary is the **artifact + fingerprint + PostgreSQL + shared-config contract**, not
-in-process calls.
+Go, with [Aarv](https://github.com/nilshah80/aarv) as the HTTP web framework. The boundary is the
+**artifact + fingerprint + PostgreSQL + shared-config contract**, not in-process calls.
 
 ```
  datagen / retailer / Shopify / BC / external sources
@@ -85,12 +89,12 @@ in-process calls.
 | `plans/` | Phased build plans + task checklists (`local/`, `aws/`) | — | authored |
 | `ingestion/` | Raw landing, gates, source profiles/adapters, staging, transforms, canonical + curated publication | Python | new + adapt M5 data patterns |
 | `ml/` | Curated-data consumers: features, models, engines and artifacts | Python | reuse + extend M5 PoC |
-| `api/` | API, workflow/HITL, serve-time guardrails, RBAC | Go | reimplement (M5 design) |
+| `api/` | Aarv-based API, workflow/HITL, serve-time guardrails, RBAC | Go | reimplement (M5 design) |
 | `datagen/` | Config Builder + source-isolated simulator and Shopify/BC/companion publishers — **extract-ready** | Python | reuse + extend generator PoC |
 | `execution/` | Versioned source-neutral safe/balanced/performance/ultra-performance profile schema, Python resolver and golden vectors shared by Python jobs | Python + JSON | new |
 | `contracts/` | Canonical `retail_v2`, source-profile/transform spec, fingerprints, guardrails, proto/OpenAPI | — | new |
 | `db/` | PostgreSQL migrations (single owner: Alembic) | — | copy/extend from M5 PoC |
-| `ui/` | Dashboard front-end (the mockup in `docs/` is the target) | TBD | new |
+| `ui/` | Dashboard front-end (the mockup in `docs/` is the target) | React + TypeScript | new |
 | `deploy/` | docker-compose / infra | — | new |
 
 **Extraction rule for `datagen/`:** it does not import `contracts/`, `ingestion/`, `ml/` or
@@ -105,11 +109,52 @@ reverse, so `datagen/` can later be lifted with that small operational package w
   pandas/DuckDB). Adapt
   the M5 `mapped_files`/quality patterns into `ingestion/`; copy/adapt its `features/`, `models/`,
   and `engines/` into `ml/`.
-- **Go** — `api/` (serving, workflow/HITL, guardrail re-validation, staleness 409/503, RBAC).
-  The M5 PoC's `api/` design carries over; the code is rewritten in Go.
+- **Go + [Aarv](https://github.com/nilshah80/aarv)** — `api/` (serving, workflow/HITL,
+  guardrail re-validation, staleness 409/503, RBAC). Aarv owns HTTP routing, binding,
+  middleware and lifecycle only; the M5 PoC's API behavior carries over into framework-neutral
+  internal packages. The versioned OpenAPI contract remains under `contracts/`.
 - **PostgreSQL** — workflow, approvals, recommendations, audit. **Parquet/DuckDB** — lake +
   features. **MLflow** — run/metric tracking.
 - **Contract version:** `retail_v2` (see `docs/demand_forecast_poc_spec.md` §11).
+
+## Cross-platform development
+
+Windows, macOS and Linux are equal, required local runtime targets for the Config Builder,
+contract/code-generation tooling, `execution/`, `datagen/`, `ingestion/`, `ml/`, the Go API,
+database migrations and the Node/React UI. Windows support is a release gate, not a best-effort
+follow-up. The shared authoritative entry point is Python: it resolves virtual-environment
+executables as `Scripts/python.exe` on Windows and `bin/python` elsewhere, uses `pathlib`,
+`tempfile` and subprocess argument lists, and never constructs shell command strings. Go code
+must use `filepath` and portable lock/process/shutdown APIs; UI workflows must be cross-platform
+npm scripts without Bash syntax.
+
+```text
+# Windows PowerShell
+py -3 tools/dev.py envs
+py -3 tools/dev.py contracts
+py -3 tools/dev.py test
+py -3 tools/dev.py wheels
+
+# macOS / Linux
+python3 tools/dev.py envs
+python3 tools/dev.py contracts
+python3 tools/dev.py test
+python3 tools/dev.py wheels
+```
+
+The root `Makefile` and `tools/check_isolated_wheels.sh` are optional POSIX wrappers only. The
+current Phase-2 Python matrix runs on Windows, macOS and Linux; each remaining layer must add its
+own unit/build/small-fixture checks to the same matrix before that layer is complete. Runtime
+permission lanes mean Windows ACLs/locking or POSIX permissions/locking as appropriate;
+ingestion never relies on a POSIX mode bit as its security boundary.
+
+Portable storage has two path forms: manifests and fingerprints use normalized `/`-separated
+logical paths, while filesystem access uses native `Path`/`filepath` objects. Code must not assume
+`/tmp`, `fork`, `flock`, symlinks, executable mode bits, case-sensitive filenames or that an open
+file can be replaced on Windows. Writers close every file/DuckDB handle before atomic promotion,
+use same-volume staging, and normalize contract text to UTF-8/LF where bytes are fingerprinted.
+No phase is complete until its supported commands and tests pass on `windows-latest`,
+`ubuntu-latest` and `macos-latest`.
 
 ## Start here (reading order)
 

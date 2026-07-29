@@ -48,6 +48,55 @@ class ExecutionProfileTests(unittest.TestCase):
         )
         self.assertEqual(5, resolved["datagen"]["partitionWorkers"])
 
+    def test_every_layer_uses_the_same_override_precedence(self) -> None:
+        document = named_profiles()["balanced"]
+        resolved = resolve_profile(
+            "balanced",
+            document=document,
+            layer_overrides={
+                "ingestion": {"scanWorkers": 7},
+                "ml": {"foldWorkers": 3},
+                "api": {"gomaxprocs": 6},
+            },
+            environment={
+                "RETAIL_INGESTION_SCAN_WORKERS": "6",
+                "RETAIL_ML_FOLD_WORKERS": "2",
+                "RETAIL_API_GOMAXPROCS": "5",
+            },
+        )
+        self.assertEqual(7, resolved["ingestion"]["scanWorkers"])
+        self.assertEqual(3, resolved["ml"]["foldWorkers"])
+        self.assertEqual(6, resolved["api"]["gomaxprocs"])
+
+    def test_layer_environment_override_beats_document(self) -> None:
+        document = named_profiles()["safe"]
+        resolved = resolve_profile(
+            "safe",
+            document=document,
+            environment={
+                "RETAIL_INGESTION_DUCKDB_THREADS": "3",
+                "RETAIL_ML_MODEL_WORKERS": "2",
+                "RETAIL_API_HTTP_CONCURRENCY": "80",
+            },
+        )
+        self.assertEqual(3, resolved["ingestion"]["duckdbThreads"])
+        self.assertEqual(2, resolved["ml"]["modelWorkers"])
+        self.assertEqual(80, resolved["api"]["httpConcurrency"])
+
+    def test_unknown_layer_or_field_override_fails(self) -> None:
+        for overrides in (
+            {"warehouse": {"workers": 2}},
+            {"ingestion": {"unknownWorker": 2}},
+            {"ingestion": 2},
+        ):
+            with self.subTest(overrides=overrides):
+                with self.assertRaises(ProfileValidationError):
+                    resolve_profile(
+                        "safe",
+                        layer_overrides=overrides,  # type: ignore[arg-type]
+                        environment={},
+                    )
+
     def test_unsafe_or_unknown_values_fail(self) -> None:
         with self.assertRaises(ProfileValidationError):
             resolve_profile(

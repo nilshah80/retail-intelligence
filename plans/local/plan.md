@@ -20,8 +20,10 @@ locally" means:
   features, and produces **demand forecasts (P50/P90 + drivers)**,
   **inventory/replenishment** decisions (safety stock, transfers, allocation), and
   **pricing/promotion** recommendations under guardrails — all as fingerprinted artifacts.
-- The **Go API** (`api/`) serves those artifacts, owns **workflow/HITL** (approve / override /
-  audit), re-validates guardrails at serve time, and enforces staleness (409/503) and RBAC.
+- The **Aarv-based Go API** (`api/`) serves those artifacts, owns **workflow/HITL** (approve /
+  override / audit), re-validates guardrails at serve time, and enforces staleness (409/503) and
+  RBAC. [Aarv](https://github.com/nilshah80/aarv) is the HTTP transport; application logic stays
+  in framework-neutral internal packages.
 - The **UI** implements the dashboard screens against the real API.
 - Everything is **shadow-only** (no price/PO is ever executed) and **fail-closed**.
 
@@ -56,6 +58,14 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
   versioned screen contract is frozen. Each capability phase replaces its clearly labelled stub
   with accepted live artifacts; Phases 6–7 add governed interactions and complete integration
   rather than starting API/UI work for the first time.
+- **Windows/macOS/Linux are equal local targets.** This applies to the Config Builder, contracts
+  and code generation, execution resolver, datagen, ingestion, ML, database tooling, Aarv-based
+  Go API, UI and developer/deployment commands. Python uses `pathlib`, `tempfile` and
+  argument-list subprocesses; Go uses `filepath` and portable locking/process/shutdown APIs; UI
+  workflows use cross-platform npm scripts. Make/Bash are optional. Logical manifest paths use
+  `/`, physical paths are native, fingerprinted text uses UTF-8/LF, and open handles are closed
+  before same-volume atomic promotion. Permission lanes preserve their semantics through native
+  OS capabilities. A layer is not complete until its matrix checks pass on all three OS families.
 
 ## 3 · Phases (local)
 
@@ -250,12 +260,14 @@ enabled department in both markets; the sparse preset returns a reason-coded
 **Demo checkpoint 5:** Pricing, Competitor Monitor and Promotion Planner render live
 response-rich and sparse-evidence outcomes.
 
-### Phase 6 — Go API, workflow & governance (`api/`, `db/`)
+### Phase 6 — Aarv-based Go API, workflow & governance (`api/`, `db/`)
 
 **Goal:** harden the incrementally delivered read-only API and add the decision/governance layer
 in Go.
 
-**Scope:** Alembic migrations (`db/`, reuse + new tables); consolidate the versioned read API
+**Scope:** pin [Aarv](https://github.com/nilshah80/aarv) in `api/go.mod` and use it for HTTP
+routing, binding, middleware and lifecycle; keep OpenAPI and application semantics outside the
+framework. Add Alembic migrations (`db/`, reuse + new tables); consolidate the versioned read API
 slices delivered in Phases 2–5; workflow/HITL (approvals, planner overrides, idempotency, audit);
 market/currency-scoped pricing activations; **serve-time guardrail re-validation** over the same
 resolved market policy; staleness 409/503; RBAC/auth; **fingerprint parity** (Python↔Go golden

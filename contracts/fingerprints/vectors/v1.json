@@ -1,0 +1,86 @@
+{
+  "specVersion": "semantic-fingerprint/v1",
+  "volatilePathVersion": "volatile-pointers/v1",
+  "vectors": [
+    {
+      "name": "object-order-and-decimal-strings",
+      "payload": {
+        "rate": "83",
+        "rows": 253192804,
+        "amount_minor": "11359245233896",
+        "enabled": true,
+        "labels": [
+          "india",
+          "us"
+        ]
+      },
+      "canonical": "{\"amount_minor\":\"11359245233896\",\"enabled\":true,\"labels\":[\"india\",\"us\"],\"rate\":\"83\",\"rows\":253192804}",
+      "sha256": "b1d466201eb3ec775e30025ac667510dff6d4a61ddb32235914b007fe087b4a6"
+    },
+    {
+      "name": "root-volatile-fields-are-excluded",
+      "payload": {
+        "artifact": "forecast-v1",
+        "executionProfile": {
+          "profile": "ultra-performance",
+          "workers": 16
+        },
+        "executionTelemetry": {
+          "elapsed": "4430.1"
+        },
+        "generated_at_utc": "2026-07-29T09:58:00Z",
+        "semantic": {
+          "market": "india-mumbai",
+          "horizon_weeks": 26
+        }
+      },
+      "canonical": "{\"artifact\":\"forecast-v1\",\"semantic\":{\"horizon_weeks\":26,\"market\":\"india-mumbai\"}}",
+      "sha256": "9dbf6d855c79b241cbadc1e2ee809d06a9d4bb4d2cd67d1f8d2ce3ae0d84696a"
+    },
+    {
+      "name": "unicode-and-path-qualified-retention",
+      "payload": {
+        "name": "Café 東京",
+        "nested": {
+          "executionTelemetry": "business-value",
+          "currency": "₹"
+        },
+        "executionTelemetry": "remove-me"
+      },
+      "canonical": "{\"name\":\"Café 東京\",\"nested\":{\"currency\":\"₹\",\"executionTelemetry\":\"business-value\"}}",
+      "sha256": "35695da050f9eefc325015279210be0f40d0b624e89c89bd12ecd3400ad1448e"
+    },
+    {
+      "name": "source-snapshot-inventory",
+      "payload": {
+        "source_instance": "shopify:northstar-in",
+        "extract_boundary": "2026-07-28T23:59:59+05:30",
+        "objects": [
+          {
+            "logical_path": "orders/year=2026/month=07/part.parquet",
+            "bytes": 41092,
+            "sha256": "3b7a456ce4f26076338e7a6346b67135ee45ea72ae0f2135edeb4f0a191d9ffd"
+          }
+        ]
+      },
+      "canonical": "{\"extract_boundary\":\"2026-07-28T23:59:59+05:30\",\"objects\":[{\"bytes\":41092,\"logical_path\":\"orders/year=2026/month=07/part.parquet\",\"sha256\":\"3b7a456ce4f26076338e7a6346b67135ee45ea72ae0f2135edeb4f0a191d9ffd\"}],\"source_instance\":\"shopify:northstar-in\"}",
+      "sha256": "71eb1455e91211203394ffed4d624e91e7ee53e029b3cee743dae9d0ff8940f8"
+    }
+  ],
+  "invalidVectors": [
+    {
+      "name": "binary-float",
+      "payload": {
+        "rate": 83.1
+      },
+      "reason": "binary_float"
+    },
+    {
+      "name": "unsafe-json-integer",
+      "payload": {
+        "amount": 9007199254740992
+      },
+      "reason": "unsafe_integer"
+    }
+  ]
+}

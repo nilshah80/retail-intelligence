@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/coverage/v1/schema.json",
+  "title": "Ingestion coverage and capability manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ingestRunId",
+    "sourceSnapshotId",
+    "entities",
+    "capabilities"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "retail-coverage/v1"},
+    "ingestRunId": {"type": "string"},
+    "sourceSnapshotId": {"type": "string"},
+    "nativeSnapshotId": {"type": ["string", "null"]},
+    "entities": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/entityCoverage"}
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/capability"}
+    }
+  },
+  "$defs": {
+    "entityCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "completeness", "fields", "evidence"],
+      "properties": {
+        "tier": {"enum": ["t1_core", "t2_operational", "t3_control"]},
+        "completeness": {
+          "enum": ["complete", "partial_fields", "zero_rows_valid", "unsupported"]
+        },
+        "fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "evidence": {
+          "enum": ["client_actual", "synthetic_test", "synthetic_scenario"]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "evidence", "reasonCodes"],
+      "properties": {
+        "availability": {
+          "enum": ["enabled", "requires_companion", "unavailable"]
+        },
+        "evidence": {
+          "enum": ["client_actual", "synthetic_test", "synthetic_scenario"]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

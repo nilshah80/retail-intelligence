@@ -4,9 +4,15 @@
 `../docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` (that HTML is the **target /
 reference**, not production code).
 
-**Framework:** TBD — see `docs/OPEN_DECISIONS.md` (#17).
+**Framework:** React + Vite + TypeScript + Tailwind, with TanStack Query/Table, Recharts and Zod
+(decision #17).
 
 **Consumes:** the Go `api/`.
+
+**Portability gate:** development, lint/typecheck, unit/component tests and production build must
+run through npm scripts on Windows, macOS and Linux. Tooling cannot depend on Bash environment
+assignment, shell glob expansion, `/` path concatenation, symlinks or case-only filename
+differences. The browser output and API behavior remain identical across hosts.
 
 ## Incremental delivery
 

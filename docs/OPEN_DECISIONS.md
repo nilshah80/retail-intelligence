@@ -12,6 +12,8 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | 3 | ML language / API language | **DECIDED** | Python ML pipelines, Go API |
 | 4 | Money storage | **DECIDED** | integer minor units paired with `currency_code` (`INR` paise, `USD/EUR` cents, `GBP` pence); exact source reconciliation is per currency; tenant reporting conversion is derived with as-of FX |
 | 5 | Contract version | **DECIDED** | `retail_v2` (superset of M5 `retail_v1`) |
+| 16 | Fingerprint canonicalization spec | **DECIDED** | `semantic-fingerprint/v1`: exact-path volatile stripping via versioned RFC 6901 JSON Pointers → RFC 8785 JCS → SHA-256; floats/native decimals forbidden, JSON integers limited to ±(2^53−1), other numerics use canonical decimal strings; shared Python/Go vectors |
+| 17 | UI framework | **DECIDED** | React + Vite + TypeScript + Tailwind, with TanStack Query/Table, Recharts and Zod; no SSR for the PoC. The Go API serves every number, and the static v6 mockup ports directly onto utility classes |
 | 20 | Source transformation extension points | **DECIDED** | profile-driven default mapper or thin source adapter → standardized staging → shared source-neutral transforms → canonical; no source logic downstream |
 | 21 | Generator outputs | **DECIDED** | Shopify-shaped, Business Central-shaped and external/companion sources, plus source-run manifest and hidden source/causal truth; no canonical publisher |
 | 22 | Location keys | **DECIDED** | `locations.location_id` authoritative; demand-only `stores` view uses `store_id = location_id` |
@@ -27,6 +29,7 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | 35 | Missing source metadata | **DECIDED** | source `known_as_of`, versions, manifests, formats and capability declarations are not universal hard requirements; ingestion derives defensible metadata under versioned profile policy or quarantines ambiguity |
 | 36 | Datagen isolation | **DECIDED** | `datagen/` imports no downstream `contracts/`, `ingestion/`, `ml/` or `api/` code; ingestion adapts to the published datagen source spec |
 | 37 | Generator fidelity tiers | **DECIDED** | exhaustive Shopify lifecycle/HMAC fixtures and full procurement/batch/supplier projections are screen/compliance extensions, not blockers for the first forecast/revenue-pricing round-trip; margin waits for accepted temporal cost |
+| 38 | Python environment topology | **DECIDED** | separate `ingestion/` and `ml/` environments/distributions, both depending on the shared `retail-contracts` and `retail-intelligence-execution` packages; `datagen/` remains independently isolated. `contracts/` changes meaning, `execution/` changes only throughput |
 | 39 | Guardrail config scoping | **DECIDED** | resolve global dimensionless defaults plus explicit `market_id + currency_code` overrides; absolute money, step/grid and price-ending rules are mandatory per market; Python and Go fingerprint and validate the same resolved policy |
 | 40 | Contextual feed scope | **DECIDED** | single-axis calendar/signal/competitor geography uses `market_id + geo_scope_type + geo_scope_id`; region/location identifiers are namespaced within market; unqualified `ALL` is invalid; multi-axis promotion applicability uses explicit qualifier rows |
 | 41 | Canonical temporal identity | **DECIDED** | cumulative/correctable facts use explicit monotonic integer versions; observation/reference facts use stable natural key + effective/observation time + `known_as_of`; divergent duplicate complete keys quarantine |
@@ -34,6 +37,9 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 | 43 | Operating vs presentment currency | **DECIDED** | canonical sales/sell prices equal the demand location operating currency; Shopify `shopMoney` is authoritative and `presentmentMoney` is audit/display-only; unsupported mismatches quarantine |
 | 44 | FX direction and arithmetic | **DECIDED** | `base_ccy` local → `quote_ccy` reporting at exact `DECIMAL(38,18)` quote-per-base rate; exponent-aware per-fact `ROUND_HALF_EVEN`, then aggregate; shared Python/Go vectors |
 | 45 | Pricing evidence demos | **DECIDED** | primary IN+US showcase is sized and tested for ≥25 actually gated series per enabled department in both markets; a separate sparse preset demonstrates reason-coded fail-closed behavior; datagen owns scenario knobs, not ML thresholds |
+| 46 | Canonical demand channel grain | **DECIDED** | channel is orthogonal to location; `channel_id` participates in sales, sell-price, assortment and forecast-series grain and is retained on adjustments, fulfillments and planner overrides. One store may serve multiple channels; ingestion never aggregates channel away or invents a separate location solely from channel |
+| 47 | Runtime OS portability | **DECIDED** | Windows, macOS and Linux are equal required targets for the Config Builder, contract/code generation, execution resolver, datagen, ingestion, ML, database tooling, Aarv-based Go API, Node/React UI and developer/deployment commands. Authoritative orchestration uses Python + `pathlib`/`tempfile`/argument-list subprocesses; Go uses `filepath` and portable process/lock/shutdown abstractions; UI uses cross-platform npm scripts. POSIX shell/Make are optional wrappers only. Manifests use normalized logical `/` paths while filesystem operations use native paths; UTF-8/LF is explicit for fingerprinted text; open handles are closed before same-volume atomic promotion. Permission/locking uses Windows ACLs/locking or POSIX modes/locking without changing semantics. A layer is not complete until its unit/build/small-fixture checks pass on Windows, macOS and Linux |
+| 48 | Go API web framework | **DECIDED** | Use [Aarv](https://github.com/nilshah80/aarv) (`github.com/nilshah80/aarv`) for the API HTTP transport. Pin exact module versions; keep handlers thin and business/read-model logic framework-neutral; keep `contracts/` OpenAPI authoritative; add Aarv plugins à la carte without making framework metadata a second contract |
 
 ## Recommended (confirm)
 
@@ -54,14 +60,11 @@ not yet confirmed), or **OPEN**. Spec refs are sections of `demand_forecast_poc_
 |---|---|---|---|---|
 | 14 | Competitor data source + SKU↔competitor match key | **OPEN** | scraped / panel / third-party; hardest new feed to source | §8.1, §11.3 |
 | 15 | Production weather granularity + provider | **OPEN** | synthetic data is market/region/store configurable; choose the client-actual provider and timestamp evidence later | §11.5 |
-| 16 | Fingerprint canonicalization spec | **OPEN** | must be byte-identical in Python + Go (key order, number format); resolve and publish golden vectors in Phase 2 before Phase 3 emits fingerprinted artifacts | Arch note |
-| 17 | UI framework | **OPEN** | the `docs/` mockup is static HTML; pick the real stack by the end of Phase 1 so the dashboard/API vertical-slice track starts in Phase 2 | §8.4 (ui) |
 | 18 | Copilot serving | **OPEN** | Go proxies to a Python copilot service vs Go calls the LLM directly; grounding from same artifacts | §8.4 |
 | 19 | Customer/segment data depth | **OPEN** | segment mix only, or basket-level for cannibalisation/bundle models | §8.1, §11.4 |
 | 26 | Incremental ingestion semantics | **OPEN** | local path is immutable full snapshots; define CDC/upsert/watermark rules after round-trip acceptance | §11.10 |
 | 27 | Tenant reporting-currency accounting policy | **OPEN** | direction/precision/rounding are locked by #44; choose the production FX source, rate type and any accounting-date override for cross-market reporting aggregates | §2.4, §11.0 |
 | 28 | Production Shopify connector scope | **OPEN** | after local PoC: connector deliverable vs client-provided landed export | §11.11 |
-| 38 | Python environment topology | **OPEN** | `datagen/` is independently isolated and may start; decide whether `ingestion/` and `ml/` use separate distributions/environments or a shared governed workspace before scaffolding those two package boundaries | Architecture note |
 
 ## Do NOT carry over from the M5 PoC
 

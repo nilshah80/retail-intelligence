@@ -1,4 +1,4 @@
-# `api/` — Go API & serving layer
+# `api/` — Aarv-based Go API & serving layer
 
 **Purpose:** serve the Python-produced artifacts to the UI and own the decision/governance layer:
 workflow / HITL (approvals, planner overrides, idempotency, audit), **serve-time guardrail
@@ -10,7 +10,18 @@ and replenishment in Phase 4, and pricing/promotion in Phase 5. Deterministic UI
 OpenAPI/read-model contracts. Phase 6 consolidates and hardens these reads and adds governed
 write/workflow endpoints.
 
-**Language:** Go.
+**Language and web framework:** Go with
+[Aarv](https://github.com/nilshah80/aarv), imported from
+`github.com/nilshah80/aarv`. The API scaffold must pin an exact Aarv version in `api/go.mod`;
+it must not build against an unpinned `@latest`.
+
+Aarv owns only the HTTP transport boundary: routing, request binding, middleware composition,
+lifecycle and graceful shutdown. Handlers remain thin and delegate to `internal/` packages for
+read models, workflow, fingerprints, execution profiles, guardrails and persistence. The
+versioned OpenAPI documents in `contracts/` remain authoritative; framework-generated
+documentation or an Aarv OpenAPI/UI plugin may expose that contract but must not become a second
+semantic source of truth. Optional Aarv plugins are added à la carte and pinned independently
+where they are separate Go modules.
 
 **Origin (`[REUSE-as-redesign]`):** the M5 PoC's `api/app.py` (FastAPI), `workflow_service.py`,
 and `workflow_repository.py` establish the design and rules; the **code is re-implemented in Go**.
@@ -36,6 +47,12 @@ vectors natively; it does not import Python. Its adapter maps the `api` namespac
 `GOMAXPROCS`, HTTP/background concurrency and PostgreSQL/DuckDB pool limits. Resolved non-secret
 values and saturation telemetry are operational metadata only and cannot alter response values,
 authorization, idempotency, fingerprints or guardrail decisions.
+
+**Portability:** the Aarv application and all middleware must use portable Go APIs and be tested
+on Windows, macOS and Linux. Application paths use `filepath`; manifest identifiers remain
+normalized logical `/` paths; shutdown, locking and process control must not depend on POSIX-only
+signals or shell scripts. File-backed readers and DuckDB connections close before replacement,
+and OS-specific signal adapters must preserve the same graceful-shutdown contract.
 
 **Spec:** §4.7–4.8 (HITL, lineage), §8 (screens), Architecture note.
 

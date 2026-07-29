@@ -1,1 +1,26 @@
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python bytecode and interpreter caches (repo-wide, including generated code).
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.pytype/
+
+# Python local environments, packaging and coverage artifacts.
+.venv/
+venv/
+.eggs/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local planning workbench; intentionally not part of the repository deliverable.
+plans/local/phase2-implementation-plan.md

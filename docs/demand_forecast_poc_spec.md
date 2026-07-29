@@ -65,12 +65,13 @@ and ML consumption:
   reconciliation; a canonical gate validates schema, point-in-time semantics, provenance,
   business rules and referential integrity before anything is promoted to curated storage.
 
-### Technology stack — Python ML pipelines + Go API
+### Technology stack — Python ML pipelines + Aarv-based Go API
 
-The new PoC is **polyglot**: **ML pipelines in Python, the API/serving layer in Golang.**
+The new PoC is **polyglot**: **ML pipelines in Python, the API/serving layer in Golang using
+[Aarv](https://github.com/nilshah80/aarv).**
 
 ```
- PYTHON                                                GO (API / serving)
+ PYTHON                                                GO + AARV (API / serving)
  ingestion/: Gate A → staging → transform → Gate B    reads artifacts + PostgreSQL
              → curated                                serves REST/gRPC to the UI
  ml/: features → models(LightGBM/Poisson-EB) →         owns workflow/HITL, guardrail
@@ -88,13 +89,16 @@ What this means for the M5-PoC carry-over:
   (FastAPI), `api/workflow_service.py`/`workflow_repository.py` (approvals, planner overrides,
   idempotency, audit), the **serve-time guardrail re-validation** (`validate_recommendation`,
   pricing-graph validation), the **staleness 409/503** logic, and RBAC. The *design and rules*
-  carry over; the *code* is rewritten in Go.
+  carry over; the *code* is rewritten in Go. Aarv (`github.com/nilshah80/aarv`) is the required
+  web framework for routing, binding, middleware composition, lifecycle and graceful shutdown.
+  Exact Aarv/plugin versions are pinned in `api/go.mod`. Handlers delegate to framework-neutral
+  internal packages, and `contracts/` remains the authoritative OpenAPI/read-model contract.
 
 **The Python↔Go boundary is deliberately the artifact + DB contract** (not in-process calls),
 which is exactly how the M5 PoC already separates "pipeline produces validated artifacts" from
 "API validates + serves them." The interface is: **artifact manifests + semantic fingerprints
 (`reports/artifact_identity.py`) + the PostgreSQL schema + the shared guardrail YAMLs.** Engineer
-for four cross-language risks:
+for five cross-language risks:
 1. **Fingerprint parity** — SHA-256 over canonical JSON must be **byte-identical** in Python and
    Go (fixed key order, number formatting, volatile-key stripping). Define one canonicalization
    spec and test both against shared golden vectors, or lineage 409s will fire spuriously.
@@ -107,6 +111,17 @@ for four cross-language risks:
    resolved market policy.
 4. **Migrations ownership** — the PostgreSQL schema is one shared asset. Recommend keeping
    **Alembic (Python)** as the single migration owner and generating Go structs from it.
+5. **Runtime OS portability** — Windows, macOS and Linux are equal required targets for the
+   Config Builder, contract/code generation, execution resolver, datagen, ingestion/ML,
+   database tooling, Aarv-based Go API and Node/React UI. Authoritative automation is
+   shell-independent; Python uses `pathlib`, `tempfile` and argument-list subprocesses; Go uses
+   `filepath` and portable lock/process/shutdown primitives; UI uses cross-platform npm scripts.
+   Make/Bash are optional wrappers. Manifests carry normalized `/`-separated logical paths while
+   physical access uses native paths. Fingerprinted text uses explicit UTF-8/LF. Staging occurs
+   on the destination volume, and every file/database handle is closed before promotion because
+   Windows cannot replace an open target. Permission lanes and publication locks retain the same
+   semantics through Windows ACLs/locking or POSIX permissions/locking. A layer is incomplete
+   until its unit, build and small-fixture checks pass on all three OS families.
 
 **Interactive scoring** (the one real design fork): batch forecasts/recommendations are
 precomputed by Python and served by Go, but the interactive screens — Price Simulation "Run",
@@ -153,14 +168,15 @@ extracts into these once; everything downstream is source-neutral.
 
 | Entity | Grain | Required fields | Feeds on this screen |
 |---|---|---|---|
-| `sales` | SKU × demand location × **day × availability version** | `sku_id, store_id, date, sales_version, units, net_sales_amount, currency_code, known_as_of` (+ `net_price, promo_flag`) | Every KPI, Forecast-vs-Actual, workbench Baseline/Last-Actual, accuracy/bias |
-| `sales_adjustments` | post-sale event × availability version | `adjustment_id, adjustment_version, sku_id, store_id, sale_date, event_date, event_type, known_as_of` (+ conditional `units` or `amount`) | Physical returns/post-fulfilment cancellations and financial refunds without rewriting fulfilled-sales history |
-| `sales_fulfillments` | fulfillment line × availability version | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | Bridges online/POS demand to the physical supply node; split-fulfillment and inventory reconciliation |
-| `products` | SKU | `sku_id, dept_id, category, sub_cat, pack_size` (+ `product_name, brand, shelf_life_days, reference_cost`) | Category filter, SKU labels, pack rounding, expiry |
-| `locations` | store/online/DC/3PL | `location_id, type ∈ {store, online, dc, 3pl}, market_id, currency_code, timezone, region, active` (+ `format, channel, parent_dc`) | Authoritative market/location hierarchy; its currency governs canonical sales/sell prices while other money domains follow their declared capability policy; derives the demand-only `stores` compatibility view |
+| `sales` | SKU × demand location × **channel × day × availability version** | `sku_id, store_id, channel_id, date, sales_version, units, net_sales_amount, currency_code, known_as_of` (+ `net_price, promo_flag`) | Every KPI, channel-aware Forecast-vs-Actual, workbench Baseline/Last-Actual, accuracy/bias |
+| `sales_adjustments` | post-sale event × availability version | `adjustment_id, adjustment_version, sku_id, store_id, channel_id, sale_date, event_date, event_type, known_as_of` (+ conditional `units` or `amount`) | Physical returns/post-fulfilment cancellations and financial refunds without rewriting fulfilled-sales history |
+| `sales_fulfillments` | fulfillment line × availability version | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, channel_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | Bridges channel-qualified demand to the physical supply node; split-fulfillment and inventory reconciliation |
+| `products` | SKU × known-as-of observation | `sku_id, dept_id, category, sub_cat, pack_size, known_as_of, known_as_of_evidence_grade` (+ `product_name, brand, shelf_life_days, reference_cost`) | Category filter, SKU labels, pack rounding, expiry |
+| `locations` | store/online/DC/3PL × known-as-of observation | `location_id, type ∈ {store, online, dc, 3pl}, market_id, currency_code, timezone, region, active, known_as_of, known_as_of_evidence_grade` (+ `format, parent_dc`) | Authoritative market/location hierarchy; its currency governs canonical sales/sell prices while other money domains follow their declared capability policy; derives the demand-only `stores` compatibility view |
+| `channels` | market × channel | `market_id, channel_id, name, type, active, known_as_of` | Orthogonal demand/promotion/price channel; a physical store may serve both online and in-store demand |
 | `calendar` | market×day | `market_id, date, known_as_of` (+ day attributes) | Market-local business day and seasonality |
 | `calendar_events` | market×geographic scope×event×date | `market_id, geo_scope_type, geo_scope_id, date, event_name, event_type, known_as_of` | Event drivers, exception "New product / event" |
-| `sell_prices` | SKU × store × **week × known-as-of observation** | `sku_id, store_id, effective week, net_price, currency_code, known_as_of` | Price-movement driver, scenario price axis, pricing |
+| `sell_prices` | SKU × store × channel × **week × known-as-of observation** | `sku_id, store_id, channel_id, effective week, net_price, currency_code, known_as_of` | Channel-aware price-movement driver, scenario price axis, pricing |
 | `stock_snapshots` | SKU × location snapshot | `sku_id, location_id, snapshot_date, on_hand_units, on_order_units, known_as_of` | Demand-at-risk, stock-out risk, required-inventory in scenarios |
 | `suppliers_leadtimes` | supplier × merchandise scope × destination/origin × effective date × known-as-of observation | `supplier_id, destination_location_id, merch_scope_type, merch_scope_id, effective_from, lead_time_days, moq, pack_qty, known_as_of` (+ `from_location_id`) | Market/location-specific safety-stock, required-inventory and replenishment linkage |
 | **pricing metadata** block | market | `market_id, currency_code, minor_unit_exponent`, price/cost unit & tax basis | Market-local money semantics; reporting conversion remains separate |
@@ -1117,25 +1133,33 @@ schemas.
 These requirements apply **after source transformation**, at the canonical boundary. Raw-source
 requirements live in the versioned dataset profile because a Shopify order export, a retailer POS
 file and an ingestion-owned canonical unit fixture have different physical schemas and grains.
-Enforced by `ingestion/quality/contracts.py` — a NULL or missing REQUIRED canonical column raises
-at ingestion:
+Enforced by `ingestion/quality/contracts.py`: `required: true` means the canonical column/key must
+be present. NULL is rejected unless that field also declares `nullable: true`; therefore
+required and nullable are independent dimensions rather than synonyms. A missing required column,
+or a NULL in a non-nullable required field, raises at ingestion:
 
 | Entity | **REQUIRED** | Optional |
 |---|---|---|
-| `sales` | `sku_id, store_id, date, sales_version, units, net_sales_amount, currency_code, known_as_of` | `net_price, gross_sales_amount, discount_amount, tax_amount, promo_flag` |
-| `sales_adjustments` | `adjustment_id, adjustment_version, sku_id, store_id, sale_date, event_date, event_type, known_as_of` | conditional `units` or `amount + currency_code`; `source_sale_id, source_parent_event_id, reason_code` |
-| `sales_fulfillments` | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | `shipment_id, carrier_status` |
-| `products` | `sku_id, dept_id, category, sub_cat, pack_size` | `product_name, brand, shelf_life_days, reference_cost` |
-| `locations` | `location_id, type, market_id, currency_code, timezone, region, active` | `name, city, parent_dc, format, channel` |
+| `sales` | `sku_id, store_id, channel_id, date, sales_version, units, net_sales_amount, currency_code, known_as_of` | `net_price, gross_sales_amount, discount_amount, tax_amount, promo_flag` |
+| `sales_adjustments` | `adjustment_id, adjustment_version, sku_id, store_id, channel_id, sale_date, event_date, event_type, known_as_of` | conditional `units` or `amount + currency_code`; `source_sale_id, source_parent_event_id, reason_code` |
+| `sales_fulfillments` | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, channel_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | `shipment_id, carrier_status` |
+| `products` | `sku_id, dept_id, category, sub_cat, pack_size, known_as_of, known_as_of_evidence_grade` | `product_name, brand, shelf_life_days, reference_cost` |
+| `locations` | `location_id, type, market_id, currency_code, timezone, region, active, known_as_of, known_as_of_evidence_grade` | `name, city, parent_dc, format` |
+| `channels` | `market_id, channel_id, name, type, active, known_as_of` | `description` |
+| `sell_prices` | `sku_id, store_id, channel_id, week_start, net_price, currency_code, known_as_of` | `regular_price, promo_price` |
 | `calendar` | `market_id, date, known_as_of` | day attributes |
 | `calendar_events` | `market_id, geo_scope_type, geo_scope_id, date, event_name, event_type, known_as_of` | event attributes |
-| `suppliers_leadtimes` | `supplier_id, destination_location_id, merch_scope_type, merch_scope_id, effective_from, lead_time_days, moq, pack_qty, known_as_of` | `from_location_id` (null means unmodelled external supplier origin, not wildcard) |
+| `suppliers_leadtimes` | `supplier_id, destination_location_id, merch_scope_type, merch_scope_id, from_location_id (required key; nullable value), effective_from, lead_time_days, moq, pack_qty, known_as_of` | — |
 | `stock_snapshots` | `sku_id, location_id, snapshot_date, on_hand_units, on_order_units, known_as_of` | `committed_units, reserved_units, damaged_units, in_transit_units, atp_units, atp_method` |
 
-For every profile, canonical temporal entities require `known_as_of`. A deliberately named
-ingestion unit fixture may opt into a same-day assumption. Generated and client-shadow sources
-instead use the profile's defensible native/extract/landing-time derivation; client-actual
-required business facts cannot be filled by arbitrary profile defaults.
+For every profile, canonical temporal entities require both `known_as_of` and
+`known_as_of_evidence_grade`; the table omits the repeated evidence-grade field on other temporal
+rows only for readability. `products` and `locations` are deliberately temporal observational
+reference facts, so both fields are required there even though their business attributes look
+dimension-like. A deliberately named ingestion unit fixture may opt into a same-day assumption.
+Generated and client-shadow sources instead use the profile's defensible
+native/extract/landing-time derivation; client-actual required business facts cannot be filled by
+arbitrary profile defaults.
 
 Four nuances that surprise people:
 - `sales.units` and `net_sales_amount` are cumulative **fulfilled/realized merchandise quantity
@@ -1291,6 +1315,12 @@ field semantics will live in the machine-readable contract and data dictionary u
   second pricing currency for a location. Other money domains retain their declared currency and
   must satisfy the capability-specific market/cost conversion policy rather than being inferred
   from location sales history.
+- **Demand channel is orthogonal to location.** `channels` is a market-qualified dimension and
+  `channel_id` participates in sales, adjustment, fulfillment, sell-price and forecast-series
+  identity. One physical store may serve both online and in-store demand, so ingestion must not
+  collapse channel into location or aggregate it away. A source without channel evidence may use
+  one explicitly declared profile default with derivation provenance; it may not infer channel
+  from a location name.
 - **Dates/times:** business dates are ISO `YYYY-MM-DD`; source events/observations may be
   timestamps. **Every temporal entity carries `known_as_of`**, the earliest defensible
   availability timestamp/date for that fact. It may be later than the business/effective date.
@@ -1310,12 +1340,12 @@ field semantics will live in the machine-readable contract and data dictionary u
   (supplier terms and promotion merchandise targets) use
   `merch_scope_type ∈ {sku, dept, category} + merch_scope_id`, with precedence
   `sku > dept > category`. Promotion applicability is intentionally multi-axis and instead uses
-  `promotion_scopes` rows with explicit nullable `region/location/channel` qualifiers:
+  `promotion_scopes` rows with explicit nullable `region/location/channel_id` qualifiers:
   qualifiers within a row are ANDed and rows are ORed. RBAC/workflow scope is a separate
   configuration domain named `rbac_scope_type`; it is not a data-scope enum.
-- **Sales semantics and key:** `(sku_id, store_id, date, sales_version)` is unique;
-  `sales_version` is a positive, strictly increasing integer within the first three fields and
-  `known_as_of` is non-decreasing with it.
+- **Sales semantics and key:** `(sku_id, store_id, channel_id, date, sales_version)` is unique;
+  `sales_version` is a positive, strictly increasing integer within
+  `(sku_id, store_id, channel_id, date)`, and `known_as_of` is non-decreasing with it.
   `units` and `net_sales_amount` are cumulative non-negative fulfilled/realized merchandise
   quantity and exact merchandise value after discounts but before later refunds for that
   business date/version. At a decision cutoff,
@@ -1341,7 +1371,7 @@ field semantics will live in the machine-readable contract and data dictionary u
   measures twice.
 - **Fulfillment bridge:** `(fulfillment_line_id, fulfillment_version)` is unique and versioned
   under the same cutoff rule. At each cutoff, latest `sales_fulfillments.units` grouped by
-  SKU+demand-location+sale-date must reconcile to latest `sales.units`. `supply_location_id`
+  SKU+demand-location+channel+sale-date must reconcile to latest `sales.units`. `supply_location_id`
   records the physical node; it never replaces the demand location used by forecasting.
 - **Money:** every canonical money fact is an integer **minor-unit** value paired with
   `currency_code` and the contract's currency metadata (`INR` paise, `USD/EUR` cents, `GBP`
@@ -1365,6 +1395,13 @@ field semantics will live in the machine-readable contract and data dictionary u
   `source_snapshot_id` and raw hashes, profile/adapter/transform versions, ingest run/time,
   coverage/composite-manifest hashes and capability mask, `known_as_of` rules,
   input/filtered/rejected/output counts and quantity/money reconciliations.
+- **Snapshot identity:** ingestion owns
+  `sha256(JCS({source_instance, extract_boundary, ordered objects}))`, where every object carries
+  its unique physical `object_path`, repeatable dataset `logical_path`, byte count and SHA-256,
+  ordered by `object_path`. A source-native run/snapshot ID is preserved separately as
+  `native_snapshot_id`; reusing it for a different ingestion-owned identity is critical, while
+  re-landing identical evidence is an idempotent replay. Physical path—not dataset logical path—is
+  the unique object key because partitioned sources legitimately repeat one logical dataset path.
 
 ### 11.1 Core canonical entities `[in]` — REUSE + TEMPORAL CONTRACT (from `retail_v1`)
 
@@ -1374,16 +1411,18 @@ parentheses).
 
 | Entity (grain) | Key columns | Sample row |
 |---|---|---|
-| `sales` (SKU×demand-location×day×availability version) | `sku_id, store_id, date, sales_version, units, net_sales_amount, currency_code, net_price, promo_flag, known_as_of` | `NK-AM270-BLK-09, MUM01, 2026-07-15, 1, 8, 8799200, INR, 1099900, false, 2026-07-15T23:59:00+05:30` |
-| `sales_adjustments` (post-sale event×availability version) | `adjustment_id, adjustment_version, source_parent_event_id, sku_id, store_id, sale_date, event_date, event_type, units, amount, currency_code, known_as_of` | `ADJ-R44-PHYS, 1, RET-R44, NK-AM270-BLK-09, MUM01, 2026-07-15, 2026-07-28, physical_return, 1, null, null, 2026-07-28T15:02:00+05:30` |
-| `sales_fulfillments` (fulfillment line×availability version) | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | `FUL-L44, 1, ORD-44, NK-AM270-BLK-09, VIRTUAL_ONLINE, WHDC-W, 2026-07-15, 2026-07-16T10:20:00+05:30, 8, 2026-07-16T10:22:00+05:30` |
-| `products` (SKU) | `sku_id, dept_id, category, sub_cat, pack_size, product_name, brand, shelf_life_days, reference_cost` | `NK-AM270-BLK-09, FTW-RUN, Footwear, Running, 1, "Nike Air Max 270", Nike, null, 630000` |
-| `stores` (curated compatibility view; not a source entity) | `store_id, market_id, currency_code, timezone, region, format, channel, city` | `MUM01, india, INR, Asia/Kolkata, West, Large-format, in-store, Mumbai` |
+| `sales` (SKU×demand-location×channel×day×availability version) | `sku_id, store_id, channel_id, date, sales_version, units, net_sales_amount, currency_code, net_price, promo_flag, known_as_of` | `NK-AM270-BLK-09, MUM01, mumbai-online, 2026-07-15, 1, 8, 8799200, INR, 1099900, false, 2026-07-16T05:20:00+05:30` |
+| `sales_adjustments` (post-sale event×availability version) | `adjustment_id, adjustment_version, source_parent_event_id, sku_id, store_id, channel_id, sale_date, event_date, event_type, units, amount, currency_code, known_as_of` | `ADJ-R44-PHYS, 1, RET-R44, NK-AM270-BLK-09, MUM01, mumbai-online, 2026-07-15, 2026-07-24, physical_return, 1, null, null, 2026-07-24T15:02:00+05:30` |
+| `sales_fulfillments` (fulfillment line×availability version) | `fulfillment_line_id, fulfillment_version, source_sale_id, sku_id, demand_location_id, channel_id, supply_location_id, sale_date, fulfilled_at, units, known_as_of` | `FUL-L44, 1, ORD-44, NK-AM270-BLK-09, MUM01, mumbai-online, WHDC-W, 2026-07-15, 2026-07-16T05:18:00+05:30, 8, 2026-07-16T05:20:00+05:30` |
+| `products` (SKU×known-as-of observation) | `sku_id, dept_id, category, sub_cat, pack_size, product_name, brand, shelf_life_days, reference_cost, known_as_of` | `NK-AM270-BLK-09, FTW-RUN, Footwear, Running, 1, "Nike Air Max 270", Nike, null, 630000, 2026-07-15T00:00:00+05:30` |
+| `stores` (curated compatibility view; not a source entity) | `store_id, market_id, currency_code, timezone, region, format, city` | `MUM01, india, INR, Asia/Kolkata, West, Large-format, Mumbai` |
+| `channels` (market×channel) | `market_id, channel_id, name, type, active, known_as_of` | `india-mumbai, mumbai-online, Online, ecommerce, true, 2016-07-28` |
 | `calendar` (market×day) | `market_id, date, known_as_of, weekday, month, year, working_day` | `india, 2026-07-15, 2020-01-01, Wed, 7, 2026, true` |
 | `calendar_events` (market×geographic-scope×event×date) | `market_id, geo_scope_type, geo_scope_id, date, event_name, event_type, known_as_of` | `india, market, india, 2026-11-08, Diwali, festival, 2020-01-01` |
-| `sell_prices` (SKU×store×week×known-as-of observation) | `sku_id, store_id, week_start, net_price, regular_price, promo_price, currency_code, known_as_of` | `NK-AM270-BLK-09, MUM01, 2026-07-13, 1099900, 1199900, 1099900, INR, 2026-07-13` |
+| `sell_prices` (SKU×store×channel×week×known-as-of observation) | `sku_id, store_id, channel_id, week_start, net_price, regular_price, promo_price, currency_code, known_as_of` | `NK-AM270-BLK-09, MUM01, mumbai-online, 2026-07-13, 1099900, 1199900, 1099900, INR, 2026-07-13` |
 | `stock_snapshots` (SKU×location snapshot) | `sku_id, location_id, snapshot_date, on_hand_units, on_order_units, known_as_of` | `NK-AM270-BLK-09, MUM01, 2026-07-15, 48, 244, 2026-07-15T23:59:00+05:30` |
 | `suppliers_leadtimes` (supplier×merchandise-scope×destination/origin×effective-date×known-as-of observation) | `supplier_id, destination_location_id, merch_scope_type, merch_scope_id, from_location_id, effective_from, lead_time_days, moq, pack_qty, known_as_of` | `SUP_NIKE, MUM01, dept, FTW-RUN, WHDC-W, 2026-01-01, 6, 24, 12, 2026-01-01` |
+| `assortment_calendar` (SKU×demand-location×channel×active-window observation) | `sku_id, store_id, channel_id, active_from, active_to, derivation_method, known_as_of` | `NK-AM270-BLK-09, MUM01, mumbai-online, 2021-09-24, null, store_assortment_and_lifecycle_v1, 2021-09-24` |
 
 **Used in the PoC:** these feed the weekly feature build → LightGBM forecaster (§3.1),
 reorder/safety-stock engine (§3.3), baselines/FVA, and every KPI in §2.5.
@@ -1429,7 +1468,7 @@ price-recommendation competitor bound.
 | Entity (grain) | Columns | Sample |
 |---|---|---|
 | `promotions` (market×promo×known-as-of observation) | `market_id, promo_id, name, type, objective, offer_value, currency_code, start_date, end_date, segment_id, min_margin_pct, approval_route, status, owner, known_as_of` | `india, PR-Monsoon, "Monsoon Footwear Event", pct, revenue, 12, null, 2026-07-20, 2026-07-31, SEG_ALL, 20, category_mgr, draft, Emma, 2026-07-01` |
-| `promotion_scopes` (market×promo×scope-row×known-as-of observation) | `market_id, promo_id, scope_row_id, region, location_id, channel, known_as_of` | `india, PR-Monsoon, S1, West, null, online, 2026-07-01` |
+| `promotion_scopes` (market×promo×scope-row×known-as-of observation) | `market_id, promo_id, scope_row_id, region, location_id, channel_id, known_as_of` | `india, PR-Monsoon, S1, West, null, mumbai-online, 2026-07-01` |
 | `promotion_merchandise_targets` (market×promo×merchandise-scope×known-as-of observation) | `market_id, promo_id, merch_scope_type, merch_scope_id, discount_pct, known_as_of` | `india, PR-Monsoon, category, Footwear, 12, 2026-07-01` |
 | `customer_segments` (market×segment snapshot) | `market_id, segment_id, name, size, share_pct, description, as_of_date, known_as_of` | `india, SEG_LOYAL, "Loyalty members", 480000, 38, "Active loyalty base", 2026-07-01, 2026-07-02` |
 
@@ -1438,7 +1477,7 @@ and the promotion-overlap + inventory-readiness guardrails; `customer_segments` 
 and the segment-response model.
 
 Promotion scope is structured, never a free-form expression. Non-null qualifiers on one
-`promotion_scopes` row are ANDed (`region=West` and `channel=online`); multiple rows are ORed.
+`promotion_scopes` row are ANDed (`region=West` and `channel_id=mumbai-online`); multiple rows are ORed.
 All-null optional qualifiers mean the whole stated market. `region` is resolved only inside
 `market_id`. Amount-based offers require the promotion market's `currency_code`; percentage
 offers keep it null. `promotion_merchandise_targets` uses the same
@@ -1456,6 +1495,7 @@ commercial categories, narrower departments and exact SKUs without a variable-sh
 | `local_events` (market×geographic-scope×event×date) | `market_id, geo_scope_type, geo_scope_id, date, event_name, event_type, expected_impact, known_as_of` | `india, location, BLR03, 2026-08-15, "City Marathon", civic, 1.2, 2026-07-01` |
 | `macro_index` (market×geographic-scope×week) | `market_id, geo_scope_type, geo_scope_id, week_start, index_name, value, known_as_of` | `india, region, West, 2026-07-13, consumption_index, 104.6, 2026-07-16` |
 | `fx_rates` (base-currency×reporting-currency×rate-date observation) | `base_ccy, quote_ccy, rate DECIMAL(38,18), rate_date, known_as_of` | `USD, INR, 83.000000000000000000, 2026-07-15, 2026-07-15` |
+| `market_disruptions` (market×disruption×phase observation) | `market_id, disruption_id, phase_id, start_date, end_date, demand_factor, traffic_factor, supply_factor, known_as_of` | `india-mumbai, COVID19, lockdown-1, 2020-03-25, 2020-05-31, 1.18, 0.42, 0.71, 2020-03-24` |
 
 **Used in the PoC:** weather/local-event/macro become forecast features + the weather and
 competitor driver groups (§3.4) and the Scenario-Planning axes (§3.6); `fx_rates` supports
@@ -1470,12 +1510,15 @@ local/base→reporting/quote direction and exact conversion rule in §2.4.
 
 | Entity (grain) | Columns | Sample |
 |---|---|---|
-| `locations` `[in]` (location; authoritative) | `location_id, name, type, market_id, currency_code, timezone, region, city, parent_dc, active` | `WHDC-W, "West DC Ahmedabad", dc, india, INR, Asia/Kolkata, West, Ahmedabad, null, true` |
+| `locations` `[in]` (location×known-as-of observation; authoritative) | `location_id, name, type, market_id, currency_code, timezone, region, city, parent_dc, active, known_as_of` | `WHDC-W, "West DC Ahmedabad", dc, india, INR, Asia/Kolkata, West, Ahmedabad, null, true, 2026-07-15T00:00:00+05:30` |
 | `stock_snapshots` (extended) `[in]` | + `committed_units, reserved_units, damaged_units, in_transit_units, atp_units, atp_method` | `NK-AM270-BLK-09, MUM01, 2026-07-15, 48, 244, 4, 2, 0, 30, 42, derived_buckets, 2026-07-15` |
 | `inventory_batches` `[in]` (batch) | `batch_id, sku_id, location_id, batch_qty, mfg_date, expiry_date, receipt_date, unit_cost, currency_code, known_as_of` | `BT-24A, BT-SERUM-30, MUM11, 320, 2026-05-01, 2026-08-05, 2026-05-04, 54000, INR, 2026-05-04` |
 | `inbound_shipments` `[in]` (shipment) | `shipment_id, sku_id, from_location, to_location, qty, dispatch_date, expected_receipt_date, status, known_as_of` | `SHP-3391, APP-APP2-WHT, WHDC-S, BLR03, 240, 2026-07-12, 2026-07-18, in_transit, 2026-07-12` |
 | `transfer_orders` `[poc]` (transfer) | `transfer_id, sku_id, from_location, to_location, qty, reason, expected_benefit_minor, currency_code, status` | `TRF-0102, RUN-SHOE-9, KOL04, CHE06, 72, lost_sales_recovery, 320000, INR, review` |
 | `allocations` `[poc]` (SKU×location) | `allocation_id, sku_id, pool_qty, location_id, requested_qty, allocated_qty, shortfall, rule, priority, status` | `ALC-77, NK-AM270-BLK-09, 1240, MUM01, 1480, 1220, 260, revenue_service, high, review` |
+| `waste_events` `[in]` (waste event) | `event_id, sku_id, location_id, event_date, units, reason_code, unit_cost, currency_code, known_as_of` | `WST-44, GRC-MILK-1L, MUM01, 2026-07-15, 8, expired, 5400, INR, 2026-07-15` |
+| `warehouse_capacity_snapshots` `[in]` (location×day observation) | `location_id, snapshot_date, capacity_units, used_units, blocked_units, known_as_of` | `WHDC-W, 2026-07-15, 45000, 25326, 340, 2026-07-15` |
+| `wms_inventory_comparisons` `[in]` (SKU×location×snapshot observation) | `sku_id, location_id, snapshot_date, erp_on_hand_units, wms_on_hand_units, difference_units, known_as_of` | `GRC-MILK-1L, WHDC-W, 2026-07-15, 228, 226, -2, 2026-07-15` |
 
 Canonical inventory bucket semantics are fixed:
 
@@ -1518,9 +1561,9 @@ These are the PoC's own outputs, bound by semantic fingerprints (§4.8), not gen
 | Entity (grain) | Columns | Sample |
 |---|---|---|
 | `forecast_versions` (version) | `version_id, kind, origin_date, horizon_weeks, created_by, accuracy, bias, demand_units, semantic_fingerprint, status` | `v28, ai, 2026-07-13, 26, DemandSenseAI, 87.6, -2.8, 1316420, sha…, current` |
-| `forecast_series` (version×SKU×store×horizon) | `version_id, sku_id, store_id, horizon_week, yhat_p50, yhat_p90, confidence` | `v28, NK-AM270-BLK-09, MUM01, 1, 510, past-591, 0.93` |
+| `forecast_series` (version×SKU×store×channel×horizon) | `version_id, sku_id, store_id, channel_id, horizon_week, yhat_p50, yhat_p90, confidence` | `v28, NK-AM270-BLK-09, MUM01, mumbai-online, 1, 510, 591, 0.93` |
 | `forecast_drivers` (version×scope×driver) | `version_id, scope, driver, contribution_pct, direction, confidence` | `v28, portfolio, seasonality, 18, positive, 0.91` |
-| `planner_adjustments` (adjustment) | `adj_id, sku_id, store_id, origin_date, ai_forecast, planner_forecast, reason_code, effective_period, comment, actor, status, value_added_flag` | `ADJ-44, LV-501-BLU-32, NOI08, 2026-07-13, 246, 260, promotion_change, next_4_weeks, "local promo", Rahul, accepted, true` |
+| `planner_adjustments` (adjustment) | `adj_id, sku_id, store_id, channel_id, origin_date, ai_forecast, planner_forecast, reason_code, effective_period, comment, actor, status, value_added_flag` | `ADJ-44, LV-501-BLU-32, NOI08, ny-online, 2026-07-13, 246, 260, promotion_change, next_4_weeks, "local promo", Rahul, accepted, true` |
 
 **Used in the PoC:** Compare Versions modal, SKU workbench, Demand Drivers tab, and the
 Planner-Overrides KPI.
@@ -1533,7 +1576,7 @@ Planner-Overrides KPI.
 | `roles` | `role_id, name, approval_limit, rbac_scope_type` | `[cfg]` |
 | `data_sources` | `source_id, name, type, source_schema_version, refresh, profile_ref, adapter_version, transform_bundle_version, enabled` | `[cfg]` |
 | `source_mapping_configs` | `mapping_config_id, source_id, entity, source_key, canonical_key, effective_from, effective_to, version, approved_by, approved_at, status` | `[cfg]` |
-| `ingest_runs` | `ingest_run_id, source_id, source_snapshot_id, raw_manifest_hash, coverage_manifest_hash, composite_manifest_hash, profile_version, adapter_version, transform_version, started_at, completed_at, status, raw_quality_pct, canonical_quality_pct, capability_mask, curated_fingerprint` | `[poc]` |
+| `ingest_runs` | `ingest_run_id, source_id, source_snapshot_id, native_snapshot_id, raw_manifest_hash, coverage_manifest_hash, composite_manifest_hash, profile_version, adapter_version, transform_version, started_at, completed_at, status, raw_quality_pct, canonical_quality_pct, capability_mask, curated_fingerprint` | `[poc]` |
 | `reconciliation_results` | `reconciliation_id, ingest_run_id, entity, metric, raw_value, filtered_value, canonical_value, difference, tolerance, status` | `[poc]` |
 | `quality_violations` | `violation_id, ingest_run_id, gate, entity, source_record_id, rule_id, severity, reason, observed_at` | `[poc]` |
 | `quarantine_records` | `quarantine_id, ingest_run_id, gate, entity, source_record_id, reason_code, raw_record_ref, payload_hash, quarantined_at` | `[poc]` |
@@ -1563,7 +1606,7 @@ demand/supply location or selected warehouse/lane context.
 
 | Ownership | Entities / artifacts |
 |---|---|
-| **`[in]`** canonical input produced by ingestion from generated/authorized sources | sales, sales_adjustments, sales_fulfillments, products, locations, calendar, calendar_events, sell_prices, stock_snapshots, inventory_batches, inbound_shipments, suppliers_leadtimes, supplier_performance, purchase_receipts, competitor_products, competitor_prices, promotions, promotion_scopes, promotion_merchandise_targets, customer_segments, weather_actual, weather_forecast, local_events, macro_index, fx_rates |
+| **`[in]`** canonical input produced by ingestion from generated/authorized sources | sales, sales_adjustments, sales_fulfillments, products, locations, channels, calendar, calendar_events, sell_prices, stock_snapshots, inventory_batches, inbound_shipments, suppliers_leadtimes, supplier_performance, purchase_receipts, competitor_products, competitor_prices, promotions, promotion_scopes, promotion_merchandise_targets, customer_segments, weather_actual, weather_forecast, local_events, macro_index, fx_rates, market_disruptions, assortment_calendar, waste_events, warehouse_capacity_snapshots, wms_inventory_comparisons |
 | **Curated compatibility/derived during ingest** | `stores` view from demand locations carrying market/currency/timezone; normalized market business calendars |
 | **`[poc]`** produced at runtime | ingest_runs, reconciliation_results, quality_violations/quarantine_records, source_crosswalks, inventory_cost, competitor_matches, transfer_orders, allocations, forecast_versions/series/drivers, planner_adjustments, model_registry, model_drift, + all workflow tables |
 | **`[cfg]`** version-controlled | competitors, users, roles, data_sources, source_mapping_configs, alert_rules, source-profile schema, guardrail config (`pricing_rules.yaml`, `policy.yaml`) |
@@ -1656,16 +1699,16 @@ coverage:
   mode: partial
   canonical_entities:
     sales: {completeness: complete,
-            fields: [sku_id, store_id, date, sales_version, units, net_sales_amount,
+            fields: [sku_id, store_id, channel_id, date, sales_version, units, net_sales_amount,
                      currency_code, known_as_of],
             zero_rows_valid: false}
     sales_adjustments: {completeness: complete,
-                        fields: [adjustment_id, adjustment_version, sku_id, store_id, sale_date,
+                        fields: [adjustment_id, adjustment_version, sku_id, store_id, channel_id, sale_date,
                                  event_date, event_type, units, amount, known_as_of],
                         zero_rows_valid: true}
     sales_fulfillments: {completeness: complete,
                          fields: [fulfillment_line_id, fulfillment_version, source_sale_id,
-                                  sku_id, demand_location_id, supply_location_id, sale_date,
+                                  sku_id, demand_location_id, channel_id, supply_location_id, sale_date,
                                   fulfilled_at, units, known_as_of],
                          zero_rows_valid: false}
     purchase_receipts: {completeness: complete,
@@ -1855,21 +1898,21 @@ coverage:
                 fields: [location_id, type, market_id, currency_code, timezone, region, active],
                 condition: approved_location_mapping_and_virtual_node}
     sales: {completeness: complete,
-            fields: [sku_id, store_id, date, sales_version, units, net_sales_amount,
+            fields: [sku_id, store_id, channel_id, date, sales_version, units, net_sales_amount,
                      currency_code, known_as_of],
             condition: complete_sales_domain_resolution_and_history}
     sales_adjustments: {completeness: complete,
-                        fields: [adjustment_id, adjustment_version, sku_id, store_id, sale_date,
+                        fields: [adjustment_id, adjustment_version, sku_id, store_id, channel_id, sale_date,
                                  event_date, event_type, units, amount, known_as_of],
                         zero_rows_valid: true,
                         condition: complete_sales_domain_resolution_and_history}
     sales_fulfillments: {completeness: complete,
                          fields: [fulfillment_line_id, fulfillment_version, source_sale_id,
-                                  sku_id, demand_location_id, supply_location_id, sale_date,
+                                  sku_id, demand_location_id, channel_id, supply_location_id, sale_date,
                                   fulfilled_at, units, known_as_of],
                          condition: complete_sales_domain_resolution_and_history}
     sell_prices: {completeness: partial_fields,
-                  fields: [sku_id, store_id, week_start, net_price, currency_code, known_as_of],
+                  fields: [sku_id, store_id, channel_id, week_start, net_price, currency_code, known_as_of],
                   history: prospective_or_proven_versions,
                   condition: approved_price_scope_mapping}
     stock_snapshots: {completeness: partial_fields,
@@ -1912,11 +1955,11 @@ a shop-level price across physical stores by assumption.
 | Shopify raw objects | Canonical treatment |
 |---|---|
 | `Product` + `ProductVariant` + `InventoryItem` | partial `products` projection; immutable variant GID is `sku_id` because merchant SKU may be blank/duplicated; deleted-variant/custom historical lines require a preserved immutable key or approved crosswalk, otherwise they are quarantined and completeness is reduced; approved taxonomy/pack fields may require PIM or mapping companion data |
-| `Location` + approved virtual demand node | physical `locations` through a versioned, retailer-approved `source_mapping_configs` crosswalk for store/DC/3PL, market, operating currency, timezone, region and city; materialize `VIRTUAL_ONLINE` as a canonical `type=online` location with `SHOPIFY_DERIVED` provenance; record resolved mappings in `source_crosswalks` |
-| `Order` + `LineItem` + `Fulfillment` + `FulfillmentLineItem` | filter test/non-merchandise lines and apply the explicit fulfillment-status policy; emit versioned `sales_fulfillments`; aggregate only successfully fulfilled merchandise into cumulative `sales` versions at SKU×demand-location×business-day, preserving exact net merchandise amount |
+| `Location` + approved demand-location mapping | physical `locations` through a versioned, retailer-approved `source_mapping_configs` crosswalk for store/DC/3PL, market, operating currency, timezone, region and city; preserve channel separately through the market-qualified `channels` dimension; create a virtual online demand location only when the retailer's attribution policy requires one, never merely because the order is online; record resolved mappings in `source_crosswalks` |
+| `Order` + channel evidence + `LineItem` + `Fulfillment` + `FulfillmentLineItem` | filter test/non-merchandise lines and apply the explicit fulfillment-status policy; emit versioned `sales_fulfillments`; aggregate only successfully fulfilled merchandise into cumulative `sales` versions at SKU×demand-location×channel×business-day, preserving exact net merchandise amount |
 | `Return` + `ReturnLineItem` + return-processing evidence + `Refund` + `RefundLineItem` + `OrderTransaction` | a return request is intent only; emit a cumulative/versioned `physical_return` child only from processed return quantity, and a separate `financial_refund` child only from a successful refund transaction with exact merchandise amount; a late event never rewrites an earlier forecast origin |
 | `Fulfillment` location + `FulfillmentOrder.assignedLocation` | actual supply location first, retailer-confirmed assigned-location fallback second, into `sales_fulfillments`; never use the warehouse as online demand origin |
-| Variant price/compare-at price + order-line money | catalog `Money` scalars and order/refund `MoneyBag.shopMoney` follow separate mappings; timestamped `sell_prices` use an approved online/market/location scope, while exact order-line money produces `sales.net_sales_amount` and rounded display `sales.net_price`; never infer store scope or unobserved historical prices from the current catalog |
+| Variant price/compare-at price + order-line money | catalog `Money` scalars and order/refund `MoneyBag.shopMoney` follow separate mappings; timestamped `sell_prices` use an approved location+channel scope, while exact order-line money produces `sales.net_sales_amount` and rounded display `sales.net_price`; shop-wide source prices may fan to declared active store×channel targets with provenance but do not become independent price evidence; never infer unobserved historical prices from the current catalog |
 | `InventoryLevel.quantities` | profile-mapped named inventory states and source controls for timestamped `stock_snapshots`; a current snapshot is never backdated into historical daily stock |
 | Discount allocations/definitions + tax lines | exact line/order attribution across split/partial fulfillments using the canonical integer-allocation rule; tax remains a separate control; `net_price` is display-only; promotion linkage is emitted where definitions exist |
 

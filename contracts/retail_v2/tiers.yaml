@@ -1,0 +1,87 @@
+schemaVersion: retail-v2-tiers/v1
+
+tiers:
+  t1_core:
+    publicationRequired: true
+    missingBehavior: critical_or_declared_capability_downgrade
+    entities:
+      - sales
+      - sales_adjustments
+      - sales_fulfillments
+      - products
+      - locations
+      - stores
+      - channels
+      - calendar
+      - calendar_events
+      - sell_prices
+      - stock_snapshots
+      - suppliers_leadtimes
+      - assortment_calendar
+      - customer_segments
+      - fx_rates
+      - market_disruptions
+    stagedSupportingDatasets:
+      - store_assortment
+
+  t2_operational:
+    publicationRequired: false
+    missingBehavior: capability_downgrade
+    entities:
+      - purchase_receipts
+      - inventory_cost
+      - competitors
+      - competitor_products
+      - competitor_prices
+      - competitor_matches
+      - promotions
+      - promotion_scopes
+      - promotion_merchandise_targets
+      - weather_actual
+      - weather_forecast
+      - local_events
+      - macro_index
+      - inventory_batches
+      - inbound_shipments
+      - transfer_orders
+      - allocations
+      - waste_events
+      - warehouse_capacity_snapshots
+      - wms_inventory_comparisons
+      - supplier_performance
+
+  t3_control:
+    publicationRequired: false
+    missingBehavior: capability_downgrade_or_not_applicable
+    entities:
+      - forecast_versions
+      - forecast_series
+      - forecast_drivers
+      - planner_adjustments
+      - users
+      - roles
+      - data_sources
+      - source_mapping_configs
+      - ingest_runs
+      - reconciliation_results
+      - quality_violations
+      - quarantine_records
+      - source_crosswalks
+      - model_registry
+      - model_drift
+      - alert_rules
+    sourceControlDatasets:
+      - fulfillment_status_history
+      - webhook_hmac_fixtures
+      - customer_basket_detail
+
+assortmentFallback:
+  policyId: full_assortment_profile_v1
+  allowedOnlyWhen: source_profile_explicitly_declares_all_launched_skus_at_all_in_market_locations_and_channels
+  provenanceRequired: true
+  otherwise:
+    outcome: capability_downgrade
+    affectedCapabilities:
+      - demand_forecast
+      - pricing_elasticity
+      - replenishment

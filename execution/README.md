@@ -1,8 +1,10 @@
 # `execution/` — shared operational execution profiles
 
 This independently installable, source-neutral package resolves hardware/runtime controls for
-datagen, ingestion and ML. The Go API implements the same versioned JSON contract and golden
-vectors in its own runtime.
+datagen, ingestion and ML. The [Aarv](https://github.com/nilshah80/aarv)-based Go API implements
+the same versioned JSON contract and golden vectors in its own runtime; its adapter maps the
+resolved API namespace to HTTP concurrency, queue, timeout and pool controls without letting the
+web framework change business semantics.
 
 Execution settings may change throughput, memory use and spill behavior only. They never change
 retailer scenarios, canonical data, model/policy semantics, source-run IDs or business
@@ -12,10 +14,21 @@ The datagen distribution packages this shared runtime from the same source so
 `pip install -e datagen` remains standalone and never tries to resolve a private
 package from PyPI. Install `execution/` independently for ingestion/ML development:
 
-```bash
-datagen/.venv/bin/pip install -e datagen
-ingestion/.venv/bin/pip install -e execution
+```powershell
+# Windows PowerShell
+.\datagen\.venv\Scripts\python.exe -m pip install -e datagen
+.\ingestion\.venv\Scripts\python.exe -m pip install -e execution
 ```
+
+```bash
+# macOS / Linux
+datagen/.venv/bin/python -m pip install -e datagen
+ingestion/.venv/bin/python -m pip install -e execution
+```
+
+The resolver itself is platform-neutral: it handles values and validation only. Layer adapters
+must use native path/process/pool primitives. Execution profiles cannot select a different
+business result by OS, and the golden vectors must pass on Windows, macOS and Linux.
 
 Resolution precedence is:
 

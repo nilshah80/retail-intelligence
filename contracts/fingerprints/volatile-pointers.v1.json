@@ -1,0 +1,17 @@
+{
+  "version": "volatile-pointers/v1",
+  "pointers": [
+    "/artifacts",
+    "/duckdb_mtime_ns",
+    "/duckdb_size",
+    "/duration_seconds",
+    "/executionProfile",
+    "/executionTelemetry",
+    "/generated_at_utc",
+    "/mtime_ns",
+    "/output_dir",
+    "/size_bytes",
+    "/warehouse_metadata_mtime_ns",
+    "/warehouse_metadata_size"
+  ]
+}

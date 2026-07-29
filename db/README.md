@@ -6,6 +6,12 @@
 **Single owner:** **Alembic (Python)** is the one migration owner; the Go `api/` generates its
 structs from the resulting schema. (Avoids two tools racing on one schema.)
 
+**Portability gate:** migration authoring and local upgrade/downgrade commands must run from
+PowerShell on Windows and a normal terminal on macOS/Linux without Bash wrappers. Paths and
+subprocesses use platform-native APIs; migrations cannot depend on executable bits, symlinks or
+case-only filename distinctions. CI applies the same migration chain to PostgreSQL on all three
+host OS families before the database layer is complete.
+
 **Planned tables:**
 - **Reused and extended from the M5 PoC (`[REUSE + EXTEND]`, migrations 001/002/003):** `workflow_sessions`,
   `draft_orders`, `approvals`, `exceptions` (+ notes, status history), `audit_log`, `policy_edits`,

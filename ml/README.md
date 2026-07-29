@@ -46,6 +46,13 @@ telemetry are recorded in the artifact/run manifest but excluded from feature/mo
 fingerprints. Fixed RNG/deterministic trainer settings must make safe/ultra-performance outcomes
 equivalent within declared library tolerances.
 
+**Portability gate:** Windows, macOS and Linux are required ML targets. Feature construction, a
+small deterministic train/backtest, serialization and artifact publication must run on all three
+using supported pinned wheels. Worker startup cannot rely on `fork`; paths use `pathlib`;
+temporary/cache locations use platform APIs; native libraries and thread pools are bounded by the
+execution profile. Keys, features and acceptance decisions must match across OSes, while any
+allowed model floating-point tolerance is explicit and tested rather than assumed.
+
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.
 

@@ -1,0 +1,53 @@
+name: phase2-python
+
+on:
+  push:
+    paths:
+      - "contracts/**"
+      - "execution/**"
+      - "ingestion/**"
+      - "ml/**"
+      - "tools/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "execution/**"
+      - "ingestion/**"
+      - "ml/**"
+      - "tools/**"
+      - ".github/workflows/**"
+
+concurrency:
+  group: phase2-python-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts-and-boundaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            contracts/python/pyproject.toml
+            execution/pyproject.toml
+            ingestion/pyproject.toml
+            ml/pyproject.toml
+      - name: Create isolated environments
+        run: python tools/dev.py envs
+      - name: Validate contracts and test
+        run: |
+          python tools/dev.py contracts
+          python tools/dev.py test
+      - name: Build and install actual wheels
+        run: |
+          python tools/dev.py wheels
+          python tools/dev.py wheels --offline

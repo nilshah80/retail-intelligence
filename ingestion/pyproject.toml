@@ -1,0 +1,37 @@
+[project]
+name = "retail-ingestion"
+version = "0.1.0"
+description = "Immutable landing, Gate A, source profiles/adapters, staging, source-neutral transforms, Gate B and curated publication"
+requires-python = ">=3.12"
+dependencies = [
+  "retail-contracts",
+  "retail-intelligence-execution",
+  "duckdb>=1.1",
+  "pyarrow>=17",
+  "pandas>=2.2",
+  "pyyaml>=6.0",
+  "jsonschema>=4.21",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "setuptools>=68", "wheel>=0.43"]
+
+[project.scripts]
+retail-ingest = "retail_ingestion.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+retail_ingestion = ["profiles/*.yaml", "quality/rules/*.sql"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+  "pinned_run: slow acceptance test that asserts the exact accepted source run",
+]

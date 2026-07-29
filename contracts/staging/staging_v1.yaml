@@ -1,0 +1,120 @@
+schemaVersion: retail-staging/v1
+description: Versioned source-neutral envelopes emitted by profiles/adapters.
+
+commonFields:
+  source_system: {type: string, required: true}
+  source_instance: {type: string, required: true}
+  source_schema_version: {type: string, required: true}
+  source_snapshot_id: {type: string, required: true}
+  native_snapshot_id: {type: string, required: false}
+  native_record_id: {type: string, required: true}
+  market_id: {type: string, required: true}
+  known_as_of: {type: timestamp, required: true}
+  evidence_grade:
+    type: string
+    required: true
+    enum:
+      - native_observed
+      - native_processed
+      - native_posted_available
+      - native_extracted
+      - landing_backfill
+  row_provenance:
+    type: string
+    required: true
+    enum: [SYNTHETIC, SHOPIFY_ACTUAL, SHOPIFY_DERIVED, ERP_ACTUAL, EXTERNAL_ACTUAL]
+  raw_object_hash: {type: string, required: true}
+  profile_version: {type: string, required: true}
+  adapter_version: {type: string, required: true}
+
+envelopes:
+  merchandise:
+    requiredFields:
+      - event_kind
+      - source_sale_id
+      - source_line_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - business_date
+      - units
+      - net_amount_major
+      - currency_code
+    optionalFields:
+      - gross_amount_major
+      - discount_amount_major
+      - tax_amount_major
+      - promo_source_key
+
+  adjustment:
+    requiredFields:
+      - source_event_id
+      - source_parent_event_id
+      - source_sale_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - sale_date
+      - event_date
+      - event_type
+    optionalFields: [units, amount_major, currency_code, reason_code]
+
+  fulfillment:
+    requiredFields:
+      - source_fulfillment_line_id
+      - source_sale_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - supply_location_source_key
+      - sale_date
+      - fulfilled_at
+      - units
+    optionalFields: [shipment_id, carrier_status]
+
+  inventory:
+    requiredFields:
+      - sku_source_key
+      - location_source_key
+      - snapshot_date
+      - on_hand_units
+    optionalFields:
+      - on_order_units
+      - committed_units
+      - reserved_units
+      - damaged_units
+      - in_transit_units
+      - source_observed_atp_units
+
+  receipt:
+    requiredFields:
+      - source_receipt_id
+      - sku_source_key
+      - location_source_key
+      - supplier_source_key
+      - receipt_date
+      - qty
+      - unit_cost_major
+      - currency_code
+    optionalFields: [batch_id, expiry_date]
+
+  dimension_signal:
+    requiredFields: [entity_kind, natural_key, effective_at, payload]
+    optionalFields:
+      - geo_scope_type
+      - geo_scope_id
+      - merch_scope_type
+      - merch_scope_id
+      - channel_source_key
+
+supportingDatasets:
+  store_assortment:
+    classification: staged
+    tier: t1_core
+    requiredFields:
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - active_from
+    optionalFields: [active_to]
+    canonicalOutput: assortment_calendar

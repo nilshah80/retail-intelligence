@@ -1,0 +1,35 @@
+schemaVersion: retail-determinism/v1
+
+profileInvariance:
+  requiredSemanticEquality:
+    - accepted_row_set
+    - quarantined_row_set
+    - quarantine_reason_codes
+    - reconciliation_controls
+    - capability_mask
+    - semantic_fingerprints
+  semanticIdentityExcludes:
+    - execution_profile
+    - execution_telemetry
+    - worker_identifiers
+    - host_identifiers
+    - wall_clock_duration
+
+byteEquality:
+  acceptanceRole: secondary_unless_writer_fully_pinned
+  requiredWhenAllPinned:
+    - writer_library
+    - writer_version
+    - partition_keys
+    - file_names
+    - row_order
+    - parquet_row_group_size
+    - compression
+    - encoding
+  otherwise: report_without_semantic_failure
+
+publication:
+  deterministicPartitionAndFileNames: true
+  deterministicBusinessKeyRowOrder: true
+  deterministicQuarantineOrderAndIds: true
+  semanticArtifactsExcludeRuntimeMetadata: true

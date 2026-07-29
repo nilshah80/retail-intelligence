@@ -12,6 +12,10 @@ local build works** (not a prerequisite). Python datagen, ingestion and ML workl
 managed jobs; the Go API runs as a container service; artifacts + lineage live in S3;
 workflow/audit in RDS.
 
+AWS containers may use Linux images, but that deployment choice does not narrow the local support
+contract: shared application code and developer/build commands remain required on Windows,
+macOS and Linux. Container success cannot replace the three-OS local/CI acceptance gates.
+
 **Governance hard rule:** real client data (if ever used) runs only in an approved
 **client-controlled account** with residency, encryption, retention, and access controls — never
 mixed with the PoC's synthetic account. This PoC account uses generated data only.
@@ -30,7 +34,7 @@ The design is built around config-switched seams so local and AWS run the same l
 | Pipeline orchestration | scripts / nightly | **Step Functions + EventBridge** (or SageMaker Pipelines) |
 | Model tracking / registry | local MLflow | **MLflow on ECS** + **SageMaker Model Registry** |
 | Relational DB (workflow, audit, recs) | Postgres (Docker) | **RDS PostgreSQL** (Multi-AZ) |
-| API runtime | Go binary | **ECS Fargate** behind **ALB** / **API Gateway** |
+| API runtime | Aarv-based Go binary | **ECS Fargate** behind **ALB** / **API Gateway** |
 | UI hosting | dev server | **S3 + CloudFront** (or Amplify) |
 | Auth / RBAC | local dev users | **Cognito** |
 | Secrets / keys | `.env` | **Secrets Manager** + **KMS** |
@@ -86,13 +90,14 @@ cost capability passes. Reporting conversion uses the same exponent-aware per-fa
 local. **Exit:** replenishment + pricing artifacts are market-scoped and
 published in-cloud under guardrails.
 
-### Phase A4 — Go API & workflow
-Go API on **ECS Fargate** behind **ALB/API Gateway**; **RDS** for workflow/audit; **Cognito**
-for RBAC; serve S3 artifacts; preserve local market/currency on recommendations; serve-time
-guardrail re-validation against the same resolved market policy; staleness 409/503; fingerprint
-parity with the Python side; reason-coded evidence blocks remain visible rather than becoming
-empty pricing results. **Exit:** the API serves live artifacts; approve/override audited;
-auth enforced.
+### Phase A4 — Aarv-based Go API & workflow
+[Aarv](https://github.com/nilshah80/aarv)-based Go API on **ECS Fargate** behind **ALB/API
+Gateway**; pin exact Aarv module versions in the image build and keep `contracts/` OpenAPI
+authoritative. Use **RDS** for workflow/audit and **Cognito** for RBAC; serve S3 artifacts;
+preserve local market/currency on recommendations; serve-time guardrail re-validation against
+the same resolved market policy; staleness 409/503; fingerprint parity with the Python side;
+reason-coded evidence blocks remain visible rather than becoming empty pricing results.
+**Exit:** the API serves live artifacts; approve/override audited; auth enforced.
 
 ### Phase A5 — UI deployment
 Deploy the front-end already delivered incrementally by the local vertical slices to **S3 +

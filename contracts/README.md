@@ -12,7 +12,7 @@ Hardware/runtime tuning is also deliberately outside this canonical contract. Th
 `execution/` package owns versioned execution-profile definitions and Python golden vectors;
 it contains no retailer, source or canonical schema.
 
-**Planned contents:**
+**Implemented foundation and planned extensions:**
 - **`retail_v2` schema** — canonical entity/grain/column definitions (the authoritative version
   of spec §11): versioned sales, exact money, adjustments and demand-to-supply fulfillment facts;
   cost/price history; competitor; promotions/segments; external signals; multi-echelon inventory;
@@ -21,7 +21,8 @@ it contains no retailer, source or canonical schema.
   `sku > dept > category`; promotion applicability keeps its explicit multi-axis qualifier rows.
 - **Temporal identity rules** — explicit monotonic integers for cumulative/correctable facts;
   stable natural key + effective/observation time + `known_as_of` for observation/reference facts,
-  with deterministic cutoff selection and divergent-duplicate quarantine.
+  with a required closed `known_as_of_evidence_grade`, deterministic cutoff selection and
+  divergent-duplicate quarantine.
 - **Money/FX rules** — sales and sell prices use location operating currency; presentment money is
   audit-only. Reporting FX is exact local/base→reporting/quote `DECIMAL(38,18)` with
   exponent-aware per-fact `ROUND_HALF_EVEN` and shared Python/Go golden vectors.
@@ -50,8 +51,28 @@ it contains no retailer, source or canonical schema.
   percentages/evidence gates may inherit defaults; absolute money, grid/step and price-ending
   conventions must be market-scoped. Python engines and Go serve-time re-validation read and
   fingerprint the same resolved payload—never duplicated in code.
+- **Generated row types** — deterministic Python `TypedDict`, Go struct and TypeScript interface
+  outputs from `retail_v2/schema.yaml`; TypeScript transports int64 as decimal text to avoid
+  browser precision loss. Presence and nullability remain independent: a required-nullable field
+  is emitted as a required `T | None`, Go pointer without `omitempty`, and required `T | null`,
+  while Gate B separately proves that the source key/column was present.
+- **Determinism contract** — semantic row/control/capability/hash equality is mandatory across
+  execution profiles; byte-identical Parquet is mandatory only under a fully pinned writer.
 - **API contract** — proto / OpenAPI for the Go ↔ UI (and Go ↔ Python scoring service) surface.
+  It remains authoritative when the Go transport is implemented with
+  [Aarv](https://github.com/nilshah80/aarv); framework-generated routes/docs must conform to this
+  contract rather than redefine it.
+
+**Portability contract:** schema validation, fingerprint vectors and Python/Go/TypeScript code
+generation must produce the same semantic output on Windows, macOS and Linux. Contract files are
+UTF-8 with LF endings; generated source uses deterministic newlines and ordering. Manifest fields
+store normalized `/`-separated logical paths, never host-specific absolute paths or `\`
+separators. Physical I/O remains native to the implementation.
 
 **Spec:** Architecture/data flow, §4.1 (two gates), §11 (canonical schema and source adapters).
 
-_No code yet — information only._
+The Phase-2 foundation now includes the 53-entity `retail_v2/schema.yaml`, tier and temporal
+contracts, six staging envelopes, source-profile and coverage JSON Schemas, exact Python
+money/FX utilities, `semantic-fingerprint/v1`, guardrail resolution/vectors, determinism policy
+and generated cross-language row types. The Go guardrail/fingerprint consumers, OpenAPI contract
+and remaining ingestion implementation continue under Phase 2.

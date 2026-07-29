@@ -17,7 +17,7 @@ immutable raw landing
 
 ## Ownership
 
-Planned contents:
+Owned contents:
 
 - `landing/` — immutable snapshots, landing timestamps, hashes and idempotent replay;
 - `profiles/` — declarative source schema, format, field, key, timezone, currency, tax and
@@ -32,6 +32,51 @@ Planned contents:
   expected canonical controls for golden round-trip tests; never a runtime transform or datagen
   dependency;
 - `warehouse/` — atomic curated Parquet/DuckDB publication.
+
+## Current implementation status
+
+The Phase-2 foundation now includes:
+
+- a Windows/macOS/Linux CLI and bounded runtime adapter using the shared execution resolver;
+- streaming immutable landing with byte-count/SHA-256 verification;
+- ingestion-owned RFC-8785 `source_snapshot_id`, separately retained native run ID, idempotent
+  replay and corrupt native-ID reuse detection;
+- atomic snapshot promotion into physically separate `public`, `restricted_truth` and
+  `restricted_mirror` roots;
+- portable logical-path validation, including Windows-invalid/reserved path rejection;
+- real isolated-wheel and static import-boundary checks;
+- the machine-readable 53-entity contract, exact money/FX/fingerprint utilities, guardrail
+  resolver/vectors and generated Python/Go/TypeScript row types.
+
+The full pin is landed as snapshot
+`dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`: all 8,644 objects
+were streamed through byte/SHA-256 verification into 8,398 public, 245 restricted-truth and one
+restricted-mirror object. A repeat request under another execution profile was an idempotent replay.
+Gate A, source adapters/staging, source-neutral transforms, Gate B and curated publication remain
+the next implementation slices.
+
+The authoritative cross-platform entry point is:
+
+```powershell
+# Windows PowerShell
+py -3 tools/dev.py contracts
+py -3 tools/dev.py test
+py -3 tools/dev.py land --source-root datagen\output\multi-market-10-year-demo\run-34b0ff729c8abe09 --landing-root ingestion\data\raw --execution-profile safe
+```
+
+```bash
+# macOS / Linux
+python3 tools/dev.py contracts
+python3 tools/dev.py test
+python3 tools/dev.py land --source-root datagen/output/multi-market-10-year-demo/run-34b0ff729c8abe09 --landing-root ingestion/data/raw --execution-profile safe
+```
+
+The `Makefile` is a POSIX convenience only. Windows does not require Make or a Unix shell.
+Manifest/catalog paths are normalized logical `/` paths; physical access uses `pathlib`.
+Landing and warehouse writers stage on the destination volume and close files, Arrow readers,
+memory maps and DuckDB connections before promotion. Windows-invalid/reserved and
+case-colliding paths fail before copying. Phase 2 is not portable-complete until landing, gates,
+transforms and publication fixtures pass on Windows, macOS and Linux.
 
 ## Shared execution profiles
 
@@ -54,8 +99,9 @@ universal raw-source requirements.
 
 The source profile/adapter must declare how each missing operational property is handled:
 
-- use trusted native creation/update/observation timestamps when available;
-- otherwise derive `observed_at` from immutable extraction/landing time and record the derivation;
+- use trusted native observation/processing/extraction timestamps when they establish availability;
+- otherwise derive `known_as_of` from immutable extraction/landing evidence and record
+  `known_as_of_evidence_grade`; business/effective time never becomes availability by default;
 - construct explicit monotonic versions by deterministic snapshot/event differencing only for
   canonical cumulative/correctable facts; reference/observation facts instead use their declared
   natural key + effective/observation time + `known_as_of`;
@@ -70,17 +116,42 @@ profile when defensible, but a client-actual capability may impose stricter evid
 ## Datagen source-format and DuckDB profile
 
 Datagen source contract v11 publishes one authoritative tabular format per run—CSV or
-Parquet—and a single
-`source-run.duckdb` mirror. Gate A must support both authoritative formats. For the PoC it may
-also use a dedicated datagen-DuckDB source profile to accelerate staging, provided it:
+Parquet—and a single all-source `source-run.duckdb` mirror. Gate A must support both authoritative
+formats.
 
-- lands the DuckDB and manifest immutably and validates them against the object/catalog hashes;
-- selects datasets through `source_object_catalog`/`source_dataset_catalog`, never hard-coded
-  table names;
-- admits only `restricted=false` datasets into ordinary staging;
-- prevents every `_truth/*`/`truth_*` dataset from entering transformations or ML features;
-- records the authoritative CSV/Parquet logical path, format, compression and hash as lineage,
-  even when rows were read from the DuckDB mirror.
+**The all-source mirror is not a permission boundary.** It contains public source tables *and*
+restricted `_truth` in one file, so filtering `restricted=false` in application code is a logical
+filter only: any process able to open the database can query truth tables. Landing therefore uses
+three permission lanes:
+
+- **public lane** — public source objects plus public generator metadata. The **only** lane
+  ordinary ingestion (landing → staging → transforms → gates → ML) may read.
+- **restricted truth lane** — `_truth/*`, readable only by the test/evaluation oracle under
+  oracle-admin permission.
+- **all-source mirror lane** — `source-run.duckdb`, oracle/evaluation-admin only. Never an
+  ingestion input. Note the restricted set is not coextensive with `_truth/`: the mirror is its own
+  category, so a profile that refuses every `_truth/*` dataset while opening the whole mirror has
+  not been prevented from reading truth.
+
+When DuckDB speed is wanted for staging, ingestion builds its own **public-only** DuckDB cache from
+landed public Parquet. Note that `source_object_catalog` and `source_dataset_catalog` live *inside*
+the restricted all-source mirror, so the cache builder cannot use them to discover datasets — that
+would require opening the prohibited file. It discovers datasets from **public manifest metadata**
+instead:
+
+1. read the public `source-run-manifest.json` and `source-schema.json`;
+2. select manifest objects where `restricted == false`;
+3. load those public Parquet/CSV objects, having validated them against the landing manifest hashes;
+4. **build ingestion-owned `source_object_catalog` and `source_dataset_catalog` inside the derived
+   public-only DuckDB** — the cache publishes its own catalogs rather than copying the mirror's;
+5. preserve the manifest paths, hashes, formats and compression as lineage.
+
+The result contains no `restricted=true`/`_truth/*`/`truth_*` dataset **by construction, not by
+filter**, and remains a disposable derived cache that never becomes the lineage authority.
+
+Reading the all-source mirror's own catalogs is legitimate only in the one-time run-acceptance
+check, performed under oracle/evaluation-admin permission, that reconciles those catalogs against
+the authoritative Parquet objects. That is an acceptance activity, not an ingestion path.
 
 The DuckDB path is a synthetic-run convenience, not a requirement for real retailers. A retailer
 may land CSV, Parquet, JSONL, API extracts or another declared format directly; its profile still
@@ -125,5 +196,3 @@ with AND-within-row and OR-across-row semantics.
   source-truth→canonical control oracle; production transforms do not read hidden truth.
 
 **Spec:** §4.1 and §11.
-
-_No code yet — information only._

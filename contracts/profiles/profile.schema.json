@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/profile/v1/schema.json",
+  "title": "Retail source profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "profileVersion",
+    "sourceSystem",
+    "sourceSchemaVersion",
+    "businessTimezone",
+    "channelPolicy",
+    "assortmentPolicy",
+    "datasets"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "retail-source-profile/v1"},
+    "profileId": {"type": "string", "minLength": 1},
+    "profileVersion": {"type": "string", "minLength": 1},
+    "sourceSystem": {"type": "string", "minLength": 1},
+    "sourceSchemaVersion": {"type": "string", "minLength": 1},
+    "businessTimezone": {"type": "string", "minLength": 1},
+    "channelPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["native", "declared_default"]},
+        "defaultChannelId": {"type": "string", "minLength": 1},
+        "derivationRule": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "declared_default"}}},
+          "then": {"required": ["defaultChannelId", "derivationRule"]}
+        }
+      ]
+    },
+    "assortmentPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "enum": [
+            "native_store_assortment",
+            "full_assortment_profile_v1",
+            "unavailable"
+          ]
+        },
+        "provenanceRule": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "full_assortment_profile_v1"}}},
+          "then": {"required": ["provenanceRule"]}
+        }
+      ]
+    },
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceUnit", "taxBasis"],
+      "properties": {
+        "sourceUnit": {"enum": ["major_decimal", "minor_integer"]},
+        "taxBasis": {"enum": ["inclusive", "exclusive"]},
+        "currencyField": {"type": "string"}
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/dataset"}
+    }
+  },
+  "$defs": {
+    "columnPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceColumn", "outcome"],
+      "properties": {
+        "sourceColumn": {"type": "string"},
+        "canonicalField": {"type": "string"},
+        "outcome": {
+          "enum": [
+            "gate_a_failure",
+            "derive_with_provenance",
+            "capability_downgrade",
+            "quarantine",
+            "declared_unsupported"
+          ]
+        },
+        "derivationRule": {"type": "string"},
+        "affectedCapability": {"type": "string"},
+        "reasonCode": {"type": "string"}
+      }
+    },
+    "availabilityRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceColumn", "evidenceGrade"],
+      "properties": {
+        "sourceColumn": {"type": "string"},
+        "evidenceGrade": {
+          "enum": [
+            "native_observed",
+            "native_processed",
+            "native_posted_available",
+            "native_extracted",
+            "landing_backfill"
+          ]
+        },
+        "postingAvailabilityProof": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidenceGrade": {"const": "native_posted_available"}
+            }
+          },
+          "then": {"required": ["postingAvailabilityProof"]}
+        }
+      ]
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "datasetId",
+        "classification",
+        "permissionLane",
+        "format",
+        "sourceKeys",
+        "columnPolicies"
+      ],
+      "properties": {
+        "datasetId": {"type": "string", "minLength": 1},
+        "classification": {
+          "enum": [
+            "staged",
+            "control_only",
+            "fixture_only",
+            "restricted_oracle",
+            "ignored_by_profile",
+            "unsupported"
+          ]
+        },
+        "permissionLane": {
+          "enum": ["public", "restricted_truth", "all_source_mirror"]
+        },
+        "format": {"enum": ["csv", "parquet", "jsonl", "json", "duckdb"]},
+        "compression": {"type": "string"},
+        "sourceKeys": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "columnPolicies": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/columnPolicy"}
+        },
+        "availabilityRules": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/availabilityRule"}
+        }
+      }
+    }
+  }
+}

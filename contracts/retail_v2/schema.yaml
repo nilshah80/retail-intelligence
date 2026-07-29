@@ -1,0 +1,958 @@
+schemaVersion: retail_v2
+contractRevision: 1
+fingerprintSpec: semantic-fingerprint/v1
+description: Canonical source-neutral retail contract produced by ingestion.
+
+typeVocabulary:
+  - string
+  - date
+  - timestamp
+  - int32
+  - int64
+  - boolean
+  - decimal
+  - json
+
+closedEnums:
+  ruleOutcome: [pass, warning, capability_downgrade, critical]
+  evidenceGrade:
+    - native_observed
+    - native_processed
+    - native_posted_available
+    - native_extracted
+    - landing_backfill
+  entityTier: [t1_core, t2_operational, t3_control]
+  datasetClass:
+    - staged
+    - control_only
+    - fixture_only
+    - restricted_oracle
+    - ignored_by_profile
+    - unsupported
+  columnOutcome:
+    - gate_a_failure
+    - derive_with_provenance
+    - capability_downgrade
+    - quarantine
+    - declared_unsupported
+  geoScopeType: [market, region, location]
+  merchScopeType: [sku, dept, category]
+
+entities:
+  sales:
+    ownership: in
+    tier: t1_core
+    temporalClass: cumulative_versioned
+    grain: [sku_id, store_id, channel_id, date, sales_version]
+    primaryKey: [sku_id, store_id, channel_id, date, sales_version]
+    versionField: sales_version
+    fields:
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      date: {type: date, required: true}
+      sales_version: {type: int64, required: true, minimum: 1}
+      units: {type: int64, required: true, minimum: 0}
+      gross_sales_amount: {type: int64, required: false, semantic: money_minor}
+      discount_amount: {type: int64, required: false, semantic: money_minor}
+      net_sales_amount: {type: int64, required: true, minimum: 0, semantic: money_minor}
+      tax_amount: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: true}
+      net_price: {type: int64, required: false, semantic: display_money_minor}
+      promo_flag: {type: boolean, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  sales_adjustments:
+    ownership: in
+    tier: t1_core
+    temporalClass: cumulative_versioned
+    grain: [adjustment_id, adjustment_version]
+    primaryKey: [adjustment_id, adjustment_version]
+    versionField: adjustment_version
+    fields:
+      adjustment_id: {type: string, required: true}
+      adjustment_version: {type: int64, required: true, minimum: 1}
+      source_sale_id: {type: string, required: false}
+      source_parent_event_id: {type: string, required: false}
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      sale_date: {type: date, required: true}
+      event_date: {type: date, required: true}
+      event_type: {type: string, required: true, enum: [physical_return, post_fulfilment_cancellation, financial_refund]}
+      units: {type: int64, required: false, minimum: 1}
+      amount: {type: int64, required: false, minimum: 1, semantic: money_minor}
+      currency_code: {type: string, required: false}
+      reason_code: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  sales_fulfillments:
+    ownership: in
+    tier: t1_core
+    temporalClass: cumulative_versioned
+    grain: [fulfillment_line_id, fulfillment_version]
+    primaryKey: [fulfillment_line_id, fulfillment_version]
+    versionField: fulfillment_version
+    fields:
+      fulfillment_line_id: {type: string, required: true}
+      fulfillment_version: {type: int64, required: true, minimum: 1}
+      source_sale_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      demand_location_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      supply_location_id: {type: string, required: true}
+      sale_date: {type: date, required: true}
+      fulfilled_at: {type: timestamp, required: true}
+      units: {type: int64, required: true, minimum: 0}
+      shipment_id: {type: string, required: false}
+      carrier_status: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  products:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [sku_id, known_as_of]
+    primaryKey: [sku_id, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      dept_id: {type: string, required: true}
+      category: {type: string, required: true}
+      sub_cat: {type: string, required: true}
+      pack_size: {type: int64, required: true, minimum: 1}
+      product_name: {type: string, required: false}
+      brand: {type: string, required: false}
+      shelf_life_days: {type: int32, required: false, minimum: 0}
+      reference_cost: {type: int64, required: false, semantic: money_minor}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  locations:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [location_id, known_as_of]
+    primaryKey: [location_id, known_as_of]
+    fields:
+      location_id: {type: string, required: true}
+      name: {type: string, required: false}
+      type: {type: string, required: true, enum: [store, online, dc, 3pl]}
+      market_id: {type: string, required: true}
+      currency_code: {type: string, required: true}
+      timezone: {type: string, required: true, semantic: iana_timezone}
+      region: {type: string, required: true}
+      city: {type: string, required: false}
+      parent_dc: {type: string, required: false}
+      format: {type: string, required: false}
+      active: {type: boolean, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  stores:
+    ownership: poc
+    tier: t1_core
+    publication: derived_view
+    derivedFrom: locations
+    grain: [store_id]
+    primaryKey: [store_id]
+    fields:
+      store_id: {type: string, required: true}
+      market_id: {type: string, required: true}
+      currency_code: {type: string, required: true}
+      timezone: {type: string, required: true}
+      region: {type: string, required: true}
+      format: {type: string, required: false}
+      city: {type: string, required: false}
+
+  channels:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [market_id, channel_id, known_as_of]
+    primaryKey: [market_id, channel_id, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      name: {type: string, required: true}
+      type: {type: string, required: true}
+      description: {type: string, required: false}
+      active: {type: boolean, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  calendar:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [market_id, date, known_as_of]
+    primaryKey: [market_id, date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      date: {type: date, required: true}
+      weekday: {type: string, required: false}
+      month: {type: int32, required: false}
+      year: {type: int32, required: false}
+      working_day: {type: boolean, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  calendar_events:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [market_id, geo_scope_type, geo_scope_id, event_name, date, known_as_of]
+    primaryKey: [market_id, geo_scope_type, geo_scope_id, event_name, date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      date: {type: date, required: true}
+      event_name: {type: string, required: true}
+      event_type: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  sell_prices:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [sku_id, store_id, channel_id, week_start, known_as_of]
+    primaryKey: [sku_id, store_id, channel_id, week_start, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      week_start: {type: date, required: true}
+      net_price: {type: int64, required: true, semantic: money_minor}
+      regular_price: {type: int64, required: false, semantic: money_minor}
+      promo_price: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: true}
+      source_price_path_id: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  stock_snapshots:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [sku_id, location_id, snapshot_date, known_as_of]
+    primaryKey: [sku_id, location_id, snapshot_date, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      snapshot_date: {type: date, required: true}
+      on_hand_units: {type: int64, required: true}
+      on_order_units: {type: int64, required: true}
+      committed_units: {type: int64, required: false}
+      reserved_units: {type: int64, required: false}
+      damaged_units: {type: int64, required: false}
+      in_transit_units: {type: int64, required: false}
+      atp_units: {type: int64, required: false}
+      atp_method: {type: string, required: false, enum: [derived_buckets, source_observed]}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  suppliers_leadtimes:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [supplier_id, destination_location_id, merch_scope_type, merch_scope_id, from_location_id, effective_from, known_as_of]
+    primaryKey: [supplier_id, destination_location_id, merch_scope_type, merch_scope_id, from_location_id, effective_from, known_as_of]
+    fields:
+      supplier_id: {type: string, required: true}
+      destination_location_id: {type: string, required: true}
+      merch_scope_type: {type: string, required: true, enum: [sku, dept, category]}
+      merch_scope_id: {type: string, required: true}
+      from_location_id: {type: string, required: true, nullable: true}
+      effective_from: {type: date, required: true}
+      lead_time_days: {type: int32, required: true, minimum: 0}
+      moq: {type: int64, required: true, minimum: 0}
+      pack_qty: {type: int64, required: true, minimum: 1}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  assortment_calendar:
+    ownership: in
+    tier: t1_core
+    publication: derived
+    temporalClass: observational
+    grain: [sku_id, store_id, channel_id, active_from, known_as_of]
+    primaryKey: [sku_id, store_id, channel_id, active_from, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      active_from: {type: date, required: true}
+      active_to: {type: date, required: false}
+      derivation_method: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  purchase_receipts:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [receipt_id, known_as_of]
+    primaryKey: [receipt_id, known_as_of]
+    fields:
+      receipt_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      supplier_id: {type: string, required: true}
+      receipt_date: {type: date, required: true}
+      qty: {type: int64, required: true}
+      unit_cost: {type: int64, required: true, semantic: money_minor}
+      currency_code: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  inventory_cost:
+    ownership: poc
+    tier: t2_operational
+    temporalClass: observational
+    grain: [sku_id, location_id, as_of_date, known_as_of]
+    primaryKey: [sku_id, location_id, as_of_date, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      as_of_date: {type: date, required: true}
+      wac_cost: {type: int64, required: true, semantic: money_minor}
+      currency_code: {type: string, required: true}
+      on_hand_qty: {type: int64, required: true}
+      method: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  competitors:
+    ownership: cfg
+    tier: t2_operational
+    grain: [market_id, comp_id]
+    primaryKey: [market_id, comp_id]
+    fields:
+      market_id: {type: string, required: true}
+      comp_id: {type: string, required: true}
+      name: {type: string, required: true}
+      type: {type: string, required: true}
+      collection_method: {type: string, required: true}
+      refresh: {type: string, required: true}
+      currency_code: {type: string, required: true}
+      compliance_ok: {type: boolean, required: true}
+
+  competitor_products:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, comp_id, comp_product_id, observed_at, known_as_of]
+    primaryKey: [market_id, comp_id, comp_product_id, observed_at, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      comp_id: {type: string, required: true}
+      comp_product_id: {type: string, required: true}
+      observed_at: {type: timestamp, required: true}
+      title: {type: string, required: true}
+      brand: {type: string, required: false}
+      model: {type: string, required: false}
+      gtin: {type: string, required: false}
+      attributes: {type: json, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  competitor_prices:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, comp_id, comp_product_id, geo_scope_type, geo_scope_id, observed_at, known_as_of]
+    primaryKey: [market_id, comp_id, comp_product_id, geo_scope_type, geo_scope_id, observed_at, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      comp_id: {type: string, required: true}
+      comp_product_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      observed_at: {type: timestamp, required: true}
+      price: {type: int64, required: true, semantic: money_minor}
+      currency_code: {type: string, required: true}
+      in_stock_flag: {type: boolean, required: true}
+      promo_flag: {type: boolean, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  competitor_matches:
+    ownership: poc
+    tier: t2_operational
+    grain: [match_id]
+    primaryKey: [match_id]
+    fields:
+      match_id: {type: string, required: true}
+      market_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      comp_id: {type: string, required: true}
+      comp_product_id: {type: string, required: true}
+      match_confidence: {type: decimal, required: true}
+      match_status: {type: string, required: true}
+      matched_attributes: {type: string, required: false}
+
+  promotions:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, promo_id, known_as_of]
+    primaryKey: [market_id, promo_id, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      promo_id: {type: string, required: true}
+      name: {type: string, required: true}
+      type: {type: string, required: true}
+      objective: {type: string, required: false}
+      offer_value: {type: decimal, required: true}
+      currency_code: {type: string, required: false}
+      start_date: {type: date, required: true}
+      end_date: {type: date, required: true}
+      segment_id: {type: string, required: false}
+      status: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  promotion_scopes:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, promo_id, scope_row_id, known_as_of]
+    primaryKey: [market_id, promo_id, scope_row_id, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      promo_id: {type: string, required: true}
+      scope_row_id: {type: string, required: true}
+      region: {type: string, required: false}
+      location_id: {type: string, required: false}
+      channel_id: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  promotion_merchandise_targets:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, promo_id, merch_scope_type, merch_scope_id, known_as_of]
+    primaryKey: [market_id, promo_id, merch_scope_type, merch_scope_id, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      promo_id: {type: string, required: true}
+      merch_scope_type: {type: string, required: true, enum: [sku, dept, category]}
+      merch_scope_id: {type: string, required: true}
+      discount_pct: {type: decimal, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  customer_segments:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [market_id, segment_id, as_of_date, known_as_of]
+    primaryKey: [market_id, segment_id, as_of_date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      segment_id: {type: string, required: true}
+      name: {type: string, required: true}
+      size: {type: int64, required: true}
+      share_pct: {type: decimal, required: true}
+      description: {type: string, required: false}
+      as_of_date: {type: date, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  weather_actual:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, geo_scope_type, geo_scope_id, date, known_as_of]
+    primaryKey: [market_id, geo_scope_type, geo_scope_id, date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      date: {type: date, required: true}
+      tavg_c: {type: decimal, required: true}
+      precip_mm: {type: decimal, required: true}
+      weather_code: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  weather_forecast:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, geo_scope_type, geo_scope_id, forecast_date, target_date, known_as_of]
+    primaryKey: [market_id, geo_scope_type, geo_scope_id, forecast_date, target_date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      forecast_date: {type: date, required: true}
+      target_date: {type: date, required: true}
+      tavg_c: {type: decimal, required: true}
+      precip_prob: {type: decimal, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  local_events:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, geo_scope_type, geo_scope_id, event_name, date, known_as_of]
+    primaryKey: [market_id, geo_scope_type, geo_scope_id, event_name, date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      date: {type: date, required: true}
+      event_name: {type: string, required: true}
+      event_type: {type: string, required: true}
+      expected_impact: {type: decimal, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  macro_index:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [market_id, geo_scope_type, geo_scope_id, week_start, index_name, known_as_of]
+    primaryKey: [market_id, geo_scope_type, geo_scope_id, week_start, index_name, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      geo_scope_type: {type: string, required: true, enum: [market, region, location]}
+      geo_scope_id: {type: string, required: true}
+      week_start: {type: date, required: true}
+      index_name: {type: string, required: true}
+      value: {type: decimal, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  fx_rates:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [base_ccy, quote_ccy, rate_date, known_as_of]
+    primaryKey: [base_ccy, quote_ccy, rate_date, known_as_of]
+    fields:
+      base_ccy: {type: string, required: true}
+      quote_ccy: {type: string, required: true}
+      rate: {type: decimal, required: true, precision: 38, scale: 18}
+      rate_date: {type: date, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  market_disruptions:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [market_id, disruption_id, phase_id, start_date, known_as_of]
+    primaryKey: [market_id, disruption_id, phase_id, start_date, known_as_of]
+    fields:
+      market_id: {type: string, required: true}
+      disruption_id: {type: string, required: true}
+      phase_id: {type: string, required: true}
+      start_date: {type: date, required: true}
+      end_date: {type: date, required: true}
+      demand_factor: {type: decimal, required: false}
+      traffic_factor: {type: decimal, required: false}
+      supply_factor: {type: decimal, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  inventory_batches:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [batch_id, known_as_of]
+    primaryKey: [batch_id, known_as_of]
+    fields:
+      batch_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      batch_qty: {type: int64, required: true}
+      mfg_date: {type: date, required: false}
+      expiry_date: {type: date, required: false}
+      receipt_date: {type: date, required: true}
+      unit_cost: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  inbound_shipments:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [shipment_id, sku_id, known_as_of]
+    primaryKey: [shipment_id, sku_id, known_as_of]
+    fields:
+      shipment_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      from_location: {type: string, required: false}
+      to_location: {type: string, required: true}
+      qty: {type: int64, required: true}
+      dispatch_date: {type: date, required: false}
+      expected_receipt_date: {type: date, required: true}
+      status: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  transfer_orders:
+    ownership: poc
+    tier: t2_operational
+    grain: [transfer_id]
+    primaryKey: [transfer_id]
+    fields:
+      transfer_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      from_location: {type: string, required: true}
+      to_location: {type: string, required: true}
+      qty: {type: int64, required: true}
+      reason: {type: string, required: true}
+      expected_benefit_minor: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: false}
+      status: {type: string, required: true}
+
+  allocations:
+    ownership: poc
+    tier: t2_operational
+    grain: [allocation_id, location_id]
+    primaryKey: [allocation_id, location_id]
+    fields:
+      allocation_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      pool_qty: {type: int64, required: true}
+      location_id: {type: string, required: true}
+      requested_qty: {type: int64, required: true}
+      allocated_qty: {type: int64, required: true}
+      shortfall: {type: int64, required: true}
+      rule: {type: string, required: true}
+      priority: {type: string, required: true}
+      status: {type: string, required: true}
+
+  waste_events:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [event_id, known_as_of]
+    primaryKey: [event_id, known_as_of]
+    fields:
+      event_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      event_date: {type: date, required: true}
+      units: {type: int64, required: true}
+      reason_code: {type: string, required: true}
+      unit_cost: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  warehouse_capacity_snapshots:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [location_id, snapshot_date, known_as_of]
+    primaryKey: [location_id, snapshot_date, known_as_of]
+    fields:
+      location_id: {type: string, required: true}
+      snapshot_date: {type: date, required: true}
+      capacity_units: {type: int64, required: true}
+      used_units: {type: int64, required: true}
+      blocked_units: {type: int64, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  wms_inventory_comparisons:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [sku_id, location_id, snapshot_date, known_as_of]
+    primaryKey: [sku_id, location_id, snapshot_date, known_as_of]
+    fields:
+      sku_id: {type: string, required: true}
+      location_id: {type: string, required: true}
+      snapshot_date: {type: date, required: true}
+      erp_on_hand_units: {type: int64, required: true}
+      wms_on_hand_units: {type: int64, required: true}
+      difference_units: {type: int64, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  supplier_performance:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [supplier_id, period, known_as_of]
+    primaryKey: [supplier_id, period, known_as_of]
+    fields:
+      supplier_id: {type: string, required: true}
+      period: {type: string, required: true}
+      otd_pct: {type: decimal, required: true}
+      capacity_confirmed_pct: {type: decimal, required: true}
+      lead_time_mean_days: {type: decimal, required: true}
+      lead_time_std_days: {type: decimal, required: true}
+      risk: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  forecast_versions:
+    ownership: poc
+    tier: t3_control
+    grain: [version_id]
+    primaryKey: [version_id]
+    fields:
+      version_id: {type: string, required: true}
+      kind: {type: string, required: true}
+      origin_date: {type: date, required: true}
+      horizon_weeks: {type: int32, required: true}
+      created_by: {type: string, required: true}
+      accuracy: {type: decimal, required: false}
+      bias: {type: decimal, required: false}
+      demand_units: {type: int64, required: true}
+      semantic_fingerprint: {type: string, required: true}
+      status: {type: string, required: true}
+
+  forecast_series:
+    ownership: poc
+    tier: t3_control
+    grain: [version_id, sku_id, store_id, channel_id, horizon_week]
+    primaryKey: [version_id, sku_id, store_id, channel_id, horizon_week]
+    fields:
+      version_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      horizon_week: {type: int32, required: true}
+      yhat_p50: {type: decimal, required: true}
+      yhat_p90: {type: decimal, required: true}
+      confidence: {type: decimal, required: true}
+
+  forecast_drivers:
+    ownership: poc
+    tier: t3_control
+    grain: [version_id, scope, driver]
+    primaryKey: [version_id, scope, driver]
+    fields:
+      version_id: {type: string, required: true}
+      scope: {type: string, required: true}
+      driver: {type: string, required: true}
+      contribution_pct: {type: decimal, required: true}
+      direction: {type: string, required: true}
+      confidence: {type: decimal, required: true}
+
+  planner_adjustments:
+    ownership: poc
+    tier: t3_control
+    grain: [adj_id]
+    primaryKey: [adj_id]
+    fields:
+      adj_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      store_id: {type: string, required: true}
+      channel_id: {type: string, required: true}
+      origin_date: {type: date, required: true}
+      ai_forecast: {type: decimal, required: true}
+      planner_forecast: {type: decimal, required: true}
+      reason_code: {type: string, required: true}
+      effective_period: {type: string, required: true}
+      comment: {type: string, required: false}
+      actor: {type: string, required: true}
+      status: {type: string, required: true}
+      value_added_flag: {type: boolean, required: false}
+
+  users:
+    ownership: cfg
+    tier: t3_control
+    grain: [user_id]
+    primaryKey: [user_id]
+    fields:
+      user_id: {type: string, required: true}
+      name: {type: string, required: true}
+      role: {type: string, required: true}
+      scope: {type: string, required: true}
+      approval_limit_pct: {type: decimal, required: true}
+      status: {type: string, required: true}
+
+  roles:
+    ownership: cfg
+    tier: t3_control
+    grain: [role_id]
+    primaryKey: [role_id]
+    fields:
+      role_id: {type: string, required: true}
+      name: {type: string, required: true}
+      approval_limit: {type: decimal, required: true}
+      rbac_scope_type: {type: string, required: true}
+
+  data_sources:
+    ownership: cfg
+    tier: t3_control
+    grain: [source_id]
+    primaryKey: [source_id]
+    fields:
+      source_id: {type: string, required: true}
+      name: {type: string, required: true}
+      type: {type: string, required: true}
+      source_schema_version: {type: string, required: true}
+      refresh: {type: string, required: true}
+      profile_ref: {type: string, required: true}
+      adapter_version: {type: string, required: true}
+      transform_bundle_version: {type: string, required: true}
+      enabled: {type: boolean, required: true}
+
+  source_mapping_configs:
+    ownership: cfg
+    tier: t3_control
+    grain: [mapping_config_id, version]
+    primaryKey: [mapping_config_id, version]
+    fields:
+      mapping_config_id: {type: string, required: true}
+      source_id: {type: string, required: true}
+      entity: {type: string, required: true}
+      source_key: {type: string, required: true}
+      canonical_key: {type: string, required: true}
+      effective_from: {type: date, required: true}
+      effective_to: {type: date, required: false}
+      version: {type: int64, required: true}
+      approved_by: {type: string, required: true}
+      approved_at: {type: timestamp, required: true}
+      status: {type: string, required: true}
+
+  ingest_runs:
+    ownership: poc
+    tier: t3_control
+    grain: [ingest_run_id]
+    primaryKey: [ingest_run_id]
+    fields:
+      ingest_run_id: {type: string, required: true}
+      source_id: {type: string, required: true}
+      source_snapshot_id: {type: string, required: true}
+      native_snapshot_id: {type: string, required: false}
+      raw_manifest_hash: {type: string, required: true}
+      coverage_manifest_hash: {type: string, required: true}
+      composite_manifest_hash: {type: string, required: true}
+      profile_version: {type: string, required: true}
+      adapter_version: {type: string, required: true}
+      transform_version: {type: string, required: true}
+      started_at: {type: timestamp, required: true}
+      completed_at: {type: timestamp, required: false}
+      status: {type: string, required: true, enum: [pass, validated_partial, fail]}
+      raw_quality_pct: {type: decimal, required: false}
+      canonical_quality_pct: {type: decimal, required: false}
+      capability_mask: {type: json, required: true}
+      curated_fingerprint: {type: string, required: false}
+
+  reconciliation_results:
+    ownership: poc
+    tier: t3_control
+    grain: [reconciliation_id]
+    primaryKey: [reconciliation_id]
+    fields:
+      reconciliation_id: {type: string, required: true}
+      ingest_run_id: {type: string, required: true}
+      entity: {type: string, required: true}
+      metric: {type: string, required: true}
+      raw_value: {type: string, required: true}
+      filtered_value: {type: string, required: true}
+      canonical_value: {type: string, required: true}
+      difference: {type: string, required: true}
+      tolerance: {type: string, required: true}
+      status: {type: string, required: true}
+
+  quality_violations:
+    ownership: poc
+    tier: t3_control
+    grain: [violation_id]
+    primaryKey: [violation_id]
+    fields:
+      violation_id: {type: string, required: true}
+      ingest_run_id: {type: string, required: true}
+      gate: {type: string, required: true}
+      entity: {type: string, required: true}
+      source_record_id: {type: string, required: false}
+      rule_id: {type: string, required: true}
+      outcome: {type: string, required: true, enum: [pass, warning, capability_downgrade, critical]}
+      affected_capability: {type: string, required: false}
+      reason_code: {type: string, required: false}
+      reason: {type: string, required: true}
+      observed_at: {type: timestamp, required: true}
+
+  quarantine_records:
+    ownership: poc
+    tier: t3_control
+    grain: [quarantine_id]
+    primaryKey: [quarantine_id]
+    fields:
+      quarantine_id: {type: string, required: true}
+      ingest_run_id: {type: string, required: true}
+      gate: {type: string, required: true}
+      entity: {type: string, required: true}
+      source_record_id: {type: string, required: false}
+      reason_code: {type: string, required: true}
+      raw_record_ref: {type: string, required: true}
+      payload_hash: {type: string, required: true}
+      quarantined_at: {type: timestamp, required: true}
+
+  source_crosswalks:
+    ownership: poc
+    tier: t3_control
+    temporalClass: observational
+    grain: [crosswalk_id, known_as_of]
+    primaryKey: [crosswalk_id, known_as_of]
+    fields:
+      crosswalk_id: {type: string, required: true}
+      ingest_run_id: {type: string, required: true}
+      mapping_config_id: {type: string, required: true}
+      source_id: {type: string, required: true}
+      entity: {type: string, required: true}
+      source_key: {type: string, required: true}
+      canonical_key: {type: string, required: true}
+      resolution_status: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  model_registry:
+    ownership: poc
+    tier: t3_control
+    grain: [model_id, version]
+    primaryKey: [model_id, version]
+    fields:
+      model_id: {type: string, required: true}
+      family: {type: string, required: true}
+      version: {type: string, required: true}
+      coverage: {type: string, required: true}
+      accuracy: {type: decimal, required: false}
+      last_trained: {type: timestamp, required: true}
+      status: {type: string, required: true}
+      fingerprint: {type: string, required: true}
+
+  model_drift:
+    ownership: poc
+    tier: t3_control
+    grain: [model_id, as_of]
+    primaryKey: [model_id, as_of]
+    fields:
+      model_id: {type: string, required: true}
+      as_of: {type: timestamp, required: true}
+      drift_score: {type: decimal, required: true}
+      threshold: {type: decimal, required: true}
+      status: {type: string, required: true}
+
+  alert_rules:
+    ownership: cfg
+    tier: t3_control
+    grain: [rule_id]
+    primaryKey: [rule_id]
+    fields:
+      rule_id: {type: string, required: true}
+      category: {type: string, required: true}
+      trigger: {type: string, required: true}
+      threshold: {type: decimal, required: true}
+      direction: {type: string, required: true}
+      owner: {type: string, required: true}
+      priority: {type: string, required: true}
+      active: {type: boolean, required: true}

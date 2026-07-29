@@ -5,14 +5,15 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 
 ## Cross-phase UI and demo track `[START EARLY]`
 
-- [ ] Resolve UI framework decision #17 by the end of Phase 1; scaffold the runtime dashboard
+- [~] UI framework decision #17 is recorded (React + Vite + TypeScript + Tailwind); scaffold the runtime dashboard
       shell, routing, design tokens and shared market/currency/status components as soon as the
       first versioned screen/API contract is frozen.
 - [ ] Maintain versioned OpenAPI/read-model contracts and deterministic stub fixtures ahead of
       each backend capability. Every screen must visibly identify stub data; a phase demo cannot
       claim a live capability until its accepted artifacts are served by the read-only Go API.
-- [ ] Extend the thin read-only Go API and UI together in Phases 2–5; do not defer all API and UI
-      work to Phases 6–7. Preserve one contract when a screen moves from stub to live data.
+- [ ] Extend the thin read-only [Aarv](https://github.com/nilshah80/aarv)-based Go API and UI
+      together in Phases 2–5; do not defer all API and UI work to Phases 6–7. Preserve one
+      contract when a screen moves from stub to live data.
 - [ ] Keep incomplete screens behind explicit demo feature flags; never fabricate unavailable
       metrics, pricing recommendations, margin or workflow state.
 - [ ] Run incremental demo checkpoints:
@@ -39,11 +40,10 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] Implement a thin Go resolver in `api/` against the same schema, precedence rules and golden
       vectors. Share the contract and behavior across Python/Go, not Python runtime code or
       layer-specific worker/pool implementations.
-- [ ] Give every layer a narrow adapter from the resolved shared profile into its native engine.
-      The Phase-1 datagen adapter is complete for market/partition/DuckDB workers, memory and
-      spools; ingestion scan/transform/write, ML feature/fold/model and API goroutine/replica/
-      connection-pool adapters land in their owning phases. Keep engine ownership and cleanup
-      within that layer.
+- [~] Give every layer a narrow adapter from the resolved shared profile into its native engine.
+      The datagen adapter and ingestion scan/transform/write/DuckDB/memory CLI adapter are
+      complete; ML feature/fold/model and API goroutine/replica/connection-pool adapters land in
+      their owning phases. Keep engine ownership and cleanup within that layer.
 - [ ] Make the resolved execution profile visible in each run/build/deployment manifest. Datagen
       now records its resolved profile and telemetry without affecting run identity; ingestion,
       ML and API manifests still need the same rule. Exclude hardware tuning from
@@ -51,6 +51,32 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [x] Establish override precedence (`explicit CLI/env > profile document > selected named
       profile > safe default`), validate impossible/oversubscribed datagen combinations before
       work starts, and never infer an unbounded setting from total host RAM/CPU.
+- [x] Make the Phase-2 Python foundation and authoritative developer commands portable across
+      Windows, macOS and Linux: use `pathlib`, platform-aware virtualenv executables, subprocess
+      argument lists and `tools/dev.py`; keep `Makefile`/shell wrappers optional. Run contract,
+      boundary, Phase-2 unit and real isolated-wheel checks in a three-OS CI matrix. Record
+      decision #47.
+- [~] Apply decision #47 to the remaining local layers as they land: the Aarv-based Go API uses
+      `filepath` and portable lock/process primitives; React tooling uses cross-platform npm
+      scripts; the shared developer entry point dispatches Python/Go/Node without Bash. Extend
+      the Windows/macOS/Linux CI matrix with Go race/unit/build and Node test/build checks before
+      those layers are called complete.
+- [ ] Make the three-OS matrix a blocking Definition of Done for **every** layer, including the
+      existing datagen suite and Config Builder tests, contract/code generation, execution,
+      ingestion, ML native dependencies and deterministic small training fixture, database
+      migration upgrade/downgrade, Aarv API and UI. Linux/macOS-only evidence cannot close a
+      phase; document any intentionally unsupported optional dependency and provide a portable
+      fallback before acceptance.
+- [ ] Enforce the portable storage/process contract in review and tests: manifests/catalogs use
+      normalized `/` logical paths while I/O uses native `Path`/`filepath`; reject
+      case-colliding and Windows-reserved names; normalize fingerprinted text to UTF-8/LF; use
+      `tempfile` rather than `/tmp`; never require `fork`, `flock`, symlinks, mode bits or shell
+      expansion; close files/memory maps/Arrow readers/DuckDB connections before same-volume
+      atomic replacement.
+- [~] Add and validate a root `.gitattributes` policy before more generated/API/UI code lands:
+      contract/vector/generated source files use deterministic UTF-8/LF on every checkout, while
+      any genuinely Windows-native script is declared explicitly. Verify code generation and
+      fingerprints after a clean checkout on all three OS families.
 - [ ] Emit per-stage wall time, peak RSS, CPU utilization, worker/thread counts, spill/temp bytes
       and output bytes in every layer. Datagen telemetry and its disposable safe/performance/
       ultra-performance
@@ -65,6 +91,12 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       source-native Shopify/Business Central ID formats and namespaces, atomic
       checkpoint/replace, checksumming/manifest logic and the CLI/logging shell where compatible.
       Replace mutable counter-based ID allocation with stable-key allocation.
+- [ ] Run the full datagen unit/config-builder/pack-contract suite plus a small deterministic
+      CSV/Parquet/DuckDB generation fixture on `windows-latest`, `ubuntu-latest` and
+      `macos-latest`. Verify native virtualenv entry points, multiprocessing startup, worker
+      cleanup, handle closure before promotion, logical-path/hash equality and browser YAML/JSON
+      round-trip parity. Do not mark Phase 1 cross-platform complete from wheel-import checks
+      alone.
 - [x] Redesign the old `RunContext`/run identity, domain checkpoint state, writer dataset
       contract, controller orchestration and CLI commands against the new generator-owned
       config and source-data specification. Replace wall-clock-derived run identity with the
@@ -277,11 +309,15 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       41.612s on the 16-core M4 Max: ultra is 12.1% faster than safe but only 0.4% faster than
       performance for this two-market workload. All 534 authoritative hashes and controls
       matched, and temporary outputs were removed.
-- [x] Generate and retain the full v0.11.0 ten-year configuration under ultra-performance:
-      `run-b8c4cceba05eb61a`, 1h26m50.27s, 17.56-GiB peak process RSS, 63,820,489,478 temporary
-      work bytes before cleanup, 10,198 Parquet objects, 297,619,898 source rows and a
-      12,938,129,408-byte DuckDB mirror. Immutable reuse verification completed in 7.52s. This
-      run is now benchmark evidence only because it predates v0.12.0/v11 corrections.
+- [x] Generate and accept the full v0.11.0 ten-year configuration under ultra-performance as
+      benchmark evidence: `run-b8c4cceba05eb61a`, 1h26m50.27s, 17.56-GiB peak process RSS,
+      63,820,489,478 temporary work bytes before cleanup, 10,198 Parquet objects, 297,619,898
+      source rows and a 12,938,129,408-byte DuckDB mirror (365 restricted truth Parquet objects
+      plus one separately restricted all-source mirror). Immutable reuse verification completed in
+      7.52s. Its local output folder was then removed after v0.12.0/v11 superseded it: these
+      measurements and hashes are retained for historical comparison, the artifacts are no longer
+      present locally, and the run stays reproducible from its recorded config/version. It is
+      benchmark evidence only and is not the Phase-2 pin.
 - [x] Resolve the pre-Phase-2 datagen review blockers in v0.12.0/v11: reconcile source tax/PO/
       receipt/customer/ledger identities, bound partition and batch working state, enforce strict
       execution profiles, replace periodic price and symmetric-season artifacts, correct retail
@@ -293,13 +329,13 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       the packaged schema; and keep standalone `pip install -e datagen` working by packaging the
       shared runtime from its single source. Replace the 10-year preset's 240-day overstock with
       42/14-day node cover and 2% constrained-SKU evidence.
-- [ ] Generate, accept and pin the full v0.12.0/v11 ten-year configuration before Phase 2
+- [x] Generate, accept and pin the full v0.12.0/v11 ten-year configuration before Phase 2
       landing starts. Record the new run/config/manifest hashes, row/object totals, runtime,
       process RSS, reconciliation checks and forecast-realism acceptance measurements.
 - [ ] Run equivalent full ten-year v0.11.0 safe and performance measurements only when two
       additional ~19-GB disposable outputs and multi-hour runs are scheduled. The 90-day parity
       benchmark already proves logical equivalence; this is optional performance evidence, not a
-      blocker to generating the replacement v0.12.0/v11 source run.
+      blocker to using the accepted v0.12.0/v11 source run.
 - [ ] Shopify, BC and companion outputs land successfully in Phase 2.
 - [x] The first pricing milestone is explicitly revenue-only; no margin amount/objective is
       implied unless the optional receipt/cost projection is enabled.
@@ -308,57 +344,100 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 
 ## Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
+**2.0 Scaffolding and boundaries**
+- [x] Scaffold independently installable `retail-contracts`, ingestion and ML distributions
+      around the shared execution package, with decision #38 recorded.
+- [x] Enforce source-boundary and source-neutral-transform imports through AST analysis that
+      resolves absolute and relative imports.
+- [x] Build and import datagen, execution, contracts, ingestion and ML as real isolated wheels;
+      expose the same check through `tools/dev.py` on Windows/macOS/Linux and optional POSIX
+      Make targets.
+- [x] Bind ingestion execution settings to the shared resolver and expose scan, transform, write,
+      DuckDB-thread and memory overrides through CLI, environment and profile documents.
+
 **2.1 Contracts — freeze before Gate B**
-- [ ] Author `contracts/retail_v2` from spec §11 with entities, grains, columns and types.
-- [ ] Define integer minor-unit money paired with currency; exact controls reconcile per currency;
+- [x] Author the 53-entity `contracts/retail_v2` foundation from spec §11 with entities, grains,
+      keys, columns, types, ownership, tiers and temporal classes.
+- [~] Define integer minor-unit money paired with currency; exact controls reconcile per currency;
       define tenant reporting conversion as exact local/base→reporting/quote `DECIMAL(38,18)`,
-      exponent-aware per-fact `ROUND_HALF_EVEN`, then aggregate; publish Python/Go vectors.
-- [ ] Require canonical `locations` and derived `stores` to carry `market_id`, operating
+      exponent-aware per-fact `ROUND_HALF_EVEN`, then aggregate. Python primitives and tests are
+      complete; shared Go consumption remains.
+- [x] Require canonical `locations` and derived `stores` to carry `market_id`, operating
       `currency_code` and IANA `timezone`; sales/sell prices must match operating currency and
       Shopify presentment money is audit-only.
-- [ ] Require contextual feeds and normalized promotion scopes to carry `market_id`; define typed
+- [x] Require contextual feeds and normalized promotion scopes to carry `market_id`; define typed
       `geo_scope_type + geo_scope_id` keys, market-namespaced region semantics and separate
       multi-axis promotion applicability rows.
-- [ ] Define explicit integer versions only for cumulative/correctable facts; define natural key
+- [x] Define explicit integer versions only for cumulative/correctable facts; define natural key
       + effective/observation time + `known_as_of` for observation/reference facts and quarantine
       divergent duplicate complete keys.
-- [ ] Define supplier terms and promotion merchandise targets with
+- [x] Define supplier terms and promotion merchandise targets with
       `merch_scope_type ∈ {sku, dept, category} + merch_scope_id` and
       `sku > dept > category`; define supplier destination and exact/null-external origin.
-- [ ] Separate entity ownership (`[in]` / `[poc]` / `[cfg]` / `[test]`) from row provenance.
-- [ ] Publish source-profile, coverage/capability, staging, transform, mapping/crosswalk,
+- [x] Separate entity ownership (`[in]` / `[poc]` / `[cfg]` / `[test]`) from row provenance.
+- [~] Publish source-profile, coverage/capability, staging, transform, mapping/crosswalk,
       reconciliation and quarantine contracts.
-- [ ] Add a canonical `[in]` market-disruption observation contract for public pandemic
+- [x] Add a canonical `[in]` market-disruption observation contract for public pandemic
       timeline/signal evidence so Phase-3 features do not discard configured COVID effects;
       hidden `_truth` demand factors remain test-only.
-- [ ] Seed guardrail YAMLs (`pricing_rules`, `policy`, `price_response`) and data dictionary;
+- [x] Preserve channel as an orthogonal dimension in canonical sales, sell prices, assortment and
+      forecast series; retain channel in adjustments/fulfilments/planner adjustments and retain
+      `source_price_path_id` when shop-wide prices fan out so copies are not independent evidence.
+- [x] Seed guardrail YAMLs (`pricing_rules`, `policy`, `price_response`) and data dictionary;
       implement decision #39 global dimensionless defaults + deterministic market/currency
       resolution, with absolute price/grid/ending rules required per market.
-- [ ] Resolve decision #16 and publish the canonical-JSON fingerprint specification plus shared
+- [x] Resolve decision #16 and publish RFC-8785 canonical JSON, the safe-integer/decimal-string
+      policy, exact volatile JSON Pointers and shared
       golden vectors before any Phase-3 artifact is fingerprinted.
-- [ ] Publish shared resolved-policy golden vectors for byte-identical Python/Go validation.
+- [x] Publish shared resolved-policy canonical-byte/fingerprint golden vectors; Python validation
+      is live and Go consumes the same vectors when its resolver lands.
+- [x] Require `known_as_of_evidence_grade` physically on every canonical temporal row and bind it
+      to the closed availability-evidence enum.
+- [x] Publish the machine-readable profile-invariance/determinism contract: semantic row/control/
+      capability/hash equality is mandatory across execution profiles; Parquet byte equality is
+      mandatory only with a fully pinned writer.
+- [x] Generate deterministic Python, Go and TypeScript row types from `schema.yaml`; keep browser
+      int64 values as decimal strings to avoid JavaScript precision loss and verify generated
+      artifacts in the cross-platform contract command.
 
 **2.2 Landing and Gate A**
-- [x] Select the immutable Phase-2 input as `run-b8c4cceba05eb61a`, config hash
-      `d52f5b629cd43243407618e9884ef25d6ac595933d317dcd6bae63fb83a89f50` and
-      manifest-file SHA-256
-      `901741cfac7b94e2208ccbbc0a34e0fd5e298efe31aae7d81805c3054568f6c1`;
-      never select “latest” or silently regenerate with another seed.
-- [ ] Land that exact run folder into an immutable raw/object-store prefix. Keep public source
-      objects separate from restricted `_truth` and the all-source DuckDB permission lane.
-      `run-98abf242ff98ddc0` remains ineligible because it predates the v10
-      customer-population and bounded-memory contract.
-- [ ] Immutable raw landing with landing time, content hashes and idempotent replay; land public
+- [x] Accept and pin the immutable Phase-2 input `run-34b0ff729c8abe09`, config hash
+      `3abbb96147c99c55e36e989a6eb6ba79305aab2caf0e1aa0cc200c1521853728` and manifest-file
+      SHA-256 `9edb5a7b5d931cd43a0333ce156404c93b0caa2c6b448e33d398e8425003598b`
+      (generator `0.12.0`, source contract `retail-source-config/v11`, profile
+      `ultra-performance`). The promoted manifest confirms the pre-generation config hash and
+      run ID. Acceptance measured: 137 logical datasets; 8,644 manifest objects
+      (8,395 public source Parquet + 245 restricted `_truth` Parquet + 3 public generator
+      metadata + 1 restricted all-source DuckDB) all re-verified by byte count and SHA-256 with
+      zero failures over 16.00 GiB; 253,192,804 source/truth rows; 16.10 GiB run folder;
+      10,687,361,024-byte DuckDB mirror; DuckDB catalogs reconcile to the manifest with zero
+      mismatch and zero public `_truth` leakage; INR 4,827,543 orders / 12,395,915 units and
+      USD 4,720,243 orders / 12,764,658 units; fill rate 0.972567 (IN 0.980525, US 0.964961);
+      4,430.1 s elapsed at 13.8-GiB peak parent RSS. Never select “latest” or silently
+      regenerate with another seed. `run-b8c4cceba05eb61a` is benchmark evidence only and
+      `run-98abf242ff98ddc0` remains ineligible; neither is the Phase-2 input.
+- [x] Land that exact run folder into immutable raw snapshot
+      `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`.
+      All 8,644 objects were streamed through byte/SHA-256 verification; the landing records
+      8,398 public objects, 245 restricted truth objects and one restricted mirror.
+- [x] Immutable raw landing with landing time, content hashes and idempotent replay; land public
       source objects and restricted `_truth`/all-source DuckDB into separate permission lanes.
+- [x] Implement and small-fixture-test cross-platform immutable landing: streaming byte/SHA-256
+      verification, ingestion-owned RFC-8785 snapshot identity, native-ID reuse detection,
+      Windows-portable paths, atomic promotion and physically separate public, restricted-truth
+      and restricted-mirror roots. The full pin and a second idempotent replay are verified.
 - [ ] Accept datagen/retailer-provided manifests when present; otherwise build the ingestion
       manifest, coverage inventory, controls and hashes from landed data/profile.
 - [ ] Gate A validates files/objects, parseability, source keys, extract window, resolved mapping
       references, input/filter/reject totals and any authenticity evidence the profile requires.
 - [ ] Treat format/compression as adapter concerns; support the declared source formats without
       demanding Parquet/JSONL from every retailer.
-- [ ] Add a datagen-DuckDB PoC profile that discovers tables through the source catalogs,
-      preserves authoritative CSV/Parquet lineage, and excludes every `restricted=true`/`_truth`
-      dataset from ordinary staging and ML.
+- [ ] Ordinary ingestion reads public Parquet/CSV only. The all-source `source-run.duckdb` is
+      oracle/evaluation-admin only and is never an ingestion input: filtering `restricted=false`
+      in application code is a logical filter, not a permission boundary, because any process that
+      can open the file can query `_truth`. If DuckDB speed is wanted, build an ingestion-owned
+      **public-only** DuckDB cache from landed public Parquet as an optional derived artifact that
+      records authoritative Parquet lineage and never becomes the lineage authority.
 
 **2.3 Profiles, adapters and staging**
 - [ ] Copy/adapt M5 `mapped_files` as the profile-driven default normalizer.
@@ -388,6 +467,11 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       source-to-canonical reconciliation, capability dependencies, inventory invariants and
       referential integrity; reject divergent duplicate observations, unqualified/cross-market
       scopes, unsupported sales-currency mismatches and ambiguous supplier terms.
+- [ ] In B01, interpret `required` as column/key presence independently from `nullable`.
+      Add a canonical supplier fixture where `from_location_id` is present and NULL: it must pass
+      as an unmodelled external origin. The same fixture with the column absent must fail. Reuse
+      this distinction for every required-nullable field; never implement B01 as blanket
+      `required ⇒ non-null`.
 - [ ] Reason-coded quarantine; atomically publish only capability-complete curated
       Parquet/DuckDB.
 - [ ] Put any direct canonical unit fixtures under ingestion/contract tests, never `datagen/`.
@@ -411,8 +495,10 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       DuckDB threads, memory/spill ceilings and partition-write concurrency. Prove safe and
       ultra-performance profiles produce identical accepted/quarantined row sets, controls, hashes
       and Gate A/B outcomes; use the common Python resolver rather than an ingestion-only parser.
-- [ ] Freeze common API envelopes plus Data Management/quality read models; implement the initial
-      read-only Go API slice over ingest runs, source coverage, reconciliation and quarantine.
+- [ ] Freeze common API envelopes plus Data Management/quality read models; scaffold `api/` with
+      a pinned `github.com/nilshah80/aarv` dependency and implement the initial read-only Go API
+      slice over ingest runs, source coverage, reconciliation and quarantine. Keep handlers thin
+      and the `contracts/` OpenAPI/read-model definitions authoritative.
 - [ ] Scaffold the runtime UI as soon as the screen contract is frozen; use visibly labelled
       deterministic stubs, then replace panels independently with the matching live Phase-2 API
       slice.
@@ -426,6 +512,10 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       tables materialize; downstream code is source-neutral.
 
 ## Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
+- [ ] Run feature construction, one deterministic training/backtest fixture and artifact
+      publication on Windows, macOS and Linux using supported pinned ML wheels. Require identical
+      keys/features/acceptance decisions and declared numeric tolerances for model outputs; use
+      bounded portable worker startup rather than relying on `fork`.
 - [ ] Implement ML execution profiles for feature-build workers, rolling-origin/fold workers,
       market/model workers, threads per model, memory ceilings and spill/cache paths. Schedule
       independent markets, series groups and backtest folds concurrently without multiplying
@@ -504,7 +594,16 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       market/currency and is guardrail-valid; Pricing/Competitor/Promotion screens render live
       response-rich and sparse-evidence outcomes; unavailable margin is omitted, not synthesized.
 
-## Phase 6 — Go API, workflow & governance (`api/`, `db/`)
+## Phase 6 — Aarv-based Go API, workflow & governance (`api/`, `db/`)
+- [ ] Keep [Aarv](https://github.com/nilshah80/aarv) limited to the HTTP boundary: pin exact core
+      and optional plugin module versions, compose routing/binding/middleware/lifecycle there,
+      and keep read models, workflow, fingerprints, execution profiles, guardrails and
+      persistence in framework-neutral `internal/` packages. Framework-generated OpenAPI/docs
+      may expose but never replace the contract under `contracts/`.
+- [ ] Build and test the Aarv server on Windows, macOS and Linux: route/OpenAPI parity,
+      middleware ordering, timeout/body/concurrency limits, database path handling, graceful
+      shutdown and portable file locks. Use OS-specific signal adapters where needed; no
+      POSIX-only signal, `flock`, path or shell assumption may sit in shared API code.
 - [ ] Implement API execution profiles for `GOMAXPROCS`, replica count, HTTP concurrency,
       PostgreSQL/DuckDB connection pools, background-job workers, queue depth, request/body
       limits, timeouts and memory budgets. Resolve them from deployment config/environment,
@@ -536,6 +635,9 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       approves or overrides a draft, and the UI shows the audit row; 409/503 and fingerprints pass.
 
 ## Phase 7 — UI completion and end-to-end integration (`ui/`)
+- [ ] Run install, lint/typecheck, unit/component tests and production build on Windows, macOS and
+      Linux through npm scripts only. Do not use Bash environment assignment, `/` path
+      concatenation or case-only filename differences in UI tooling.
 - [ ] Complete the remaining core screens and shared responsive/accessibility behavior; do not
       rebuild the vertical slices already delivered in Phases 2–6.
 - [ ] Verify multi-currency (FX) display and explicit market/department
@@ -552,4 +654,7 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [ ] At least two client-shaped dialects proving config-only onboarding where existing transforms
       cover semantics; otherwise only a bounded versioned adapter, with no downstream changes.
 - [ ] End-to-end acceptance run (ingest → serve) through all fail-closed gates.
+- [ ] Run the small end-to-end smoke path from Windows, macOS and Linux developer hosts; the
+      production-scale benchmark may run once on the designated machine, but its orchestration
+      and artifact semantics must not be host-specific.
 - [ ] **Exit:** full run passes; all screens live.

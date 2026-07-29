@@ -483,21 +483,53 @@ movements. The final committed quantities also reconcile exactly to open fulfill
 lines (70 India, 96 US). Of 4,356 receipt batches, 2,169 have family-derived expiry dates across
 17 categories.
 
-Create the isolated datagen environment and run it from the repository root:
+## Cross-platform operation
+
+The Config Builder and generator are required to work on Windows, macOS and Linux. Source
+manifests always record `/`-separated logical paths; native filesystem access uses `pathlib`.
+Multiprocessing must use spawn-safe entry points, temporary work uses `tempfile`, and publication
+must close CSV/Parquet/DuckDB handles before a same-volume atomic replace. No generator code may
+require `fork`, `flock`, symlinks, POSIX mode bits, `/tmp` or shell expansion. The full
+unit/config-builder suite and a small CSV/Parquet/DuckDB run are required on all three OS
+families; importing the wheel alone is not sufficient.
+
+Create the isolated datagen environment and run it from the repository root.
+
+Windows PowerShell:
+
+```powershell
+py -3 -m venv datagen\.venv
+.\datagen\.venv\Scripts\python.exe -m pip install -e datagen
+
+.\datagen\.venv\Scripts\python.exe -m retail_datagen.cli validate-config `
+  -c datagen\configs\multi-market-showcase.yaml
+
+.\datagen\.venv\Scripts\python.exe -m retail_datagen.cli plan `
+  -c datagen\configs\multi-market-showcase.yaml
+
+.\datagen\.venv\Scripts\python.exe -m retail_datagen.cli generate `
+  -c datagen\configs\multi-market-showcase.yaml
+```
+
+macOS/Linux:
 
 ```bash
 python3 -m venv datagen/.venv
-datagen/.venv/bin/pip install -e datagen
+datagen/.venv/bin/python -m pip install -e datagen
 
-datagen/.venv/bin/retail-datagen validate-config \
+datagen/.venv/bin/python -m retail_datagen.cli validate-config \
   -c datagen/configs/multi-market-showcase.yaml
 
-datagen/.venv/bin/retail-datagen plan \
+datagen/.venv/bin/python -m retail_datagen.cli plan \
   -c datagen/configs/multi-market-showcase.yaml
 
-datagen/.venv/bin/retail-datagen generate \
+datagen/.venv/bin/python -m retail_datagen.cli generate \
   -c datagen/configs/multi-market-showcase.yaml
 ```
+
+Later examples use the shorter POSIX entry point
+`datagen/.venv/bin/retail-datagen`. On Windows, use
+`.\datagen\.venv\Scripts\python.exe -m retail_datagen.cli` with the same arguments.
 
 Generate the 20-year preset with:
 
@@ -540,10 +572,13 @@ datagen/.venv/bin/retail-datagen generate \
   --execution-profile safe
 ```
 
-The previously retained v0.11.0/v10 run is reproducible benchmark evidence:
+The v0.11.0/v10 run was generated and accepted as benchmark evidence, then its local output folder
+was removed after v0.12.0/v11 superseded it. The measurements and hashes below are retained for
+historical comparison; **the artifacts are no longer present locally.** The run remains reproducible
+from its recorded config and generator/spec versions:
 
 ```
-datagen/output/multi-market-10-year-demo/run-b8c4cceba05eb61a
+run id:        run-b8c4cceba05eb61a          (local output folder deleted)
 config hash:   d52f5b629cd43243407618e9884ef25d6ac595933d317dcd6bae63fb83a89f50
 manifest hash: 901741cfac7b94e2208ccbbc0a34e0fd5e298efe31aae7d81805c3054568f6c1
 ```
@@ -556,9 +591,9 @@ It completed in 1h26m50.27s using `--execution-profile ultra-performance`
 (`2` market workers, `16` partition writers, `8` DuckDB threads, a `64`-GB DuckDB ceiling and
 `100000`-row spools), with 18,853,019,648-byte (17.56-GiB) peak process RSS. The run
 contains 137 logical datasets, 10,198 authoritative Parquet objects, 297,619,898
-source/truth rows and one 12,938,129,408-byte DuckDB mirror; the complete retained folder uses
-19.45 GiB of allocated disk. Its source totals are Shopify 211,284,407 rows, Business Central 57,623,146,
-companion 3,154,540 and restricted truth 25,557,805.
+source/truth rows and one 12,938,129,408-byte DuckDB mirror; the complete folder occupied
+19.45 GiB of allocated disk before it was deleted. Its source totals were Shopify 211,284,407 rows,
+Business Central 57,623,146, companion 3,154,540 and restricted truth 25,557,805.
 
 Each Shopify market has 525,062 direct-identifier-free registered customers with creation
 dates spanning 2011-07-31 through 2026-07-28; each BC company has the same registered
@@ -570,7 +605,9 @@ maximum is two orders per registered customer per local day, as configured. Shop
 both have zero orphan customer references, and no customer row contains a direct identifier.
 
 The DuckDB catalogs reconcile 137 datasets, 10,198 Parquet objects and 297,619,898 rows with
-zero mismatch. All 365 restricted objects are under `_truth/`; no truth object is public.
+zero mismatch. Restricted artifacts were 365 restricted truth Parquet objects under `_truth/` plus
+one separately restricted all-source DuckDB mirror; no truth object is public, and the mirror is its
+own restricted category rather than part of the `_truth/` set.
 An identical invocation reverified all manifest sizes/hashes and returned `reused: true` in
 7.52 seconds. No private `.work`, staging directory, temporary DuckDB or WAL remains.
 
@@ -651,7 +688,9 @@ scenario, and download YAML (default) or JSON. A bundled, locally served YAML ru
 conventional block-style YAML import/export without a network dependency. PyYAML is a required
 datagen dependency, so the CLI consumes the same YAML directly; `.json` configs remain supported.
 
-The generated database is a single-file view of the same run:
+The generated database is a single-file view of the same run. The heredoc below is a POSIX
+convenience; on Windows, run the same Python body from PowerShell using
+`.\datagen\.venv\Scripts\python.exe -` or save it as a `.py` file.
 
 ```bash
 datagen/.venv/bin/python - <<'PY'
@@ -670,7 +709,17 @@ different inference or rounding from the authoritative CSV/Parquet object.
 It is setuptools metadata generated by `pip install -e datagen`; it was removed from `src/` and
 `*.egg-info/` is ignored. The active virtual environment may regenerate it locally at any time.
 
-Run the execution-contract and datagen test suites with:
+Run the execution-contract and datagen test suites.
+
+Windows PowerShell:
+
+```powershell
+$env:PYTHONPATH = "execution\src;datagen\src"
+.\datagen\.venv\Scripts\python.exe -m unittest discover -s execution\tests -v
+.\datagen\.venv\Scripts\python.exe -m unittest discover -s datagen\tests -v
+```
+
+macOS/Linux:
 
 ```bash
 PYTHONPATH=execution/src:datagen/src \
@@ -679,7 +728,16 @@ PYTHONPATH=execution/src:datagen/src \
   datagen/.venv/bin/python -m unittest discover -s datagen/tests -v
 ```
 
-Re-run the disposable profile benchmark with:
+Re-run the disposable profile benchmark.
+
+Windows PowerShell:
+
+```powershell
+$env:PYTHONPATH = "execution\src;datagen\src"
+.\datagen\.venv\Scripts\python.exe datagen\tools\benchmark_execution_profiles.py
+```
+
+macOS/Linux:
 
 ```bash
 PYTHONPATH=execution/src:datagen/src \

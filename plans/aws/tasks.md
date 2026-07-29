@@ -13,6 +13,10 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] RDS PostgreSQL (Multi-AZ, encrypted, private).
 - [ ] Secrets Manager entries; CloudWatch log groups.
 - [ ] CI/CD pipeline (build/test/deploy for `datagen/`, `ingestion/`, `ml/`, `api/`).
+- [ ] Keep Terraform/CDK validation, image-build orchestration and deployment smoke-test commands
+      callable from Windows PowerShell and macOS/Linux terminals without mandatory Bash. A Linux
+      container runtime does not waive the three-OS application test gates locked by decision
+      #47.
 - [ ] Build Python job images from the dependency/environment topology locked locally under
       decision #38; never merge the isolated datagen environment into downstream images.
 - [ ] Install the same versioned `execution/` package into each Python job image and run its
@@ -79,8 +83,10 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Write recommendations/drafts → RDS; artifacts → S3.
 - [ ] **Exit:** replenishment + pricing artifacts published under guardrails.
 
-## Phase A4 — Go API & workflow
-- [ ] Containerize Go `api/`; push to ECR.
+## Phase A4 — Aarv-based Go API & workflow
+- [ ] Containerize Go `api/` with exact pinned
+      [Aarv](https://github.com/nilshah80/aarv) core/plugin modules; push to ECR. Keep
+      `contracts/` OpenAPI authoritative and application logic framework-neutral.
 - [ ] ECS Fargate service behind ALB / API Gateway.
 - [ ] Implement the Go resolver against the shared execution schema/golden vectors; map it to
       `GOMAXPROCS`, HTTP/job concurrency and DB pools within the task CPU/memory allocation.

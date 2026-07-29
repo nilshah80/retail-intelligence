@@ -1,0 +1,15 @@
+schemaVersion: retail-price-response/v1
+policyVersion: price-response/1.0.0
+
+# Strict Plan-v3 evidence gates. The M5 demonstration-only IQR amendment is
+# intentionally not inherited.
+globalDefaults:
+  requireNegativeBeta: true
+  betaMinAbs: "0.3"
+  betaMaxAbs: "4"
+  signConsistencyMin: "0.9"
+  resampleIqrRatioMax: "0.8"
+  minResampleDraws: 50
+  holdoutImprovementMin: "0"
+  departmentCoverageMin: "0.05"
+  departmentMinGatedSeries: 25
