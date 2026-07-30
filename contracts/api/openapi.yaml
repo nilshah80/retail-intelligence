@@ -1,8 +1,11 @@
 openapi: 3.1.0
 info:
   title: Retail Intelligence API
-  version: 0.1.0
-  description: Read-only Phase 2 data-management and quality API.
+  version: 0.3.0
+  description: >-
+    Read-only data-management and Phase 3 forecast API. Forecast routes serve
+    only an explicitly activated PostgreSQL projection produced from an
+    accepted, fully verified ten-artifact forecast bundle.
 servers:
   - url: http://localhost:8080
 paths:
@@ -85,8 +88,332 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FxRates"
+  /api/v1/forecast/versions:
+    get:
+      operationId: forecastVersions
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/summary:
+    get:
+      operationId: forecastSummary
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/series:
+    get:
+      operationId: forecastSeries
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastHorizon"}
+        - {$ref: "#/components/parameters/ForecastHorizonWeeks"}
+        - {$ref: "#/components/parameters/ForecastView"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/actuals:
+    get:
+      operationId: forecastActuals
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastHorizon"}
+        - {$ref: "#/components/parameters/ForecastView"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/horizons:
+    get:
+      operationId: forecastHorizons
+      description: >-
+        Filter-scoped additive metrics. The server always SUMs governed
+        components before dividing.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastHorizon"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/stores:
+    get:
+      operationId: forecastStores
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastHorizonWeeks"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/drivers:
+    get:
+      operationId: forecastDrivers
+      parameters:
+        - name: scope
+          in: query
+          schema: {type: string}
+          description: Exact governed driver scope; defaults to portfolio.
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/signals:
+    get:
+      operationId: forecastSignals
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/exceptions:
+    get:
+      operationId: forecastExceptions
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - name: exceptionClass
+          in: query
+          schema: {type: string}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ForecastLive"
+        "503":
+          $ref: "#/components/responses/ForecastUnavailable"
 components:
+  parameters:
+    ForecastMarket:
+      name: marketId
+      in: query
+      schema: {type: string}
+    ForecastRegion:
+      name: region
+      in: query
+      schema: {type: string}
+    ForecastStore:
+      name: storeId
+      in: query
+      schema: {type: string}
+    ForecastChannel:
+      name: channelId
+      in: query
+      schema: {type: string}
+    ForecastChannelType:
+      name: channelType
+      in: query
+      schema: {type: string, enum: [online, store]}
+    ForecastCategory:
+      name: category
+      in: query
+      schema: {type: string}
+    ForecastHorizon:
+      name: horizon
+      in: query
+      schema: {type: integer, minimum: 0, maximum: 26, default: 0}
+    ForecastHorizonWeeks:
+      name: horizonWeeks
+      in: query
+      description: Inclusive future-horizon cap used by aggregated projections.
+      schema: {type: integer, minimum: 1, maximum: 26, default: 4}
+    ForecastView:
+      name: view
+      in: query
+      description: Optional UI projection; unsupported values retain the raw resource.
+      schema: {type: string, enum: [raw, workbench, weekly]}
+    ForecastSearch:
+      name: search
+      in: query
+      schema: {type: string, maxLength: 200}
+    ForecastOffset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    ForecastLimit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
+  responses:
+    ForecastLive:
+      description: >-
+        Live data from the explicitly activated, lineage-matching PostgreSQL
+        forecast projection.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ForecastLive"
+    ForecastUnavailable:
+      description: >-
+        Forecast data is unavailable because no accepted, lineage-consistent,
+        fully verified forecast read model can be served.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ForecastUnavailable"
   schemas:
+    ForecastLive:
+      type: object
+      required:
+        - schemaVersion
+        - dataMode
+        - versionId
+        - forecastRunId
+        - semanticFingerprint
+        - publicationFingerprint
+        - activationScopeFingerprint
+        - decisionAsOf
+        - markets
+        - capabilities
+        - items
+      properties:
+        schemaVersion:
+          type: string
+          pattern: ^retail-forecast-[a-z-]+/v1$
+        dataMode: {const: live}
+        versionId:
+          type: string
+          pattern: ^fv_[0-9a-f]{16}$
+        forecastRunId:
+          type: string
+          pattern: ^fr_[0-9a-f]{16}$
+        semanticFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        publicationFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        activationScopeFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        decisionAsOf:
+          type: string
+          format: date-time
+        markets:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: string}
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [demandForecastNonPit, pointInTimeForecasting]
+          properties:
+            demandForecastNonPit:
+              type: object
+              additionalProperties: false
+              required: [available]
+              properties:
+                available: {const: true}
+            pointInTimeForecasting:
+              type: object
+              additionalProperties: false
+              required: [available, reasonCode]
+              properties:
+                available: {const: false}
+                reasonCode: {const: LANDING_BACKFILL_DEPENDENCY}
+        items:
+          type: array
+          items: {type: object}
+        unavailableItems:
+          type: array
+          items: {type: object}
+        freshnessBaseline:
+          type: string
+          format: date-time
+        pagination:
+          type: object
+          additionalProperties: false
+          required: [offset, limit, total]
+          properties:
+            offset: {type: integer, minimum: 0}
+            limit: {type: integer, minimum: 1, maximum: 1000}
+            total: {type: integer, minimum: 0}
+    ForecastUnavailable:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - dataMode
+        - versionId
+        - forecastRunId
+        - semanticFingerprint
+        - reasonCode
+        - message
+        - capabilities
+      properties:
+        schemaVersion: {const: retail-forecast-unavailable/v1}
+        dataMode: {const: unavailable}
+        versionId: {type: ["string", "null"]}
+        forecastRunId: {type: ["string", "null"]}
+        semanticFingerprint: {type: ["string", "null"]}
+        reasonCode:
+          type: string
+          enum:
+            - FORECAST_ARTIFACT_MISSING
+            - FORECAST_ARTIFACT_INVALID
+            - FORECAST_RUN_REJECTED
+            - FORECAST_LINEAGE_MISMATCH
+            - FORECAST_READ_MODEL_UNAVAILABLE
+        message: {type: string, minLength: 1}
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [demandForecastNonPit, pointInTimeForecasting]
+          properties:
+            demandForecastNonPit:
+              type: object
+              additionalProperties: false
+              required: [available, reasonCode]
+              properties:
+                available: {const: false}
+                reasonCode: {type: string, minLength: 1}
+            pointInTimeForecasting:
+              type: object
+              additionalProperties: false
+              required: [available, reasonCode]
+              properties:
+                available: {const: false}
+                reasonCode: {const: LANDING_BACKFILL_DEPENDENCY}
     FxRates:
       type: object
       required: [schemaVersion, dataMode, reportingCurrency, coverage, rates]

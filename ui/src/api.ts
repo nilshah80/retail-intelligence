@@ -136,11 +136,183 @@ export const fxSchema = z.object({
   })).min(1)
 });
 
+const forecastEnvelope = {
+  dataMode: z.literal("live"),
+  versionId: z.string(),
+  forecastRunId: z.string(),
+  semanticFingerprint: z.string(),
+  publicationFingerprint: z.string(),
+  activationScopeFingerprint: z.string(),
+  decisionAsOf: z.string(),
+  markets: z.array(z.string())
+};
+
+const nullableNumber = z.number().nullable();
+
+export const forecastSummarySchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-summary/v1"),
+  items: z.array(z.object({
+    accuracy: nullableNumber,
+    bias: nullableNumber,
+    p90Coverage: nullableNumber,
+    baselineAccuracy: nullableNumber,
+    fvaVsMa13Pct: nullableNumber,
+    demandUnits: z.number(),
+    seriesCount: z.number().int(),
+    exceptionCount: z.number().int(),
+    exceptionCounts: z.record(z.string(), z.number().int()),
+    qualityCounts: z.record(z.string(), z.number().int()),
+    forecastCoveragePct: nullableNumber,
+    backtestCoveragePct: nullableNumber,
+    categories: z.array(z.string())
+  }))
+});
+
+export const forecastActualsSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-actuals/v1"),
+  items: z.array(z.object({
+    targetWeekStart: z.string(),
+    forecast: z.number(),
+    actual: z.number()
+  }))
+});
+
+export const forecastHorizonsSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-horizons/v1"),
+  items: z.array(z.object({
+    horizon: z.number().int(),
+    absErrorSum: z.number(),
+    signedErrorSum: z.number(),
+    actualSum: z.number(),
+    coverageHits: z.number().int(),
+    n: z.number().int(),
+    wape: nullableNumber,
+    bias: nullableNumber,
+    accuracy: nullableNumber,
+    p90Coverage: nullableNumber
+  }))
+});
+
+export const forecastStoresSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-stores/v1"),
+  items: z.array(z.object({
+    storeId: z.string(),
+    marketId: z.string(),
+    name: z.string(),
+    city: z.string(),
+    region: z.string(),
+    timezone: z.string(),
+    currencyCode: z.string(),
+    format: z.string(),
+    active: z.boolean(),
+    accuracy: nullableNumber,
+    bias: nullableNumber,
+    p90Coverage: nullableNumber
+  }))
+});
+
+export const forecastWorkbenchSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-series/v1"),
+  items: z.array(z.object({
+    marketId: z.string(),
+    skuId: z.string(),
+    storeId: z.string(),
+    channelId: z.string(),
+    departmentId: z.string(),
+    category: z.string(),
+    productName: z.string(),
+    channelType: z.string(),
+    storeName: z.string(),
+    storeCity: z.string(),
+    horizonWeeks: z.number().int(),
+    baseline: nullableNumber,
+    aiForecast: nullableNumber,
+    aiForecastP90: nullableNumber,
+    plannerForecast: nullableNumber,
+    lastActual: nullableNumber,
+    lastActualWeek: z.string().nullable(),
+    accuracy: nullableNumber,
+    bias: nullableNumber,
+    confidence: z.number(),
+    primaryDriver: z.string().nullable(),
+    dataQuality: z.string(),
+    priority: z.string(),
+    exceptionClass: z.string().nullable(),
+    status: z.string()
+  })),
+  pagination: z.object({
+    offset: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int()
+  })
+});
+
+export const forecastDriversSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-drivers/v1"),
+  items: z.array(z.object({
+    scope: z.string(),
+    driver: z.string(),
+    contributionPct: z.string(),
+    direction: z.string(),
+    confidence: z.string()
+  })),
+  unavailableItems: z.array(z.object({
+    driver: z.string(),
+    label: z.string(),
+    reasonCode: z.string()
+  }))
+});
+
+export const forecastSignalsSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-signals/v1"),
+  freshnessBaseline: z.string(),
+  items: z.array(z.object({
+    signal: z.string(),
+    label: z.string(),
+    status: z.string(),
+    reasonCode: z.string(),
+    knownAsOf: z.string().nullable()
+  }))
+});
+
+export const forecastVersionsSchema = z.object({
+  ...forecastEnvelope,
+  schemaVersion: z.literal("retail-forecast-versions/v1"),
+  items: z.array(z.object({
+    versionId: z.string(),
+    kind: z.string(),
+    originDate: z.string(),
+    horizonWeeks: z.number().int(),
+    createdBy: z.string(),
+    accuracy: z.number(),
+    bias: z.number(),
+    demandUnits: z.number(),
+    semanticFingerprint: z.string(),
+    artifactStatus: z.string(),
+    lifecycleStatus: z.string()
+  }))
+});
+
 export type DataSummary = z.infer<typeof summarySchema>;
 export type Gates = z.infer<typeof gatesSchema>;
 export type Reconciliation = z.infer<typeof reconciliationSchema>;
 export type Dashboard = z.infer<typeof dashboardSchema>;
 export type FxRates = z.infer<typeof fxSchema>;
+export type ForecastSummary = z.infer<typeof forecastSummarySchema>;
+export type ForecastActuals = z.infer<typeof forecastActualsSchema>;
+export type ForecastHorizons = z.infer<typeof forecastHorizonsSchema>;
+export type ForecastStores = z.infer<typeof forecastStoresSchema>;
+export type ForecastWorkbench = z.infer<typeof forecastWorkbenchSchema>;
+export type ForecastDrivers = z.infer<typeof forecastDriversSchema>;
+export type ForecastSignals = z.infer<typeof forecastSignalsSchema>;
+export type ForecastVersions = z.infer<typeof forecastVersionsSchema>;
 
 async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   const response = await fetch(path, {headers: {Accept: "application/json"}});
@@ -160,3 +332,45 @@ export const loadDashboard = () =>
   get("/api/v1/data-management/dashboard", dashboardSchema);
 export const loadFx = () =>
   get("/api/v1/fx/rates", fxSchema);
+
+export type ForecastFilters = {
+  marketId?: string;
+  region?: string;
+  storeId?: string;
+  channelType?: string;
+  category?: string;
+  search?: string;
+  horizonWeeks?: number;
+};
+
+function forecastQuery(filters: ForecastFilters, extra?: Record<string, string | number>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries({...filters, ...extra})) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export const loadForecastSummary = () =>
+  get("/api/v1/forecast/summary", forecastSummarySchema);
+export const loadForecastActuals = (filters: ForecastFilters) =>
+  get(
+    `/api/v1/forecast/actuals${forecastQuery(filters, {view: "weekly", limit: 8})}`,
+    forecastActualsSchema
+  );
+export const loadForecastHorizons = (filters: ForecastFilters) =>
+  get(`/api/v1/forecast/horizons${forecastQuery(filters)}`, forecastHorizonsSchema);
+export const loadForecastStores = (filters: ForecastFilters) =>
+  get(`/api/v1/forecast/stores${forecastQuery(filters)}`, forecastStoresSchema);
+export const loadForecastWorkbench = (filters: ForecastFilters) =>
+  get(
+    `/api/v1/forecast/series${forecastQuery(filters, {view: "workbench", limit: 100})}`,
+    forecastWorkbenchSchema
+  );
+export const loadForecastDrivers = () =>
+  get("/api/v1/forecast/drivers", forecastDriversSchema);
+export const loadForecastSignals = () =>
+  get("/api/v1/forecast/signals", forecastSignalsSchema);
+export const loadForecastVersions = () =>
+  get("/api/v1/forecast/versions", forecastVersionsSchema);

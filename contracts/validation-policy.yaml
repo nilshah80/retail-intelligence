@@ -1,0 +1,16 @@
+schemaVersion: retail-validation-policy/v1
+repositoryCI:
+  allowed: false
+  workflowDirectory: .github/workflows
+  enforcement: contract_validation_rejects_workflow_files
+validation:
+  mode: developer_run
+  entrypoint: tools/dev.py
+  portabilityEvidence: manual_supported_os_runs
+  supportedOperatingSystems:
+    - windows
+    - macos
+    - linux
+rationale: >-
+  Repository CI is outside this PoC's delivery model. Tests, builds, deterministic
+  fixtures, and portability evidence run through the checked-in developer commands.

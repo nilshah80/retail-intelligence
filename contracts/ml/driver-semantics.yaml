@@ -1,0 +1,77 @@
+schemaVersion: retail-ml-driver-semantics/v1
+originRule:
+  cutoffField: fit_known_as_of
+  comparison: known_as_of <= fit_known_as_of
+  unavailableFuture: explicit_missing_indicator
+  forbiddenSubstitution: target_date_actual
+drivers:
+  weather_actual:
+    publishedGroup: weather_local_events
+    allowedUse: origin_known_history_only
+    selection: latest observation with observation_date <= origin_date and known_as_of <= fit_known_as_of
+    targetDateUse: forbidden
+    longHorizonFallback: seasonal_climatology_from_origin_known_history
+  weather_forecast:
+    publishedGroup: weather_local_events
+    allowedUse: origin_published_target_date
+    selection: latest issue with issued_at <= fit_known_as_of and target_date equal to the forecast target
+    targetDateUse: allowed_only_when_origin_published
+    longHorizonFallback: seasonal_climatology_from_origin_known_history
+    measuredLeadCoverageDays:
+      minimum: 1
+      maximum: 7
+    horizonPolicy: horizons 2 through 26 always use the declared fallback; horizon 1 uses a forecast only when its exact target date is covered
+  local_events:
+    publishedGroup: weather_local_events
+    allowedUse: origin_published_target_date
+    selection: event known_as_of <= fit_known_as_of and event interval covers the target date
+    targetDateUse: allowed_only_when_announced_by_origin
+    longHorizonFallback: explicit_missing_indicator
+  competitor_prices:
+    publishedGroup: competitor_activity
+    allowedUse: origin_known_history
+    selection: latest observation with observed_at <= origin_date and known_as_of <= fit_known_as_of
+    targetDateUse: carry_forward_from_origin_only
+    longHorizonFallback: carry_forward_with_age_and_missing_indicators
+  market_disruptions:
+    publishedGroup: demand_trend
+    allowedUse: origin_published_target_date
+    selection: disruption known_as_of <= fit_known_as_of and effective interval covers the target date
+    targetDateUse: allowed_only_when_published_by_origin
+    longHorizonFallback: explicit_missing_indicator
+  macro_index:
+    publishedGroup: demand_trend
+    allowedUse: origin_known_history
+    selection: latest released period with release known_as_of <= fit_known_as_of
+    targetDateUse: carry_forward_released_value_only
+    longHorizonFallback: carry_forward_with_age_and_missing_indicators
+  promotions:
+    publishedGroup: promotion_plan
+    allowedUse: unavailable
+    selection: none
+    targetDateUse: forbidden
+    longHorizonFallback: explicit_unavailable_row
+    reasonCode: NO_ORIGIN_VISIBLE_PROMOTION_PLAN
+    evidence: all retained rows are landing_backfill, share one post-period known_as_of, and no promotion was known by its own start date
+presentation:
+  liveGroups:
+    - demand_trend
+    - seasonality
+    - price
+    - competitor_activity
+    - weather_local_events
+  unavailableGroups:
+    - promotion_plan
+  eventComponent:
+    sourceComponent: event_snap
+    publishedGroup: weather_local_events
+    retainComponentForAudit: true
+  normalization:
+    denominator: sum of absolute contributions across live groups
+    unavailableGroupsExcluded: true
+    targetPercent: "100.0000"
+tests:
+  - reject every driver value whose known_as_of exceeds fit_known_as_of
+  - reject a planted target-date actual
+  - require an explicit missingness or age indicator whenever fallback is used
+  - require promotion features to be absent from every model matrix

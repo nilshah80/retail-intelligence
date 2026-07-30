@@ -246,12 +246,12 @@ def validate_json_schema(path: Path) -> None:
 
 
 def validate_openapi(path: Path) -> None:
-    """Validate the stable Phase-2 surface without introducing a second toolchain."""
+    """Validate the stable read-only surface without a second OpenAPI toolchain."""
 
     document = load_yaml(path)
     if not str(document.get("openapi", "")).startswith("3.1."):
         raise ContractValidationError("OpenAPI contract must use 3.1")
-    expected_paths = {
+    live_paths = {
         "/healthz",
         "/api/v1/data-management/summary",
         "/api/v1/data-management/dashboard",
@@ -261,9 +261,21 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/data-management/quality-findings",
         "/api/v1/fx/rates",
     }
+    forecast_paths = {
+        "/api/v1/forecast/versions",
+        "/api/v1/forecast/summary",
+        "/api/v1/forecast/series",
+        "/api/v1/forecast/actuals",
+        "/api/v1/forecast/horizons",
+        "/api/v1/forecast/stores",
+        "/api/v1/forecast/drivers",
+        "/api/v1/forecast/signals",
+        "/api/v1/forecast/exceptions",
+    }
+    expected_paths = live_paths | forecast_paths
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:
-        raise ContractValidationError("Phase-2 OpenAPI path inventory drifted")
+        raise ContractValidationError("OpenAPI path inventory drifted")
     operation_ids: list[str] = []
     for endpoint, methods in paths.items():
         if not isinstance(methods, Mapping) or "get" not in methods:
@@ -271,8 +283,14 @@ def validate_openapi(path: Path) -> None:
         operation = methods["get"]
         if not isinstance(operation, Mapping) or not operation.get("operationId"):
             raise ContractValidationError(f"{endpoint}: operationId is absent")
-        if "200" not in operation.get("responses", {}):
-            raise ContractValidationError(f"{endpoint}: 200 response is absent")
+        expected_responses = (
+            {"200", "503"} if endpoint in forecast_paths else {"200"}
+        )
+        responses = operation.get("responses", {})
+        if set(responses) != expected_responses:
+            raise ContractValidationError(
+                f"{endpoint}: expected responses {sorted(expected_responses)}"
+            )
         operation_ids.append(str(operation["operationId"]))
     if len(operation_ids) != len(set(operation_ids)):
         raise ContractValidationError("OpenAPI operationId values must be unique")

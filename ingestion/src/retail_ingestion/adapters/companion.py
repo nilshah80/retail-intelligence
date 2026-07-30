@@ -11,7 +11,7 @@ from .registry import register_adapter
 @register_adapter
 class CompanionAdapter(SourceAdapter):
     source_system = "companion"
-    adapter_version = "companion-adapter/1.1.0"
+    adapter_version = "companion-adapter/1.2.0"
     raw_schema = "raw_companion"
 
     _natural_key_fields = {
@@ -40,7 +40,7 @@ class CompanionAdapter(SourceAdapter):
             "effectiveFrom",
         ),
         "promotions": ("promotionId",),
-        "storeAssortment": ("sku", "storeKey", "validFrom"),
+        "storeAssortment": ("sku", "storeKey", "validFrom", "observedAt"),
         "weatherActuals": ("targetType", "targetId", "validDate"),
         "weatherForecasts": (
             "provider",
@@ -88,6 +88,7 @@ class CompanionAdapter(SourceAdapter):
             "competitorPrices": "observedAt",
             "macroIndex": "observedAt",
             "pandemicSignals": "observedAt",
+            "storeAssortment": "observedAt",
             "weatherActuals": "observedAt",
             "weatherForecasts": "issuedAt",
         }
@@ -99,6 +100,18 @@ class CompanionAdapter(SourceAdapter):
             raw_name = snake_case(dataset)
             stage_name = f"companion_{raw_name}"
             observed = observed_fields.get(dataset)
+            if observed is not None:
+                raw_columns = {
+                    str(row[0])
+                    for row in con.execute(
+                        f"DESCRIBE raw_companion.{sql_identifier(raw_name)}"
+                    ).fetchall()
+                }
+                if observed not in raw_columns:
+                    # Backward-compatible downgrade for older source-schema
+                    # versions: the current landing time remains explicit,
+                    # and Gate B keeps the non-PIT capability downgrade.
+                    observed = None
             if observed:
                 known_expression = f"try_cast({observed} AS TIMESTAMPTZ)"
                 evidence_grade = (
@@ -176,6 +189,8 @@ class CompanionAdapter(SourceAdapter):
             )
             payload = f"to_json(struct_pack({payload_fields}))"
             key_fields = self._natural_key_fields.get(dataset, business_columns)
+            if dataset == "storeAssortment" and "observedAt" not in columns:
+                key_fields = ("sku", "storeKey", "validFrom")
             missing_keys = sorted(set(key_fields) - set(columns))
             if missing_keys:
                 raise RuntimeError(

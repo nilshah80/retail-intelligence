@@ -1,0 +1,22 @@
+[project]
+name = "retail-intelligence-db"
+version = "0.1.0"
+description = "Alembic-owned PostgreSQL schema for Retail Intelligence"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "alembic==1.16.5",
+  "psycopg[binary]==3.3.4",
+  "sqlalchemy==2.0.43",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

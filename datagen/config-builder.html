@@ -110,7 +110,7 @@
 <header>
   <div class="brand">
     <strong>Retail Source Scenario Builder</strong>
-    <small>generator-owned contract · retail-source-config/v11</small>
+    <small>generator-owned contract · retail-source-config/v12</small>
   </div>
   <div class="header-actions">
     <button class="button ghost" id="resetShowcase">Showcase preset</button>
@@ -1492,7 +1492,7 @@
 
 <script id="showcasePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v11",
+  "specVersion": "retail-source-config/v12",
   "identity": {
     "scenarioId": "multi-market-showcase",
     "scenarioVersion": "1.0.0",
@@ -3558,7 +3558,7 @@
 
 <script id="historyPreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v11",
+  "specVersion": "retail-source-config/v12",
   "identity": {
     "scenarioId": "multi-market-20-year-history",
     "scenarioVersion": "1.0.0",
@@ -6398,7 +6398,7 @@
 
 <script id="volumePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v11",
+  "specVersion": "retail-source-config/v12",
   "identity": {
     "scenarioId": "multi-market-2021-current-volume",
     "scenarioVersion": "1.0.0",
@@ -9300,7 +9300,7 @@
 
 <script id="demoDecadePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v11",
+  "specVersion": "retail-source-config/v12",
   "identity": {
     "scenarioId": "multi-market-10-year-demo",
     "scenarioVersion": "1.0.0",
@@ -9899,7 +9899,7 @@
         ]
       },
       "assortment": {
-        "skusPerDepartment": 36,
+        "skusPerDepartment": 72,
         "variantsPerProduct": 3
       },
       "demand": {
@@ -10189,7 +10189,7 @@
         ]
       },
       "assortment": {
-        "skusPerDepartment": 36,
+        "skusPerDepartment": 72,
         "variantsPerProduct": 3
       },
       "demand": {
@@ -13345,7 +13345,7 @@ function validate() {
     if(!Array.isArray(rows)||(!allowEmpty&&!rows.length)){errors.push(`${path} needs at least one row`);return new Set();}
     const seen=new Set(); rows.forEach((row,index)=>{const value=row[key];require(value,`${path}[${index}].${key}`);if(!idPattern.test(value||""))errors.push(`${path}[${index}].${key} has invalid ID format`);if(seen.has(value))errors.push(`${path} duplicate ${value}`);seen.add(value);});return seen;
   };
-  if(cfg.specVersion!=="retail-source-config/v11") errors.push("specVersion must be retail-source-config/v11");
+  if(cfg.specVersion!=="retail-source-config/v12") errors.push("specVersion must be retail-source-config/v12");
   require(cfg.identity.scenarioId,"identity.scenarioId"); require(cfg.identity.scenarioName,"identity.scenarioName");
   if(cfg.time.endDate<cfg.time.startDate) errors.push("endDate must not be before startDate");
   const marketIds=unique(cfg.markets,"marketId","markets");

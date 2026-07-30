@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "retail-phase3-accepted-publication-evidence/v1",
+  "recordedAt": "2026-07-30",
+  "inputBundle": {
+    "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b",
+    "gateASemanticFingerprint": "e1e16e33b689cc951a61d8d96da54d80ba8f88b12692f936ddeaba849a52bc38",
+    "gateBSemanticFingerprint": "e4bd23a1b4b4e28a678d4c15fbb660bb54e2772f81ead71800d9dd6299979313",
+    "publicationSemanticFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff"
+  },
+  "featureSemanticFingerprint": "c320b05dc09ae9676eed58b3a60dfc0bf4afda11dcfc419b71951f4acf6d8102",
+  "acceptance": {
+    "passed": true,
+    "evaluationRows": 708708,
+    "trainingRows": 65021190,
+    "global": {
+      "relativeWapeImprovementPct": 55.82743544717504,
+      "p90Coverage": 0.888813164236893,
+      "slowMoverSeries": 321,
+      "slowMoverMinimumPairedSeriesPerOrigin": 194,
+      "slowMoverDifferenceInterval95": [
+        -0.38925238,
+        -0.24799075
+      ]
+    },
+    "markets": {
+      "india-west": {
+        "relativeWapeImprovementPct": 55.01832781145549,
+        "p90Coverage": 0.8927815026737342,
+        "slowMoverSeries": 159,
+        "slowMoverMinimumPairedSeriesPerOrigin": 95,
+        "passed": true
+      },
+      "us-new-york": {
+        "relativeWapeImprovementPct": 56.71225437678268,
+        "p90Coverage": 0.8851154651314929,
+        "slowMoverSeries": 162,
+        "slowMoverMinimumPairedSeriesPerOrigin": 96,
+        "passed": true
+      }
+    }
+  },
+  "currentCycle": {
+    "decisionAsOf": "2026-07-30T09:23:11.952654Z",
+    "forecastOrigin": "2026-07-27",
+    "horizons": 26,
+    "series": 2034,
+    "forecastRows": 52884,
+    "trainingRows": 5127448,
+    "actualLabelsPresent": false,
+    "forecastObjectSha256": "1e57df55e53e42ba14fb7df6d3156d9b8b4ba6f3079eab044b9533695471cb2e"
+  },
+  "decision60": {
+    "exceptionPolicyFingerprint": "6a061db92136264217b8b3225b5f6dbb68a579c40333dcaf16f021e98d853fc8",
+    "dataQualityPolicyFingerprint": "3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c",
+    "exceptionRows": 685,
+    "dataQualityRows": 2034,
+    "dataQualityClassCounts": {
+      "Watch": 2034
+    }
+  },
+  "publication": {
+    "forecastRunId": "fr_b2f18d0e2999a36d",
+    "forecastVersionId": "fv_a00fe79a86768419",
+    "lifecycleStatus": "accepted",
+    "semanticFingerprint": "5490da0c27d130be64545b9a090881268b50d7da5bcf6f3578f22beb923ef86a",
+    "artifactCount": 10,
+    "forecastSeriesRows": 52884,
+    "forecastDriverRows": 10200
+  },
+  "validation": {
+    "forecastRunVerification": "pass",
+    "forecastRunJsonSchema": "pass",
+    "mlTests": 55,
+    "contractTests": 82,
+    "contractValidation": "pass",
+    "repositoryCI": "prohibited"
+  }
+}

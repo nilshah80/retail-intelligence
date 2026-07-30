@@ -1,0 +1,336 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://retail-intelligence.local/contracts/ml/forecast-run.schema.yaml
+title: Retail forecast-run manifest
+description: >-
+  Manifest for the immutable forecast evaluation and serving bundle. It carries
+  the unchanged canonical forecast_* tables alongside origin-aligned evaluation
+  predictions, additive metrics, calibration, exceptions and lineage.
+type: object
+additionalProperties: false
+required:
+  - schemaVersion
+  - forecastRunId
+  - semanticFingerprint
+  - createdAt
+  - decisionAsOf
+  - inputBundle
+  - featureSemanticFingerprint
+  - modelPolicy
+  - randomSeeds
+  - pitEligibility
+  - lifecycleStatus
+  - classificationPolicies
+  - executionProfile
+  - stageTelemetry
+  - mlflowRunId
+  - fingerprintContract
+  - artifacts
+properties:
+  schemaVersion:
+    const: retail-forecast-run/v1
+  forecastRunId:
+    type: string
+    pattern: ^fr_[0-9a-f]{16}$
+  semanticFingerprint:
+    $ref: "#/$defs/sha256"
+  createdAt:
+    type: string
+    format: date-time
+  decisionAsOf:
+    type: string
+    format: date-time
+  inputBundle:
+    type: object
+    additionalProperties: false
+    required:
+      - sourceSnapshotId
+      - gateASemanticFingerprint
+      - gateBSemanticFingerprint
+      - publicationSemanticFingerprint
+    properties:
+      sourceSnapshotId:
+        $ref: "#/$defs/sha256"
+      gateASemanticFingerprint:
+        $ref: "#/$defs/sha256"
+      gateBSemanticFingerprint:
+        $ref: "#/$defs/sha256"
+      publicationSemanticFingerprint:
+        $ref: "#/$defs/sha256"
+  featureSemanticFingerprint:
+    $ref: "#/$defs/sha256"
+  modelPolicy:
+    type: object
+    additionalProperties: false
+    required:
+      - horizonWeeks
+      - evaluationWindowWeeks
+      - scoringOriginStepWeeks
+      - scoringOrigins
+      - trainingOrigins
+      - labelEmbargoWeeks
+      - slowMoverZeroShareThreshold
+      - seriesKeyFields
+      - marketFeature
+      - metricAggregation
+      - promotionFeature
+    properties:
+      horizonWeeks:
+        type: array
+        minItems: 26
+        maxItems: 26
+        uniqueItems: true
+        items:
+          type: integer
+          minimum: 1
+          maximum: 26
+      evaluationWindowWeeks:
+        const: 26
+      scoringOriginStepWeeks:
+        const: 2
+      scoringOrigins:
+        const: 13
+      trainingOrigins:
+        const: 104
+      labelEmbargoWeeks:
+        const: 8
+      slowMoverZeroShareThreshold:
+        const: "0.60"
+      seriesKeyFields:
+        const:
+          - sku_id
+          - store_id
+          - channel_id
+      marketFeature:
+        const: market_id
+      metricAggregation:
+        const: additive_components
+      promotionFeature:
+        const: unavailable
+  randomSeeds:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: integer
+      minimum: 0
+  pitEligibility:
+    type: object
+    additionalProperties: false
+    required:
+      - eligible
+      - reasonCode
+    properties:
+      eligible:
+        const: false
+      reasonCode:
+        const: LANDING_BACKFILL_DEPENDENCY
+  lifecycleStatus:
+    enum:
+      - rejected
+      - accepted
+  classificationPolicies:
+    type: object
+    additionalProperties: false
+    required:
+      - exceptions
+      - dataQuality
+    properties:
+      exceptions:
+        allOf:
+          - $ref: "#/$defs/policy"
+          - properties:
+              policyId:
+                const: retail-forecast-exceptions/v1
+              semanticFingerprint:
+                const: 6a061db92136264217b8b3225b5f6dbb68a579c40333dcaf16f021e98d853fc8
+      dataQuality:
+        allOf:
+          - $ref: "#/$defs/policy"
+          - properties:
+              policyId:
+                const: retail-forecast-data-quality/v1
+              semanticFingerprint:
+                const: 3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c
+  executionProfile:
+    type: object
+  stageTelemetry:
+    type: object
+  mlflowRunId:
+    type:
+      - string
+      - "null"
+  fingerprintContract:
+    type: object
+    additionalProperties: false
+    required:
+      - schemaVersion
+      - volatilePointers
+    properties:
+      schemaVersion:
+        const: semantic-fingerprint/v1
+      volatilePointers:
+        const:
+          - /createdAt
+          - /executionProfile
+          - /stageTelemetry
+          - /mlflowRunId
+          - /artifacts/forecast_versions/path
+          - /artifacts/forecast_versions/bytes
+          - /artifacts/forecast_versions/sha256
+          - /artifacts/forecast_series/path
+          - /artifacts/forecast_series/bytes
+          - /artifacts/forecast_series/sha256
+          - /artifacts/forecast_drivers/path
+          - /artifacts/forecast_drivers/bytes
+          - /artifacts/forecast_drivers/sha256
+          - /artifacts/forecast_eval_predictions/path
+          - /artifacts/forecast_eval_predictions/bytes
+          - /artifacts/forecast_eval_predictions/sha256
+          - /artifacts/forecast_baseline_predictions/path
+          - /artifacts/forecast_baseline_predictions/bytes
+          - /artifacts/forecast_baseline_predictions/sha256
+          - /artifacts/forecast_metrics/path
+          - /artifacts/forecast_metrics/bytes
+          - /artifacts/forecast_metrics/sha256
+          - /artifacts/forecast_exceptions/path
+          - /artifacts/forecast_exceptions/bytes
+          - /artifacts/forecast_exceptions/sha256
+          - /artifacts/forecast_data_quality/path
+          - /artifacts/forecast_data_quality/bytes
+          - /artifacts/forecast_data_quality/sha256
+          - /artifacts/forecast_calibration/path
+          - /artifacts/forecast_calibration/bytes
+          - /artifacts/forecast_calibration/sha256
+          - /artifacts/forecast_acceptance/path
+          - /artifacts/forecast_acceptance/bytes
+          - /artifacts/forecast_acceptance/sha256
+  artifacts:
+    type: object
+    additionalProperties: false
+    required:
+      - forecast_versions
+      - forecast_series
+      - forecast_drivers
+      - forecast_eval_predictions
+      - forecast_baseline_predictions
+      - forecast_metrics
+      - forecast_exceptions
+      - forecast_data_quality
+      - forecast_calibration
+      - forecast_acceptance
+    properties:
+      forecast_versions:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-v2-forecast-versions/v1
+      forecast_series:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-v2-forecast-series/v1
+      forecast_drivers:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-v2-forecast-drivers/v1
+      forecast_eval_predictions:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-eval-predictions/v1
+              additiveMetricColumns:
+                const:
+                  - abs_error_sum
+                  - signed_error_sum
+                  - actual_sum
+                  - coverage_hits
+                  - n
+            required:
+              - additiveMetricColumns
+      forecast_baseline_predictions:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-baseline-predictions/v1
+      forecast_metrics:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-metrics/v1
+      forecast_exceptions:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-exceptions/v1
+      forecast_data_quality:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-data-quality/v1
+      forecast_calibration:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-calibration/v1
+      forecast_acceptance:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-acceptance/v1
+$defs:
+  sha256:
+    type: string
+    pattern: ^[0-9a-f]{64}$
+  artifact:
+    type: object
+    additionalProperties: false
+    required:
+      - schemaVersion
+      - path
+      - bytes
+      - sha256
+      - semanticFingerprint
+      - rowCount
+    properties:
+      schemaVersion:
+        type: string
+        minLength: 1
+      path:
+        type: string
+        minLength: 1
+      bytes:
+        type: integer
+        minimum: 0
+      sha256:
+        $ref: "#/$defs/sha256"
+      semanticFingerprint:
+        $ref: "#/$defs/sha256"
+      rowCount:
+        type: integer
+        minimum: 0
+      additiveMetricColumns:
+        type: array
+        items:
+          type: string
+  policy:
+    type: object
+    additionalProperties: false
+    required:
+      - policyId
+      - semanticFingerprint
+    properties:
+      policyId:
+        type: string
+        minLength: 1
+      semanticFingerprint:
+        $ref: "#/$defs/sha256"

@@ -14,7 +14,8 @@ workflow/audit in RDS.
 
 AWS containers may use Linux images, but that deployment choice does not narrow the local support
 contract: shared application code and developer/build commands remain required on Windows,
-macOS and Linux. Container success cannot replace the three-OS local/CI acceptance gates.
+macOS and Linux. Container success cannot replace manually collected three-OS acceptance
+evidence.
 
 **Governance hard rule:** real client data (if ever used) runs only in an approved
 **client-controlled account** with residency, encryption, retention, and access controls — never
@@ -39,7 +40,7 @@ The design is built around config-switched seams so local and AWS run the same l
 | Auth / RBAC | local dev users | **Cognito** |
 | Secrets / keys | `.env` | **Secrets Manager** + **KMS** |
 | Observability | logs | **CloudWatch** (+ X-Ray) |
-| IaC / CI-CD | — | **Terraform/CDK** + **CodePipeline** / GitHub Actions |
+| IaC / deployment | — | **Terraform/CDK**, invoked manually; repository CI/CD is prohibited |
 
 ## 3 · Phases (AWS)
 
@@ -48,8 +49,9 @@ Status: `[ ]` not started · `[~]` partial · `[x]` done. Detail in `plans/aws/t
 ### Phase A0 — Foundations
 Account/org guardrails, VPC (private subnets, VPC endpoints, no public data paths), IAM
 least-privilege roles, **KMS** CMKs, **S3** buckets (raw/curated/features/artifacts, versioned +
-encrypted), **RDS PostgreSQL**, **Secrets Manager**, IaC skeleton (Terraform/CDK), CI/CD
-pipeline. **Exit:** `terraform apply` stands up an empty, private, encrypted environment.
+encrypted), **RDS PostgreSQL**, **Secrets Manager**, IaC skeleton (Terraform/CDK), and manual
+build/test/deploy runbooks. **Exit:** `terraform apply` stands up an empty, private, encrypted
+environment.
 Each Python image installs the neutral `execution/` resolver; the Go image implements the same
 schema/golden vectors natively. IaC maps a selected bounded profile to explicit service/job
 resources rather than inferring unbounded concurrency from the instance.

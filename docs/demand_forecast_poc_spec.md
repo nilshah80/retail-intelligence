@@ -895,7 +895,7 @@ pack was revised later.
 The configuration hierarchy is:
 
 ```yaml
-specVersion: retail-source-config/v11
+specVersion: retail-source-config/v12
 identity: {scenarioId: multi-market-demo, scenarioVersion: 1.0.0, masterSeed: 20260101}
 time: {startDate: 2025-01-01, endDate: 2025-03-31, generationPartition: month}
 retailer: {retailerId: retailer-001, name: Example Retail, reportingCurrency: INR}
@@ -966,7 +966,7 @@ output: {rootDirectory: output, publicFormats: [parquet, duckdb],
          compression: zstd, writeHiddenTruth: true, overwrite: false}
 ```
 
-This is an abbreviated, readable excerpt; the Config Builder's resolved v11 YAML/JSON—including
+This is an abbreviated, readable excerpt; the Config Builder's resolved v12 YAML/JSON—including
 the complete locale/catalog packs and every operations field—is the executable contract.
 
 `customerPopulation` is required per market and is generator/source vocabulary. It controls
@@ -1042,7 +1042,7 @@ after its discontinuation. A successor launch does not itself discontinue its pr
 builder exposes spike/decay, anticipation, substitution, runout, markdown, clearance and
 fire-sale controls.
 
-Source spec v11 accepts complete date ranges within the materialized locale-pack coverage. The
+Source spec v12 accepts complete date ranges within the materialized locale-pack coverage. The
 current packs cover `2005-01-01` through `2026-12-31` (22 complete years), and the checked-in
 2005–2024 preset exercises the minimum 20-year requirement with monthly partitions, compound
 growth/inflation, ongoing catalog launches/replacements and phased pandemic/supply disruption.
@@ -1076,7 +1076,7 @@ until canonical cost-as-of exists. A generated cost ledger may later enable a cl
 synthetic margin scenario; only provenance-matched client cost can enable a client-actual margin
 objective.
 
-Source spec v11 implements the following as config-driven source fidelity. They remain
+Source spec v12 implements the following as config-driven source fidelity. They remain
 **non-blocking capabilities** for a consumer that only needs the first forecast/revenue-pricing
 round-trip:
 

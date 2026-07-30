@@ -22,6 +22,10 @@ venv/
 htmlcov/
 coverage.xml
 
+# Local service credentials and overrides. Commit only *.example templates.
+.env
+deploy/.env
+
 # Local planning workbench; intentionally not part of the repository deliverable.
 plans/local/phase2-implementation-plan.md
 plans/local/phase3-implementation-plan.md

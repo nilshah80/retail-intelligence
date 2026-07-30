@@ -1,0 +1,38 @@
+{
+  "$schema": "./input-bundle.schema.json",
+  "schemaVersion": "retail-ml-expected-pin/v1",
+  "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b",
+  "gateA": {
+    "status": "pass",
+    "semanticFingerprint": "e1e16e33b689cc951a61d8d96da54d80ba8f88b12692f936ddeaba849a52bc38",
+    "evidenceSha256": "de8113600bcb46c5b3efb1b4ce7648a65e753cd65889ea96e4aa7b4327b0c1f3"
+  },
+  "gateB": {
+    "status": "pass",
+    "semanticFingerprint": "e4bd23a1b4b4e28a678d4c15fbb660bb54e2772f81ead71800d9dd6299979313",
+    "evidenceSha256": "c3d22eadfa6cd28ff895e0f6ecdb7c460194fef758018a58f0cc8339b65b5050"
+  },
+  "publication": {
+    "semanticFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
+    "gateBSemanticFingerprint": "e4bd23a1b4b4e28a678d4c15fbb660bb54e2772f81ead71800d9dd6299979313",
+    "evidenceSha256": "789145d42381e263303422cbdfaf4495ffd39bb4d6fc3f84f1c13e798887f9c4",
+    "objectCount": 1509,
+    "duckdb": {
+      "path": "retail_v2.duckdb",
+      "bytes": 1406676992,
+      "sha256": "1c03864339dc8ff65971aa8eb1b964978b40c9b3db1b1ab06bd3061edc1b9cf6"
+    }
+  },
+  "retention": {
+    "schemaVersion": "retail-ingestion-retained-evidence/v1",
+    "publicationFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
+    "files": {
+      "gate-a.json": "de8113600bcb46c5b3efb1b4ce7648a65e753cd65889ea96e4aa7b4327b0c1f3",
+      "gate-b.json": "c3d22eadfa6cd28ff895e0f6ecdb7c460194fef758018a58f0cc8339b65b5050",
+      "publication-manifest.json": "789145d42381e263303422cbdfaf4495ffd39bb4d6fc3f84f1c13e798887f9c4"
+    }
+  },
+  "requiredCapabilities": [
+    "demand_forecast_non_pit"
+  ]
+}

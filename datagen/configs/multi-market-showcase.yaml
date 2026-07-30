@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v11
+specVersion: retail-source-config/v12
 identity:
   scenarioId: multi-market-showcase
   scenarioVersion: 1.0.0

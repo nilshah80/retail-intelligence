@@ -1646,7 +1646,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     if formats not in (["csv", "duckdb"], ["parquet", "duckdb"]):
         errors.append(
             "output.publicFormats must be exactly ['csv', 'duckdb'] or "
-            "['parquet', 'duckdb'] in source spec v11"
+            "['parquet', 'duckdb'] in source spec v12"
         )
     compression = output.get("compression")
     if compression not in SUPPORTED_COMPRESSION:

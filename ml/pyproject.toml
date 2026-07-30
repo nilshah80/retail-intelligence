@@ -2,20 +2,35 @@
 name = "retail-ml"
 version = "0.1.0"
 description = "Curated-data consumers: point-in-time features, forecast models and decision engines"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
   "retail-contracts",
   "retail-intelligence-execution",
-  "duckdb>=1.1",
-  "pyarrow>=17",
-  "pandas>=2.2",
-  "pyyaml>=6.0",
+  "duckdb==1.5.4",
+  "lightgbm==4.7.0",
+  "mlflow==3.14.0",
+  "numpy==2.4.6",
+  "pandas==2.3.3",
+  "pyarrow==24.0.0",
+  "psutil==7.2.2",
+  "psycopg[binary]==3.3.4",
+  "pyyaml==6.0.3",
+  "scikit-learn==1.9.0",
+  "scipy==1.17.1",
+  "shap==0.52.0",
+  "statsmodels==0.14.6",
 ]
 
 [project.optional-dependencies]
-# Phase 3 adds lightgbm, statsmodels, scikit-learn and mlflow. Deliberately absent
-# until features/models land, so the environment stays cheap to create in Phase 2.
-dev = ["pytest>=8.0", "setuptools>=68", "wheel>=0.43"]
+dev = [
+  "jsonschema==4.26.0",
+  "pytest==9.1.1",
+  "setuptools>=68",
+  "wheel>=0.43",
+]
+
+[project.scripts]
+retail-ml = "retail_ml.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

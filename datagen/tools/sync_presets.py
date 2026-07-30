@@ -277,7 +277,11 @@ def _sync_yaml(path: Path) -> None:
         market["catalogPack"] = CATALOG_PACK_METADATA[market["countryCode"]]
         market["localePack"] = LOCALE_PACKS[market["countryCode"]]
         market["assortment"]["skusPerDepartment"] = (
-            12 if "20-year-history" in path.name else 36
+            12
+            if "20-year-history" in path.name
+            else 72
+            if "10-year-demo" in path.name
+            else 36
         )
         market["customerPopulation"] = {
             "openingRegisteredCustomers": 5_000,

@@ -144,6 +144,77 @@ def test_companion_adapter_emits_generic_dimension_signal_envelope() -> None:
         connection.close()
 
 
+def test_companion_assortment_uses_native_effective_observation() -> None:
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute("SET TimeZone = 'UTC'")
+        connection.execute("CREATE SCHEMA raw_companion")
+        connection.execute(
+            """
+            CREATE TABLE raw_companion.store_assortment (
+                marketKey VARCHAR,
+                storeKey VARCHAR,
+                sku VARCHAR,
+                validFrom VARCHAR,
+                validTo VARCHAR,
+                observedAt VARCHAR,
+                active VARCHAR,
+                assortmentReason VARCHAR,
+                _source_instance VARCHAR,
+                _market_id VARCHAR,
+                _market_currency_code VARCHAR,
+                _business_timezone VARCHAR,
+                _raw_object_hash VARCHAR,
+                _raw_object_path VARCHAR
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO raw_companion.store_assortment VALUES (
+                'india', 'store-1', 'sku-1', '2025-01-01', '2026-01-01',
+                '2025-01-01T00:00:00+05:30', 'true', 'effective-assortment',
+                'companion-in', 'india', 'INR', 'Asia/Kolkata',
+                'object-hash', 'companion/india/store_assortment.parquet'
+            )
+            """
+        )
+        reference = SimpleNamespace(
+            artifact_format="parquet",
+            dataset="storeAssortment",
+        )
+        catalog = SimpleNamespace(
+            landing_manifest={
+                "sourceSnapshotId": "snapshot-1",
+                "nativeSnapshotId": "source-run-1",
+                "landingTime": "2026-02-01T00:00:00Z",
+            },
+            for_source=lambda source_system: (
+                (reference,) if source_system == "companion" else ()
+            ),
+        )
+        context = AdapterContext(
+            connection=connection,
+            catalog=catalog,
+            profile={
+                "sourceSchemaVersion": "source/v2",
+                "profileVersion": "profile/v1",
+            },
+        )
+
+        created = adapter_for("companion").materialize_staging(context)
+
+        assert "stage_data.companion_store_assortment" in created
+        assert connection.execute(
+            """
+            SELECT cast(known_as_of AS VARCHAR), evidence_grade
+            FROM stage_data.companion_store_assortment
+            """
+        ).fetchone() == ("2024-12-31 18:30:00+00", "native_observed")
+    finally:
+        connection.close()
+
+
 def test_shopify_adapter_reads_declared_jsonl_through_shared_reader(
     tmp_path: Path,
 ) -> None:

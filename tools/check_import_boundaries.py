@@ -3,8 +3,8 @@
 
 Why static and not `ModuleNotFoundError`: an import-time assertion only fires when
 the forbidden package is genuinely absent. Once `ingestion` and `ml` share a
-developer machine — or CI installs both to run one test session — a runtime probe
-passes while the boundary is being violated. Parsing the AST does not care what is
+developer validation environment, a runtime probe passes while the boundary is
+being violated. Parsing the AST does not care what is
 installed.
 
 Two kinds of rule:
@@ -86,10 +86,21 @@ BOUNDARIES: tuple[Boundary, ...] = (
     Boundary(
         name="ml",
         root=REPO_ROOT / "ml" / "src",
-        forbidden=frozenset({"ingestion", "retail_ingestion", "api"}),
+        forbidden=frozenset(
+            {
+                "api",
+                "datagen",
+                "ingestion",
+                "pipeline",
+                "reports",
+                "retail_ai",
+                "retail_datagen",
+                "retail_ingestion",
+            }
+        ),
         rationale=(
             "decision #2: ml consumes curated data only; reaching into ingestion would "
-            "let source logic leak into features and models"
+            "let source logic or a superseded publication path leak into features and models"
         ),
     ),
     Boundary(

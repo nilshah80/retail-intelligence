@@ -1,8 +1,8 @@
 schemaVersion: retail-source-profile/v1
 profileId: retail-datagen-multi-source
-profileVersion: "1.1.0"
+profileVersion: "1.2.0"
 sourceSystem: generator
-sourceSchemaVersion: retail-source-config/v11
+sourceSchemaVersion: retail-source-config/v12
 businessTimezone: source_location_timezone
 extractWindow:
   start: "2016-07-28"
@@ -284,8 +284,8 @@ datasets:
   - <<: *staged
     sourceSystem: companion
     datasetId: storeAssortment
-    sourceKeys: [marketKey, storeKey, sku, validFrom]
-    grainFields: [marketKey, storeKey, sku, validFrom]
+    sourceKeys: [marketKey, storeKey, sku, validFrom, observedAt]
+    grainFields: [marketKey, storeKey, sku, validFrom, observedAt]
   - <<: *staged
     sourceSystem: companion
     datasetId: weatherActuals

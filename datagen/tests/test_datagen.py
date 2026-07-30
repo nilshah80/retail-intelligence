@@ -3021,6 +3021,23 @@ class GenerationTests(unittest.TestCase):
                     dataset_exists(base, f"companion/india-mumbai/{filename}"),
                     filename,
                 )
+            assortment = dataset_rows(
+                base,
+                "companion/india-mumbai/store_assortment.csv",
+            )
+            self.assertTrue(assortment)
+            self.assertTrue(
+                all(
+                    row["observedAt"][:10] == row["validFrom"]
+                    for row in assortment
+                )
+            )
+            self.assertTrue(
+                all(
+                    row["observedAt"].endswith("+05:30")
+                    for row in assortment
+                )
+            )
             forecasts = dataset_rows(
                 base,
                 "companion/india-mumbai/weather_forecasts.csv",

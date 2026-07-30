@@ -1,0 +1,402 @@
+schemaVersion: retail-screen-contract/v1
+screenId: demandForecast
+status: frozen_approved_for_implementation
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  pageSelector: "#demandForecast"
+  plan: plans/local/phase3-implementation-plan.md
+  api: contracts/api/openapi.yaml
+dataMode: accepted_live_only
+
+activation:
+  verifier: retail_ml.publish.verify.verify_forecast_run
+  requiredLifecycleStatus: accepted
+  requiredAcceptanceVerdict: true
+  currentState: accepted_active
+  forecastRunId: fr_b2f18d0e2999a36d
+  versionId: fv_a00fe79a86768419
+  semanticFingerprint: 5490da0c27d130be64545b9a090881268b50d7da5bcf6f3578f22beb923ef86a
+  fixturesAllowedInLiveScreen: false
+
+reviewGate:
+  reactImplementationAuthorized: true
+  authorizedAt: "2026-07-30"
+  authorization: User directed completion of the entire Phase 3.
+  resolvedDecision:
+    Q1: >-
+      Forecast vs Actual shows the eight most recent completed target weeks.
+      Each week is one governed h1 forecast/actual aggregate pair.
+    Q2: >-
+      Stores come from current accepted forecast_stores and display as
+      "{name}, {city}" unless the city is already present in the name.
+    Q3: >-
+      Weekly is live. Monthly is a sum of weekly values by target month.
+      Daily is visible but disabled because no governed disaggregation exists.
+    Q4: The Category filter uses the canonical product category grain.
+    Q5: >-
+      KPI deltas stay Not available until a second comparable accepted version
+      exists; prior-period values never substitute for version comparison.
+    Q6: >-
+      Horizon health uses checkpoints 1, 4, 8, 13 and 26, hiding checkpoints
+      beyond the selected horizon cap.
+    Q7: >-
+      Workbench AI Forecast and MA13 baseline are sums across h1 through the
+      selected horizon; Last Actual is the latest completed weekly actual.
+    Q8: >-
+      Relative time is computed from known_as_of to forecast decisionAsOf,
+      never wall clock. Missing known_as_of renders Not available.
+    Q9: >-
+      Global and page Store controls share one state. Channel intersects page
+      filters. Topbar date is historical context; page horizon is future.
+      Currency is independent and cannot alter unit or percentage measures.
+    Q10: >-
+      Baseline is the governed MA13 evaluation model and current is the active
+      accepted AI version. Prior and planner versions remain Not available.
+    Q11: >-
+      Unavailable controls remain in reference order with native disabled and
+      aria-disabled states plus a tooltip naming the owning future phase.
+    Q12: Screenshot baselines use 1440x1100 desktop and 390x844 responsive.
+    Q13: >-
+      The shared currency/FX shell remains visible, but no unit or percentage
+      value is converted. Demand at Risk and Business Impact stay Not available.
+    Q14: >-
+      Action Center shows live governed exception counts; Store Drilldown shows
+      live store accuracy, bias and coverage; Compare Versions shows MA13 and
+      current AI. Unsupported business, prior and planner values stay Not available.
+    Q15: >-
+      FVA is relative WAPE improvement versus MA13 and is rendered as a percent
+      everywhere, never as percentage points.
+    Q16: >-
+      Forecast Coverage is distinct active forecast SeriesKeys divided by
+      distinct governed forecast_data_quality SeriesKeys for the accepted version.
+    Q17: >-
+      event_snap is published under Weather and local events. Five live groups
+      renormalize to 100%; Promotion plan stays visible and unavailable.
+    Q18: >-
+      Decision #60 and contracts/ml/forecast-classification-policy.json freeze
+      the five exception formulas, thresholds/severity, unavailable-promotion
+      behavior, and per-series Good/Watch/Issue quality battery.
+  pendingDecisions: {}
+
+shell:
+  inheritFrom: contracts/screens/data-management.yaml
+  topbar:
+    title: Demand Forecast
+    subtitle: Forecast demand by SKU, store, channel and time
+  navigation:
+    activeItem: Demand Forecast
+    preserveReferenceOrder: true
+    phaseOrRoadmapLabelsAllowed: false
+  footer:
+    left: AI Retail Intelligence — Dynamic Pricing & Demand Forecasting
+    right: Powered by AI • Built for Retail
+    slots:
+      - label: Total SKUs
+        source: curated.products
+        status: live
+      - label: Active SKUs
+        source: curated.assortment_calendar
+        status: live
+      - label: Stores
+        source: curated.stores
+        status: live
+      - label: Channels
+        source: accepted publication business channel types
+        status: live
+      - label: Forecast Coverage
+        source: distinct current forecast SeriesKeys / governed quality SeriesKeys
+        status: live_when_forecast_accepted
+      - label: Data Freshness
+        source: contextual known_as_of relative to decision_as_of
+        status: live_when_forecast_accepted
+      - label: Model Accuracy
+        source: forecast_metrics global champion accuracy
+        status: live_when_forecast_accepted
+
+actions:
+  - selector: "#acceptForecastBtn"
+    label: Accept Forecast
+    order: 1
+    status: unavailable_phase_6
+  - selector: "#addForecastAdjustmentBtn"
+    label: Add Planner Adjustment
+    order: 2
+    status: unavailable_phase_6
+  - selector: "#compareForecastVersionsBtn"
+    label: Compare Versions
+    order: 3
+    status: live_when_forecast_accepted
+    behavior: Compare governed MA13 baseline with the active accepted AI version.
+  - selector: "#forecastScenarioBtn"
+    label: Scenario Planning
+    order: 4
+    status: unavailable_phase_5
+  - selector: "#forecastActionCenterBtn"
+    label: Forecast Action Center
+    order: 5
+    status: live_when_forecast_accepted
+    behavior: Show governed current-cycle exception counts.
+  - selector: "#exportForecastBtn"
+    label: Export
+    order: 6
+    status: live_when_forecast_accepted
+    behavior: Export the active live table; never export sample HTML rows.
+
+filters:
+  precedence:
+    status: frozen
+    rule: >-
+      Global and page Store controls share one state; Channel intersects page
+      filters; historical date, future horizon and currency remain independent.
+  controls:
+    - selector: "#forecastRegionFilter"
+      order: 1
+      label: All Regions
+      source: market-qualified canonical location regions
+      status: live_when_forecast_accepted
+    - selector: "#forecastStoreFilter"
+      order: 2
+      label: All Stores
+      source: current canonical locations
+      status: live_when_forecast_accepted
+      displayRule: "{name}, {city}, unless city is already present in name"
+    - selector: "#forecastCategoryFilter"
+      order: 3
+      label: All Categories
+      source: canonical product category
+      status: live_when_forecast_accepted
+    - selector: "#forecastHorizonFilter"
+      order: 4
+      options: [Next 4 Weeks, Next 8 Weeks, Next 13 Weeks, Next 26 Weeks]
+      source: forecast_series.horizon_week
+      status: live_when_forecast_accepted
+    - selector: "#forecastGranularityFilter"
+      order: 5
+      options: [Weekly, Daily, Monthly]
+      status: partially_available
+      behavior:
+        Weekly: live
+        Monthly: sum weekly values by target month
+        Daily: disabled_no_governed_disaggregation
+    - selector: "#forecastSearch"
+      order: 6
+      placeholder: Search product, SKU or store
+      fields: [sku_id, product_name, store_label]
+      status: live_when_forecast_accepted
+
+kpis:
+  selector: "#demandForecast .kpi-grid"
+  preserveReferenceOrder: true
+  tiles:
+    - order: 1
+      label: Forecast Accuracy
+      source: forecast_metrics champion additive accuracy at active filter slice
+      grain: composed evaluation rows
+      format: percentage_1dp
+      delta:
+        status: unavailable_until_comparable_accepted_version
+      note: "Target: 90%"
+      status: live_when_forecast_accepted
+    - order: 2
+      label: Forecast Bias
+      source: forecast_metrics champion signed_error_sum / actual_sum
+      grain: composed evaluation rows
+      format: signed_percentage_1dp
+      delta:
+        status: unavailable_until_comparable_accepted_version
+      note: "Target range: ±5%"
+      status: live_when_forecast_accepted
+    - order: 3
+      label: Demand at Risk
+      status: unavailable_phase_4
+      unavailablePresentation: Not available
+    - order: 4
+      label: Planner Overrides
+      status: unavailable_phase_6
+      unavailablePresentation: Not available
+    - order: 5
+      label: Forecast Value Add
+      source: forecast_metrics champion FVA versus MA13
+      grain: composed evaluation rows
+      format: relative_percentage_1dp
+      status: live_when_forecast_accepted
+
+tabs:
+  selector: "#forecastTabs"
+  default: Overview
+  preserveReferenceOrder: true
+  items:
+    - {label: Overview, panel: "#forecastOverviewPanel"}
+    - {label: Store View, panel: "#forecastStorePanel"}
+    - {label: SKU View, panel: "#forecastSkuPanel"}
+    - {label: Demand Drivers, panel: "#forecastDriversPanel"}
+    - {label: Governance, panel: "#forecastGovernancePanel"}
+
+panels:
+  - selector: "#forecastOverviewPanel"
+    label: Overview
+    elements:
+      - selector: "#forecastOverviewPanel .grid-2 .card:nth-child(1)"
+        label: Forecast vs Actual
+        linkLabel: Last 8 weeks
+        source: forecast_eval_predictions
+        grain: scoring_origin × SeriesKey × horizon
+        displayRule: eight most recent completed target weeks using h1 aggregates
+        status: live_when_forecast_accepted
+      - selector: "#forecastOverviewPanel .grid-2 .card:nth-child(2)"
+        label: Forecast Health by Horizon
+        linkLabel: Accuracy and bias
+        source: forecast_metrics
+        columns: [Horizon, Accuracy, Bias, Coverage, Status]
+        coverageDefinition: empirical P90 coverage
+        checkpoints: [1, 4, 8, 13, 26]
+        status: live_when_forecast_accepted
+      - selector: "#forecastOverviewPanel .grid-3 .card:nth-child(1)"
+        label: Forecast Exceptions
+        linkLabel: Current cycle
+        rows:
+          - High under-forecast risk
+          - High over-forecast risk
+          - New product / sparse history
+          - Promotion uplift conflict
+          - Data-quality exception
+        source: forecast_exceptions
+        status: live_when_forecast_accepted
+        unavailablePresentation: Not available
+      - selector: "#forecastOverviewPanel .grid-3 .card:nth-child(2)"
+        label: Forecast Value Add
+        linkLabel: AI vs baseline
+        rows:
+          - label: Statistical baseline accuracy
+            source: forecast_metrics MA13 accuracy
+            status: live_when_forecast_accepted
+          - label: AI forecast accuracy
+            source: forecast_metrics champion accuracy
+            status: live_when_forecast_accepted
+          - label: Planner-adjusted accuracy
+            status: unavailable_phase_6
+          - label: Net FVA
+            source: forecast_metrics champion versus MA13
+            format: relative_percentage_1dp
+            status: live_when_forecast_accepted
+          - label: Overrides adding value
+            status: unavailable_phase_6
+      - selector: "#forecastOverviewPanel .grid-3 .card:nth-child(3)"
+        label: Business Impact
+        linkLabel: Projected
+        rows:
+          - Stock-out reduction
+          - Excess inventory reduction
+          - Markdown reduction
+          - Working capital release
+          - Service-level improvement
+        status: unavailable_phase_4
+        unavailablePresentation: Not available
+
+  - selector: "#forecastStorePanel"
+    label: Store View
+    elements:
+      - selector: "#storeForecastDrilldownBtn"
+        label: Open Store Drilldown
+        status: live_when_forecast_accepted
+        behavior: Show live store accuracy, bias and coverage only.
+      - selector: "#storeForecastTable"
+        label: Store Forecast Performance
+        rowGrain: store
+        columns:
+          - {label: Store, source: forecast_stores name and city, status: live_when_forecast_accepted}
+          - {label: Forecast Accuracy, source: forecast_metrics store accuracy, status: live_when_forecast_accepted}
+          - {label: Bias, source: forecast_metrics store bias, status: live_when_forecast_accepted}
+          - {label: Demand at Risk, status: unavailable_phase_4}
+          - {label: Stock-out Risk, status: unavailable_phase_4}
+          - {label: Override Rate, status: unavailable_phase_6}
+          - {label: Priority Action, status: unavailable_no_frozen_business_rule}
+
+  - selector: "#forecastSkuPanel"
+    label: SKU View
+    elements:
+      - selector: "#forecastRecordCount"
+        source: filtered forecast_series count
+        status: live_when_forecast_accepted
+      - selector: "#forecastWorkbenchTable"
+        label: SKU-Store Forecast Workbench
+        rowGrain: version × SeriesKey
+        preserveHorizontalScrollContainer: true
+        columns:
+          - {label: Select, selector: "#selectAllForecastRows", status: live_when_forecast_accepted}
+          - {label: Priority, source: forecast_exceptions.severity, status: live_when_forecast_accepted}
+          - {label: SKU / Product, source: curated products product_name and sku_id, status: live_when_forecast_accepted}
+          - {label: Store, source: forecast_stores name and city, status: live_when_forecast_accepted}
+          - {label: Baseline, source: forecast_baseline_predictions MA13, status: live_when_forecast_accepted}
+          - {label: AI Forecast, source: forecast_series yhat_p50 sum h1 through selected horizon, status: live_when_forecast_accepted}
+          - {label: Planner Forecast, status: unavailable_phase_6}
+          - {label: Last Actual, source: forecast_eval_predictions latest completed target, status: live_when_forecast_accepted}
+          - {label: Accuracy, source: forecast_metrics series accuracy, status: live_when_forecast_accepted}
+          - {label: Bias, source: forecast_metrics series bias, status: live_when_forecast_accepted}
+          - {label: Confidence, source: forecast_series.confidence, status: live_when_forecast_accepted}
+          - {label: Primary Driver, source: forecast_drivers highest live contribution, status: live_when_forecast_accepted}
+          - {label: Data Quality, source: forecast_data_quality, status: live_when_forecast_accepted}
+          - {label: Status, source: governed current-cycle exception presence, status: live_when_forecast_accepted}
+
+  - selector: "#forecastDriversPanel"
+    label: Demand Drivers
+    elements:
+      - selector: "#forecastDriversPanel .card:nth-child(1)"
+        label: Demand Driver Contribution
+        linkLabel: Portfolio level
+        columns: [Driver, Contribution, Direction, Confidence]
+        rows:
+          - {label: Base demand trend, driver: demand_trend, status: live_when_forecast_accepted}
+          - {label: Promotion plan, driver: promo, status: unavailable_on_current_pin}
+          - {label: Seasonality, driver: seasonality, status: live_when_forecast_accepted}
+          - {label: Price movement, driver: price, status: live_when_forecast_accepted}
+          - {label: Competitor availability, driver: competitor_activity, status: live_when_forecast_accepted}
+          - {label: Weather and local events, driver: weather_local_events, status: live_when_forecast_accepted}
+        liveContributionTotal: "100.0000"
+      - selector: "#forecastDriversPanel .card:nth-child(2)"
+        label: External Signal Readiness
+        rows:
+          - {label: Promotion calendar, status: unavailable_on_current_pin}
+          - {label: Competitor pricing, source: competitor latest known_as_of}
+          - {label: Weather feed, source: weather latest known_as_of}
+          - {label: Local event feed, source: local events latest known_as_of}
+          - {label: Macroeconomic index, source: macro latest known_as_of}
+        freshnessBaseline: forecast_run.decisionAsOf
+        relativeTime:
+          status: frozen
+          rule: Compare known_as_of with decisionAsOf; missing timestamps are Not available.
+
+  - selector: "#forecastGovernancePanel"
+    label: Governance
+    elements:
+      - selector: "#forecastGovernancePanel .card:nth-child(1)"
+        label: Forecast Approval & SLA
+        columns: [Workflow Stage, Open, Average Age, SLA, Status]
+        status: unavailable_phase_6
+        unavailablePresentation: Not available
+      - selector: "#forecastGovernancePanel .card:nth-child(2)"
+        label: Model & Data Controls
+        rows:
+          - {label: Forecast version traceability, source: accepted manifest lineage, status: live_when_forecast_accepted}
+          - {label: Planner override comments, status: unavailable_phase_6}
+          - {label: Data freshness compliance, source: feed known_as_of relative to decisionAsOf, status: live_when_forecast_accepted}
+          - {label: Model drift within tolerance, status: pending_at_least_two_versions}
+          - {label: Back-testing coverage, source: forecast_eval_predictions distinct evaluated SeriesKey share, status: live_when_forecast_accepted}
+
+modals:
+  - trigger: "#forecastActionCenterBtn"
+    title: Forecast Action Center
+    status: live_when_forecast_accepted
+  - trigger: "#storeForecastDrilldownBtn"
+    title: Open Store Drilldown
+    status: live_when_forecast_accepted
+  - trigger: "#compareForecastVersionsBtn"
+    title: Compare Versions
+    status: live_when_forecast_accepted
+
+behavior:
+  loading: Preserve the reviewed shell and element positions; show loading in value regions.
+  error: Preserve the shell and state that live forecast data is unavailable.
+  empty: Show zero only for an exact governed zero under a frozen policy.
+  unavailable: Use the literal text Not available; never substitute HTML sample values.
+  rejectedCandidate: Treat exactly like unavailable; rejection evidence belongs outside the business screen.

@@ -4,3 +4,6 @@ build/
 *.egg-info/
 __pycache__/
 .pytest_cache/
+data/features/
+data/artifacts/
+mlruns/

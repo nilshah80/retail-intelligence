@@ -917,6 +917,7 @@ def _store_assortment(
     variants: list[dict[str, Any]],
     start: date,
     end: date,
+    timezone_name: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     selected: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
@@ -935,6 +936,10 @@ def _store_assortment(
         )
         target = max(1, round(len(ordered) * store["assortmentCoverage"]))
         for variant in ordered[:target]:
+            valid_from = max(
+                start,
+                date.fromisoformat(variant["_launchDate"]),
+            )
             selected.append(variant)
             rows.append(
                 {
@@ -944,10 +949,7 @@ def _store_assortment(
                     "productCode": variant["_productCode"],
                     "departmentId": variant["_departmentId"],
                     "categoryId": category_id,
-                    "validFrom": max(
-                        start,
-                        date.fromisoformat(variant["_launchDate"]),
-                    ).isoformat(),
+                    "validFrom": valid_from.isoformat(),
                     "validTo": min(
                         end,
                         (
@@ -956,6 +958,11 @@ def _store_assortment(
                             else end
                         ),
                     ).isoformat(),
+                    # Native effective-dated availability evidence. Ingestion
+                    # uses this observation to make an absent sale knowable
+                    # after each covered business day, instead of assigning
+                    # every materialized zero to the final landing timestamp.
+                    "observedAt": _iso_at(valid_from, 0, timezone_name),
                     "active": "true",
                     "assortmentReason": "deterministic-store-coverage",
                 }
@@ -1562,6 +1569,7 @@ def simulate(
             variants_by_market[store["marketId"]],
             start,
             end,
+            markets[store["marketId"]]["timezone"],
         )
         store_variants[store["storeId"]] = selected
         assortment_rows.extend(rows)

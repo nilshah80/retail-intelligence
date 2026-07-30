@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/ml/input-bundle.schema.json",
+  "title": "Retail ML expected input pin",
+  "description": "The committed authority against which the ten fail-closed ML input-bundle checks run. Directory names are not identities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceSnapshotId",
+    "gateA",
+    "gateB",
+    "publication",
+    "retention",
+    "requiredCapabilities"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "retail-ml-expected-pin/v1"
+    },
+    "sourceSnapshotId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "gateA": {
+      "$ref": "#/$defs/gatePin"
+    },
+    "gateB": {
+      "$ref": "#/$defs/gatePin"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semanticFingerprint",
+        "gateBSemanticFingerprint",
+        "evidenceSha256",
+        "objectCount",
+        "duckdb"
+      ],
+      "properties": {
+        "semanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "gateBSemanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "objectCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "duckdb": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "publicationFingerprint",
+        "files"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "retail-ingestion-retained-evidence/v1"
+        },
+        "publicationFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gate-a.json",
+            "gate-b.json",
+            "publication-manifest.json"
+          ],
+          "properties": {
+            "gate-a.json": {
+              "$ref": "#/$defs/sha256"
+            },
+            "gate-b.json": {
+              "$ref": "#/$defs/sha256"
+            },
+            "publication-manifest.json": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "requiredCapabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "contains": {
+        "const": "demand_forecast_non_pit"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gatePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "semanticFingerprint",
+        "evidenceSha256"
+      ],
+      "properties": {
+        "status": {
+          "const": "pass"
+        },
+        "semanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

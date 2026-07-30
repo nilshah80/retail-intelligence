@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v11
+specVersion: retail-source-config/v12
 identity:
   scenarioId: multi-market-10-year-demo
   scenarioVersion: 1.0.0
@@ -426,7 +426,7 @@ markets:
       startMonthDay: 01-20
       endMonthDay: 01-28
   assortment:
-    skusPerDepartment: 36
+    skusPerDepartment: 72
     variantsPerProduct: 3
   demand:
     startingDailyOrders: 1200
@@ -661,7 +661,7 @@ markets:
       startMonthDay: 08-01
       endMonthDay: 09-10
   assortment:
-    skusPerDepartment: 36
+    skusPerDepartment: 72
     variantsPerProduct: 3
   demand:
     startingDailyOrders: 1200

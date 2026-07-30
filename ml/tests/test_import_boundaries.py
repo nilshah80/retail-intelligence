@@ -34,4 +34,12 @@ def test_ml_may_not_import_ingestion() -> None:
         sys.path.pop(0)
 
     ml = next(b for b in checker.BOUNDARIES if b.name == "ml")
-    assert {"ingestion", "retail_ingestion"} <= ml.forbidden
+    assert {
+        "datagen",
+        "ingestion",
+        "pipeline",
+        "reports",
+        "retail_ai",
+        "retail_datagen",
+        "retail_ingestion",
+    } <= ml.forbidden

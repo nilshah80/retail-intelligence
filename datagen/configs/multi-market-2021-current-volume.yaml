@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v11
+specVersion: retail-source-config/v12
 identity:
   scenarioId: multi-market-2021-current-volume
   scenarioVersion: 1.0.0

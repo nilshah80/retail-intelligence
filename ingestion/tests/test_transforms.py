@@ -114,3 +114,71 @@ def test_sales_densification_is_limited_to_active_assortment_dates() -> None:
         ).fetchone()[0] == 0
     finally:
         connection.close()
+
+
+def test_native_assortment_makes_zero_sale_visible_after_business_day() -> None:
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute(
+            """
+            SET TimeZone = 'UTC';
+            CREATE SCHEMA canonical_data;
+            CREATE TABLE canonical_data.stores (
+                store_id VARCHAR,
+                market_id VARCHAR,
+                currency_code VARCHAR,
+                timezone VARCHAR
+            );
+            INSERT INTO canonical_data.stores VALUES
+                ('store-1', 'market-1', 'USD', 'America/New_York');
+            CREATE TABLE canonical_data.calendar (market_id VARCHAR, date DATE);
+            INSERT INTO canonical_data.calendar VALUES
+                ('market-1', DATE '2026-01-01');
+            CREATE TABLE canonical_data.assortment_calendar (
+                sku_id VARCHAR,
+                store_id VARCHAR,
+                channel_id VARCHAR,
+                active_from DATE,
+                active_to DATE,
+                known_as_of TIMESTAMPTZ,
+                known_as_of_evidence_grade VARCHAR
+            );
+            INSERT INTO canonical_data.assortment_calendar VALUES (
+                'sku-1', 'store-1', 'channel-1',
+                DATE '2026-01-01', NULL,
+                TIMESTAMPTZ '2026-01-01T00:00:00-05:00',
+                'native_observed'
+            );
+            CREATE TABLE canonical_data.sales (
+                sku_id VARCHAR,
+                store_id VARCHAR,
+                channel_id VARCHAR,
+                date DATE,
+                sales_version INTEGER,
+                units BIGINT,
+                gross_sales_amount BIGINT,
+                discount_amount BIGINT,
+                net_sales_amount BIGINT,
+                tax_amount BIGINT,
+                currency_code VARCHAR,
+                net_price BIGINT,
+                promo_flag BOOLEAN,
+                known_as_of TIMESTAMPTZ,
+                known_as_of_evidence_grade VARCHAR
+            );
+            """
+        )
+
+        _densify_sales(connection)
+
+        assert connection.execute(
+            """
+            SELECT
+                units,
+                cast(known_as_of AS VARCHAR),
+                known_as_of_evidence_grade
+            FROM canonical_data.sales
+            """
+        ).fetchone() == (0, "2026-01-02 05:00:00+00", "native_observed")
+    finally:
+        connection.close()

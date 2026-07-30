@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v11
+specVersion: retail-source-config/v12
 identity:
   scenarioId: multi-market-20-year-history
   scenarioVersion: 1.0.0

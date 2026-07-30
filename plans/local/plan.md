@@ -82,7 +82,7 @@ patterns are adapted into `ingestion/`; `features/`, `models/` and `engines/` ar
   `/`, physical paths are native, fingerprinted text uses UTF-8/LF, and open handles are closed
   before same-volume atomic promotion. Permission lanes preserve their semantics through native
   OS capabilities. Local capability work must remain portable; the three-OS blocking matrix is a
-  Phase-7/8 release-hardening gate and is not claimed as active CI today.
+  manually collected Phase-7/8 release-hardening gate and never becomes repository CI.
 
 ## 3 · Phases (local)
 
@@ -178,6 +178,15 @@ on the full 90-day showcase; full ten-year ultra evidence is recorded, while equ
 performance full runs remain optional comparison evidence. Phase 1 code is complete; a fresh
 v0.12.0/v11 ten-year acceptance run must be pinned before Phase 2 landing begins.
 
+Phase 3 acceptance later exposed a structural limit in that otherwise accepted pin: all
+materialized zero-demand labels are landing-backfilled, so no historical forecast origin can
+train on them. Generator v0.13.0/source contract v12 is therefore a controlled rebaseline
+candidate. It adds native effective-dated `storeAssortment.observedAt` evidence and expands the
+ten-year demo to 1,440 sellable SKUs so the frozen slow-mover sufficiency rule can be evaluated
+without threshold tuning. The v12 run is now generated, landed and published with Gate A/Gate B
+passes, exact reconciliation and all zero-demand/assortment rows `native_observed`; it is the
+frozen ML input pin. Forecast activation remains separately gated by Phase 3 acceptance.
+
 ### Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
 **Goal:** prove that differently shaped raw sources become the same clean canonical `retail_v2`
@@ -217,11 +226,11 @@ No model/engine code differs by source. Phase 2 has three incremental UI checkpo
 (live coverage, reconciliation and quarantine) and **2C** after Gate B/publication (live
 capability mask and curated status). UI work does not wait for Phase 3.
 
-**Implemented status:** the accepted ten-year source pin runs through all governed boundaries. A
-full-history disposable candidate has validated the v1.2 corrections for fulfilled sales,
-financial refunds, exact integer money, timezone-stable dates, ATP and current inbound-status
-splitting. The retained curated folder predates that correction and must be republished before
-Phase 3 or the live UI treats it as accepted evidence.
+**Implemented status:** the accepted ten-year source pin runs through all governed boundaries. The
+retained publication now post-dates the v1.2 corrections for fulfilled sales, financial refunds,
+exact integer money, timezone-stable dates, ATP and current inbound-status splitting. Phase 3
+consumes that publication only through the committed `contracts/ml/expected-pin.json` and the
+fail-closed ML input-bundle verifier; a later republish requires an explicit reviewed pin change.
 The stable source-profile filename is `retail_datagen.yaml`; `profileVersion` and
 `sourceSchemaVersion` remain inside the document. Manifest-less retailer drops can be inventoried
 from explicit profile globs, physical CSV/Parquet/JSONL/JSON parsing is shared, and source
@@ -246,14 +255,17 @@ Croston routing for intermittent; baselines + **Forecast Value Add** (WAPE, bias
 `accuracy = 100·(1−WAPE)`); rolling-origin backtest + global and per-market acceptance gates/
 calibration; `forecast_versions`, SHAP-grouped `forecast_drivers` (incl. competitor + weather
 groups), per-series confidence.
-MLflow tracking begins with this first training/backtest slice; local file-backed tracking is
-enough until a shared service is needed.
+MLflow tracking begins with this first training/backtest slice. The first accepted run retains its
+file-backed telemetry identity; decision #63 brings a shared Compose MLflow server backed by
+PostgreSQL into Phase 3 for subsequent runs without making telemetry the publication authority.
 
 **Exit criteria:** forecast beats seasonal-naive ≥25%; P90 coverage ∈ [0.85, 0.95]; monotonic
 P50≤P90 globally and for every supported market; artifacts include market/config fingerprints.
 The read-only API and Demand Forecast vertical slice are delivered with the model.
 **Demo checkpoint 3:** the screen renders live Mumbai + New York P50/P90, accuracy, confidence
-and drivers.
+and drivers. The accepted v12 forecast, PostgreSQL read model and React vertical slice now meet
+these code/data criteria locally. Strict phase sign-off remains pending only on manual
+Windows/Linux portability evidence and explicit user visual approval of the running UI.
 
 ### Phase 4 — Inventory & replenishment (`ml/engines`)
 
@@ -307,9 +319,10 @@ slices delivered in Phases 2–5; workflow/HITL (approvals, planner overrides, i
 market/currency-scoped pricing activations; **serve-time guardrail re-validation** over the same
 resolved market policy; staleness 409/503; RBAC/auth; **fingerprint parity** (Python↔Go golden
 vectors); lineage/audit.
-PostgreSQL enters here for mutable workflow/governance state. Docker Compose enters at this
-integration boundary, when PostgreSQL, shared MLflow, the API and UI need one reproducible stack;
-neither is a prerequisite for Phase-2 batch ingestion.
+PostgreSQL first enters in Phase 3 for the read-only forecast serving projection, and Docker
+Compose first provides that database plus shared MLflow under decisions #62–#63. This phase extends
+the same services with mutable workflow/governance state and later adds the API/UI containers;
+neither service is a prerequisite for Phase-2 batch ingestion.
 
 **Exit criteria:** an approve/override writes an audit row; stale artifact → 409, missing → 503;
 Go and Python produce identical fingerprints on shared vectors. **Demo checkpoint 6:** a planner

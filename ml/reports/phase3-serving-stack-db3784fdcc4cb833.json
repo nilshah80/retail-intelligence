@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "retail-phase3-serving-evidence/v1",
+  "observedAt": "2026-07-30",
+  "forecastIdentity": {
+    "forecastRunId": "fr_b2f18d0e2999a36d",
+    "versionId": "fv_a00fe79a86768419",
+    "semanticFingerprint": "5490da0c27d130be64545b9a090881268b50d7da5bcf6f3578f22beb923ef86a",
+    "publicationFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
+    "activationScopeFingerprint": "fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6"
+  },
+  "services": {
+    "composeProject": "retail-intelligence",
+    "postgresImage": "postgres:17.10-bookworm",
+    "postgresHealth": "healthy",
+    "mlflowImage": "ghcr.io/mlflow/mlflow:v3.14.0+psycopg-3.3.4",
+    "mlflowHealth": "healthy",
+    "ports": {
+      "postgres": "127.0.0.1:5432",
+      "mlflow": "127.0.0.1:5000"
+    },
+    "durability": [
+      "postgres-data",
+      "mlflow-artifacts"
+    ]
+  },
+  "database": {
+    "migrationRevision": "0003_forecast_series_dimensions",
+    "schema": "retail_serving",
+    "materializationMode": "verified_single_transaction",
+    "activationMode": "separate_append_only_event",
+    "rowCounts": {
+      "forecast_versions": 1,
+      "forecast_series": 52884,
+      "forecast_eval_predictions": 708708,
+      "forecast_metrics": 310230,
+      "forecast_drivers": 10200,
+      "forecast_exceptions": 685,
+      "forecast_data_quality": 2034,
+      "forecast_stores": 4,
+      "forecast_series_dimensions": 2232
+    }
+  },
+  "apiSmoke": {
+    "dataMode": "live",
+    "forecastRunId": "fr_b2f18d0e2999a36d",
+    "routes": {
+      "/api/v1/forecast/versions": 1,
+      "/api/v1/forecast/summary": 1,
+      "/api/v1/forecast/series?limit=2": 2,
+      "/api/v1/forecast/series?view=workbench&horizonWeeks=4&limit=2": 2,
+      "/api/v1/forecast/actuals?limit=2": 2,
+      "/api/v1/forecast/actuals?view=weekly&limit=8": 8,
+      "/api/v1/forecast/horizons": 26,
+      "/api/v1/forecast/stores": 4,
+      "/api/v1/forecast/drivers": 6,
+      "/api/v1/forecast/signals": 5,
+      "/api/v1/forecast/exceptions?limit=2": 2
+    }
+  },
+  "mlflowSmoke": {
+    "trackingUri": "http://127.0.0.1:5000",
+    "experiment": "phase3-infrastructure-smoke",
+    "runName": "compose-smoke",
+    "runId": "9d01bb332da04a7981e50359e879cf9d"
+  },
+  "validation": {
+    "contracts": {
+      "status": "valid",
+      "openApiVersion": "0.3.0",
+      "forecastRoutes": 9,
+      "generatedTypesCurrent": true,
+      "repositoryCI": "prohibited"
+    },
+    "importBoundaries": {
+      "status": "pass",
+      "files": 85,
+      "trees": 3
+    },
+    "contractPython": {
+      "status": "pass",
+      "tests": 82
+    },
+    "ingestionFast": {
+      "status": "pass",
+      "tests": 60,
+      "deselectedPinnedTests": 7
+    },
+    "mlIncludingPostgresIntegration": {
+      "status": "pass",
+      "tests": 58
+    },
+    "databaseIntegration": {
+      "status": "pass",
+      "tests": 1
+    },
+    "goRaceIncludingPostgresIntegration": {
+      "status": "pass",
+      "packages": 4
+    },
+    "ui": {
+      "status": "pass",
+      "tests": 8,
+      "typecheck": "pass",
+      "productionBuild": "pass",
+      "browserConsoleErrors": 0,
+      "viewports": [
+        "1440x1100",
+        "390x844"
+      ],
+      "liveInteractions": [
+        "global and page store synchronization",
+        "filter-scoped KPI recomposition",
+        "five-tab navigation",
+        "14-column SKU workbench",
+        "six-row driver presentation",
+        "MA13 versus active-version comparison"
+      ]
+    }
+  },
+  "remainingPhase3Gates": [
+    "W7 manual Windows portability evidence",
+    "W7 manual Linux portability evidence",
+    "W11 explicit human visual approval"
+  ]
+}

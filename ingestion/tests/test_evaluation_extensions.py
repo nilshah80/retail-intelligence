@@ -28,14 +28,14 @@ SOURCE_RUN = (
     / "datagen"
     / "output"
     / "multi-market-10-year-demo"
-    / "run-34b0ff729c8abe09"
+    / "run-c5eb1506ecd4c550"
 )
 CURATED_DATABASE = (
     REPO_ROOT
     / "ingestion"
     / "data"
     / "curated"
-    / "run-34b0ff729c8abe09"
+    / "run-c5eb1506ecd4c550"
     / "retail_v2.duckdb"
 )
 SOURCE_PROFILE = (

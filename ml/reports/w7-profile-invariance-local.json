@@ -1,0 +1,73 @@
+{
+  "createdAt": "2026-07-30T07:03:00Z",
+  "featureSemanticFingerprint": "bd73a734068571d5e38052f57fcc57ebebc4e676375a8bd93085b2f5bf02a26b",
+  "localEvidence": {
+    "modelThreadInvariance": {
+      "absoluteTolerance": "0.000000000001",
+      "compared": [
+        "P50 raw",
+        "P90 raw",
+        "P50 calibrated",
+        "P90 calibrated",
+        "confidence",
+        "five TreeSHAP presentation groups",
+        "global calibration",
+        "market calibration"
+      ],
+      "relativeTolerance": "0",
+      "status": "pass",
+      "threadsCompared": [
+        1,
+        4
+      ]
+    },
+    "platform": "darwin",
+    "pythonVersion": "3.12.13",
+    "runIdentityInvariance": {
+      "executionProfilesCompared": [
+        "safe",
+        "ultra-performance"
+      ],
+      "forecastRunId": "identical",
+      "semanticFingerprint": "identical",
+      "stageTelemetryExcludedFromIdentity": true,
+      "status": "pass"
+    },
+    "smokeBacktest": {
+      "executionProfile": "performance",
+      "forecastRows": 1308,
+      "horizons": 1,
+      "maxSampledRssBytes": 763330560,
+      "rssMeasurement": "sampled_at_stage_boundaries_process_only",
+      "scoringOrigins": 1,
+      "stageCalls": {
+        "acceptance": 1,
+        "baselines": 1,
+        "fit_models": 1,
+        "intermittent_history": 1,
+        "intermittent_routing": 1,
+        "load_evaluation": 1,
+        "load_training": 1,
+        "score_and_tree_shap": 1,
+        "serialize_diagnostics": 1
+      },
+      "trainingRows": 41072,
+      "wallClockElapsedSeconds": "9.702278"
+    }
+  },
+  "schemaVersion": "retail-ml-w7-profile-invariance/v1",
+  "testSuite": {
+    "command": "ml/.venv/bin/python -m pytest ml/tests -q",
+    "currentPassedTests": 46,
+    "localPassedTestsBeforeW7Additions": 42,
+    "status": "pass"
+  },
+  "supportedOsEvidence": {
+    "evidenceMode": "manual_developer_host",
+    "linux": "pending_manual_run",
+    "macos": "pass",
+    "repositoryCI": "prohibited",
+    "status": "pending_manual_windows_and_linux_runs",
+    "windows": "pending_manual_run"
+  }
+}

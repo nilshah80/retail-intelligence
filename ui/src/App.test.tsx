@@ -163,6 +163,7 @@ const liveFx = {
 };
 
 function renderApp() {
+  window.history.replaceState({}, "", "/?page=dataManagement");
   const client = new QueryClient({
     defaultOptions: {queries: {retry: false}}
   });

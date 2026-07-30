@@ -12,7 +12,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] KMS CMKs; S3 buckets (raw/curated/features/artifacts) versioned + encrypted.
 - [ ] RDS PostgreSQL (Multi-AZ, encrypted, private).
 - [ ] Secrets Manager entries; CloudWatch log groups.
-- [ ] CI/CD pipeline (build/test/deploy for `datagen/`, `ingestion/`, `ml/`, `api/`).
+- [ ] Manual, auditable build/test/deploy runbook for `datagen/`, `ingestion/`, `ml/`, `api/`;
+      do not add a repository CI/CD pipeline.
 - [ ] Keep Terraform/CDK validation, image-build orchestration and deployment smoke-test commands
       callable from Windows PowerShell and macOS/Linux terminals without mandatory Bash. A Linux
       container runtime does not waive the three-OS application test gates locked by decision
@@ -20,7 +21,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Build Python job images from the dependency/environment topology locked locally under
       decision #38; never merge the isolated datagen environment into downstream images.
 - [ ] Install the same versioned `execution/` package into each Python job image and run its
-      golden vectors in CI. Map named profiles to explicit Batch/SageMaker CPU/memory requests;
+      golden vectors through developer-run validation. Map named profiles to explicit
+      Batch/SageMaker CPU/memory requests;
       never auto-expand from instance size or put hardware controls in scenario/model configs.
 - [ ] **Exit:** `apply` stands up an empty, private, encrypted environment.
 
@@ -43,7 +45,8 @@ _AWS is a deployment target **after** the local build (`plans/local/`) works. Sy
 - [ ] Persist lineage, reconciliation and quarantine artifacts; atomically publish passing
       canonical Parquet to S3 **curated**.
 - [ ] Assert curated locations/stores retain `market_id`, operating `currency_code` and timezone;
-      execute the ingestion-owned source-truth→canonical expected-control oracle in CI.
+      execute the ingestion-owned source-truth→canonical expected-control oracle through the
+      manual release-validation runbook.
 - [ ] Assert contextual feeds retain market-qualified `geo_scope_*` or structured promotion
       applicability, observation/reference identity follows the canonical temporal class,
       `merch_scope_*` precedence is deterministic, Shopify presentment money is audit-only and

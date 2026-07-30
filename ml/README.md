@@ -34,9 +34,11 @@ required by a model may enter `ml/`. A partial Shopify slice never reaches this 
 Feature/model/engine code cannot inspect or branch on retailer, source platform, source adapter
 or datagen scenario.
 
-**Output boundary:** reads curated data and writes feature/model/decision artifacts
-(Parquet/JSON) plus manifests and **semantic fingerprints** to the lake + PostgreSQL. The Go
-`api/` reads these — it never calls Python in-process.
+**Output boundary:** reads curated data and writes immutable feature/model/decision artifacts
+(Parquet/JSON) plus manifests and **semantic fingerprints**. After acceptance, a separate offline
+Python materializer verifies the current input pin and all ten forecast artifacts, then projects
+the serving subset transactionally into PostgreSQL. The Go `api/` reads only that active SQL
+projection; it never calls Python in-process or scans forecast Parquet.
 
 **Execution boundary:** ML installs the same neutral `execution/` resolver as datagen and
 ingestion, then maps only the `ml` namespace into feature, fold, market/model and trainer thread
@@ -52,6 +54,8 @@ using supported pinned wheels. Worker startup cannot rely on `fork`; paths use `
 temporary/cache locations use platform APIs; native libraries and thread pools are bounded by the
 execution profile. Keys, features and acceptance decisions must match across OSes, while any
 allowed model floating-point tolerance is explicit and tested rather than assumed.
+Evidence is produced with developer-run commands on supported hosts. Repository CI workflows are
+prohibited by `contracts/validation-policy.yaml` and are not a present or future completion gate.
 
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.

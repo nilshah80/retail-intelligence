@@ -2,10 +2,12 @@ import {useEffect, useMemo, useState, type ReactNode} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {
   loadDashboard,
+  loadForecastSummary,
   loadFx,
   type Dashboard,
   type FxRates
 } from "./api";
+import {DemandForecast} from "./Forecast";
 
 type SourceRow = Dashboard["sources"][number];
 
@@ -68,17 +70,20 @@ const adminNavigation = [
 function NavItem({
   icon,
   label,
-  active = false
+  active = false,
+  onClick
 }: {
   icon: string;
   label: string;
   active?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       className={`nav-item${active ? " active" : ""}`}
       type="button"
       aria-current={active ? "page" : undefined}
+      onClick={onClick}
     >
       <span className="nav-ico">{icon}</span>
       {label}
@@ -88,10 +93,14 @@ function NavItem({
 
 function NavigationSection({
   title,
-  items
+  items,
+  activeLabel,
+  onSelect
 }: {
   title: string;
   items: Array<{icon: string; label: string}>;
+  activeLabel?: string;
+  onSelect?: (label: string) => void;
 }) {
   return (
     <div className="nav-section">
@@ -100,7 +109,8 @@ function NavigationSection({
         <NavItem
           key={item.label}
           {...item}
-          active={item.label === "Data Management"}
+          active={item.label === activeLabel}
+          onClick={() => onSelect?.(item.label)}
         />
       ))}
     </div>
@@ -139,7 +149,13 @@ function NavigationParent({
   );
 }
 
-function Sidebar() {
+function Sidebar({
+  page,
+  onPage
+}: {
+  page: "demandForecast" | "dataManagement";
+  onPage: (page: "demandForecast" | "dataManagement") => void;
+}) {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [replenishmentOpen, setReplenishmentOpen] = useState(false);
   return (
@@ -151,13 +167,32 @@ function Sidebar() {
           <p>Dynamic Pricing &amp;<br />Demand Forecasting</p>
         </div>
       </div>
+      <div className="mobile-navigation" aria-label="Primary mobile navigation">
+        <NavItem
+          icon="▥"
+          label="Demand Forecast"
+          active={page === "demandForecast"}
+          onClick={() => onPage("demandForecast")}
+        />
+        <NavItem
+          icon="▦"
+          label="Data Management"
+          active={page === "dataManagement"}
+          onClick={() => onPage("dataManagement")}
+        />
+      </div>
 
       {primaryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
       <NavigationSection title="PRICING" items={pricingNavigation} />
 
       <div className="nav-section">
         <div className="nav-title">DEMAND &amp; INVENTORY</div>
-        <NavItem icon="▥" label="Demand Forecast" />
+        <NavItem
+          icon="▥"
+          label="Demand Forecast"
+          active={page === "demandForecast"}
+          onClick={() => onPage("demandForecast")}
+        />
         <NavigationParent
           icon="▤"
           label="Inventory Overview"
@@ -178,7 +213,14 @@ function Sidebar() {
       </div>
 
       <NavigationSection title="ANALYTICS" items={analyticsNavigation} />
-      <NavigationSection title="ADMIN" items={adminNavigation} />
+      <NavigationSection
+        title="ADMIN"
+        items={adminNavigation}
+        activeLabel={page === "dataManagement" ? "Data Management" : undefined}
+        onSelect={(label) => {
+          if (label === "Data Management") onPage("dataManagement");
+        }}
+      />
     </aside>
   );
 }
@@ -267,17 +309,27 @@ function displayRateText(currency: string, fx?: FxRates) {
 
 function Topbar({
   dashboard,
+  title,
+  subtitle,
+  storeId,
+  onStoreId,
+  channelType,
+  onChannelType,
   currency,
   onCurrency,
   onFx
 }: {
   dashboard?: Dashboard;
+  title: string;
+  subtitle: string;
+  storeId: string;
+  onStoreId: (value: string) => void;
+  channelType: string;
+  onChannelType: (value: string) => void;
   currency: string;
   onCurrency: (value: string) => void;
   onFx: () => void;
 }) {
-  const [storeId, setStoreId] = useState("");
-  const [channelType, setChannelType] = useState("");
   const selectedStore = dashboard?.filters.stores.find(
     (store) => store.storeId === storeId
   );
@@ -289,7 +341,7 @@ function Topbar({
     [dashboard, selectedStore]
   );
   const selectStore = (nextStoreId: string) => {
-    setStoreId(nextStoreId);
+    onStoreId(nextStoreId);
     const marketId = dashboard?.filters.stores.find(
       (store) => store.storeId === nextStoreId
     )?.marketId;
@@ -297,21 +349,21 @@ function Topbar({
       (channel) => channel.type === channelType &&
         channel.marketIds.includes(marketId)
     )) {
-      setChannelType("");
+      onChannelType("");
     }
   };
   return (
     <header className="topbar">
       <div className="title">
-        <h2>Data Management</h2>
-        <p>Monitor source systems, data freshness and data quality</p>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
       </div>
       <div className="filters">
         <select
           className="filter"
           aria-label="Channel"
           value={channelType}
-          onChange={(event) => setChannelType(event.target.value)}
+          onChange={(event) => onChannelType(event.target.value)}
         >
           <option value="">All Channels</option>
           {channelTypes.map((channel) => (
@@ -569,7 +621,15 @@ function FragmentRow({
   );
 }
 
-function FooterKpis({dashboard}: {dashboard: Dashboard}) {
+function FooterKpis({
+  dashboard,
+  forecastCoveragePct,
+  modelAccuracyPct
+}: {
+  dashboard: Dashboard;
+  forecastCoveragePct?: number | null;
+  modelAccuracyPct?: number | null;
+}) {
   const values = [
     ["total-skus", "Total SKUs", formatCount(dashboard.footer.totalSkus)],
     ["active-skus", "Active SKUs", formatCount(dashboard.footer.activeSkus)],
@@ -578,7 +638,7 @@ function FooterKpis({dashboard}: {dashboard: Dashboard}) {
     [
       "forecast-coverage",
       "Forecast Coverage",
-      formatPct(dashboard.footer.forecastCoveragePct)
+      formatPct(forecastCoveragePct ?? dashboard.footer.forecastCoveragePct)
     ],
     [
       "data-freshness",
@@ -588,7 +648,7 @@ function FooterKpis({dashboard}: {dashboard: Dashboard}) {
     [
       "model-accuracy",
       "Model Accuracy",
-      formatPct(dashboard.footer.modelAccuracyPct)
+      formatPct(modelAccuracyPct ?? dashboard.footer.modelAccuracyPct)
     ]
   ];
   return (
@@ -610,12 +670,28 @@ function Shell({
   fx,
   fxPending = false,
   fxError = null,
+  page,
+  onPage,
+  storeId,
+  onStoreId,
+  channelType,
+  onChannelType,
+  forecastCoveragePct,
+  modelAccuracyPct,
   children
 }: {
   dashboard?: Dashboard;
   fx?: FxRates;
   fxPending?: boolean;
   fxError?: Error | null;
+  page: "demandForecast" | "dataManagement";
+  onPage: (page: "demandForecast" | "dataManagement") => void;
+  storeId: string;
+  onStoreId: (value: string) => void;
+  channelType: string;
+  onChannelType: (value: string) => void;
+  forecastCoveragePct?: number | null;
+  modelAccuracyPct?: number | null;
   children: ReactNode;
 }) {
   const [currency, setCurrency] = useState("INR");
@@ -626,10 +702,18 @@ function Shell({
     : availableCurrencies[0] ?? "INR";
   return (
     <div className="app">
-      <Sidebar />
+      <Sidebar page={page} onPage={onPage} />
       <main className="main">
         <Topbar
           dashboard={dashboard}
+          title={page === "demandForecast" ? "Demand Forecast" : "Data Management"}
+          subtitle={page === "demandForecast"
+            ? "Forecast demand by SKU, store, channel and time"
+            : "Monitor source systems, data freshness and data quality"}
+          storeId={storeId}
+          onStoreId={onStoreId}
+          channelType={channelType}
+          onChannelType={onChannelType}
           currency={activeCurrency}
           onCurrency={setCurrency}
           onFx={() => setFxOpen(true)}
@@ -644,11 +728,19 @@ function Shell({
               {displayRateText(activeCurrency, fx)}
             </span>
             <span>
-              All monetary values update across dashboards, tables, modals and exports.
+              {page === "demandForecast"
+                ? "Demand Forecast currently presents units and percentages; no live monetary measure is converted."
+                : "All monetary values update across dashboards, tables, modals and exports."}
             </span>
           </div>
           {children}
-          {dashboard && <FooterKpis dashboard={dashboard} />}
+          {dashboard && (
+            <FooterKpis
+              dashboard={dashboard}
+              forecastCoveragePct={forecastCoveragePct}
+              modelAccuracyPct={modelAccuracyPct}
+            />
+          )}
           <div className="page-footer">
             <span>AI Retail Intelligence — Dynamic Pricing &amp; Demand Forecasting</span>
             <span>Powered by AI • Built for Retail</span>
@@ -702,6 +794,12 @@ function DataManagement({dashboard}: {dashboard: Dashboard}) {
 }
 
 export default function App() {
+  const initialPage = new URLSearchParams(window.location.search).get("page");
+  const [page, setPage] = useState<"demandForecast" | "dataManagement">(
+    initialPage === "dataManagement" ? "dataManagement" : "demandForecast"
+  );
+  const [storeId, setStoreId] = useState("");
+  const [channelType, setChannelType] = useState("");
   const dashboard = useQuery({
     queryKey: ["data-management-dashboard"],
     queryFn: loadDashboard
@@ -710,25 +808,41 @@ export default function App() {
     queryKey: ["fx-rates"],
     queryFn: loadFx
   });
+  const forecastSummary = useQuery({
+    queryKey: ["forecast-summary"],
+    queryFn: loadForecastSummary,
+    enabled: page === "demandForecast"
+  });
+  const changePage = (nextPage: "demandForecast" | "dataManagement") => {
+    setPage(nextPage);
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", nextPage);
+    window.history.replaceState({}, "", url);
+  };
+  const shellProps = {
+    page,
+    onPage: changePage,
+    storeId,
+    onStoreId: setStoreId,
+    channelType,
+    onChannelType: setChannelType,
+    fx: fx.data,
+    fxPending: fx.isPending,
+    fxError: fx.error,
+    forecastCoveragePct: forecastSummary.data?.items[0]?.forecastCoveragePct,
+    modelAccuracyPct: forecastSummary.data?.items[0]?.accuracy
+  };
 
   if (dashboard.isPending) {
     return (
-      <Shell
-        fx={fx.data}
-        fxPending={fx.isPending}
-        fxError={fx.error}
-      >
+      <Shell {...shellProps}>
         <div className="state-card">Loading live retail data…</div>
       </Shell>
     );
   }
   if (dashboard.error || !dashboard.data) {
     return (
-      <Shell
-        fx={fx.data}
-        fxPending={fx.isPending}
-        fxError={fx.error}
-      >
+      <Shell {...shellProps}>
         <div className="state-card error-state">
           <strong>Live data is unavailable.</strong>
           <span>{String(dashboard.error)}</span>
@@ -739,12 +853,19 @@ export default function App() {
   }
   return (
     <Shell
+      {...shellProps}
       dashboard={dashboard.data}
-      fx={fx.data}
-      fxPending={fx.isPending}
-      fxError={fx.error}
     >
-      <DataManagement dashboard={dashboard.data} />
+      {page === "demandForecast"
+        ? (
+          <DemandForecast
+            dashboard={dashboard.data}
+            storeId={storeId}
+            onStoreId={setStoreId}
+            channelType={channelType}
+          />
+        )
+        : <DataManagement dashboard={dashboard.data} />}
     </Shell>
   );
 }

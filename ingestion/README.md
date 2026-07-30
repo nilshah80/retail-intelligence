@@ -67,37 +67,20 @@ The Phase-2 implementation now includes:
 - an Aarv-based read-only Go API and React Data Management dashboard over accepted evidence.
 
 The full pin is landed as snapshot
-`dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`: all 8,644 objects
-were streamed through byte/SHA-256 verification into 8,398 public, 245 restricted-truth and one
-restricted-mirror object. A repeat request under another execution profile was an idempotent replay.
-The retained ultra-performance pipeline publishes 40 canonical entities, 1,445 Parquet objects
-and one `retail_v2.duckdb`. It scanned 226,929,388 public rows, opened zero restricted objects and
-reconciled INR and USD gross/net/tax/units with zero differences. Its measured wall time was
-164.820679 seconds: Gate A 6.176781, staging 128.063277, transform 23.463547, Gate B 1.213771 and
-publication 5.903303 seconds under `ultra-performance`. Physical Parquet object count may vary
-with writer concurrency and is deliberately excluded from semantic identity. The 4-GiB,
-single-DuckDB-thread `safe` profile completed the same full history in 333.062388 seconds and
-produced the identical staging, candidate, Gate-B and publication semantic fingerprints; its
-different physical object count is therefore operational rather than semantic.
+`681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`: all 8,726 objects
+were streamed through byte/SHA-256 verification into 8,480 public, 245 restricted-truth and one
+restricted-mirror object. The performance-profile pipeline publishes 40 canonical entities,
+1,509 Parquet objects and one 1,406,676,992-byte `retail_v2.duckdb`. Gate A and Gate B pass,
+restricted objects remain unopened by public ingestion, and INR/USD gross/net/tax/units
+reconcile with zero differences.
 
-The accepted curated folder above predates the v1.2 correctness pass and must be republished before
-Phase 3 or a live UI consumes corrected facts. A disposable full-history v1.2 candidate proved:
-
-- canonical sales are successful fulfilled units, not ordered units: 25,159,219 units reconcile
-  exactly to 17,153,375 fulfillment lines (the prior ordered-grain result overstated sales by
-  1,354 units);
-- fulfilled integer-minor gross/net/tax controls reconcile to zero for INR and USD;
-- 476,062 physical returns and 452,327 successful financial refunds remain separate facts, with
-  refund amount carried only by the financial rows;
-- source-observed ATP reconciles after committed, damaged, quality-control, reserved and
-  safety-stock holds; the current extract has a status-derived on-order/in-transit split;
-- 2,228,133 densified historical zero-sales rows remain `landing_backfill`. They cannot honestly be
-  relabelled PIT-safe merely because they were derived inside an active assortment window.
-
-Gate B therefore keeps non-PIT demand and revenue reporting available, while PIT forecasting,
-pricing availability and historical replenishment replay remain capability-downgraded until native
-versioned availability/inbound-status evidence exists. The current-snapshot replenishment inputs
-are valid; historical in-transit status is not reconstructed from a final extract.
+The accepted v12 publication contains 7,471,784 dense daily sales rows. All 4,275,653
+materialized zero-sales rows and all 5,122 assortment rows are `native_observed`; a zero becomes
+available only after local business-day close. B21 therefore no longer lists sales or assortment.
+It still honestly downgrades the broader `point_in_time_forecasting` capability for 8 locations,
+289,884 sell-price rows and 654 supplier-lead-time rows that remain landing-backfilled.
+Non-PIT demand and revenue reporting remain available; pricing and historical replenishment
+capabilities retain their reason-coded downgrades.
 
 The authoritative cross-platform entry point is:
 
@@ -105,14 +88,14 @@ The authoritative cross-platform entry point is:
 # Windows PowerShell
 py -3 tools/dev.py contracts
 py -3 tools/dev.py test
-py -3 tools/dev.py land --source-root datagen\output\multi-market-10-year-demo\run-34b0ff729c8abe09 --landing-root ingestion\data\raw --execution-profile safe
+py -3 tools/dev.py land --source-root datagen\output\multi-market-10-year-demo\run-c5eb1506ecd4c550 --landing-root ingestion\data\raw --execution-profile safe
 ```
 
 ```bash
 # macOS / Linux
 python3 tools/dev.py contracts
 python3 tools/dev.py test
-python3 tools/dev.py land --source-root datagen/output/multi-market-10-year-demo/run-34b0ff729c8abe09 --landing-root ingestion/data/raw --execution-profile safe
+python3 tools/dev.py land --source-root datagen/output/multi-market-10-year-demo/run-c5eb1506ecd4c550 --landing-root ingestion/data/raw --execution-profile safe
 ```
 
 The `Makefile` is a POSIX convenience only. Windows does not require Make or a Unix shell.
@@ -126,24 +109,24 @@ Run the retained snapshot through every governed stage:
 
 ```powershell
 # Windows PowerShell
-py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4 --work-root ingestion\data\work\run-34b0ff729c8abe09 --publication-root ingestion\data\curated\run-34b0ff729c8abe09 --execution-profile ultra-performance
+py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b --work-root ingestion\data\work\run-c5eb1506ecd4c550 --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 --execution-profile ultra-performance
 ```
 
 ```bash
 # macOS / Linux
-python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4 --work-root ingestion/data/work/run-34b0ff729c8abe09 --publication-root ingestion/data/curated/run-34b0ff729c8abe09 --execution-profile ultra-performance
+python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b --work-root ingestion/data/work/run-c5eb1506ecd4c550 --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 --execution-profile ultra-performance
 ```
 
 After acceptance, retain the small evidence bundle and remove rebuildable staging/candidate work:
 
 ```powershell
 # Windows PowerShell
-py -3 tools/dev.py finalize --work-root ingestion\data\work\run-34b0ff729c8abe09 --publication-root ingestion\data\curated\run-34b0ff729c8abe09 --evidence-root ingestion\data\evidence\run-34b0ff729c8abe09 --prune-work
+py -3 tools/dev.py finalize --work-root ingestion\data\work\run-c5eb1506ecd4c550 --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 --evidence-root ingestion\data\evidence\run-c5eb1506ecd4c550 --prune-work
 ```
 
 ```bash
 # macOS / Linux
-python3 tools/dev.py finalize --work-root ingestion/data/work/run-34b0ff729c8abe09 --publication-root ingestion/data/curated/run-34b0ff729c8abe09 --evidence-root ingestion/data/evidence/run-34b0ff729c8abe09 --prune-work
+python3 tools/dev.py finalize --work-root ingestion/data/work/run-c5eb1506ecd4c550 --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 --evidence-root ingestion/data/evidence/run-c5eb1506ecd4c550 --prune-work
 ```
 
 Production retention is explicit: keep immutable raw landing according to replay/audit policy,

@@ -134,6 +134,10 @@ func (s *Store) Summary() map[string]any {
 	}
 }
 
+func (s *Store) PublicationFingerprint() string {
+	return stringValue(s.publication, "semanticFingerprint")
+}
+
 func (s *Store) Dashboard() map[string]any {
 	type sourceAggregate struct {
 		sourceSystem string

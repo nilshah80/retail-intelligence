@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, err := New(store, execution.Resolved{
+	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), execution.Resolved{
 		SchemaVersion: execution.SchemaVersion,
 		Profile:       "safe",
 		API: execution.APIProfile{
@@ -97,6 +98,25 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	if fxPayload["schemaVersion"] != "retail-fx-rates/v1" {
 		t.Fatalf("unexpected FX contract: %v", fxPayload)
 	}
+
+	client := aarv.NewTestClient(app)
+	for _, path := range forecastPaths {
+		forecast := client.Get(path)
+		forecast.AssertStatus(t, http.StatusServiceUnavailable)
+		var unavailable map[string]any
+		if err := forecast.JSON(&unavailable); err != nil {
+			t.Fatal(err)
+		}
+		if unavailable["schemaVersion"] != readmodel.ForecastUnavailableSchema ||
+			unavailable["dataMode"] != "unavailable" ||
+			unavailable["reasonCode"] != readmodel.ForecastReasonUnmaterialized {
+			t.Fatalf("%s returned an invalid fail-closed envelope: %v", path, unavailable)
+		}
+		if unavailable["forecastRunId"] != nil ||
+			unavailable["semanticFingerprint"] != nil {
+			t.Fatalf("%s exposed a forecast identity without an accepted run", path)
+		}
+	}
 }
 
 func TestOpenAPIDocumentationRoutes(t *testing.T) {
@@ -131,7 +151,7 @@ func TestOpenAPIDocumentationRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := []byte("openapi: 3.1.0\ninfo:\n  title: Test\n  version: 1.0.0\n")
-	app, err := New(store, execution.Resolved{
+	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), execution.Resolved{
 		SchemaVersion: execution.SchemaVersion,
 		Profile:       "safe",
 		API: execution.APIProfile{

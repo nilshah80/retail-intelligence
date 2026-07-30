@@ -1,0 +1,84 @@
+{
+  "boundedBatchingRequired": false,
+  "createdAt": "2026-07-30T05:49:05.395543Z",
+  "environment": {
+    "availableMemoryBytesAtReport": 101961433088,
+    "logicalCpuCount": 16,
+    "physicalCpuCount": 16,
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "versions": {
+      "duckdb": "1.5.4",
+      "lightgbm": "4.7.0",
+      "numpy": "2.4.6",
+      "pandas": "2.3.3",
+      "psutil": "7.2.2",
+      "pyarrow": "24.0.0",
+      "scikit-learn": "1.9.0"
+    }
+  },
+  "executionProfile": {
+    "affectsRunIdentity": false,
+    "featureWorkers": 2,
+    "foldWorkers": 1,
+    "memoryLimitGb": 16,
+    "modelWorkers": 1,
+    "profile": "safe",
+    "schemaVersion": "retail-execution-profile/v1",
+    "threadsPerModel": 2
+  },
+  "featureBuild": {
+    "feature_rows": 654728,
+    "max_forecast_origin": "2026-07-27",
+    "min_forecast_origin": "2016-07-25",
+    "parquetBytes": 71243544,
+    "per_market": {
+      "india-west": {
+        "featureRows": 312072,
+        "seriesCount": 1284,
+        "trainingEligibleRows": 309726,
+        "weeklyUnits": 12395260,
+        "zeroWeekShare": "0.21487349"
+      },
+      "us-new-york": {
+        "featureRows": 342656,
+        "seriesCount": 1278,
+        "trainingEligibleRows": 340306,
+        "weeklyUnits": 12763959,
+        "zeroWeekShare": "0.20543927"
+      }
+    },
+    "series_count": 2562,
+    "training_eligible_rows": 650032,
+    "weekly_units": 25159219,
+    "zero_week_share": "0.20993603"
+  },
+  "inputBundle": {
+    "gateASemanticFingerprint": "1bf6f838cd3c15aa922154cba142ed1eb63cd1a4986cabf4012a351f203fe6dc",
+    "gateBSemanticFingerprint": "368f6fd80b5e2dbcdc6203c470e70191632343bcd0e2849053088d580089ce47",
+    "publicationSemanticFingerprint": "c08afc148b058a645f4da787daca25670ed3b1436e0ba4aeec7e54cc156f8866",
+    "sourceSnapshotId": "dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4"
+  },
+  "memoryHeadroomGiB": "12.748154",
+  "memoryLimitGiB": 16,
+  "peakRssBytes": 3491643392,
+  "peakRssGiB": "3.251846",
+  "representativeFold": {
+    "evaluationRows": 1308,
+    "horizon": 1,
+    "quantile": "0.50",
+    "scoredOrigin": "2026-01-19",
+    "trainingOrigins": 104,
+    "trainingRows": 41072,
+    "trees": 400,
+    "wapeDiagnostic": "0.31627614"
+  },
+  "schemaVersion": "retail-ml-memory-spike/v1",
+  "stageTelemetry": {
+    "bundleVerificationSeconds": "0.796227",
+    "featureBuildSeconds": "3.307263",
+    "foldLoadSeconds": "0.128779",
+    "oneFoldTrainingSeconds": "1.577725"
+  },
+  "totalSeconds": "5.881487",
+  "verdict": "pass"
+}

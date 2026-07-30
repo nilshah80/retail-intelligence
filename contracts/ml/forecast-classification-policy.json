@@ -1,0 +1,269 @@
+{
+  "schemaVersion": "retail-forecast-classification-policy/v1",
+  "decisionId": 60,
+  "exceptions": {
+    "policyId": "retail-forecast-exceptions/v1",
+    "semanticFingerprint": "6a061db92136264217b8b3225b5f6dbb68a579c40333dcaf16f021e98d853fc8",
+    "evaluationCutoff": "decision_as_of",
+    "status": "active",
+    "classes": {
+      "high_under_forecast_risk": {
+        "formula": "upper_gap_units=yhat_p90-yhat_p50; upper_gap_ratio=upper_gap_units/max(yhat_p50,1)",
+        "trigger": "upper_gap_units>=5 AND upper_gap_ratio>=0.50",
+        "severity": "high",
+        "thresholds": {
+          "minimumGapUnits": "5",
+          "minimumGapRatio": "0.50"
+        }
+      },
+      "high_over_forecast_risk": {
+        "formula": "over_gap_units=yhat_p50-ma13_baseline; over_gap_ratio=over_gap_units/max(ma13_baseline,1)",
+        "trigger": "over_gap_units>=5 AND over_gap_ratio>=0.50",
+        "severity": "high",
+        "thresholds": {
+          "minimumGapUnits": "5",
+          "minimumGapRatio": "0.50"
+        }
+      },
+      "new_product_sparse_history": {
+        "formula": "history_weeks<26 OR zero_share_52w>0.60",
+        "trigger": "formula is true",
+        "severity": {
+          "high": "history_weeks<13 OR zero_share_52w>0.80",
+          "medium": "otherwise"
+        },
+        "thresholds": {
+          "highZeroShare": "0.80",
+          "minimumEstablishedHistoryWeeks": 26,
+          "minimumHistoryWeeks": 13,
+          "sparseZeroShare": "0.60"
+        }
+      },
+      "promotion_uplift_conflict": {
+        "formula": "uplift_shortfall=planned_promotion_uplift_pct-forecast_uplift_vs_ma13_pct",
+        "trigger": "promotion_plan_available AND planned_promotion_uplift_pct>=0.10 AND uplift_shortfall>=0.10",
+        "severity": "medium",
+        "thresholds": {
+          "minimumPlannedUpliftPct": "0.10",
+          "minimumUpliftShortfallPct": "0.10"
+        },
+        "unavailableBehavior": {
+          "emitException": false,
+          "reasonCode": "NO_ORIGIN_VISIBLE_PROMOTION_PLAN",
+          "renderingState": "unavailable"
+        }
+      },
+      "data_quality_exception": {
+        "formula": "data_quality_class=Issue",
+        "trigger": "formula is true",
+        "severity": "high",
+        "thresholds": {}
+      }
+    },
+    "evidenceContract": {
+      "encoding": "canonical-json-string",
+      "requiredFields": [
+        "decision_as_of",
+        "observed",
+        "policy_id",
+        "rule_id",
+        "thresholds"
+      ]
+    },
+    "testVectors": [
+      {
+        "id": "upper-tail-risk",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "0",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0",
+          "promotion_plan_available": false,
+          "yhat_p50": "10",
+          "yhat_p90": "16",
+          "zero_share_52w": "0.10"
+        },
+        "expected": [
+          {
+            "exceptionClass": "high_under_forecast_risk",
+            "severity": "high"
+          }
+        ]
+      },
+      {
+        "id": "over-and-sparse-risk",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "1.00",
+          "history_weeks": 10,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0",
+          "promotion_plan_available": false,
+          "yhat_p50": "20",
+          "yhat_p90": "22",
+          "zero_share_52w": "0.85"
+        },
+        "expected": [
+          {
+            "exceptionClass": "high_over_forecast_risk",
+            "severity": "high"
+          },
+          {
+            "exceptionClass": "new_product_sparse_history",
+            "severity": "high"
+          }
+        ]
+      },
+      {
+        "id": "promotion-unavailable-is-not-conflict",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "0",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0.30",
+          "promotion_plan_available": false,
+          "yhat_p50": "10",
+          "yhat_p90": "12",
+          "zero_share_52w": "0.10"
+        },
+        "expected": []
+      },
+      {
+        "id": "promotion-conflict-and-quality-issue",
+        "input": {
+          "data_quality_class": "Issue",
+          "forecast_uplift_vs_ma13_pct": "0.05",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0.20",
+          "promotion_plan_available": true,
+          "yhat_p50": "10.5",
+          "yhat_p90": "12",
+          "zero_share_52w": "0.10"
+        },
+        "expected": [
+          {
+            "exceptionClass": "promotion_uplift_conflict",
+            "severity": "medium"
+          },
+          {
+            "exceptionClass": "data_quality_exception",
+            "severity": "high"
+          }
+        ]
+      }
+    ]
+  },
+  "dataQuality": {
+    "policyId": "retail-forecast-data-quality/v1",
+    "semanticFingerprint": "3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c",
+    "evaluationCutoff": "decision_as_of",
+    "status": "active",
+    "inputSemantics": {
+      "coreFeatureMissingShare": "Missing share excludes declared-unavailable promotion inputs and expected governed fallback values.",
+      "latestActualAgeDays": "decision_as_of date minus the latest origin-visible actual date.",
+      "sourceFindings": "Only findings bound to the same SeriesKey and accepted input publication are counted.",
+      "zeroDemand": "Sparse or zero demand is a demand behavior, not by itself a data-quality defect."
+    },
+    "checks": {
+      "canonical_key_complete": {
+        "issue": "false"
+      },
+      "core_feature_missing_share": {
+        "issue": ">0.20",
+        "watch": ">0.05"
+      },
+      "latest_actual_age_days": {
+        "issue": ">21",
+        "watch": ">14"
+      },
+      "observation_coverage_13w": {
+        "issue": "<0.75",
+        "watch": "<0.90"
+      },
+      "reconciliation_passed": {
+        "issue": "false"
+      },
+      "source_quality_critical_count": {
+        "issue": ">0"
+      },
+      "source_quality_warning_count": {
+        "watch": ">0"
+      }
+    },
+    "reduction": {
+      "Good": "no Issue checks and no Watch checks",
+      "Issue": "one or more Issue checks",
+      "Watch": "no Issue checks and one or more Watch checks",
+      "precedence": [
+        "Issue",
+        "Watch",
+        "Good"
+      ]
+    },
+    "evidenceContract": {
+      "encoding": "canonical-json-string",
+      "requiredFields": [
+        "checks",
+        "decision_as_of",
+        "policy_id"
+      ]
+    },
+    "testVectors": [
+      {
+        "id": "good",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.01",
+          "latest_actual_age_days": 7,
+          "observation_coverage_13w": "1.00",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 0
+        },
+        "expectedClass": "Good"
+      },
+      {
+        "id": "watch",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.10",
+          "latest_actual_age_days": 15,
+          "observation_coverage_13w": "0.85",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 1
+        },
+        "expectedClass": "Watch"
+      },
+      {
+        "id": "issue",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.25",
+          "latest_actual_age_days": 22,
+          "observation_coverage_13w": "0.70",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 0
+        },
+        "expectedClass": "Issue"
+      },
+      {
+        "id": "critical-source-finding-dominates",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0",
+          "latest_actual_age_days": 0,
+          "observation_coverage_13w": "1",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 1,
+          "source_quality_warning_count": 0
+        },
+        "expectedClass": "Issue"
+      }
+    ]
+  }
+}

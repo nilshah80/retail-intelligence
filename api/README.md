@@ -29,7 +29,11 @@ where they are separate Go modules.
 **Origin (`[REUSE-as-redesign]`):** the M5 PoC's `api/app.py` (FastAPI), `workflow_service.py`,
 and `workflow_repository.py` establish the design and rules; the **code is re-implemented in Go**.
 
-**Boundary:** reads Python artifacts + PostgreSQL + the shared guardrail YAMLs in `contracts/`.
+**Boundary:** reads PostgreSQL projections produced only from fully verified Python artifacts, plus
+the shared guardrail YAMLs in `contracts/`. Parquet/JSON remains the immutable authority, but the
+API process and its HTTP handlers never scan forecast Parquet. The offline materializer binds every
+database row set to the accepted run, version, publication and policy fingerprints before an
+explicit activation can make it serveable.
 Two hard requirements:
 - **Fingerprint parity** — SHA-256 over canonical JSON must be byte-identical to Python's
   (see `contracts/`), or lineage checks 409 spuriously. The Go implementation lives in
@@ -60,7 +64,7 @@ and OS-specific signal adapters must preserve the same graceful-shutdown contrac
 
 **Spec:** §4.7–4.8 (HITL, lineage), §8 (screens), Architecture note.
 
-## Implemented Phase-2 slice
+## Implemented read-only slices
 
 `api/go.mod` pins `github.com/nilshah80/aarv` to `v0.9.6`. The initial server is deliberately
 read-only: it loads accepted Gate A, Gate B and publication manifests, verifies that all three
@@ -76,6 +80,10 @@ refer to the same immutable source snapshot, and exposes:
 - `GET /api/v1/data-management/capabilities`;
 - `GET /api/v1/data-management/reconciliation`;
 - `GET /api/v1/data-management/quality-findings`;
+- `GET /api/v1/forecast/{versions,summary,series,actuals,horizons,stores,drivers,signals,exceptions}`
+  — live PostgreSQL-backed Phase 3 forecast read models for the lineage-matching active version.
+  The routes return the same governed 503 envelope when the projection is absent, inactive or
+  publication-mismatched;
 - `GET /openapi.yaml` — the authoritative OpenAPI contract;
 - `GET /docs` — interactive Swagger UI;
 - `GET /redoc` — alternate ReDoc documentation.
@@ -88,15 +96,25 @@ before `GOMAXPROCS` and HTTP concurrency are applied.
 ```powershell
 # Windows PowerShell
 go test -race ./...
-go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\evidence\run-34b0ff729c8abe09\gate-a.json -gate-b-report ..\ingestion\data\evidence\run-34b0ff729c8abe09\gate-b.json -publication-manifest ..\ingestion\data\curated\run-34b0ff729c8abe09\publication-manifest.json -execution-profiles ..\execution\src\retail_execution\data\v1\profiles.json -execution-profile safe -openapi-spec ..\contracts\api\openapi.yaml
+$env:RETAIL_POSTGRES_DSN = "postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence"
+$env:RETAIL_FORECAST_ACTIVATION_SCOPE = "fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6"
+go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-a.json -gate-b-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-b.json -publication-manifest ..\ingestion\data\curated\run-c5eb1506ecd4c550\publication-manifest.json -execution-profiles ..\execution\src\retail_execution\data\v1\profiles.json -execution-profile safe -openapi-spec ..\contracts\api\openapi.yaml
 ```
 
 ```bash
 # macOS / Linux
 go test -race ./...
-go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/evidence/run-34b0ff729c8abe09/gate-a.json -gate-b-report ../ingestion/data/evidence/run-34b0ff729c8abe09/gate-b.json -publication-manifest ../ingestion/data/curated/run-34b0ff729c8abe09/publication-manifest.json -execution-profiles ../execution/src/retail_execution/data/v1/profiles.json -execution-profile safe -openapi-spec ../contracts/api/openapi.yaml
+export RETAIL_POSTGRES_DSN='postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence'
+export RETAIL_FORECAST_ACTIVATION_SCOPE='fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6'
+go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-a.json -gate-b-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-b.json -publication-manifest ../ingestion/data/curated/run-c5eb1506ecd4c550/publication-manifest.json -execution-profiles ../execution/src/retail_execution/data/v1/profiles.json -execution-profile safe -openapi-spec ../contracts/api/openapi.yaml
 ```
 
 Run these commands from `api/`. The server never substitutes sample values when accepted
 artifacts are absent or inconsistent. After startup, open `http://127.0.0.1:8080/docs` for
 Swagger, `http://127.0.0.1:8080/redoc` for ReDoc, and `http://127.0.0.1:5173` for the React UI.
+Start and migrate the Docker Desktop services, materialize the accepted bundle and activate it as
+documented in the root runbook before starting the server. Pass a PostgreSQL DSN only through the
+configured secret/environment boundary. Missing,
+unmaterialized, inactive, rejected or publication-mismatched versions remain unavailable and are
+never exposed as live forecast data. The materialization command—not the API—opens the immutable
+forecast-run directory and verifies all ten artifacts.

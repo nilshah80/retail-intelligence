@@ -19,14 +19,14 @@ RUN_ROOT = (
     / "datagen"
     / "output"
     / "multi-market-10-year-demo"
-    / "run-34b0ff729c8abe09"
+    / "run-c5eb1506ecd4c550"
 )
 MANIFEST = RUN_ROOT / "source-run-manifest.json"
 EVIDENCE_ROOT = (
-    REPO_ROOT / "ingestion" / "data" / "evidence" / "run-34b0ff729c8abe09"
+    REPO_ROOT / "ingestion" / "data" / "evidence" / "run-c5eb1506ecd4c550"
 )
 CURATED_ROOT = (
-    REPO_ROOT / "ingestion" / "data" / "curated" / "run-34b0ff729c8abe09"
+    REPO_ROOT / "ingestion" / "data" / "curated" / "run-c5eb1506ecd4c550"
 )
 
 
@@ -38,18 +38,18 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
     )
     raw = MANIFEST.read_bytes()
     assert hashlib.sha256(raw).hexdigest() == (
-        "9edb5a7b5d931cd43a0333ce156404c93b0caa2c6b448e33d398e8425003598b"
+        "3ca63c09ce220c1606a1c73b6d1c8a74268cf437cc1ab620fcd49776747665a9"
     )
     manifest = json.loads(raw)
-    assert manifest["runId"] == "run-34b0ff729c8abe09"
+    assert manifest["runId"] == "run-c5eb1506ecd4c550"
     assert manifest["configHash"] == (
-        "3abbb96147c99c55e36e989a6eb6ba79305aab2caf0e1aa0cc200c1521853728"
+        "ae0f74be19d850079934ee8f87858d10b46ac9d3ec93baea8e97a58b989f57e9"
     )
-    assert manifest["generatorVersion"] == "0.12.0"
-    assert manifest["sourceSpecVersion"] == "retail-source-config/v11"
+    assert manifest["generatorVersion"] == "0.13.0"
+    assert manifest["sourceSpecVersion"] == "retail-source-config/v12"
 
     objects = manifest["objects"]
-    assert len(objects) == 8_644
+    assert len(objects) == 8_726
     paths = [row["path"] for row in objects]
     assert len(paths) == len(set(paths))
     source_truth_rows = sum(
@@ -57,7 +57,7 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         for row in objects
         if row["sourceSystem"] != "generator"
     )
-    assert source_truth_rows == 253_192_804
+    assert source_truth_rows == 252_864_055
 
     public = [row for row in objects if not row["restricted"]]
     truth = [
@@ -70,7 +70,7 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         for row in objects
         if row["restricted"] and row["format"] == "duckdb"
     ]
-    assert len(public) == 8_398  # 8,395 source objects + 3 public metadata
+    assert len(public) == 8_480  # 8,477 source objects + 3 public metadata
     assert len(truth) == 245
     assert len(restricted_mirrors) == 1
     assert not [
@@ -93,23 +93,23 @@ def test_phase2_pin_controls_are_exact() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["controlsByCurrency"] == {
         "INR": {
-            "grossAmount": "113592452338.96",
-            "netAmount": "98156265872.00",
-            "orders": 4_827_543,
-            "taxAmount": "15436186466.96",
-            "units": 12_395_915,
+            "grossAmount": "97238216662.69",
+            "netAmount": "84426913125.00",
+            "orders": 4_590_902,
+            "taxAmount": "12811303537.69",
+            "units": 11_354_448,
         },
         "USD": {
-            "grossAmount": "1185135402.04",
-            "netAmount": "1099192986.27",
-            "orders": 4_720_243,
-            "taxAmount": "85942415.77",
-            "units": 12_764_658,
+            "grossAmount": "1261917926.25",
+            "netAmount": "1170730807.46",
+            "orders": 4_209_420,
+            "taxAmount": "91187118.79",
+            "units": 8_917_814,
         },
     }
-    assert manifest["simulationControls"]["fillRate"] == "0.972567"
-    assert manifest["simulationControls"]["orders"] == 9_547_786
-    assert manifest["simulationControls"]["orderLines"] == 17_130_980
+    assert manifest["simulationControls"]["fillRate"] == "0.976855"
+    assert manifest["simulationControls"]["orders"] == 8_800_322
+    assert manifest["simulationControls"]["orderLines"] == 15_785_727
 
 
 @pytest.mark.pinned_run
@@ -135,32 +135,36 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
     b03 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B03")
     assert b03["outcome"] == "pass"
     assert b03["evidence"] == {
-        "activeAssortmentDates": 4_565_498,
+        "activeAssortmentDates": 7_471_784,
         "dateGapPolicy": "distinct_daily_row_inside_active_assortment_v1",
         "missingActiveDates": 0,
         "positiveSalesOutsideAssortment": 0,
-        "zeroSalesRows": 2_228_133,
+        "zeroSalesRows": 4_275_653,
     }
     b15 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B15")
-    assert b15["evidence"]["staleIntervals"] == 844
+    assert b15["evidence"]["staleIntervals"] == 1_906
     b21 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B21")
-    assert b21["evidence"]["affectedEntities"]["sales"] == 2_228_133
+    assert b21["evidence"]["affectedEntities"] == {
+        "locations": 8,
+        "sell_prices": 289_884,
+        "suppliers_leadtimes": 654,
+    }
     b16 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B16")
     assert b16["evidence"]["fulfillmentAggregateMismatches"] == 0
     assert b16["evidence"]["overfulfilledLines"] == 0
     b17 = next(rule for rule in gate_b["rules"] if rule["ruleId"] == "B17")
     assert b17["evidence"]["controls"] == [
         {
-            "amountMinor": 458_825_950_637,
+            "amountMinor": 437_291_129_332,
             "eventType": "financial_refund",
-            "rows": 452_327,
+            "rows": 441_089,
             "units": 0,
         },
         {
             "amountMinor": 0,
             "eventType": "physical_return",
-            "rows": 476_062,
-            "units": 476_062,
+            "rows": 464_230,
+            "units": 464_230,
         },
     ]
     assert all(
@@ -168,9 +172,9 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
         for row in gate_b["reconciliation"]
     )
     assert len(publication["entityCounts"]) == 40
-    assert publication["entityCounts"]["sales"] == 4_565_498
+    assert publication["entityCounts"]["sales"] == 7_471_784
     assert publication["businessControls"] == {
-        "activeSkus": 348,
+        "activeSkus": 573,
         "asOfDate": "2026-07-28",
         "channels": [
             {
@@ -274,7 +278,7 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
                 "timezone": "America/New_York",
             },
         ],
-        "totalSkus": 720,
+        "totalSkus": 1_440,
     }
     object_paths = [row["path"] for row in publication["objects"]]
     assert len(object_paths) >= len(publication["entityCounts"])

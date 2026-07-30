@@ -8,7 +8,7 @@ with ``py -3 tools/check_isolated_wheels.py`` while POSIX can use ``python3``.
 By default dependencies are resolved normally (with the local wheelhouse preferred).
 ``--offline`` installs only the wheels built from this repository and validates
 declared dependency metadata; it is useful in network-restricted sandboxes but is
-not a replacement for the default CI run.
+not a replacement for the authoritative developer-run component suites.
 """
 
 from __future__ import annotations

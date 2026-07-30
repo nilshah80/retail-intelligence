@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/nilshah80/retail-intelligence/api/internal/execution"
 	"github.com/nilshah80/retail-intelligence/api/internal/httpapi"
@@ -26,6 +28,16 @@ func main() {
 	)
 	openAPISpec := flag.String(
 		"openapi-spec", "", "path to the authoritative OpenAPI YAML document",
+	)
+	postgresDSN := flag.String(
+		"postgres-dsn",
+		os.Getenv("RETAIL_POSTGRES_DSN"),
+		"PostgreSQL DSN; RETAIL_POSTGRES_DSN is the recommended source",
+	)
+	forecastScope := flag.String(
+		"forecast-activation-scope",
+		os.Getenv("RETAIL_FORECAST_ACTIVATION_SCOPE"),
+		"active forecast scope fingerprint",
 	)
 	flag.Parse()
 
@@ -56,7 +68,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	app, err := httpapi.New(store, profile, spec)
+	forecastLoadContext, cancelForecastLoad := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	forecast := readmodel.LoadForecast(forecastLoadContext, readmodel.ForecastConfig{
+		PostgresDSN:                    *postgresDSN,
+		ExpectedPublicationFingerprint: store.PublicationFingerprint(),
+		ActivationScopeFingerprint:     *forecastScope,
+		DBReadPool:                     profile.API.DBReadPool,
+	})
+	cancelForecastLoad()
+	defer forecast.Close()
+	app, err := httpapi.New(store, forecast, profile, spec)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

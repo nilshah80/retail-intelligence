@@ -1,6 +1,6 @@
 [project]
 name = "retail-intelligence-datagen"
-version = "0.12.0"
+version = "0.13.0"
 description = "Independent multi-market Shopify/Business Central synthetic source generator"
 requires-python = ">=3.12"
 dependencies = [

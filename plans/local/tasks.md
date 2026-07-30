@@ -2,53 +2,59 @@
 
 _Companion to `plans/local/plan.md`. Status: `[ ]` not started · `[~]` partial · `[x]` done._
 _All tasks below are **local**, on generated synthetic data, shadow-only._
+_Status reconciled 2026-07-30: Phases 1–3 reflect implemented evidence and explicit remaining
+manual/human/evidence gates; Phases 4–8 remain future work unless a line says otherwise._
 
 ## Cross-phase UI and demo track `[START EARLY]`
 
-- [~] UI framework decision #17 is recorded (React + Vite + TypeScript + Tailwind). The initial
-      Phase-2 screen proved live API connectivity, but its shell/design is rejected as a demo
-      baseline because it does not follow the agreed HTML. Do not describe Phase-2 UI as
-      complete until the parity gates below pass.
-- [ ] Treat `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` as a strict,
+- [x] UI framework decision #17 is implemented with React + Vite + TypeScript, TanStack
+      Query/Table, Recharts and Zod. The rejected Phase-2 connectivity prototype has been replaced
+      by the shared HTML-faithful shell used by Data Management and Demand Forecast.
+- [~] Treat `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` as a strict,
       review-controlled UI contract—not visual inspiration. Preserve its application width,
       navy/light color system, typography hierarchy, left-navigation groups/order/icons/
       submenus, top title/subtitle and filter order, display-currency strip, page composition,
       labels, table columns, bottom KPI strip and branded footer. Any deviation requires explicit
-      approval before implementation.
-- [ ] Record the only currently approved omissions: **Add Data Source**, **Upload Sample Data**
+      approval before implementation. Data Management and Demand Forecast are contracted; future
+      screens must repeat the same freeze.
+- [x] Record the only currently approved omissions: **Add Data Source**, **Upload Sample Data**
       and **Run Validation** may be omitted for now, and the sidebar user card/User Management
       navigation/destination may be omitted until users/RBAC are implemented. These exceptions do not permit
       changing any other navigation, header, content, footer, color or spacing contract.
-- [ ] Remove internal delivery language from the product UI: no “Phase 2”, “Phase 3”, “Phase 4”,
+- [~] Remove internal delivery language from the product UI: no “Phase 2”, “Phase 3”, “Phase 4”,
       “Phase 5”, “governed ingestion”, source snapshot hashes, implementation status or roadmap
       badges in the normal business experience. Keep such evidence in API/Swagger, tests,
-      development diagnostics or a separately approved technical view.
-- [ ] Before coding each page, produce a parity/data matrix with one row per visible HTML element:
+      development diagnostics or a separately approved technical view. Current live screens pass;
+      enforce this again for every future screen.
+- [~] Before coding each page, produce a parity/data matrix with one row per visible HTML element:
       reference selector/text, required behavior, API field or governed calculation, canonical
       grain, filter context, unit/currency, time window, formatting, loading/error/empty behavior
-      and implementation/test status. Review that matrix before changing React code.
-- [ ] Never reuse a nearby backend count under a reference UI label. Implement the exact business
+      and implementation/test status. Data Management and Demand Forecast matrices are frozen;
+      remaining destinations are future work.
+- [~] Never reuse a nearby backend count under a reference UI label. Implement the exact business
       definition or mark the element unavailable in the reviewed data matrix; never invent,
-      relabel or silently approximate data. Sample/stub values must not appear in a live demo.
-- [ ] Build the shared HTML shell once before the next vertical slice: full left navigation,
+      relabel or silently approximate data. Current screens pass; retain the rule for future work.
+- [x] Build the shared HTML shell once before the next vertical slice: full left navigation,
       topbar filters, currency strip, common content container, seven-item footer KPI strip and
-      page footer. All phase screens reuse this shell; phases may not independently redesign it.
-- [ ] Add automated parity gates: reference and React screenshots at agreed desktop and
+      page footer. Data Management and Demand Forecast reuse it; future phases may not redesign it.
+- [~] Add automated parity gates: reference and React screenshots at agreed desktop and
       responsive viewports, DOM assertions for navigation/order/text/table columns, design-token
       assertions for the approved palette/layout, and API fixture assertions for every displayed
-      value. Require a human screenshot review before each demo checkpoint.
+      value. Automated gates exist for Data Management and Demand Forecast; explicit human
+      approval and equivalent future-screen gates remain.
 - [~] Maintain internally versioned OpenAPI/read-model contracts and deterministic fixtures ahead
       of each backend capability. Fixtures are for tests only and cannot make a demo screen look
       live. A phase demo cannot claim a live capability until accepted artifacts are served by
       the read-only Go API and every visible value passes its data-map assertion.
 - [~] Extend the thin read-only [Aarv](https://github.com/nilshah80/aarv)-based Go API and UI
       together in Phases 2–5; do not defer all API and UI work to Phases 6–7. Preserve one
-      contract when a screen moves from test fixture to live data. The ingestion/API portion of
-      Phase 2 is complete; the Phase-2 UI parity correction remains open.
-- [ ] Keep incomplete destination pages non-demoable without altering or annotating the agreed
+      contract when a screen moves from test fixture to live data. Phase-2 Data Management and
+      Phase-3 Demand Forecast code/data gates pass; explicit human approvals remain.
+- [~] Keep incomplete destination pages non-demoable without altering or annotating the agreed
       navigation. Never fabricate unavailable metrics, pricing recommendations, margin or
-      workflow state, and never place phase/roadmap labels beside future navigation items.
-- [ ] Run incremental demo checkpoints:
+      workflow state, and never place phase/roadmap labels beside future navigation items. Current
+      navigation follows this rule; retain it as new pages land.
+- [~] Run incremental demo checkpoints:
       Phase 1 Config Builder → Phase 2 Data Management/quality → Phase 3 Demand Forecast →
       Phase 4 Inventory/Replenishment → Phase 5 Pricing/Competitor/Promotion → Phase 6 governed
       approval/override. A checkpoint passes only after HTML parity, live-data mapping and human
@@ -73,10 +79,10 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [x] Implement a thin Go resolver in `api/` against the same schema, precedence rules and golden
       vectors. Share the contract and behavior across Python/Go, not Python runtime code or
       layer-specific worker/pool implementations.
-- [~] Give every layer a narrow adapter from the resolved shared profile into its native engine.
-      The datagen, ingestion scan/transform/write/DuckDB/memory and API
-      goroutine/connection-pool adapters are complete; ML feature/fold/model adapters land in
-      Phase 3. Keep engine ownership and cleanup within that layer.
+- [x] Give every implemented layer a narrow adapter from the resolved shared profile into its
+      native engine. Datagen, ingestion scan/transform/write/DuckDB/memory, ML feature/fold/model
+      and API goroutine/connection-pool adapters are complete. Keep future engine ownership and
+      cleanup within its layer.
 - [~] Make the resolved execution profile visible in each run/build/deployment manifest. Datagen
       and ingestion record it without affecting identity, and the API exposes its resolved
       profile through health evidence; ML and production deployment manifests remain. Exclude hardware tuning from
@@ -87,38 +93,36 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 - [x] Make the Phase-2 Python foundation and authoritative developer commands portable across
       Windows, macOS and Linux: use `pathlib`, platform-aware virtualenv executables, subprocess
       argument lists and `tools/dev.py`; keep `Makefile`/shell wrappers optional. Run contract,
-      boundary, Phase-2 unit and real isolated-wheel checks locally. Record decision #47; the
-      three-OS CI enforcement remains the explicit Phase-7/8 hardening task below.
+      boundary, Phase-2 unit and real isolated-wheel checks locally. Record decision #47; collect
+      supported-OS evidence through developer-run commands, never repository CI.
 - [x] Apply decision #47 to the Phase-2 local layers: the Aarv-based Go API uses
       `filepath` and portable lock/process primitives; React tooling uses cross-platform npm
       scripts; the shared developer entry point dispatches Python/Go/Node without Bash. Local
-      Go race/unit/build and Node typecheck/test/build checks exist; adding those checks to a
-      Windows/macOS/Linux CI matrix is intentionally deferred. Future ML/DB layers add their own
-      portable checks when they land.
-- [ ] At Phase-7/8 hardening, make the three-OS matrix a blocking Definition of Done for **every**
-      completed layer. Do not add or expand GitHub workflows during the current local capability
-      build merely to represent unfinished phases; use `tools/dev.py` and component tests until the
-      corresponding runtime exists. The eventual matrix includes the
-      existing datagen suite and Config Builder tests, contract/code generation, execution,
-      ingestion, ML native dependencies and deterministic small training fixture, database
-      migration upgrade/downgrade, Aarv API and UI. Linux/macOS-only evidence cannot close a
-      phase; document any intentionally unsupported optional dependency and provide a portable
-      fallback before acceptance.
+      Go race/unit/build and Node typecheck/test/build checks exist. Decision #61 and
+      `contracts/validation-policy.yaml` prohibit adding those checks to repository CI now or
+      later; future layers add portable developer commands when they land.
+- [ ] At Phase-7/8 hardening, collect manual supported-OS evidence for every completed layer using
+      `tools/dev.py` and component commands. Do not add GitHub Actions or another repository CI
+      system. Evidence covers datagen and Config Builder tests, contract/code generation,
+      execution, ingestion, ML native dependencies and deterministic small training fixture,
+      database migration upgrade/downgrade, Aarv API and UI. Document any intentionally unsupported
+      optional dependency and provide a portable fallback before acceptance.
 - [~] Enforce the portable storage/process contract in review and tests: Phase-2
       manifests/catalogs use
       normalized `/` logical paths while I/O uses native `Path`/`filepath`; reject
       case-colliding and Windows-reserved names; normalize fingerprinted text to UTF-8/LF; use
       `tempfile` rather than `/tmp`; never require `fork`, `flock`, symlinks, mode bits or shell
       expansion; close files/readers/DuckDB connections before same-volume atomic replacement.
-      Carry the same gate into future ML/DB code.
+      ML and database serving code follow the same contract locally; manual supported-OS evidence
+      and future layers remain.
 - [x] Add and validate a root `.gitattributes` policy before more generated/API/UI code lands:
       contract/vector/generated source files use deterministic UTF-8/LF on every checkout, while
-      Windows-native scripts are explicitly CRLF. Cross-platform CI verifies code generation and
-      fingerprints.
-- [ ] Emit per-stage wall time, peak RSS, CPU utilization, worker/thread counts, spill/temp bytes
+      Windows-native scripts are explicitly CRLF. Developer-run cross-platform checks verify code
+      generation and fingerprints.
+- [~] Emit per-stage wall time, peak RSS, CPU utilization, worker/thread counts, spill/temp bytes
       and output bytes in every layer. Datagen telemetry and its disposable safe/performance/
-      ultra-performance
-      benchmark are complete; ingestion, ML and API add their metrics/benchmarks in their phases.
+      ultra-performance benchmark are complete; ingestion and ML record stage evidence, while
+      complete API saturation telemetry and future-layer benchmarks remain.
 
 ## Phase 1 — Config Builder and synthetic source generation `[FIRST]`
 
@@ -144,8 +148,9 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       `retail.duckdb` publication contract. Hidden truth remains restricted and source-shaped
       Shopify/Business Central/companion publications are authoritative.
 - [x] Give `datagen/` its own dependency file and generator-owned scenario/source schemas.
-- [ ] Resolve Python environment topology decision #38 before creating ingestion/ML package
-      lockfiles; `datagen/` remains isolated regardless of that choice.
+- [x] Resolve Python environment topology decision #38: datagen, ingestion, ML and database
+      tooling use isolated environments/distributions, with contracts and execution shared only
+      through independently installable packages.
 - [x] Enforce that `datagen/` imports no `contracts/`, `ingestion/`, `ml/` or `api/` module.
 - [x] Remove canonical `retail_v2` publication and canonical terminology from generator outputs.
 
@@ -374,7 +379,15 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       additional ~19-GB disposable outputs and multi-hour runs are scheduled. The 90-day parity
       benchmark already proves logical equivalence; this is optional performance evidence, not a
       blocker to using the accepted v0.12.0/v11 source run.
-- [ ] Shopify, BC and companion outputs land successfully in Phase 2.
+- [x] Rebaseline the Phase-3 forecast input on generator v0.13.0/source contract v12 without
+      weakening acceptance gates. Publish native effective-dated `storeAssortment.observedAt`,
+      expand the ten-year demo to 72 SKUs per department per market (1,440 total), generate the
+      immutable `run-c5eb1506ecd4c550`, then require Gate A, Gate B, exact reconciliation and a
+      reviewed pin before replacing v0.12.0/v11. Snapshot `681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`
+      and publication fingerprint `db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff`
+      pass the ten-check ML bundle verifier.
+- [x] Shopify, BC and companion outputs land successfully in Phase 2; the immutable v12 source
+      pin passes landing, both gates and curated publication.
 - [x] The first pricing milestone is explicitly revenue-only; no margin amount/objective is
       implied unless the optional receipt/cost projection is enabled.
 - [x] **Demo checkpoint 1:** use the Config Builder HTML to create, export, re-import and generate
@@ -440,25 +453,25 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       artifacts in the cross-platform contract command.
 
 **2.2 Landing and Gate A**
-- [x] Accept and pin the immutable Phase-2 input `run-34b0ff729c8abe09`, config hash
-      `3abbb96147c99c55e36e989a6eb6ba79305aab2caf0e1aa0cc200c1521853728` and manifest-file
-      SHA-256 `9edb5a7b5d931cd43a0333ce156404c93b0caa2c6b448e33d398e8425003598b`
-      (generator `0.12.0`, source contract `retail-source-config/v11`, profile
-      `ultra-performance`). The promoted manifest confirms the pre-generation config hash and
-      run ID. Acceptance measured: 137 logical datasets; 8,644 manifest objects
-      (8,395 public source Parquet + 245 restricted `_truth` Parquet + 3 public generator
+- [x] Accept and pin the immutable Phase-2 input `run-c5eb1506ecd4c550`, config hash
+      `ae0f74be19d850079934ee8f87858d10b46ac9d3ec93baea8e97a58b989f57e9` and manifest-file
+      SHA-256 `3ca63c09ce220c1606a1c73b6d1c8a74268cf437cc1ab620fcd49776747665a9`
+      (generator `0.13.0`, source contract `retail-source-config/v12`, profile
+      `performance`). The promoted manifest confirms the pre-generation config hash and run ID.
+      Acceptance measured: 137 logical datasets; 8,726 manifest objects
+      (8,477 public source Parquet + 245 restricted `_truth` Parquet + 3 public generator
       metadata + 1 restricted all-source DuckDB) all re-verified by byte count and SHA-256 with
-      zero failures over 16.00 GiB; 253,192,804 source/truth rows; 16.10 GiB run folder;
-      10,687,361,024-byte DuckDB mirror; DuckDB catalogs reconcile to the manifest with zero
-      mismatch and zero public `_truth` leakage; INR 4,827,543 orders / 12,395,915 units and
-      USD 4,720,243 orders / 12,764,658 units; fill rate 0.972567 (IN 0.980525, US 0.964961);
-      4,430.1 s elapsed at 13.8-GiB peak parent RSS. Never select “latest” or silently
+      zero failures; 252,864,055 source/truth rows; 16,521,861,406 published object bytes;
+      10,341,855,232-byte DuckDB mirror; DuckDB catalogs reconcile to the manifest with zero
+      mismatch and zero public `_truth` leakage; INR 4,590,902 orders / 11,354,448 units and
+      USD 4,209,420 orders / 8,917,814 units; fill rate 0.976855;
+      4,594.755 s elapsed at 13,915,750,400-byte peak process RSS. Never select “latest” or silently
       regenerate with another seed. `run-b8c4cceba05eb61a` is benchmark evidence only and
       `run-98abf242ff98ddc0` remains ineligible; neither is the Phase-2 input.
 - [x] Land that exact run folder into immutable raw snapshot
-      `dafa9d4228181c25a3562fef0362317f52675a6013669134285247e6179de5b4`.
-      All 8,644 objects were streamed through byte/SHA-256 verification; the landing records
-      8,398 public objects, 245 restricted truth objects and one restricted mirror.
+      `681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`.
+      All 8,726 objects were streamed through byte/SHA-256 verification; the landing records
+      8,480 public objects, 245 restricted truth objects and one restricted mirror.
 - [x] Immutable raw landing with landing time, content hashes and idempotent replay; land public
       source objects and restricted `_truth`/all-source DuckDB into separate permission lanes.
 - [x] Implement and small-fixture-test cross-platform immutable landing: streaming byte/SHA-256
@@ -616,61 +629,230 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 ## Phase 3 — Features & demand forecast (`ml/features`, `ml/models`)
 - [x] Land Go/Python `semantic-fingerprint/v1` parity against the shared RFC-8785 golden
       vectors before Phase 3 emits fingerprinted artifacts.
-- [ ] Resolve the accepted publication's B21 `LANDING_BACKFILL_DEPENDENCY` before enabling
-      point-in-time training. Either ingest native/versioned availability observations for the
-      affected historical sales-zero, assortment, price and supplier facts, or explicitly scope
-      the first model to the already-available non-PIT demand capability. Never relabel business
+- [x] Scope the first diagnostic model to the accepted `demand_forecast_non_pit` capability.
+      Every run must
+      declare `pitEligible: false` + `LANDING_BACKFILL_DEPENDENCY`; never relabel business
       effective dates or landing-time backfills as historically PIT-accurate.
-- [ ] Start MLflow run/metric/artifact tracking with the first deterministic demand
-      training/backtest. A local file-backed store is sufficient in Phase 3; do not require
-      PostgreSQL, a shared MLflow server or Docker Compose for the initial model slice.
-- [ ] Run feature construction, one deterministic training/backtest fixture and artifact
-      publication on Windows, macOS and Linux using supported pinned ML wheels. Require identical
-      keys/features/acceptance decisions and declared numeric tolerances for model outputs; use
-      bounded portable worker startup rather than relying on `fork`.
-- [ ] Implement ML execution profiles for feature-build workers, rolling-origin/fold workers,
+- [x] Complete the selected origin-safe target-availability follow-on: generate and ingest the v12 source run
+      with native effective-dated assortment observations; prove materialized zero labels become
+      available only after local business-day close; freeze a new immutable input pin; then
+      rebuild features and rerun the 13-origin H1 diagnostic before the full H1–H26 battery.
+      Do not claim the broader `point_in_time_forecasting` capability if unrelated core entities
+      remain landing-backfilled.
+- [x] Verify the immutable ML input bundle against `contracts/ml/expected-pin.json` before opening
+      data: recompute Gate A/Gate B/publication fingerprints, require both gates to pass, verify
+      retained evidence and all publication object/DuckDB hashes, bind Gate B/publication masks,
+      and require `demand_forecast_non_pit`.
+- [x] Start MLflow run/metric/artifact tracking with the first deterministic demand
+      training/backtest. The initial accepted run used the governed local file store; decision #63
+      now brings a shared MLflow 3.14.0 server and PostgreSQL into the Phase 3 serving stack through
+      Docker Desktop. Repoint future runs to `MLFLOW_TRACKING_URI` without changing run identity;
+      tracking URI and run id remain excluded from semantic fingerprints.
+- [~] Run feature construction, one deterministic training/backtest fixture and artifact
+      publication manually on Windows, macOS and Linux using supported pinned ML wheels. Require
+      identical keys/features/acceptance decisions and declared numeric tolerances for model
+      outputs; use bounded portable worker startup rather than relying on `fork`. Do not add
+      repository CI; decision #61 makes developer-run evidence authoritative.
+- [x] Implement ML execution profiles for feature-build workers, rolling-origin/fold workers,
       market/model workers, threads per model, memory ceilings and spill/cache paths. Schedule
       independent markets, series groups and backtest folds concurrently without multiplying
       nested thread pools beyond the resolved CPU/memory budget; consume the same common Python
       resolver used by datagen and ingestion.
-- [ ] Separate execution tuning from feature/model/policy specifications and artifact identity.
+- [x] Separate execution tuning from feature/model/policy specifications and artifact identity.
       Fix every RNG seed; enable deterministic trainer settings; require equivalent features,
       predictions, metrics, SHAP group totals and acceptance decisions across safe and
       ultra-performance profiles (byte-identical artifacts where the library supports it, otherwise
       declared numeric tolerances).
-- [ ] Record stage-level ML telemetry and benchmark the full pinned-data feature build,
+- [~] Record stage-level ML telemetry and benchmark the full pinned-data feature build,
       rolling-origin backtest and training run on both the 16-GB-available demo profile and a
       high-performance profile. Fail closed on OOM risk and fall back to bounded batching rather
       than silently reducing horizons, markets, series or validation folds.
-- [ ] Characterize the retained curated demand series before fitting: lifecycle stages,
-      holiday/event peak ratios, zero-day share, overdispersion and autocorrelation. Treat these
+- [x] Characterize the retained curated demand series before fitting: lifecycle stages,
+      holiday/event peak ratios, weekly zero share, overdispersion and autocorrelation. Treat these
       as model-routing/evaluation evidence, not as a reason to regenerate the pinned source run.
-- [ ] Weekly PIT feature build (+ competitor/weather/event/market-disruption/macro drivers).
-- [ ] Join market-local calendars by market/calendar key; add market/country features and use
+- [x] Weekly non-PIT feature build with origin-safe labels and external drivers. Promotion features
+      are unavailable on this pin and must remain absent from the model matrix.
+- [x] Join market-local calendars by market/calendar key; add `market_id` (no derived `country`)
+      and use
       dimensionless or local-normalized prices rather than raw cross-currency levels.
-- [ ] Join weather/event/market-disruption/macro/promotion/competitor features only by
-      `market_id` plus resolved `geo_scope_*` or structured promotion applicability; assert no
-      unqualified region-only join.
-- [ ] LightGBM horizon-quantile P50/P90, **horizons → 26 wk**; Croston routing.
-- [ ] Baselines + FVA; metrics WAPE / bias / `accuracy = 100·(1−WAPE)`.
-- [ ] Rolling-origin backtest + acceptance gates (≥25% vs seasonal-naive; P90 coverage 0.85–0.95; monotonic).
-- [ ] Publish per-market WAPE/bias/P50/P90 coverage and require supported-market gates so a large
+- [x] Join weather/event/market-disruption/macro/competitor features only by `market_id` plus
+      resolved `geo_scope_*`; enforce `contracts/ml/driver-semantics.yaml`, explicit future
+      fallback/missingness, and no unqualified region-only join.
+- [x] LightGBM horizon-quantile P50/P90, **horizons → 26 wk**; Croston routing.
+- [x] Baselines + FVA; metrics WAPE / bias / `accuracy = 100·(1−WAPE)`.
+- [x] Run the fixed rolling-origin schedule (26-week window, step 2, 13 scoring origins,
+      104 training origins) and all five acceptance gates: ≥25% WAPE improvement over
+      seasonal-naive, P90 coverage 0.85–0.95, slow-mover WAPE no worse than seasonal-naive,
+      P90 ≥ P50 row-wise, and no supported-market failure hidden by the global result.
+      The v11 H1 diagnostic remains a rejected baseline. The accepted v12 run passed A1–A5
+      globally and in both supported markets without threshold tuning.
+- [x] Store filter-scoped metrics as additive `abs_error_sum`, `signed_error_sum`, `actual_sum`,
+      `coverage_hits`, `n`; prove every fixed pre-aggregate equals SUM-then-divide results.
+- [x] Publish per-market WAPE/bias/P50/P90 coverage and require supported-market gates so a large
       market cannot hide a failure elsewhere; calibrate per market when evidence is sufficient.
-- [ ] `forecast_versions`, SHAP `forecast_drivers` (+ competitor/weather groups), confidence.
-- [ ] Extend the read-only Go API with versioned forecast-series, horizon, metric, confidence and
-      driver endpoints; keep market/currency/config fingerprints explicit.
-- [ ] Before Demand Forecast React work, freeze the parity/data matrix from the original
+- [x] Publish `forecast_versions`, SHAP `forecast_drivers` (+ competitor/weather groups),
+      confidence and the seven evaluation/governance artifacts in one accepted immutable bundle.
+- [x] Extend the read-only Go API with versioned forecast-series, horizon, metric, confidence and
+      driver endpoints; keep market/currency/config fingerprints explicit. Per decision #62,
+      request handlers never scan Parquet: first verify all ten immutable run artifacts, load the
+      serving projection transactionally through the Alembic-owned PostgreSQL schema, then create
+      a separate activation record. The Go repository serves only the lineage-matching active
+      version; accepted-but-unmaterialized and accepted-but-inactive states remain governed 503s.
+      PostgreSQL 17.10 and MLflow 3.14.0 now run under Docker Desktop Compose; migration,
+      materialization, explicit activation, all nine live routes and fail-closed states are tested.
+- [x] Before Demand Forecast React work, freeze the parity/data matrix from the original
       `#demandForecast` page: preserve its toolbar/search/filter positions, KPI labels/order,
       Forecast vs Actual and driver/quality panels, store-performance section, SKU/store forecast
       table columns/actions and common top/left/bottom shell. Map every visible value to the
       accepted forecast artifact grain and filter context.
-- [ ] Build the Demand Forecast vertical slice as a faithful port of that reviewed HTML page,
+- [x] Build the Demand Forecast vertical slice as a faithful port of that reviewed HTML page,
       replacing only its sample values with accepted live P50/P90, accuracy, bias, confidence,
       actuals and drivers. Do not add Phase 3 badges, model-engineering cards or an alternative
-      layout. Pass screenshot/DOM/data parity and human review before Demo 3.
-- [ ] **Demo checkpoint 3 / exit:** acceptance gates pass; artifacts are fingerprinted and the
+      layout. Screenshot/DOM/live-data parity passes locally at 1440×1100 and 390×844; explicit
+      user visual approval remains the W11 handoff.
+- [~] **Demo checkpoint 3 / exit:** acceptance gates pass; artifacts are fingerprinted and the
       HTML-faithful Demand Forecast screen renders live Mumbai + New York P50/P90, accuracy and
-      drivers with no mock or relabelled values.
+      drivers with no mock or relabelled values. Local implementation and browser verification
+      pass; task-ledger exit remains open for manual Windows/Linux portability evidence, the full
+      pinned-data 16-GB/high-performance benchmark comparison and explicit user visual approval.
+
+## Post–Phase 3 forecast quality and presentation hardening `[DEFERRED]`
+
+**Do not start this work before the complete Phase 3 exit and retrospective approval.** The
+accepted v12 run remains the comparison authority. These tasks improve forecast usefulness and
+communication; they do not authorize threshold tuning, relabelling, hiding weak slices or changing
+datagen merely to manufacture greener metrics.
+
+- [ ] Publish a frozen diagnostic baseline before changing models: global, market, store,
+      category, channel, lifecycle/intermittency segment and horizons 1/4/8/13/26. Include WAPE,
+      accuracy, signed bias, P90 coverage, interval width/confidence, FVA versus MA13 and
+      seasonal-naive lift. Preserve paired row keys so every claimed improvement is comparable.
+- [ ] Diagnose the current under-forecast pattern explicitly. The accepted run is 73.0% accurate
+      with −4.7% bias in India and 70.4% with −9.1% bias in US New York; exact-horizon accuracy
+      declines from 78.2% at h1 to 69.7% at h26. Identify whether the causes are calibration,
+      category mix, intermittent routing, censored sales, lifecycle, signal fallback or model
+      pooling before selecting a remedy.
+- [ ] Evaluate market × horizon bias correction and quantile calibration on held-out origins.
+      Any correction must improve paired WAPE/bias while keeping P90 coverage inside 0.85–0.95,
+      preserving P90 ≥ P50 and passing every supported-market gate. Never tune against the
+      future-only active cycle or optimize a display value directly.
+- [ ] Compare segmented champion candidates by market, category and governed demand behavior:
+      LightGBM configuration, intermittent-demand routing, lifecycle-specific treatment and
+      shrinkage back to sufficiently evidenced parent pools. Freeze minimum sample/origin rules;
+      insufficient segments fall back transparently rather than receiving bespoke overfit models.
+- [ ] Evaluate hierarchical reconciliation across SeriesKey → store/category → market totals so
+      operational aggregates and leaf forecasts are coherent. Measure leaf and aggregate accuracy
+      separately; never present an easier aggregate score as SKU×store×channel accuracy.
+- [ ] Improve actual uncertainty, not merely the displayed confidence number. The current median
+      confidence is about 0.56 because the governed formula reflects relative P50–P90 width.
+      Test interval sharpness only under unchanged empirical-coverage gates; artificial interval
+      narrowing that raises confidence while reducing coverage is an automatic rejection.
+- [ ] Prioritize origin-safe information that a real retailer can supply through ingestion
+      profiles/adapters: future promotion plans, longer-horizon weather outlooks, competitor
+      availability/plans, stock-out/censored-demand evidence and lifecycle/assortment changes.
+      Declare each capability optional and reason-coded. Do not add downstream retailer branches,
+      and do not change datagen unless correcting the source contract or modelling evidence a real
+      source is expected to provide.
+- [ ] Revisit the per-series quality policy as a versioned policy-v2 proposal. All 2,034 current
+      series are `Watch` because a publication-level source warning is inherited by every row,
+      while most row-local checks are `Good`. Separate global capability limitations from
+      row-specific completeness/freshness findings without hiding either; require policy review,
+      new fingerprints, executable vectors and a newly accepted run before changing labels.
+- [ ] Freeze a business target matrix by metric grain and horizon. Do not retain a universal 90%
+      accuracy target unless evidence and stakeholders justify it at SeriesKey grain. Targets may
+      differ for portfolio/category/store versus SKU×store×channel and for near versus long
+      horizons, but the screen must label the exact grain and never substitute an aggregate score.
+- [ ] Prepare a reviewed Demand Forecast presentation update that keeps truth visible while
+      leading with accepted strengths: +30.7% FVA versus MA13, +55.8% WAPE improvement versus
+      seasonal-naive and 88.9% P90 coverage inside target. Explain confidence as calibrated
+      uncertainty, show horizon/market context and distinguish global limitations from row
+      quality. Update the parity contract and obtain UI approval before changing React.
+- [ ] Accept an improvement only when the same immutable comparison schedule passes A1–A5,
+      additive-metric consistency, leakage checks, both supported markets, calibration,
+      deterministic profile invariance and live-screen mapping. Publish a new immutable candidate;
+      never overwrite or cosmetically reclassify the accepted v12 evidence.
+
+## Post–Phase 3 decision gate — retailer-source onboarding hardening `[DEFERRED]`
+
+**Do not start this work before the complete Phase 3 exit above.** The accepted synthetic v12
+publication remains valid evidence for the demo pin, but it is not evidence that an arbitrary
+retailer extract is retailer-ready. After Demo checkpoint 3, review this workstream and explicitly
+decide whether, when and to what depth it should be implemented. Adding these tasks records the
+gap; it does not authorize implementation, change the Phase 3 acceptance result or make this a
+Phase 3 blocker.
+
+- [ ] At the Phase 3 retrospective, record a go/no-go and scope decision for retailer-source
+      onboarding hardening. Keep three claims separate: source data can be parsed, a
+      capability-complete canonical publication can be produced, and the retailer has enough
+      origin-safe/statistically sufficient evidence for a particular ML capability. Never infer
+      the latter two from `retail_v2` schema conformance alone.
+- [ ] Inventory and remove platform coupling below the adapter boundary. The current staging
+      builder and quarantine rules directly reference `shopify_*`, `bc_*` and `companion_*`
+      relations; document every occurrence and replace it, if this workstream is approved, with
+      source-neutral staging roles such as merchandise, fulfillment, products, locations, prices,
+      inventory, receipts, assortment and contextual signals.
+- [ ] Freeze a machine-readable standardized-staging role contract before refactoring. Define each
+      role's grain, required/optional fields, types, money/time semantics, provenance fields,
+      evidence-grade requirements and quarantine rules. Adapters publish role bindings; shared
+      staging validation and canonical transforms consume roles and must not know the retailer or
+      platform name.
+- [ ] Move quarantine and staging-quality validation from platform table names to the frozen role
+      schemas. Require the same invalid-row, money-precision, key, temporal and provenance checks
+      for every adapter that supplies a role; a new adapter must not bypass or duplicate shared
+      validation.
+- [ ] Implement the documented profile-driven `mapped_files` default adapter for client CSV,
+      Parquet, JSONL and JSON drops whose semantics are fully expressible by approved mappings.
+      Column renames and physical formats should require profile/mapping changes only, not a new
+      platform adapter.
+- [ ] Define and implement a versioned retailer-adapter extension path for semantics that cannot be
+      expressed by `mapped_files`. Shopify and Business Central remain optional adapters, not
+      prerequisites. A retailer ERP/WMS, custom commerce source or governed flat-file dialect may
+      add one bounded adapter that emits standardized roles; it must not add retailer branches to
+      shared transforms, ML, API or UI. Prefer shared mapping/normalization helpers over copied
+      Shopify/BC adapter implementations.
+- [ ] Add adapter registration/packaging rules and conformance tests. Registration must declare
+      source-system id, adapter version, supported source schema/profile versions, supplied roles
+      and required source capabilities; duplicate ids or ambiguous role ownership fail closed.
+      Decide at this workstream's go/no-go whether static in-repo registration is sufficient or an
+      installable plugin mechanism is required.
+- [ ] Freeze a retailer temporal-evidence policy and readiness report. For each canonical temporal
+      entity, record the native observation/posted/extracted timestamp, immutable snapshot/CDC
+      evidence or reviewed landing-time derivation, plus `known_as_of_evidence_grade`. Business
+      effective dates never become historical availability by default; unsupported derivations
+      quarantine or capability-downgrade.
+- [ ] Treat zero demand as a derived fact requiring both extract completeness and
+      SKU × store × channel assortment/listing coverage at the business date. Map native
+      assortment, item-location, planogram, catalog snapshot, CDC or equivalent retailer evidence
+      when available. If it is absent, do not manufacture historical zeros from a current catalog;
+      report the affected replay/PIT capability as unavailable or collect evidence prospectively.
+- [ ] Define capability-specific onboarding outcomes rather than one global "safe" flag: current
+      descriptive analytics, current/non-PIT forecasting, origin-safe historical replay, broader
+      point-in-time forecasting, inventory/replenishment and price/margin capabilities each publish
+      their own dependency, coverage and evidence verdict. `validated_partial` stops before any
+      consumer whose required capability is incomplete.
+- [ ] Replace the single demo `contracts/ml/expected-pin.json` deployment assumption with a
+      reviewed per-retailer/per-tenant publication-selection and pinning mechanism before
+      multi-retailer use. Each selected publication must still pass the same Gate A/Gate B,
+      reconciliation, capability, object-hash and lineage checks; changing retailer data must not
+      require ML source-code changes.
+- [ ] Add at least one fully non-Shopify/non-Business-Central retailer fixture that reaches the
+      same canonical roles through `mapped_files`, and one fixture whose genuinely different
+      semantics require a bounded custom adapter. Prove both reach shared transforms without
+      platform-named staging tables or downstream branches; also include missing-temporal-evidence,
+      ambiguous-mapping and incomplete-capability negative fixtures.
+- [ ] Keep statistical sufficiency independent from ingestion success. Real retailer data may
+      legitimately produce `insufficient_evidence`; never expand, duplicate or synthesize client
+      series to pass an ML gate. Any alternative cold-start, hierarchical/pooling method or gate
+      amendment requires its own versioned model-policy decision and untouched holdout evidence.
+- [ ] Before declaring retailer onboarding complete, run a client-shaped round trip:
+      immutable landing → Gate A → profile/mapped adapter or custom adapter → neutral staging roles
+      → shared transforms → Gate B → per-retailer pin → unchanged feature/ML code. Publish the
+      readiness/capability report and prove that adding the adapter changed no shared transform,
+      ML, API or UI source behavior.
+- [ ] If implementation is approved, reconcile the architecture/specification, ingestion README,
+      open decisions, source-profile contract, conformance kit and operational onboarding guide
+      with the delivered behavior. Until then, describe the current result precisely as
+      "accepted synthetic demo pin", not universal retailer-data authorization.
 
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
 - [ ] Reorder / safety-stock (quantile-spread × service level).
@@ -759,15 +941,17 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       idempotency and guardrail decisions; performance tuning may change latency/throughput only.
       Publish p50/p95/p99 latency, throughput, error rate, peak RSS/CPU and pool saturation, then
       set explicit demo and production-like acceptance budgets.
-- [ ] Alembic migrations (`db/`): reuse M5 workflow tables; add `retail_v2` domain/output tables
-      plus `ingest_runs`, reconciliation, quality/quarantine, approved source-mapping config and
-      runtime source-crosswalk tables.
-- [ ] Introduce PostgreSQL here for mutable approvals, overrides, recommendation state,
-      idempotency, RBAC and audit. Keep immutable raw/curated/features in Parquet/DuckDB rather
-      than moving the lake into PostgreSQL.
-- [ ] Add Docker Compose at the Phase-6 integration checkpoint, when PostgreSQL, the shared MLflow
-      tracking service, Aarv API and UI must run together. Do not containerize batch-only Phase-2
-      work solely to create infrastructure early.
+- [~] Extend the Alembic-owned PostgreSQL schema. Phase 3 already supplies the independent
+      migration ledger and read-only `retail_serving` forecast projection; Phase 6 must add the
+      reviewed workflow, approval, override, idempotency, RBAC and audit tables without turning
+      immutable raw/curated/features into database-owned lake storage.
+- [~] Extend the PostgreSQL service introduced in Phase 3 for mutable approvals, overrides,
+      recommendation state, idempotency, RBAC and audit. The Compose/RDS-compatible serving
+      foundation exists; all mutable workflow semantics remain Phase-6 work.
+- [~] Extend the Phase-3 Docker Compose base rather than introducing Compose here. PostgreSQL and
+      shared MLflow already run under decision #63; Phase 6 adds the Aarv API/UI services, mutable
+      workflow/governance state and production-like secret/network settings. Keep batch data jobs
+      explicit rather than turning them into idle services.
 - [ ] Consolidate and harden the read-only Go API slices delivered in Phases 2–5; keep
       OpenAPI/proto contracts in `contracts/` and preserve their stub-to-live compatibility.
 - [ ] Make pricing activation/recommendation market and currency explicit; keep consolidated
@@ -807,16 +991,18 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
       approved HTML screenshots/DOM contract and has explicit human visual acceptance.
 
 ## Phase 8 — Analytics, admin & hardening
-- [ ] Freeze and implement parity/data matrices for the original Performance Insights, Reports &
-      Exports, Alerts & Notifications, Data Management and Model Management destinations before
-      adding their live analytics/admin data. User Management remains omitted until users/RBAC
-      scope is explicitly reopened.
+- [ ] Retain the accepted Data Management matrix/screen and freeze equivalent matrices for the
+      original Performance Insights, Reports & Exports, Alerts & Notifications and Model
+      Management destinations before adding their live analytics/admin data. User Management
+      remains omitted until users/RBAC scope is explicitly reopened.
 - [ ] Model registry / drift; alerts + data-freshness; data-source management; reports, rendered
       through those approved original screens rather than new admin layouts.
 - [ ] Adoption metrics / performance insights (AI-vs-control cohort).
 - [ ] Disclosure guardrails (projections not lift; observational elasticity; synthetic labelling).
-- [ ] At least two client-shaped dialects proving config-only onboarding where existing transforms
-      cover semantics; otherwise only a bounded versioned adapter, with no downstream changes.
+- [ ] Complete the approved portions, if any, of the deferred post–Phase 3 retailer-source
+      onboarding workstream. Its two client-shaped dialects must prove config-only onboarding
+      where mappings cover semantics and a bounded versioned adapter where they do not, with no
+      platform-named staging dependency or downstream retailer branch.
 - [ ] End-to-end acceptance run (ingest → serve) through all fail-closed gates.
 - [ ] Run the small end-to-end smoke path from Windows, macOS and Linux developer hosts; the
       production-scale benchmark may run once on the designated machine, but its orchestration
