@@ -28,7 +28,7 @@ def load_driver_semantics(path: str | Path) -> dict[str, object]:
     value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise DriverAvailabilityError("driver semantics root must be a mapping")
-    if value.get("schemaVersion") != "retail-ml-driver-semantics/v1":
+    if value.get("schemaVersion") != "retail-ml-driver-semantics/v3":
         raise DriverAvailabilityError("unsupported driver semantics schemaVersion")
     drivers = value.get("drivers")
     if not isinstance(drivers, dict) or set(drivers) != set(DRIVER_NAMES):

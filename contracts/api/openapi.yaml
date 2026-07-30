@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Retail Intelligence API
-  version: 0.3.0
+  version: 0.3.1
   description: >-
     Read-only data-management and Phase 3 forecast API. Forecast routes serve
     only an explicitly activated PostgreSQL projection produced from an
@@ -94,6 +94,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/summary:
@@ -102,6 +104,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/series:
@@ -123,6 +127,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/actuals:
@@ -143,6 +149,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/horizons:
@@ -163,6 +171,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/stores:
@@ -180,6 +190,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/drivers:
@@ -193,6 +205,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/signals:
@@ -201,6 +215,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
   /api/v1/forecast/exceptions:
@@ -219,6 +235,8 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/ForecastLive"
+        "409":
+          $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
 components:
@@ -284,8 +302,16 @@ components:
             $ref: "#/components/schemas/ForecastLive"
     ForecastUnavailable:
       description: >-
-        Forecast data is unavailable because no accepted, lineage-consistent,
-        fully verified forecast read model can be served.
+        Forecast data is unavailable because no fully verified forecast read
+        model can be served.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ForecastUnavailable"
+    ForecastStale:
+      description: >-
+        An activated forecast exists, but its curated-publication lineage is
+        stale or superseded and cannot be served.
       content:
         application/json:
           schema:
@@ -389,9 +415,7 @@ components:
         reasonCode:
           type: string
           enum:
-            - FORECAST_ARTIFACT_MISSING
             - FORECAST_ARTIFACT_INVALID
-            - FORECAST_RUN_REJECTED
             - FORECAST_LINEAGE_MISMATCH
             - FORECAST_READ_MODEL_UNAVAILABLE
         message: {type: string, minLength: 1}

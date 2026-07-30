@@ -644,7 +644,7 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       retained evidence and all publication object/DuckDB hashes, bind Gate B/publication masks,
       and require `demand_forecast_non_pit`.
 - [x] Start MLflow run/metric/artifact tracking with the first deterministic demand
-      training/backtest. The initial accepted run used the governed local file store; decision #63
+      training/backtest. The initial candidate used the governed local file store; decision #63
       now brings a shared MLflow 3.14.0 server and PostgreSQL into the Phase 3 serving stack through
       Docker Desktop. Repoint future runs to `MLFLOW_TRACKING_URI` without changing run identity;
       tracking URI and run id remain excluded from semantic fingerprints.
@@ -684,8 +684,12 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       104 training origins) and all five acceptance gates: ≥25% WAPE improvement over
       seasonal-naive, P90 coverage 0.85–0.95, slow-mover WAPE no worse than seasonal-naive,
       P90 ≥ P50 row-wise, and no supported-market failure hidden by the global result.
-      The v11 H1 diagnostic remains a rejected baseline. The accepted v12 run passed A1–A5
-      globally and in both supported markets without threshold tuning.
+      The v11 H1 diagnostic remains a rejected baseline. The former v12 forecast is structurally
+      incompatible with the repaired policy/verifier and is unservable; do not claim that its old
+      bundle was independently recomputed. Review #2 also rejects
+      `fr_92135aa7b5215b69`: its 53.47% seasonal-naive improvement uses 605,904 paired rows while
+      dropping 102,804 harder champion rows, so acceptance-v2 fails the complete-overall A1
+      comparison globally and in both markets. No forecast is currently authorized.
 - [x] Store filter-scoped metrics as additive `abs_error_sum`, `signed_error_sum`, `actual_sum`,
       `coverage_hits`, `n`; prove every fixed pre-aggregate equals SUM-then-divide results.
 - [x] Publish per-market WAPE/bias/P50/P90 coverage and require supported-market gates so a large
@@ -698,8 +702,10 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       serving projection transactionally through the Alembic-owned PostgreSQL schema, then create
       a separate activation record. The Go repository serves only the lineage-matching active
       version; accepted-but-unmaterialized and accepted-but-inactive states remain governed 503s.
-      PostgreSQL 17.10 and MLflow 3.14.0 now run under Docker Desktop Compose; migration,
-      materialization, explicit activation, all nine live routes and fail-closed states are tested.
+      PostgreSQL 17.10 and MLflow 3.14.0 run under Docker Desktop Compose. Stale publication or
+      superseded request-time activation lineage returns 409; missing, invalid, unmigrated or
+      unavailable projection state returns 503. Only a future accepted run materialized under
+      `retail-forecast-verifier/v3` may activate after migration 0005.
 - [x] Before Demand Forecast React work, freeze the parity/data matrix from the original
       `#demandForecast` page: preserve its toolbar/search/filter positions, KPI labels/order,
       Forecast vs Actual and driver/quality panels, store-performance section, SKU/store forecast
@@ -710,16 +716,82 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       actuals and drivers. Do not add Phase 3 badges, model-engineering cards or an alternative
       layout. Screenshot/DOM/live-data parity passes locally at 1440×1100 and 390×844; explicit
       user visual approval remains the W11 handoff.
-- [~] **Demo checkpoint 3 / exit:** acceptance gates pass; artifacts are fingerprinted and the
-      HTML-faithful Demand Forecast screen renders live Mumbai + New York P50/P90, accuracy and
-      drivers with no mock or relabelled values. Local implementation and browser verification
-      pass; task-ledger exit remains open for manual Windows/Linux portability evidence, the full
-      pinned-data 16-GB/high-performance benchmark comparison and explicit user visual approval.
+- [x] Repair the Phase 3 publication trust boundary: both `publish_forecast_run` and
+      `verify_forecast_run` independently recompute A1–A5 from the evaluation and
+      seasonal-naive artifacts; a caller-supplied or re-signed false verdict fails closed.
+- [x] Repair unavailable contextual feeds with `retail-weekly-features/v6`: preserve origin-observed
+      `event_count_origin`, remove unavailable future calendar-event columns from the model/data
+      contract, remove the false horizon-derived local-event availability indicator and its two
+      permanently-null model columns, and remove the permanently-null market-disruption feature.
+      Keep working-day availability independent and bind the Parquet descriptor into feature
+      identity. The manifest declares calendar, local-event and disruption futures unavailable
+      with reason codes. Build and consumer checks now reject every structurally all-null feature
+      column. Behavioral tests and a full 1,072,430-row v6 build prove origin events across all
+      523 origins, zero unavailable future-feed columns and zero all-null columns. The complete
+      feed sweep is bound to expected-pin `run-c5eb1506ecd4c550` / `db3784fd…` / 1,509 objects:
+      promotions 811, calendar events 182, local events 2,266 and disruptions 24 are unavailable;
+      macro 7,306, competitor prices 300,611, weather actual 7,306, weather forecast 51,142 and
+      calendar 7,306 retain origin-visible evidence.
+- [x] Restore execution-profile feature invariance: deterministically round the three
+      order-sensitive aggregate floats, bind the normalized feature SQL hash into semantic
+      identity, and prove safe/performance Parquet objects have zero logical row differences.
+- [x] Preserve missing lag-52 seasonal-naive predictions as unavailable and compute canonical
+      pairing-key hashes instead of hardcoding `pairedRowsIdentical`. Acceptance-v2 publishes
+      full, paired and dropped champion WAPE plus row/actual shares. Decision #81 requires a
+      complete overall A1 comparison; any dropped row makes A1 fail rather than allowing a
+      post-result floor.
+- [x] Recompute decision-#12 confidence after intermittent/Croston routing changes P50/P90, and
+      independently reject evaluation/current artifacts whose stored confidence is not reproduced
+      from their own quantiles.
+- [~] Restore spec §4.8 serving semantics: startup and request-time stale lineage map to 409;
+      missing/invalid/unmaterialized state maps to 503. The API now asserts the exact migration
+      revision before reading and workbench confidence uses decision #12's P50-weighted aggregate.
+      Typed runtime-lineage and HTTP status-mapping tests pass; a router-level test that mutates
+      an initially valid activation during a live request remains open.
+- [~] Bind new PostgreSQL materializations to `retail-forecast-verifier/v3`. Migration 0005
+      excludes verifier-v2 materializations and prevents the rejected run from silently returning
+      through old activation events. Code/tests are updated; local migration and new accepted
+      materialization evidence remain.
+- [~] Make PostgreSQL integration prove first-call plus repeated-call idempotency. Repeated-call
+      coverage is real, but the first-call assertion remains state-dependent and is an explicit
+      open test-hardening item. Datagen, PostgreSQL, uncached Go race tests and UI remain in the
+      developer-run gate; no repository CI is allowed.
+- [~] Build feature-schema-v6 characterization, run the full 13-origin H1–H26 backtest and publish
+      current-cycle classifications plus an immutable forecast-run-v2 bundle. The v4/v5 builds
+      were superseded after revealing false local-event availability and a dead disruption
+      feature. The corrected v6 build is complete at semantic fingerprint
+      `f3ff8725d36d78ff…`: 1,072,430 rows preserve origin event counts across all 523 origins,
+      expose no unavailable future-feed or all-null columns and have a self-contained
+      characterization summary in the reassessment evidence. The full backtest is intentionally
+      blocked on decision #82
+      because decision #81's strict complete comparison cannot accept the unchanged short-history
+      population. Publish/activate only if acceptance-v2/verifier-v3 concludes accepted;
+      otherwise retain a rejected candidate and keep the API fail-closed.
+- [~] Re-run safe/high-performance invariance and the 16-GB memory evidence against the repaired
+      feature/run semantics. The old feature-schema-v3 safe/performance builds were byte-identical
+      at semantic fingerprint `1edd93f17b01fa8b…`, and its 16-GB spike passed at 7.148 GiB peak
+      RSS, but neither is feature-schema-v6 acceptance evidence. Full v6 pinned-data
+      safe/high-performance comparison and Windows/Linux evidence remain open.
+- [~] Re-run the authoritative stateful `tools/dev.py verify` gate under acceptance-v2,
+      feature-schema-v6, forecast-run-v2, verifier-v3 and migration 0005. The former green counts
+      are historical verifier-v2 evidence and do not authorize a forecast. Go tests now use
+      `-count=1`; publish verifies its feature and backtest object hashes before reading.
+- [~] **Demo checkpoint 3 / exit:** forecast authorization is NO-GO pending a new complete-pairing
+      run. The historical screen rendered live verifier-v2 Mumbai + New York values, but visual
+      parity is not yet approved: Forecast Health currently hides h8/h13 at the default four-week
+      cap and uses cumulative labels/statuses that differ from the original four-row table.
+      Visual approval must explicitly accept that deferred deviation or move its correction
+      earlier. Manual Windows/Linux evidence and the full pinned-data 16-GB/high-performance
+      benchmark comparison also remain open.
 
 ## Post–Phase 3 forecast quality and presentation hardening `[DEFERRED]`
 
 **Do not start this work before the complete Phase 3 exit and retrospective approval.** The
-accepted v12 run remains the comparison authority. These tasks improve forecast usefulness and
+former v12 run is structurally incompatible with the repaired verifier and remains historical
+evidence only. Run `fr_92135aa7b5215b69` is also rejected under decision #81 and may be used only
+as a disclosed diagnostic, never as C0. The next accepted verifier-v3 run becomes the immutable
+comparison authority. These tasks
+improve forecast usefulness and
 communication; they do not authorize threshold tuning, relabelling, hiding weak slices or changing
 datagen merely to manufacture greener metrics.
 
@@ -727,9 +799,10 @@ datagen merely to manufacture greener metrics.
       category, channel, lifecycle/intermittency segment and horizons 1/4/8/13/26. Include WAPE,
       accuracy, signed bias, P90 coverage, interval width/confidence, FVA versus MA13 and
       seasonal-naive lift. Preserve paired row keys so every claimed improvement is comparable.
-- [ ] Diagnose the current under-forecast pattern explicitly. The accepted run is 73.0% accurate
-      with −4.7% bias in India and 70.4% with −9.1% bias in US New York; exact-horizon accuracy
-      declines from 78.2% at h1 to 69.7% at h26. Identify whether the causes are calibration,
+- [ ] Diagnose the current under-forecast pattern explicitly. Rejected diagnostic run
+      `fr_92135aa7b5215b69` is 71.82% accurate with −6.72% bias globally, 72.99% with −4.75%
+      bias in India and 70.35% with −9.17% bias in US New York; exact-horizon accuracy declines
+      from 78.16% at h1 to 69.51% at h26. Identify whether the causes are calibration,
       category mix, intermittent routing, censored sales, lifecycle, signal fallback or model
       pooling before selecting a remedy.
 - [ ] Evaluate market × horizon bias correction and quantile calibration on held-out origins.
@@ -762,20 +835,37 @@ datagen merely to manufacture greener metrics.
       accuracy target unless evidence and stakeholders justify it at SeriesKey grain. Targets may
       differ for portfolio/category/store versus SKU×store×channel and for near versus long
       horizons, but the screen must label the exact grain and never substitute an aggregate score.
-- [ ] Prepare a reviewed Demand Forecast presentation update that keeps truth visible while
-      leading with accepted strengths: +30.7% FVA versus MA13, +55.8% WAPE improvement versus
-      seasonal-naive and 88.9% P90 coverage inside target. Explain confidence as calibrated
-      uncertainty, show horizon/market context and distinguish global limitations from row
-      quality. Update the parity contract and obtain UI approval before changing React.
+- [ ] Correct the known Forecast Health parity deviation after amending decision #64/Q6 and the
+      screen contract. Always render the original four default rows in order — `1 week`,
+      `4 weeks`, `8 weeks`, `13 weeks` — independent of the selected operational forecast cap.
+      Freeze whether the values are exact h1/h4/h8/h13 or cumulative 1..N before coding; exact
+      horizons are recommended so deterioration is not averaged away. Keep h26 in diagnostics or
+      a separately approved drilldown, not as a fifth default row.
+- [ ] Replace the current coverage-only Forecast Health badge with a governed status matrix using
+      the approved accuracy, bias and P90-coverage targets for the displayed grain/horizon.
+      Preserve `Strong / Healthy / Watch / Action`, keep unavailable evidence explicit and add
+      desktop/responsive DOM, data-value, order and horizon-filter-independence tests.
+- [ ] Prepare a reviewed Demand Forecast presentation update that keeps truth visible. The
+      rejected run's +30.61% FVA and 88.85% P90 coverage may be shown only as labelled diagnostic
+      evidence; its +53.47% seasonal-naive result is paired-subset evidence, not an accepted
+      strength. Lead with metrics only after the next complete-pairing run is accepted. Explain
+      confidence as calibrated uncertainty, show horizon/market context and distinguish global
+      limitations from row quality. Update the parity contract and obtain UI approval before
+      changing React.
 - [ ] Accept an improvement only when the same immutable comparison schedule passes A1–A5,
       additive-metric consistency, leakage checks, both supported markets, calibration,
-      deterministic profile invariance and live-screen mapping. Publish a new immutable candidate;
-      never overwrite or cosmetically reclassify the accepted v12 evidence.
+      deterministic profile invariance and live-screen mapping. Bind comparison to feature schema
+      v4, `paired-seasonal-complete-recomputation/v3`,
+      `retail-forecast-verifier/v3`, canonical serialized row ordering and identical complete
+      rows. US New York currently sits exactly at the frozen 100 slow-mover-series minimum, so a
+      smaller candidate population is `insufficient_evidence`, not an improved result. Publish a
+      new immutable candidate; never overwrite or cosmetically reclassify prior evidence.
 
 ## Post–Phase 3 decision gate — retailer-source onboarding hardening `[DEFERRED]`
 
-**Do not start this work before the complete Phase 3 exit above.** The accepted synthetic v12
-publication remains valid evidence for the demo pin, but it is not evidence that an arbitrary
+**Do not start this work before the complete Phase 3 exit above.** The accepted synthetic source
+publication remains valid input evidence for the demo pin; the former v12 forecast does not.
+Neither is evidence that an arbitrary
 retailer extract is retailer-ready. After Demo checkpoint 3, review this workstream and explicitly
 decide whether, when and to what depth it should be implemented. Adding these tasks records the
 gap; it does not authorize implementation, change the Phase 3 acceptance result or make this a

@@ -13,14 +13,18 @@ import pandas as pd
 
 from retail_contracts.fingerprint import semantic_fingerprint
 
+from retail_ml.models.backtest import evaluate_acceptance
+from retail_ml.models.confidence import forecast_confidence
 from retail_ml.publish.run_artifacts import (
     ARTIFACT_SCHEMAS,
+    EVALUATION_KEY_COLUMNS,
     RUN_SCHEMA_VERSION,
     RUN_VOLATILE_POINTERS,
     _frame_semantic_fingerprint,
     _json_semantic_fingerprint,
     _validate_calibration_schedule,
     _validate_complete_schedule,
+    model_policy,
 )
 
 
@@ -163,6 +167,10 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         parsed_decision_as_of.tzinfo is not None,
         "decisionAsOf must be timezone-aware",
     )
+    _require(
+        manifest.get("modelPolicy") == model_policy(),
+        "forecast-run model/acceptance policy is unsupported",
+    )
 
     artifact_paths: dict[str, Path] = {}
     for name, schema_version in ARTIFACT_SCHEMAS.items():
@@ -221,6 +229,7 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         )
 
     evaluation = frames["forecast_eval_predictions"]
+    baselines = frames["forecast_baseline_predictions"]
     calibration = frames["forecast_calibration"]
     try:
         _validate_complete_schedule(evaluation)
@@ -242,6 +251,27 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         and set(additive_columns) <= set(evaluation.columns),
         "evaluation additive metric columns differ from the frozen contract",
     )
+    for label, frame, p50_column, p90_column in (
+        ("evaluation", evaluation, "yhat_p50", "yhat_p90"),
+        ("current series", frames["forecast_series"], "yhat_p50", "yhat_p90"),
+    ):
+        expected_confidence = forecast_confidence(
+            frame[p50_column],
+            frame[p90_column],
+        )
+        actual_confidence = pd.to_numeric(
+            frame["confidence"],
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        _require(
+            bool(
+                pd.notna(actual_confidence).all()
+                and (
+                    abs(actual_confidence - expected_confidence) <= 1e-12
+                ).all()
+            ),
+            f"{label} confidence violates decision #12",
+        )
     lifecycle_status = manifest.get("lifecycleStatus")
     _require(
         lifecycle_status in {"accepted", "rejected"},
@@ -256,6 +286,32 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
     _require(
         (lifecycle_status == "accepted") == acceptance["passed"],
         "lifecycleStatus disagrees with the acceptance verdict",
+    )
+    seasonal = baselines[
+        baselines["baseline_id"].astype(str).eq("seasonal_naive")
+    ][[*EVALUATION_KEY_COLUMNS, "prediction"]].rename(
+        columns={"prediction": "seasonal_naive_baseline"}
+    )
+    _require(
+        len(seasonal) == len(evaluation)
+        and not seasonal.duplicated(list(EVALUATION_KEY_COLUMNS)).any(),
+        "seasonal-naive artifact does not pair one-to-one with evaluation rows",
+    )
+    acceptance_frame = evaluation.merge(
+        seasonal,
+        on=list(EVALUATION_KEY_COLUMNS),
+        how="left",
+        validate="one_to_one",
+    )
+    try:
+        derived_acceptance = evaluate_acceptance(acceptance_frame)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise ForecastRunVerificationError(
+            f"cannot recompute A1-A5 acceptance gates: {exc}"
+        ) from exc
+    _require(
+        derived_acceptance == acceptance,
+        "forecast acceptance document does not match recomputed A1-A5 gates",
     )
     versions = frames["forecast_versions"]
     series = frames["forecast_series"]

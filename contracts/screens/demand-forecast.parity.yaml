@@ -4,7 +4,8 @@ status: frozen_approved_for_implementation
 authority:
   html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
   pageSelector: "#demandForecast"
-  plan: plans/local/phase3-implementation-plan.md
+  specification: docs/demand_forecast_poc_spec.md
+  tasks: plans/local/tasks.md
   api: contracts/api/openapi.yaml
 dataMode: accepted_live_only
 
@@ -12,10 +13,12 @@ activation:
   verifier: retail_ml.publish.verify.verify_forecast_run
   requiredLifecycleStatus: accepted
   requiredAcceptanceVerdict: true
-  currentState: accepted_active
-  forecastRunId: fr_b2f18d0e2999a36d
-  versionId: fv_a00fe79a86768419
-  semanticFingerprint: 5490da0c27d130be64545b9a090881268b50d7da5bcf6f3578f22beb923ef86a
+  currentState: no_accepted_forecast
+  forecastRunId: null
+  versionId: null
+  semanticFingerprint: null
+  rejectedHistoricalRunId: fr_92135aa7b5215b69
+  rejectionReason: INCOMPLETE_SEASONAL_NAIVE_COMPARISON
   fixturesAllowedInLiveScreen: false
 
 reviewGate:
@@ -359,7 +362,7 @@ panels:
           - {label: Promotion calendar, status: unavailable_on_current_pin}
           - {label: Competitor pricing, source: competitor latest known_as_of}
           - {label: Weather feed, source: weather latest known_as_of}
-          - {label: Local event feed, source: local events latest known_as_of}
+          - {label: Local event feed, status: unavailable_on_current_pin, reasonCode: NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN}
           - {label: Macroeconomic index, source: macro latest known_as_of}
         freshnessBaseline: forecast_run.decisionAsOf
         relativeTime:

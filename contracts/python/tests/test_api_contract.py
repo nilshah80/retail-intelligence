@@ -18,15 +18,18 @@ FORECAST_PATHS = (
 )
 
 
-def test_forecast_routes_have_live_and_fail_closed_contracts() -> None:
+def test_forecast_routes_have_live_stale_and_fail_closed_contracts() -> None:
     contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
 
-    assert contract["info"]["version"] == "0.3.0"
+    assert contract["info"]["version"] == "0.3.1"
     for path in FORECAST_PATHS:
         responses = contract["paths"][path]["get"]["responses"]
-        assert set(responses) == {"200", "503"}
+        assert set(responses) == {"200", "409", "503"}
         assert responses["200"] == {
             "$ref": "#/components/responses/ForecastLive"
+        }
+        assert responses["409"] == {
+            "$ref": "#/components/responses/ForecastStale"
         }
         assert responses["503"] == {
             "$ref": "#/components/responses/ForecastUnavailable"
@@ -41,9 +44,7 @@ def test_unavailable_forecast_never_requires_a_fake_identity() -> None:
     for field in ("versionId", "forecastRunId", "semanticFingerprint"):
         assert schema["properties"][field]["type"] == ["string", "null"]
     assert {
-        "FORECAST_ARTIFACT_MISSING",
         "FORECAST_ARTIFACT_INVALID",
-        "FORECAST_RUN_REJECTED",
         "FORECAST_LINEAGE_MISMATCH",
         "FORECAST_READ_MODEL_UNAVAILABLE",
     } == set(schema["properties"]["reasonCode"]["enum"])

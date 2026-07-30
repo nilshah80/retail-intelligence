@@ -97,7 +97,8 @@ before `GOMAXPROCS` and HTTP concurrency are applied.
 # Windows PowerShell
 go test -race ./...
 $env:RETAIL_POSTGRES_DSN = "postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence"
-$env:RETAIL_FORECAST_ACTIVATION_SCOPE = "fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6"
+$env:RETAIL_FORECAST_ACTIVATION_SCOPE = (docker compose -f ..\deploy\compose.yaml exec -T postgres psql -U retail -d retail_intelligence -Atc "SELECT activation_scope_fingerprint FROM retail_serving.active_forecast_versions ORDER BY recorded_at DESC LIMIT 1").Trim()
+if (-not $env:RETAIL_FORECAST_ACTIVATION_SCOPE) { throw "Materialize and activate a verifier-v3 forecast before starting the API." }
 go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-a.json -gate-b-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-b.json -publication-manifest ..\ingestion\data\curated\run-c5eb1506ecd4c550\publication-manifest.json -execution-profiles ..\execution\src\retail_execution\data\v1\profiles.json -execution-profile safe -openapi-spec ..\contracts\api\openapi.yaml
 ```
 
@@ -105,7 +106,8 @@ go run ./cmd/server -address :8080 -gate-a-report ..\ingestion\data\evidence\run
 # macOS / Linux
 go test -race ./...
 export RETAIL_POSTGRES_DSN='postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence'
-export RETAIL_FORECAST_ACTIVATION_SCOPE='fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6'
+export RETAIL_FORECAST_ACTIVATION_SCOPE="$(docker compose -f ../deploy/compose.yaml exec -T postgres psql -U retail -d retail_intelligence -Atc 'SELECT activation_scope_fingerprint FROM retail_serving.active_forecast_versions ORDER BY recorded_at DESC LIMIT 1')"
+test -n "$RETAIL_FORECAST_ACTIVATION_SCOPE" || { echo "Materialize and activate a verifier-v3 forecast before starting the API." >&2; exit 1; }
 go run ./cmd/server -address :8080 -gate-a-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-a.json -gate-b-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-b.json -publication-manifest ../ingestion/data/curated/run-c5eb1506ecd4c550/publication-manifest.json -execution-profiles ../execution/src/retail_execution/data/v1/profiles.json -execution-profile safe -openapi-spec ../contracts/api/openapi.yaml
 ```
 

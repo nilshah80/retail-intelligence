@@ -6,6 +6,7 @@ repositoryCI:
 validation:
   mode: developer_run
   entrypoint: tools/dev.py
+  phaseExitCommand: tools/dev.py verify
   portabilityEvidence: manual_supported_os_runs
   supportedOperatingSystems:
     - windows

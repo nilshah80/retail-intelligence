@@ -1,77 +1,102 @@
 {
-  "schemaVersion": "retail-phase3-accepted-publication-evidence/v1",
+  "schemaVersion": "retail-phase3-accepted-publication-evidence/v2",
   "recordedAt": "2026-07-30",
+  "status": "historical_rejected_after_review2",
+  "currentAuthority": false,
+  "supersededBy": "review2-acceptance-reassessment-db3784fdcc4cb833.json",
+  "supersessionReason": "Acceptance-v2 requires a complete overall seasonal-naive comparison; this historical verifier-v2 result dropped 102804 harder champion rows.",
   "inputBundle": {
     "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b",
     "gateASemanticFingerprint": "e1e16e33b689cc951a61d8d96da54d80ba8f88b12692f936ddeaba849a52bc38",
     "gateBSemanticFingerprint": "e4bd23a1b4b4e28a678d4c15fbb660bb54e2772f81ead71800d9dd6299979313",
     "publicationSemanticFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff"
   },
-  "featureSemanticFingerprint": "c320b05dc09ae9676eed58b3a60dfc0bf4afda11dcfc419b71951f4acf6d8102",
+  "featureArtifact": {
+    "schemaVersion": "retail-weekly-features/v3",
+    "semanticFingerprint": "1edd93f17b01fa8ba9d7fde51df0f9124954fed2658c9b345e93fbf7d4bc7f58",
+    "featureSqlSha256": "a25647a4ebc91ef5bc5ed264b048026ede9ecdf5f1181b43c515d06457a43af2",
+    "safePerformanceObjectsIdentical": true
+  },
   "acceptance": {
+    "evaluationContract": "paired-seasonal-independent-recomputation/v2",
     "passed": true,
     "evaluationRows": 708708,
     "trainingRows": 65021190,
     "global": {
-      "relativeWapeImprovementPct": 55.82743544717504,
-      "p90Coverage": 0.888813164236893,
-      "slowMoverSeries": 321,
-      "slowMoverMinimumPairedSeriesPerOrigin": 194,
+      "relativeWapeImprovementPct": 53.4656234455363,
+      "p90Coverage": 0.8885281385281385,
+      "slowMoverSeries": 218,
+      "slowMoverMinimumPairedSeriesPerOrigin": 171,
       "slowMoverDifferenceInterval95": [
-        -0.38925238,
-        -0.24799075
-      ]
+        -0.77188991,
+        -0.51876517
+      ],
+      "pairedRows": 605904,
+      "droppedUnpairedRows": 102804,
+      "passed": true
     },
     "markets": {
       "india-west": {
-        "relativeWapeImprovementPct": 55.01832781145549,
-        "p90Coverage": 0.8927815026737342,
-        "slowMoverSeries": 159,
-        "slowMoverMinimumPairedSeriesPerOrigin": 95,
+        "relativeWapeImprovementPct": 54.543541781405345,
+        "p90Coverage": 0.8921935151706626,
+        "slowMoverSeries": 118,
+        "slowMoverMinimumPairedSeriesPerOrigin": 86,
         "passed": true
       },
       "us-new-york": {
-        "relativeWapeImprovementPct": 56.71225437678268,
-        "p90Coverage": 0.8851154651314929,
-        "slowMoverSeries": 162,
-        "slowMoverMinimumPairedSeriesPerOrigin": 96,
+        "relativeWapeImprovementPct": 52.004542532908324,
+        "p90Coverage": 0.8851127393257446,
+        "slowMoverSeries": 100,
+        "slowMoverMinimumPairedSeriesPerOrigin": 73,
         "passed": true
       }
     }
   },
   "currentCycle": {
-    "decisionAsOf": "2026-07-30T09:23:11.952654Z",
+    "decisionAsOf": "2026-07-30T16:00:00Z",
     "forecastOrigin": "2026-07-27",
     "horizons": 26,
     "series": 2034,
     "forecastRows": 52884,
     "trainingRows": 5127448,
     "actualLabelsPresent": false,
-    "forecastObjectSha256": "1e57df55e53e42ba14fb7df6d3156d9b8b4ba6f3079eab044b9533695471cb2e"
+    "forecastObjectSha256": "6e1a7d6abfdc4278205e37a31eabe2fc9bc9771f00af0bad0d2d64cb0a408156"
   },
   "decision60": {
     "exceptionPolicyFingerprint": "6a061db92136264217b8b3225b5f6dbb68a579c40333dcaf16f021e98d853fc8",
     "dataQualityPolicyFingerprint": "3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c",
-    "exceptionRows": 685,
+    "exceptionRows": 640,
     "dataQualityRows": 2034,
     "dataQualityClassCounts": {
       "Watch": 2034
     }
   },
   "publication": {
-    "forecastRunId": "fr_b2f18d0e2999a36d",
-    "forecastVersionId": "fv_a00fe79a86768419",
+    "forecastRunId": "fr_92135aa7b5215b69",
+    "forecastVersionId": "fv_7d29221dc70dea90",
     "lifecycleStatus": "accepted",
-    "semanticFingerprint": "5490da0c27d130be64545b9a090881268b50d7da5bcf6f3578f22beb923ef86a",
+    "semanticFingerprint": "8932650d0b1b956eb821e5933ca8462dba6f87fc1a58b50348fe54273026d04f",
     "artifactCount": 10,
     "forecastSeriesRows": 52884,
-    "forecastDriverRows": 10200
+    "forecastDriverRows": 10199,
+    "independentVerification": "pass"
   },
   "validation": {
     "forecastRunVerification": "pass",
     "forecastRunJsonSchema": "pass",
-    "mlTests": 55,
+    "statefulLocalGate": "pass",
+    "executionTests": 12,
+    "executionSubtests": 17,
     "contractTests": 82,
+    "datagenTests": 52,
+    "datagenSubtests": 8,
+    "ingestionTests": 67,
+    "databaseTests": 1,
+    "mlTests": 68,
+    "goRaceIncludingPostgres": "pass",
+    "uiTests": 8,
+    "uiTypecheck": "pass",
+    "uiBuild": "pass",
     "contractValidation": "pass",
     "repositoryCI": "prohibited"
   }

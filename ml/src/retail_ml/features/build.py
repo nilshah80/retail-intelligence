@@ -25,11 +25,10 @@ from retail_ml.io.curated import CuratedReader
 from retail_ml.keys import SERIES_KEY_FIELDS
 from retail_ml.runtime.profile import MLRuntimeProfile
 
-FEATURE_SCHEMA_VERSION: Final[str] = "retail-weekly-features/v1"
+FEATURE_SCHEMA_VERSION: Final[str] = "retail-weekly-features/v6"
 FEATURE_MANIFEST_VOLATILE_POINTERS: Final[tuple[str, ...]] = (
     "/createdAt",
     "/executionProfile",
-    "/objects",
     "/outputPath",
 )
 
@@ -104,24 +103,18 @@ def weekly_features_sql() -> str:
     )
     calendar_leads = ",\n            ".join(
         f"""
-            lead(event_count, {horizon}) OVER market_calendar_window
-                AS event_count_h{horizon},
             lead(working_days, {horizon}) OVER market_calendar_window
                 AS working_days_h{horizon},
-            lead(calendar_known_as_of, {horizon}) OVER market_calendar_window
-                AS calendar_known_as_of_h{horizon}
+            lead(working_days_known_as_of, {horizon})
+                OVER market_calendar_window
+                AS working_days_known_as_of_h{horizon}
         """.strip()
         for horizon in HORIZONS
     )
     future_calendar_select = ",\n        ".join(
         f"""
         CASE
-            WHEN calendar.calendar_known_as_of_h{horizon} <= features.week_end
-            THEN calendar.event_count_h{horizon}
-            ELSE NULL
-        END AS event_count_h{horizon},
-        CASE
-            WHEN calendar.calendar_known_as_of_h{horizon} <= features.week_end
+            WHEN calendar.working_days_known_as_of_h{horizon} <= features.week_end
             THEN calendar.working_days_h{horizon}
             ELSE NULL
         END AS working_days_h{horizon}
@@ -356,37 +349,6 @@ def weekly_features_sql() -> str:
         FROM competitor_ranked
         WHERE preference = 1
     ),
-    local_event_h1 AS (
-        SELECT
-            origins.market_id,
-            origins.week_start AS origin_week,
-            count(events.event_name) AS local_event_count_h1,
-            sum(CAST(events.expected_impact AS DOUBLE)) AS local_event_impact_h1
-        FROM origin_weeks AS origins
-        INNER JOIN local_events AS events
-            ON events.market_id = origins.market_id
-           AND events.date BETWEEN
-               CAST(origins.week_start + INTERVAL 1 WEEK AS DATE)
-               AND CAST(origins.week_start + INTERVAL 13 DAY AS DATE)
-           AND events.known_as_of < origins.origin_cutoff
-        GROUP BY origins.market_id, origins.week_start
-    ),
-    disruption_h1 AS (
-        SELECT
-            origins.market_id,
-            origins.week_start AS origin_week,
-            avg(CAST(disruptions.demand_factor AS DOUBLE))
-                AS disruption_demand_factor_h1
-        FROM origin_weeks AS origins
-        INNER JOIN market_disruptions AS disruptions
-            ON disruptions.market_id = origins.market_id
-           AND disruptions.start_date
-               <= CAST(origins.week_start + INTERVAL 13 DAY AS DATE)
-           AND disruptions.end_date
-               >= CAST(origins.week_start + INTERVAL 1 WEEK AS DATE)
-           AND disruptions.known_as_of < origins.origin_cutoff
-        GROUP BY origins.market_id, origins.week_start
-    ),
     weekly_with_external AS (
         SELECT
             weekly.*,
@@ -404,10 +366,7 @@ def weekly_features_sql() -> str:
                 WHEN competitor.competitor_price IS NULL THEN 0 ELSE 1
             END AS competitor_available,
             CAST(competitor.competitor_in_stock AS INTEGER) AS competitor_in_stock,
-            competitor.competitor_age_days,
-            events.local_event_count_h1,
-            events.local_event_impact_h1,
-            disruption.disruption_demand_factor_h1
+            competitor.competitor_age_days
         FROM weekly_normalized AS weekly
         LEFT JOIN weather_history AS weather
             ON weather.market_id = weekly.market_id
@@ -423,12 +382,6 @@ def weekly_features_sql() -> str:
            AND competitor.sku_id = weekly.sku_id
            AND competitor.store_id = weekly.store_id
            AND competitor.week_start = weekly.week_start
-        LEFT JOIN local_event_h1 AS events
-            ON events.market_id = weekly.market_id
-           AND events.origin_week = weekly.week_start
-        LEFT JOIN disruption_h1 AS disruption
-            ON disruption.market_id = weekly.market_id
-           AND disruption.origin_week = weekly.week_start
     ),
     weekly_calendar AS (
         SELECT
@@ -436,15 +389,14 @@ def weekly_features_sql() -> str:
             CAST(date_trunc('week', calendar.date) AS DATE) AS week_start,
             sum(CASE WHEN calendar.working_day THEN 1 ELSE 0 END) AS working_days,
             count(events.event_name) AS event_count,
-            greatest(
-                max(calendar.known_as_of),
-                max(events.known_as_of)
-            ) AS calendar_known_as_of
+            max(calendar.known_as_of) AS working_days_known_as_of
         FROM calendar
         LEFT JOIN calendar_events AS events
             ON events.market_id = calendar.market_id
            AND events.date = calendar.date
-        GROUP BY calendar.market_id, date_trunc('week', calendar.date)
+        GROUP BY
+            calendar.market_id,
+            date_trunc('week', calendar.date)
     ),
     calendar_future AS (
         SELECT
@@ -530,22 +482,22 @@ def weekly_features_sql() -> str:
                 units_roll_mean_4 - units_roll_mean_13
             ) / nullif(abs(units_roll_mean_13), 0) AS demand_trend_4v13,
             price_ratio_13w,
-            local_category_price_index,
+            round(local_category_price_index, 8)
+                AS local_category_price_index,
             weather_tavg_origin,
             weather_precip_origin,
             weather_tavg_climatology,
             weather_precip_climatology,
-            weather_tavg_forecast_h1,
-            weather_precip_forecast_h1,
+            round(weather_tavg_forecast_h1, 12)
+                AS weather_tavg_forecast_h1,
+            round(weather_precip_forecast_h1, 12)
+                AS weather_precip_forecast_h1,
             weather_forecast_coverage_days_h1,
             macro_index_value,
             competitor_price_ratio,
             competitor_available,
             competitor_in_stock,
             competitor_age_days,
-            local_event_count_h1,
-            local_event_impact_h1,
-            disruption_demand_factor_h1,
             CAST(strftime(week_start, '%V') AS INTEGER) AS iso_week,
             sin(
                 2 * pi() * CAST(strftime(week_start, '%V') AS DOUBLE) / 52.1775
@@ -560,13 +512,9 @@ def weekly_features_sql() -> str:
     )
     SELECT
         features.*,
+        calendar.event_count AS event_count_origin,
         CASE
-            WHEN calendar.calendar_known_as_of <= features.week_end
-            THEN calendar.event_count
-            ELSE NULL
-        END AS event_count_origin,
-        CASE
-            WHEN calendar.calendar_known_as_of <= features.week_end
+            WHEN calendar.working_days_known_as_of <= features.week_end
             THEN calendar.working_days
             ELSE NULL
         END AS working_days_origin,
@@ -590,6 +538,28 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def all_null_feature_columns(connection: Any, feature_path: Path) -> list[str]:
+    """Return columns that contain no observed value in the full artifact."""
+
+    sql_path = str(feature_path).replace("'", "''")
+    columns = [
+        str(row[0])
+        for row in connection.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{sql_path}')"
+        ).fetchall()
+    ]
+    counts = connection.execute(
+        "SELECT "
+        + ", ".join(f'count("{column}")' for column in columns)
+        + f" FROM read_parquet('{sql_path}')"
+    ).fetchone()
+    return [
+        column
+        for column, count in zip(columns, counts, strict=True)
+        if int(count) == 0
+    ]
 
 
 def _stats(connection: Any, feature_path: Path) -> FeatureBuildStats:
@@ -683,6 +653,7 @@ def build_features(
     feature_path = staging / "weekly_features.parquet"
     try:
         reader = CuratedReader(bundle)
+        feature_sql = weekly_features_sql()
         with reader.connect_duckdb() as connection:
             connection.execute(f"SET threads = {runtime_profile.feature_workers}")
             connection.execute(
@@ -695,7 +666,7 @@ def build_features(
             escaped_output = str(feature_path).replace("'", "''")
             connection.execute(
                 f"""
-                COPY ({weekly_features_sql()})
+                COPY ({feature_sql})
                 TO '{escaped_output}'
                 (
                     FORMAT PARQUET,
@@ -705,6 +676,12 @@ def build_features(
                 """
             )
             stats = _stats(connection, feature_path)
+            all_null_columns = all_null_feature_columns(connection, feature_path)
+            if all_null_columns:
+                raise ValueError(
+                    "weekly feature artifact contains structurally all-null "
+                    f"columns: {', '.join(all_null_columns)}"
+                )
         spill.rmdir()
         feature_bytes = feature_path.stat().st_size
         manifest: dict[str, Any] = {
@@ -716,13 +693,29 @@ def build_features(
                 "labelEmbargoWeeks": LABEL_EMBARGO_WEEKS,
                 "partialBoundaryWeeks": PARTIAL_BOUNDARY_POLICY,
                 "promotionFeature": "unavailable",
+                "calendarEventFutureFeature": "unavailable",
+                "localEventFutureFeature": "unavailable",
+                "marketDisruptionFutureFeature": "unavailable",
                 "pitEligible": False,
                 "reasonCode": "LANDING_BACKFILL_DEPENDENCY",
+                "calendarEventFutureReasonCode": (
+                    "NO_ORIGIN_VISIBLE_CALENDAR_EVENT_SNAPSHOT"
+                ),
+                "localEventFutureReasonCode": (
+                    "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN"
+                ),
+                "marketDisruptionFutureReasonCode": (
+                    "NO_ORIGIN_VISIBLE_MARKET_DISRUPTION_PLAN"
+                ),
+                "allNullFeatureColumns": [],
                 "priceFeatures": [
                     "price_ratio_13w",
                     "local_category_price_index",
                 ],
-                "driverSemantics": "retail-ml-driver-semantics/v1",
+                "driverSemantics": "retail-ml-driver-semantics/v3",
+                "featureSqlSha256": hashlib.sha256(
+                    feature_sql.encode("utf-8")
+                ).hexdigest(),
             },
             "stats": asdict(stats),
             "objects": {
@@ -762,6 +755,7 @@ __all__ = [
     "FEATURE_MANIFEST_VOLATILE_POINTERS",
     "FEATURE_SCHEMA_VERSION",
     "FeatureBuildStats",
+    "all_null_feature_columns",
     "build_features",
     "weekly_features_sql",
 ]

@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 
 from retail_ml.keys import SeriesKey
+from retail_ml.models.confidence import forecast_confidence
 
 
 def croston_sba(values: Iterable[float], alpha: float = 0.10) -> float:
@@ -109,6 +110,10 @@ def route_intermittent_forecasts(
     result["tail_candidate_selected"] = False
     result["tail_candidate_p50"] = math.nan
     result["tail_candidate_p90"] = math.nan
+    result["confidence"] = forecast_confidence(
+        result["yhat_p50"],
+        result["yhat_p90"],
+    )
     if "zero_share_52w" not in result or history.empty:
         return result
     sparse = (
@@ -154,6 +159,10 @@ def route_intermittent_forecasts(
     result.loc[routed, "selected_model"] = "croston_sba_replay_selected"
     result.loc[routed, "tail_candidate_selected"] = True
     result.loc[sparse & ~routed, "selected_model"] = "lightgbm_intermittent_fallback"
+    result["confidence"] = forecast_confidence(
+        result["yhat_p50"],
+        result["yhat_p90"],
+    )
     return result
 
 

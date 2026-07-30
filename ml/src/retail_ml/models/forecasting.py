@@ -16,6 +16,12 @@ from typing import Any
 import duckdb
 import pandas as pd
 
+from retail_contracts.fingerprint import semantic_fingerprint
+from retail_ml.features.build import (
+    FEATURE_MANIFEST_VOLATILE_POINTERS,
+    all_null_feature_columns,
+    weekly_features_sql,
+)
 from retail_ml.features.availability import HORIZONS
 from retail_ml.models.backtest import evaluate_acceptance
 from retail_ml.models.baselines import attach_baselines, metric_for_column
@@ -57,8 +63,23 @@ def _sha256_file(path: Path) -> str:
 def _verified_feature_path(feature_dir: Path) -> tuple[Path, dict[str, Any]]:
     manifest_path = feature_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schemaVersion") != "retail-weekly-features/v1":
+    if manifest.get("schemaVersion") != "retail-weekly-features/v6":
         raise ValueError("unsupported weekly feature artifact")
+    fingerprint_payload = dict(manifest)
+    recorded_fingerprint = fingerprint_payload.pop(
+        "semanticFingerprint",
+        None,
+    )
+    if (
+        recorded_fingerprint
+        != semantic_fingerprint(
+            fingerprint_payload,
+            volatile_pointers=FEATURE_MANIFEST_VOLATILE_POINTERS,
+        )
+        or manifest.get("featurePolicy", {}).get("featureSqlSha256")
+        != hashlib.sha256(weekly_features_sql().encode("utf-8")).hexdigest()
+    ):
+        raise ValueError("weekly feature semantic identity does not match its policy")
     feature_path = feature_dir / manifest["objects"]["weeklyFeatures"]["path"]
     expected = manifest["objects"]["weeklyFeatures"]
     if (
@@ -66,7 +87,62 @@ def _verified_feature_path(feature_dir: Path) -> tuple[Path, dict[str, Any]]:
         or _sha256_file(feature_path) != expected["sha256"]
     ):
         raise ValueError("weekly feature object does not match its manifest")
+    connection = duckdb.connect()
+    try:
+        all_null_columns = all_null_feature_columns(connection, feature_path)
+    finally:
+        connection.close()
+    if (
+        manifest.get("featurePolicy", {}).get("allNullFeatureColumns") != []
+        or all_null_columns
+    ):
+        raise ValueError(
+            "weekly feature artifact contains structurally all-null columns: "
+            + ", ".join(all_null_columns)
+        )
     return feature_path, manifest
+
+
+def verified_backtest_artifacts(
+    backtest_dir: Path,
+    *,
+    feature_manifest: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Path]]:
+    """Verify every backtest object before the publisher reads it."""
+
+    root = backtest_dir.resolve()
+    manifest = json.loads(
+        (root / "backtest-manifest.json").read_text(encoding="utf-8")
+    )
+    if manifest.get("schemaVersion") != "retail-forecast-backtest/v1":
+        raise ValueError("unsupported forecast backtest artifact")
+    if (
+        manifest.get("featureSemanticFingerprint")
+        != feature_manifest.get("semanticFingerprint")
+    ):
+        raise ValueError("backtest does not match the verified feature artifact")
+    expected_names = {
+        "forecast_eval_predictions.parquet",
+        "forecast_calibration.parquet",
+        "acceptance.json",
+    }
+    objects = manifest.get("objects")
+    if not isinstance(objects, dict) or set(objects) != expected_names:
+        raise ValueError("backtest objects do not match the frozen contract")
+    paths: dict[str, Path] = {}
+    for name in sorted(expected_names):
+        descriptor = objects[name]
+        path = (root / name).resolve()
+        if (
+            path.parent != root
+            or not path.is_file()
+            or not isinstance(descriptor, dict)
+            or path.stat().st_size != descriptor.get("bytes")
+            or _sha256_file(path) != descriptor.get("sha256")
+        ):
+            raise ValueError(f"backtest object does not match its manifest: {name}")
+        paths[name] = path
+    return manifest, paths
 
 
 def _history(feature_path: Path, origin: date) -> pd.DataFrame:
@@ -317,4 +393,8 @@ def run_backtest(
         raise
 
 
-__all__ = ["BacktestStats", "run_backtest"]
+__all__ = [
+    "BacktestStats",
+    "run_backtest",
+    "verified_backtest_artifacts",
+]

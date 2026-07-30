@@ -14,9 +14,7 @@ TARGET_AVAILABILITY_COLUMNS: Final[tuple[str, ...]] = tuple(
     f"target_known_as_of_h{horizon}" for horizon in HORIZONS
 )
 FUTURE_CALENDAR_COLUMNS: Final[tuple[str, ...]] = tuple(
-    column
-    for horizon in HORIZONS
-    for column in (f"event_count_h{horizon}", f"working_days_h{horizon}")
+    f"working_days_h{horizon}" for horizon in HORIZONS
 )
 
 

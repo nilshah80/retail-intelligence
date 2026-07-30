@@ -9,13 +9,16 @@ wrapper. Every subprocess is invoked with an argument list, every path uses
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
-from urllib.parse import quote
+import tempfile
 import venv
 from pathlib import Path
+from urllib.parse import quote
+from urllib.request import urlopen
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INGESTION_ENV = REPO_ROOT / "ingestion" / ".venv"
@@ -25,6 +28,9 @@ DB_ENV = REPO_ROOT / "db" / ".venv"
 COMPOSE_FILE = REPO_ROOT / "deploy" / "compose.yaml"
 COMPOSE_ENV = REPO_ROOT / "deploy" / ".env"
 COMPOSE_ENV_EXAMPLE = REPO_ROOT / "deploy" / ".env.example"
+ACCEPTANCE_EVALUATION_VERSION = (
+    "paired-seasonal-complete-recomputation/v3"
+)
 
 
 def venv_python(root: Path) -> Path:
@@ -59,15 +65,24 @@ def _create_environment(
     editable: list[str],
     *,
     interpreter: Path | None = None,
+    clear: bool = True,
+    install_shared: bool = True,
 ) -> None:
     if interpreter is None or interpreter.resolve() == Path(sys.executable).resolve():
-        venv.EnvBuilder(with_pip=True, clear=True).create(root)
-    elif _run([str(interpreter), "-m", "venv", "--clear", str(root)]):
-        raise RuntimeError(f"failed to create environment with {interpreter}")
+        venv.EnvBuilder(with_pip=True, clear=clear).create(root)
+    else:
+        venv_command = [str(interpreter), "-m", "venv"]
+        if clear:
+            venv_command.append("--clear")
+        venv_command.append(str(root))
+        if _run(venv_command):
+            raise RuntimeError(f"failed to create environment with {interpreter}")
     python = venv_python(root)
-    commands = (
+    commands = [
         [str(python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
-        [
+    ]
+    if install_shared:
+        commands.append([
             str(python),
             "-m",
             "pip",
@@ -76,8 +91,8 @@ def _create_environment(
             str(REPO_ROOT / "execution"),
             "--editable",
             str(REPO_ROOT / "contracts" / "python"),
-        ],
-        [
+        ])
+    commands.append([
             str(python),
             "-m",
             "pip",
@@ -89,8 +104,7 @@ def _create_environment(
                 ),
                 [],
             ),
-        ],
-    )
+        ])
     for command in commands:
         if _run(command):
             raise RuntimeError(f"environment command failed: {command!r}")
@@ -135,6 +149,12 @@ def _ml_python() -> Path:
 
 
 def command_envs(_: argparse.Namespace) -> int:
+    _create_environment(
+        DATAGEN_ENV,
+        ["datagen[dev]"],
+        clear=False,
+        install_shared=False,
+    )
     _create_environment(INGESTION_ENV, ["ingestion[dev]"])
     _create_environment(ML_ENV, ["ml[dev]"], interpreter=_ml_python())
     _create_environment(DB_ENV, ["db[dev]"], interpreter=_ml_python())
@@ -234,6 +254,7 @@ def command_boundaries(_: argparse.Namespace) -> int:
 
 
 def command_test(args: argparse.Namespace) -> int:
+    datagen = _require_python(DATAGEN_ENV, "datagen")
     ingestion = _require_python(INGESTION_ENV, "ingestion")
     ml = _require_python(ML_ENV, "ml")
     database = _require_python(DB_ENV, "database")
@@ -241,6 +262,7 @@ def command_test(args: argparse.Namespace) -> int:
         [sys.executable, str(REPO_ROOT / "tools" / "check_import_boundaries.py")],
         [str(ingestion), "-m", "pytest", "execution/tests", "-q"],
         [str(ingestion), "-m", "pytest", "contracts/python/tests", "-q"],
+        [str(datagen), "-m", "pytest", "datagen/tests", "-q"],
         [
             str(ingestion),
             "-m",
@@ -254,9 +276,134 @@ def command_test(args: argparse.Namespace) -> int:
         [str(database), "-m", "pytest", "db/tests", "-q"],
     ]
     if args.pinned_only:
-        commands = [commands[3]]
+        commands = [commands[4]]
     for command in commands:
         result = _run(command)
+        if result:
+            return result
+    return 0
+
+
+def _discover_accepted_forecast_run() -> Path:
+    override = os.environ.get("RETAIL_TEST_FORECAST_RUN")
+    if override:
+        candidate = Path(override).expanduser().resolve()
+        if not candidate.is_dir():
+            raise RuntimeError(
+                f"RETAIL_TEST_FORECAST_RUN is not a directory: {candidate}"
+            )
+        return candidate
+
+    candidates: list[tuple[str, Path]] = []
+    artifact_root = REPO_ROOT / "ml" / "data" / "artifacts"
+    for manifest_path in artifact_root.glob(
+        "forecast_run_accepted_*/forecast-run-manifest.json"
+    ):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            manifest.get("lifecycleStatus") == "accepted"
+            and manifest.get("modelPolicy", {}).get("acceptanceEvaluation")
+            == ACCEPTANCE_EVALUATION_VERSION
+        ):
+            candidates.append(
+                (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
+            )
+    if not candidates:
+        raise RuntimeError(
+            "No independently recomputed accepted forecast run is available. "
+            "Set RETAIL_TEST_FORECAST_RUN or complete the Phase 3 publication first."
+        )
+    return max(candidates, key=lambda value: (value[0], str(value[1])))[1]
+
+
+def command_verify(_: argparse.Namespace) -> int:
+    """Run the authoritative local phase-exit gate without repository CI."""
+
+    datagen = _require_python(DATAGEN_ENV, "datagen")
+    ingestion = _require_python(INGESTION_ENV, "ingestion")
+    ml = _require_python(ML_ENV, "ml")
+    database = _require_python(DB_ENV, "database")
+    result = command_contracts(argparse.Namespace())
+    if result:
+        return result
+    result = command_db_upgrade(argparse.Namespace())
+    if result:
+        return result
+    mlflow_port = _compose_values().get("MLFLOW_PORT", "5000")
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{mlflow_port}/health",
+            timeout=5,
+        ) as response:
+            if response.status != 200:
+                raise RuntimeError(
+                    f"MLflow health returned HTTP {response.status}"
+                )
+    except OSError as exc:
+        raise RuntimeError(
+            "MLflow is unavailable; run tools/dev.py services up"
+        ) from exc
+    integration_environment = dict(os.environ)
+    integration_environment["RETAIL_TEST_POSTGRES_DSN"] = _local_postgres_dsn(
+        sqlalchemy=False
+    )
+    integration_environment["RETAIL_TEST_FORECAST_RUN"] = str(
+        _discover_accepted_forecast_run()
+    )
+    integration_environment.setdefault(
+        "GOCACHE",
+        str(Path(tempfile.gettempdir()) / "retail-intelligence-go-cache"),
+    )
+    commands: list[tuple[list[str], Path, dict[str, str] | None]] = [
+        (
+            [sys.executable, str(REPO_ROOT / "tools/check_import_boundaries.py")],
+            REPO_ROOT,
+            None,
+        ),
+        (
+            [str(ingestion), "-m", "pytest", "execution/tests", "-q"],
+            REPO_ROOT,
+            None,
+        ),
+        (
+            [str(ingestion), "-m", "pytest", "contracts/python/tests", "-q"],
+            REPO_ROOT,
+            None,
+        ),
+        (
+            [str(datagen), "-m", "pytest", "datagen/tests", "-q"],
+            REPO_ROOT,
+            None,
+        ),
+        (
+            [str(ingestion), "-m", "pytest", "ingestion/tests", "-q"],
+            REPO_ROOT,
+            None,
+        ),
+        (
+            [str(database), "-m", "pytest", "db/tests", "-q"],
+            REPO_ROOT,
+            integration_environment,
+        ),
+        (
+            [str(ml), "-m", "pytest", "ml/tests", "-q"],
+            REPO_ROOT,
+            integration_environment,
+        ),
+        (
+            ["go", "test", "-count=1", "-race", "./..."],
+            REPO_ROOT / "api",
+            integration_environment,
+        ),
+        (["npm", "test"], REPO_ROOT / "ui", None),
+        (["npm", "run", "typecheck"], REPO_ROOT / "ui", None),
+        (["npm", "run", "build"], REPO_ROOT / "ui", None),
+    ]
+    for command, cwd, environment in commands:
+        result = _run(command, cwd=cwd, env=environment)
         if result:
             return result
     return 0
@@ -451,7 +598,16 @@ def command_run_status(_: argparse.Namespace) -> int:
 
 
 def command_api_test(_: argparse.Namespace) -> int:
-    return _run(["go", "test", "-race", "./..."], cwd=REPO_ROOT / "api")
+    environment = dict(os.environ)
+    environment.setdefault(
+        "GOCACHE",
+        str(Path(tempfile.gettempdir()) / "retail-intelligence-go-cache"),
+    )
+    return _run(
+        ["go", "test", "-race", "./..."],
+        cwd=REPO_ROOT / "api",
+        env=environment,
+    )
 
 
 def command_services(args: argparse.Namespace) -> int:
@@ -616,7 +772,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser(
         "envs",
-        help="create ingestion, ML, and database environments",
+        help="create datagen, ingestion, ML, and database environments",
     )
     subparsers.add_parser("db-env", help="create the database tooling environment")
     subparsers.add_parser("db-upgrade", help="upgrade PostgreSQL to the latest migration")
@@ -626,6 +782,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     test = subparsers.add_parser("test", help="run the fast repository suites")
     test.add_argument("--pinned-only", action="store_true")
+    subparsers.add_parser(
+        "verify",
+        help="run the authoritative stateful local phase-exit gate",
+    )
 
     wheels = subparsers.add_parser("wheels", help="build and isolate actual wheels")
     wheels.add_argument("--offline", action="store_true")
@@ -872,6 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
         "db-test": command_db_test,
         "boundaries": command_boundaries,
         "test": command_test,
+        "verify": command_verify,
         "wheels": command_wheels,
         "contracts": command_contracts,
         "config-hash": command_config_hash,

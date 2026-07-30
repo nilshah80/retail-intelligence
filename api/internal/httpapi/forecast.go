@@ -19,11 +19,21 @@ var forecastPaths = []string{
 	"/api/v1/forecast/exceptions",
 }
 
+func forecastUnavailableStatus(reasonCode string) int {
+	if reasonCode == readmodel.ForecastReasonLineage {
+		return http.StatusConflict
+	}
+	return http.StatusServiceUnavailable
+}
+
 func mountForecastRoutes(app *aarv.App, store *readmodel.ForecastStore) {
 	for _, path := range forecastPaths {
 		app.Get(path, func(c *aarv.Context) error {
 			if !store.Available() {
-				return c.JSON(http.StatusServiceUnavailable, store.Unavailable())
+				return c.JSON(
+					forecastUnavailableStatus(store.UnavailableReason()),
+					store.Unavailable(),
+				)
 			}
 			payload, err := store.Read(c.Context(), path, readmodel.ForecastQuery{
 				MarketID:       c.Query("marketId"),
@@ -42,20 +52,21 @@ func mountForecastRoutes(app *aarv.App, store *readmodel.ForecastStore) {
 				Limit:          c.QueryInt("limit", 100),
 			})
 			if err != nil {
+				reasonCode := readmodel.ForecastReadErrorReason(err)
 				return c.JSON(
-					http.StatusServiceUnavailable,
+					forecastUnavailableStatus(reasonCode),
 					map[string]any{
 						"schemaVersion":       readmodel.ForecastUnavailableSchema,
 						"dataMode":            "unavailable",
 						"versionId":           nil,
 						"forecastRunId":       nil,
 						"semanticFingerprint": nil,
-						"reasonCode":          readmodel.ForecastReasonUnmaterialized,
+						"reasonCode":          reasonCode,
 						"message":             "The PostgreSQL forecast projection could not be read.",
 						"capabilities": map[string]any{
 							"demandForecastNonPit": map[string]any{
 								"available":  false,
-								"reasonCode": readmodel.ForecastReasonUnmaterialized,
+								"reasonCode": reasonCode,
 							},
 							"pointInTimeForecasting": map[string]any{
 								"available":  false,

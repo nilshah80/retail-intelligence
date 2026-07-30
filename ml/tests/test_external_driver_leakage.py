@@ -65,3 +65,27 @@ def test_versioned_driver_contract_lists_every_driver() -> None:
     root = Path(__file__).resolve().parents[2]
     semantics = load_driver_semantics(root / "contracts/ml/driver-semantics.yaml")
     assert set(semantics["drivers"]) == set(DRIVER_NAMES)
+    assert semantics["drivers"]["local_events"] == {
+        "publishedGroup": "weather_local_events",
+        "allowedUse": "unavailable",
+        "selection": "none",
+        "targetDateUse": "forbidden",
+        "longHorizonFallback": "explicit_unavailable",
+        "reasonCode": "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN",
+        "evidence": (
+            "all retained local-event rows have known_as_of after every "
+            "historical forecast origin"
+        ),
+    }
+    assert semantics["drivers"]["market_disruptions"] == {
+        "publishedGroup": "demand_trend",
+        "allowedUse": "unavailable",
+        "selection": "none",
+        "targetDateUse": "forbidden",
+        "longHorizonFallback": "explicit_unavailable",
+        "reasonCode": "NO_ORIGIN_VISIBLE_MARKET_DISRUPTION_PLAN",
+        "evidence": (
+            "all retained disruption rows have known_as_of after every "
+            "historical forecast origin"
+        ),
+    }

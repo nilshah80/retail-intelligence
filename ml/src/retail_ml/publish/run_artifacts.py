@@ -25,17 +25,23 @@ from retail_contracts.fingerprint import semantic_fingerprint
 from retail_ml.features.availability import HORIZONS, LABEL_EMBARGO_WEEKS
 from retail_ml.keys import SeriesKey
 from retail_ml.models.backtest import (
+    ACCEPTANCE_SCHEMA_VERSION,
     EVALUATION_WINDOW_WEEKS,
     ORIGIN_STEP_WEEKS,
     SCORING_ORIGINS,
     SLOW_MOVER_THRESHOLD,
     TRAINING_ORIGINS,
+    evaluate_acceptance,
 )
 from retail_ml.models.drivers import aggregate_driver_rows
+from retail_ml.models.confidence import forecast_confidence
 from retail_ml.policies.classification import load_classification_policy
 from retail_ml.runtime.profile import MLRuntimeProfile
 
-RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v1"
+RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v2"
+ACCEPTANCE_EVALUATION_VERSION: Final[str] = (
+    "paired-seasonal-complete-recomputation/v3"
+)
 ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "forecast_versions": "retail-v2-forecast-versions/v1",
     "forecast_series": "retail-v2-forecast-series/v1",
@@ -46,7 +52,7 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "forecast_exceptions": "retail-forecast-exceptions/v1",
     "forecast_data_quality": "retail-forecast-data-quality/v1",
     "forecast_calibration": "retail-forecast-calibration/v1",
-    "forecast_acceptance": "retail-forecast-acceptance/v1",
+    "forecast_acceptance": ACCEPTANCE_SCHEMA_VERSION,
 }
 RUN_VOLATILE_POINTERS: Final[tuple[str, ...]] = (
     "/createdAt",
@@ -83,6 +89,25 @@ BASELINE_COLUMNS: Final[dict[str, str]] = {
 
 class ForecastPublicationError(RuntimeError):
     """A candidate cannot satisfy the immutable run-bundle contract."""
+
+
+def model_policy() -> dict[str, Any]:
+    """Return the exact semantic model and acceptance policy for this publisher."""
+
+    return {
+        "horizonWeeks": list(HORIZONS),
+        "evaluationWindowWeeks": EVALUATION_WINDOW_WEEKS,
+        "scoringOriginStepWeeks": ORIGIN_STEP_WEEKS,
+        "scoringOrigins": SCORING_ORIGINS,
+        "trainingOrigins": TRAINING_ORIGINS,
+        "labelEmbargoWeeks": LABEL_EMBARGO_WEEKS,
+        "slowMoverZeroShareThreshold": "0.60",
+        "seriesKeyFields": list(SERIES_COLUMNS),
+        "marketFeature": "market_id",
+        "metricAggregation": "additive_components",
+        "promotionFeature": "unavailable",
+        "acceptanceEvaluation": ACCEPTANCE_EVALUATION_VERSION,
+    }
 
 
 @dataclass(frozen=True)
@@ -244,12 +269,35 @@ def derive_evaluation_predictions(evaluation: pd.DataFrame) -> pd.DataFrame:
         "zero_share_52w",
     ]
     result = evaluation[columns].copy()
+    if result.duplicated(list(EVALUATION_KEY_COLUMNS), keep=False).any():
+        raise ForecastPublicationError(
+            "evaluation predictions duplicate the canonical evaluation key"
+        )
     actual = pd.to_numeric(result["actual_units"], errors="coerce")
     prediction = pd.to_numeric(result["yhat_p50"], errors="coerce")
     upper = pd.to_numeric(result["yhat_p90"], errors="coerce")
-    if actual.isna().any() or prediction.isna().any() or upper.isna().any():
+    confidence = pd.to_numeric(result["confidence"], errors="coerce")
+    if (
+        actual.isna().any()
+        or prediction.isna().any()
+        or upper.isna().any()
+        or confidence.isna().any()
+        or not np.isfinite(actual).all()
+        or not np.isfinite(prediction).all()
+        or not np.isfinite(upper).all()
+    ):
         raise ForecastPublicationError(
-            "evaluation actual/P50/P90 values must all be finite numbers"
+            "evaluation actual/P50/P90/confidence values must all be finite numbers"
+        )
+    expected_confidence = forecast_confidence(prediction, upper)
+    if not np.allclose(
+        confidence.to_numpy(dtype=float),
+        expected_confidence,
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        raise ForecastPublicationError(
+            "evaluation confidence violates decision #12"
         )
     result["abs_error_sum"] = (prediction - actual).abs()
     result["signed_error_sum"] = prediction - actual
@@ -303,6 +351,13 @@ def _metric_rows_for_scope(
     working = frame.copy()
     actual = pd.to_numeric(working["actual_units"], errors="coerce")
     prediction = pd.to_numeric(working[prediction_column], errors="coerce")
+    valid = actual.notna() & prediction.notna()
+    if model_id == "champion":
+        upper = pd.to_numeric(working["yhat_p90"], errors="coerce")
+        valid &= upper.notna()
+    working = working.loc[valid].copy()
+    actual = actual.loc[valid]
+    prediction = prediction.loc[valid]
     working["_abs"] = (prediction - actual).abs()
     working["_signed"] = prediction - actual
     working["_actual"] = actual
@@ -425,6 +480,25 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
                     scope_columns=scope_columns,
                 )
             )
+    for scope_type, scope_columns, scoped in scopes:
+        if scoped.empty:
+            continue
+        seasonal = pd.to_numeric(
+            scoped["seasonal_naive_baseline"],
+            errors="coerce",
+        )
+        paired = scoped.loc[seasonal.notna() & np.isfinite(seasonal)].copy()
+        if paired.empty:
+            continue
+        rows.extend(
+            _metric_rows_for_scope(
+                paired,
+                prediction_column="yhat_p50",
+                model_id="champion_seasonal_paired",
+                scope_type=scope_type,
+                scope_columns=scope_columns,
+            )
+        )
     result = pd.DataFrame(rows)
     index_columns = ["slice_type", "slice_id", "horizon"]
     lookup = result.set_index([*index_columns, "model_id"])["wape"]
@@ -434,6 +508,9 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
     for index in result.index[champion]:
         key = tuple(result.loc[index, column] for column in index_columns)
         champion_wape = result.at[index, "wape"]
+        paired_champion_wape = lookup.get(
+            (*key, "champion_seasonal_paired")
+        )
         ma13_wape = lookup.get((*key, "ma13"))
         seasonal_wape = lookup.get((*key, "seasonal_naive"))
         if pd.notna(champion_wape) and pd.notna(ma13_wape) and ma13_wape != 0:
@@ -441,12 +518,14 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
                 (ma13_wape - champion_wape) / ma13_wape * 100.0
             )
         if (
-            pd.notna(champion_wape)
+            pd.notna(paired_champion_wape)
             and pd.notna(seasonal_wape)
             and seasonal_wape != 0
         ):
             result.at[index, "improvement_vs_seasonal_naive_pct"] = (
-                (seasonal_wape - champion_wape) / seasonal_wape * 100.0
+                (seasonal_wape - paired_champion_wape)
+                / seasonal_wape
+                * 100.0
             )
     return result.sort_values(
         [*index_columns, "model_id"]
@@ -543,6 +622,15 @@ def _validated_current_forecasts(
     ):
         raise ForecastPublicationError(
             "current P50/P90/confidence values violate the canonical domain"
+        )
+    if not np.allclose(
+        confidence.to_numpy(dtype=float),
+        forecast_confidence(p50, p90),
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        raise ForecastPublicationError(
+            "current confidence violates decision #12"
         )
     return result.sort_values(
         [*SERIES_COLUMNS, "horizon"]
@@ -861,6 +949,29 @@ def publish_forecast_run(
     )
     evaluation_artifact = derive_evaluation_predictions(evaluation)
     baseline_artifact = derive_baseline_predictions(evaluation)
+    seasonal = baseline_artifact[
+        baseline_artifact["baseline_id"].astype(str).eq("seasonal_naive")
+    ][[*EVALUATION_KEY_COLUMNS, "prediction"]].rename(
+        columns={"prediction": "seasonal_naive_baseline"}
+    )
+    acceptance_frame = evaluation_artifact.merge(
+        seasonal,
+        on=list(EVALUATION_KEY_COLUMNS),
+        how="left",
+        validate="one_to_one",
+    )
+    derived_acceptance = evaluate_acceptance(acceptance_frame)
+    if (
+        acceptance.get("schemaVersion")
+        != ARTIFACT_SCHEMAS["forecast_acceptance"]
+        or not isinstance(acceptance.get("passed"), bool)
+        or acceptance["passed"] != derived_acceptance["passed"]
+    ):
+        raise ForecastPublicationError(
+            "supplied acceptance verdict does not match independently "
+            "recomputed A1-A5 gates"
+        )
+    acceptance = derived_acceptance
     metrics_artifact = derive_forecast_metrics(evaluation)
     exception_artifact = _validated_governed_frame(
         exceptions,
@@ -1021,19 +1132,7 @@ def publish_forecast_run(
             ),
             "inputBundle": input_bundle,
             "featureSemanticFingerprint": feature_semantic_fingerprint,
-            "modelPolicy": {
-                "horizonWeeks": list(HORIZONS),
-                "evaluationWindowWeeks": EVALUATION_WINDOW_WEEKS,
-                "scoringOriginStepWeeks": ORIGIN_STEP_WEEKS,
-                "scoringOrigins": SCORING_ORIGINS,
-                "trainingOrigins": TRAINING_ORIGINS,
-                "labelEmbargoWeeks": LABEL_EMBARGO_WEEKS,
-                "slowMoverZeroShareThreshold": "0.60",
-                "seriesKeyFields": list(SERIES_COLUMNS),
-                "marketFeature": "market_id",
-                "metricAggregation": "additive_components",
-                "promotionFeature": "unavailable",
-            },
+            "modelPolicy": model_policy(),
             "randomSeeds": random_seeds or {"model": 20260730, "bootstrap": 20260730},
             "pitEligibility": {
                 "eligible": False,
@@ -1092,6 +1191,7 @@ def series_key_from_row(row: pd.Series) -> SeriesKey:
 
 
 __all__ = [
+    "ACCEPTANCE_EVALUATION_VERSION",
     "ARTIFACT_SCHEMAS",
     "ForecastPublicationError",
     "ForecastRunPublication",
@@ -1100,6 +1200,7 @@ __all__ = [
     "derive_baseline_predictions",
     "derive_evaluation_predictions",
     "derive_forecast_metrics",
+    "model_policy",
     "publish_forecast_run",
     "series_key_from_row",
 ]

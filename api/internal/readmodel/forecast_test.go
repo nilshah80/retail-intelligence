@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func TestForecastLoadFailsClosedWithoutSQLProjection(t *testing.T) {
@@ -49,15 +51,53 @@ func TestForecastLoadFailsClosedWhenPostgresCannotBeReached(t *testing.T) {
 	}
 }
 
+func TestForecastReadErrorsPreserveRuntimeLineageReason(t *testing.T) {
+	lineage := forecastReadError(
+		ForecastReasonLineage,
+		"activation changed",
+	)
+	if reason := ForecastReadErrorReason(lineage); reason != ForecastReasonLineage {
+		t.Fatalf("runtime lineage reason = %s", reason)
+	}
+	if reason := ForecastReadErrorReason(context.Canceled); reason != ForecastReasonUnmaterialized {
+		t.Fatalf("untyped read error reason = %s", reason)
+	}
+}
+
 func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
 	scope := os.Getenv("RETAIL_TEST_FORECAST_SCOPE")
 	publication := os.Getenv("RETAIL_TEST_PUBLICATION_FINGERPRINT")
-	if dsn == "" || scope == "" || publication == "" {
+	if dsn == "" {
 		t.Skip("PostgreSQL forecast integration environment is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	expectedRunID := ""
+	expectedVersionID := ""
+	if scope == "" || publication == "" {
+		connection, err := pgx.Connect(ctx, dsn)
+		if err != nil {
+			t.Fatalf("connect to forecast integration database: %v", err)
+		}
+		defer connection.Close(ctx)
+		err = connection.QueryRow(
+			ctx,
+			`
+			SELECT
+				activation_scope_fingerprint,
+				publication_semantic_fingerprint,
+				forecast_run_id,
+				version_id
+			FROM retail_serving.active_forecast_versions
+			ORDER BY recorded_at DESC
+			LIMIT 1
+			`,
+		).Scan(&scope, &publication, &expectedRunID, &expectedVersionID)
+		if err != nil {
+			t.Fatalf("discover active forecast integration identity: %v", err)
+		}
+	}
 	store := LoadForecast(ctx, ForecastConfig{
 		PostgresDSN:                    dsn,
 		ExpectedPublicationFingerprint: publication,
@@ -67,6 +107,14 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	defer store.Close()
 	if !store.Available() {
 		t.Fatalf("configured active forecast is unavailable: %v", store.Unavailable())
+	}
+	if expectedRunID == "" {
+		expectedRunID = store.forecastRunID
+		expectedVersionID = store.versionID
+	}
+	if !forecastRunIDPattern.MatchString(expectedRunID) ||
+		!forecastVersionID.MatchString(expectedVersionID) {
+		t.Fatalf("active forecast identity is malformed: %s %s", expectedRunID, expectedVersionID)
 	}
 
 	paths := []string{
@@ -86,8 +134,8 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			t.Fatalf("%s: %v", path, err)
 		}
 		if payload["dataMode"] != "live" ||
-			payload["forecastRunId"] != "fr_b2f18d0e2999a36d" ||
-			payload["versionId"] != "fv_a00fe79a86768419" {
+			payload["forecastRunId"] != expectedRunID ||
+			payload["versionId"] != expectedVersionID {
 			t.Fatalf("%s returned invalid identity: %v", path, payload)
 		}
 	}

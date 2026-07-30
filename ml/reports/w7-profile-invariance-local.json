@@ -1,6 +1,22 @@
 {
-  "createdAt": "2026-07-30T07:03:00Z",
-  "featureSemanticFingerprint": "bd73a734068571d5e38052f57fcc57ebebc4e676375a8bd93085b2f5bf02a26b",
+  "status": "historical_superseded_feature_v3",
+  "currentAuthority": false,
+  "supersededByFeatureSchema": "retail-weekly-features/v6",
+  "requiresRerun": true,
+  "createdAt": "2026-07-30T17:07:12Z",
+  "featureArtifact": {
+    "schemaVersion": "retail-weekly-features/v3",
+    "semanticFingerprint": "1edd93f17b01fa8ba9d7fde51df0f9124954fed2658c9b345e93fbf7d4bc7f58",
+    "featureSqlSha256": "a25647a4ebc91ef5bc5ed264b048026ede9ecdf5f1181b43c515d06457a43af2",
+    "profilesCompared": [
+      "safe",
+      "performance"
+    ],
+    "physicalSha256": "8d584aa3e8b7f764691e2107777bc01e6c25384a5fbcd7d671bf852172bbd0e4",
+    "physicalObjectsIdentical": true,
+    "logicalRowDifferences": 0,
+    "status": "pass"
+  },
   "localEvidence": {
     "modelThreadInvariance": {
       "absoluteTolerance": "0.000000000001",
@@ -33,33 +49,26 @@
       "stageTelemetryExcludedFromIdentity": true,
       "status": "pass"
     },
-    "smokeBacktest": {
-      "executionProfile": "performance",
-      "forecastRows": 1308,
-      "horizons": 1,
-      "maxSampledRssBytes": 763330560,
-      "rssMeasurement": "sampled_at_stage_boundaries_process_only",
-      "scoringOrigins": 1,
-      "stageCalls": {
-        "acceptance": 1,
-        "baselines": 1,
-        "fit_models": 1,
-        "intermittent_history": 1,
-        "intermittent_routing": 1,
-        "load_evaluation": 1,
-        "load_training": 1,
-        "score_and_tree_shap": 1,
-        "serialize_diagnostics": 1
-      },
-      "trainingRows": 41072,
-      "wallClockElapsedSeconds": "9.702278"
+    "fullPerformanceBacktest": {
+      "accepted": true,
+      "forecastRows": 708708,
+      "horizons": 26,
+      "maxSampledRssBytes": 7574732800,
+      "scoringOrigins": 13,
+      "trainingRows": 65021190,
+      "wallClockElapsedSeconds": "2029.652531"
+    },
+    "safe16GbSpike": {
+      "peakRssGiB": "7.147903",
+      "memoryHeadroomGiB": "8.852097",
+      "status": "pass"
     }
   },
-  "schemaVersion": "retail-ml-w7-profile-invariance/v1",
+  "schemaVersion": "retail-ml-w7-profile-invariance/v2",
   "testSuite": {
-    "command": "ml/.venv/bin/python -m pytest ml/tests -q",
-    "currentPassedTests": 46,
-    "localPassedTestsBeforeW7Additions": 42,
+    "command": "python3 tools/dev.py verify",
+    "mlPassedTests": 68,
+    "statefulRepositoryGate": "pass",
     "status": "pass"
   },
   "supportedOsEvidence": {
@@ -69,5 +78,9 @@
     "repositoryCI": "prohibited",
     "status": "pending_manual_windows_and_linux_runs",
     "windows": "pending_manual_run"
+  },
+  "remainingComparison": {
+    "fullPinnedSafeVsPerformanceBacktest": "pending",
+    "reason": "feature equivalence and bounded-memory evidence pass; a second full safe-profile backtest has not been run"
   }
 }

@@ -19,7 +19,11 @@ from retail_ml.features.characterize import characterize_features
 from retail_ml.io.bundle import discover_input_bundle
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.current_cycle import run_current_cycle
-from retail_ml.models.forecasting import run_backtest
+from retail_ml.models.forecasting import (
+    _verified_feature_path,
+    run_backtest,
+    verified_backtest_artifacts,
+)
 from retail_ml.policies.classification import (
     classify_current_cycle,
     load_classification_policy,
@@ -193,14 +197,13 @@ def _command_classify(args: argparse.Namespace) -> int:
 
 def _command_publish(args: argparse.Namespace) -> int:
     backtest_dir = args.backtest_dir.resolve()
-    feature_manifest = json.loads(
-        (args.feature_dir.resolve() / "manifest.json").read_text(encoding="utf-8")
-    )
-    backtest_manifest = json.loads(
-        (backtest_dir / "backtest-manifest.json").read_text(encoding="utf-8")
+    _, feature_manifest = _verified_feature_path(args.feature_dir.resolve())
+    backtest_manifest, backtest_paths = verified_backtest_artifacts(
+        backtest_dir,
+        feature_manifest=feature_manifest,
     )
     acceptance = json.loads(
-        (backtest_dir / "acceptance.json").read_text(encoding="utf-8")
+        backtest_paths["acceptance.json"].read_text(encoding="utf-8")
     )
     classification_policies = json.loads(
         args.classification_policies.read_text(encoding="utf-8")
@@ -209,8 +212,8 @@ def _command_publish(args: argparse.Namespace) -> int:
         args.decision_as_of.replace("Z", "+00:00")
     )
     publication = publish_forecast_run(
-        pd.read_parquet(backtest_dir / "forecast_eval_predictions.parquet"),
-        pd.read_parquet(backtest_dir / "forecast_calibration.parquet"),
+        pd.read_parquet(backtest_paths["forecast_eval_predictions.parquet"]),
+        pd.read_parquet(backtest_paths["forecast_calibration.parquet"]),
         acceptance,
         pd.read_parquet(args.exceptions),
         pd.read_parquet(args.data_quality),

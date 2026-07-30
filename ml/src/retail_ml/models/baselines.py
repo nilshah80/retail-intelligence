@@ -59,9 +59,12 @@ def attach_baselines(frame: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     ).fillna(0.0).clip(lower=0.0)
     result["seasonal_naive_baseline"] = pd.to_numeric(
-        result.get("units_lag_52", 0.0),
+        result.get(
+            "units_lag_52",
+            pd.Series(np.nan, index=result.index, dtype=float),
+        ),
         errors="coerce",
-    ).fillna(0.0).clip(lower=0.0)
+    ).clip(lower=0.0)
     result["ma8_baseline"] = pd.to_numeric(
         result.get("units_roll_mean_8", 0.0),
         errors="coerce",

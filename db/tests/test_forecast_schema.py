@@ -31,7 +31,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0003_forecast_series_dimensions",)
+            assert cursor.fetchone() == ("0005_complete_pairing_verifier",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -51,3 +51,26 @@ def test_forecast_serving_schema_integration() -> None:
                 """
             )
             assert cursor.fetchone() == ("YES",)
+            cursor.execute(
+                """
+                SELECT is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'retail_serving'
+                  AND table_name = 'forecast_materializations'
+                  AND column_name = 'verification_contract'
+                """
+            )
+            nullable, default = cursor.fetchone()
+            assert nullable == "NO"
+            assert "legacy-unverified" in default
+            cursor.execute(
+                """
+                SELECT view_definition
+                FROM information_schema.views
+                WHERE table_schema = 'retail_serving'
+                  AND table_name = 'active_forecast_versions'
+                """
+            )
+            view_definition = cursor.fetchone()[0]
+            assert "verification_contract" in view_definition
+            assert "retail-forecast-verifier/v3" in view_definition

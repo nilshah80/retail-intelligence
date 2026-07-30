@@ -52,7 +52,6 @@ def _training_frame() -> pd.DataFrame:
                     "week_cos": np.cos(origin_index),
                     "event_count_origin": 0,
                     "working_days_origin": 5,
-                    "event_count_horizon": 0,
                     "working_days_horizon": 5,
                     "weather_tavg_origin": 24,
                     "weather_precip_origin": 2,
@@ -64,9 +63,6 @@ def _training_frame() -> pd.DataFrame:
                     "competitor_available": 1,
                     "competitor_in_stock": 1,
                     "competitor_age_days": 1,
-                    "local_event_count_horizon": 0,
-                    "local_event_impact_horizon": 0,
-                    "disruption_demand_factor_horizon": 1,
                     "origin_year": origin.year,
                 }
             )

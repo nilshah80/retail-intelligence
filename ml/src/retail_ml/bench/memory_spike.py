@@ -45,9 +45,8 @@ NUMERIC_SPIKE_FEATURES = (
     "iso_week",
     "week_sin",
     "week_cos",
-    "event_count_origin",
     "working_days_origin",
-    "event_count_h1",
+    "event_count_origin",
     "working_days_h1",
 )
 CATEGORICAL_SPIKE_FEATURES = (
@@ -196,6 +195,9 @@ def run_memory_spike(
                 runtime_profile=runtime,
             )
             feature_path = feature_output / "weekly_features.parquet"
+            feature_manifest = json.loads(
+                (feature_output / "manifest.json").read_text(encoding="utf-8")
+            )
             stages["featureBuildSeconds"] = f"{time.monotonic() - feature_started:.6f}"
 
             fold_load_started = time.monotonic()
@@ -282,6 +284,8 @@ def run_memory_spike(
         "featureBuild": {
             **stats.__dict__,
             "parquetBytes": feature_bytes,
+            "schemaVersion": feature_manifest["schemaVersion"],
+            "semanticFingerprint": feature_manifest["semanticFingerprint"],
         },
         "representativeFold": fold,
         "stageTelemetry": stages,

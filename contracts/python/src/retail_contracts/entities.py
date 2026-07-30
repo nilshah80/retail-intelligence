@@ -284,7 +284,7 @@ def validate_openapi(path: Path) -> None:
         if not isinstance(operation, Mapping) or not operation.get("operationId"):
             raise ContractValidationError(f"{endpoint}: operationId is absent")
         expected_responses = (
-            {"200", "503"} if endpoint in forecast_paths else {"200"}
+            {"200", "409", "503"} if endpoint in forecast_paths else {"200"}
         )
         responses = operation.get("responses", {})
         if set(responses) != expected_responses:

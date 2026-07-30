@@ -1,0 +1,217 @@
+{
+  "schemaVersion": "retail-forecast-review-reassessment/v1",
+  "review": "final-adversarial-review-plus-complete-context-feed-sweep-2026-07-31",
+  "sourcePublicationFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
+  "sourcePublication": {
+    "runDirectory": "ingestion/data/curated/run-c5eb1506ecd4c550",
+    "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b",
+    "objectCount": 1509,
+    "duckdbSha256": "1c03864339dc8ff65971aa8eb1b964978b40c9b3db1b1ab06bd3061edc1b9cf6",
+    "expectedPinMatch": true
+  },
+  "historicalForecastRunId": "fr_92135aa7b5215b69",
+  "historicalEvaluationArtifact": "ml/data/artifacts/forecast_h1_h26_origins13_pitfix_v14/forecast_eval_predictions.parquet",
+  "recomputedWithPolicy": {
+    "acceptanceSchemaVersion": "retail-forecast-acceptance/v2",
+    "verifierPolicy": "retail-forecast-verifier/v3",
+    "a1Population": "complete_overall_champion_actual_seasonal_naive",
+    "minimumRelativeWapeImprovementPct": 25.0
+  },
+  "verdict": {
+    "accepted": false,
+    "reasonCode": "INCOMPLETE_SEASONAL_NAIVE_COMPARISON",
+    "serveable": false,
+    "activationStateAfterMigration0005": "excluded"
+  },
+  "servingState": {
+    "migrationRevision": "0005_complete_pairing_verifier",
+    "activeForecastVersionRows": 0,
+    "expectedApiState": "forecast routes fail closed until a verifier-v3 run is accepted and active"
+  },
+  "repairedFeatureEvidence": {
+    "schemaVersion": "retail-weekly-features/v6",
+    "semanticFingerprint": "f3ff8725d36d78fff9422155d2e4362bcdac174af8e39f383040e7c587de42c5",
+    "rows": 1072430,
+    "columns": 130,
+    "weeklyFeaturesSha256": "869a0e62d8709552d3e9407933543440b5ae133d716033f51a2a99543ff0cdf7",
+    "originEventNonNullRows": 1072430,
+    "originEventPositiveRows": 168744,
+    "originEventDistinctOrigins": 523,
+    "futureCalendarEventColumns": 0,
+    "futureLocalEventColumns": 0,
+    "futureMarketDisruptionColumns": 0,
+    "allNullFeatureColumns": [],
+    "retainedLocalEventRows": 2266,
+    "retainedLocalEventDistinctKnownAsOfValues": 1,
+    "retainedLocalEventsKnownByOwnDate": 0,
+    "retainedMarketDisruptionRows": 24,
+    "retainedMarketDisruptionDistinctKnownAsOfValues": 1,
+    "retainedMarketDisruptionsKnownByOwnStartDate": 0,
+    "calendarEventFutureReasonCode": "NO_ORIGIN_VISIBLE_CALENDAR_EVENT_SNAPSHOT",
+    "localEventFutureReasonCode": "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN",
+    "marketDisruptionFutureReasonCode": "NO_ORIGIN_VISIBLE_MARKET_DISRUPTION_PLAN",
+    "driverSemanticsSchemaVersion": "retail-ml-driver-semantics/v3",
+    "supersededV4SemanticFingerprint": "defa5a48a6f9a1bf72064c669d251e7d3428747abd493c79abcfe0b80dbd6943",
+    "supersededV5SemanticFingerprint": "b0ca33309f04e9f6b4ad47e827e588e97813b388a033e3b28e1c1f1249126072",
+    "supersessionReason": "V4 falsely derived local-event availability from horizon number; v5 still carried an all-null market-disruption feature."
+  },
+  "characterizationSummary": {
+    "descriptiveOnly": true,
+    "slowMoverZeroShare52w": "0.60",
+    "markets": {
+      "india-west": {
+        "seriesCount": 2558,
+        "slowMoverSeries": 714,
+        "lifecycleStages": {
+          "coldStart": 264,
+          "developing": 600,
+          "established": 1694
+        },
+        "medianLifetimeZeroShare": "0.17235159",
+        "medianOverdispersionRatio": "2.01660079",
+        "medianAutocorrelationLag1": "0.29208578",
+        "medianEventPeakRatio": "1.07238066"
+      },
+      "us-new-york": {
+        "seriesCount": 2564,
+        "slowMoverSeries": 644,
+        "lifecycleStages": {
+          "coldStart": 122,
+          "developing": 730,
+          "established": 1712
+        },
+        "medianLifetimeZeroShare": "0.13399478",
+        "medianOverdispersionRatio": "2.30645161",
+        "medianAutocorrelationLag1": "0.29990032",
+        "medianEventPeakRatio": "1.09059348"
+      }
+    }
+  },
+  "contextFeedSweep": {
+    "publicationRunDirectory": "run-c5eb1506ecd4c550",
+    "unavailable": {
+      "promotions": {
+        "rows": 811,
+        "distinctKnownAsOf": 1,
+        "originVisibleByOwnStartOrDateRows": 0,
+        "reasonCode": "NO_ORIGIN_VISIBLE_PROMOTION_PLAN"
+      },
+      "calendar_events": {
+        "rows": 182,
+        "distinctKnownAsOf": 1,
+        "originVisibleByOwnStartOrDateRows": 0,
+        "reasonCode": "NO_ORIGIN_VISIBLE_CALENDAR_EVENT_SNAPSHOT"
+      },
+      "local_events": {
+        "rows": 2266,
+        "distinctKnownAsOf": 1,
+        "originVisibleByOwnStartOrDateRows": 0,
+        "reasonCode": "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN"
+      },
+      "market_disruptions": {
+        "rows": 24,
+        "distinctKnownAsOf": 1,
+        "originVisibleByOwnStartOrDateRows": 0,
+        "reasonCode": "NO_ORIGIN_VISIBLE_MARKET_DISRUPTION_PLAN"
+      }
+    },
+    "originVisible": {
+      "macro_index": {
+        "rows": 7306,
+        "distinctKnownAsOf": 7306
+      },
+      "competitor_prices": {
+        "rows": 300611,
+        "distinctKnownAsOf": 1044
+      },
+      "weather_actual": {
+        "rows": 7306,
+        "distinctKnownAsOf": 7306
+      },
+      "weather_forecast": {
+        "rows": 51142,
+        "distinctKnownAsOf": 7306
+      },
+      "calendar": {
+        "rows": 7306,
+        "distinctKnownAsOf": 1
+      }
+    }
+  },
+  "global": {
+    "eligibleChampionRows": 708708,
+    "pairedRows": 605904,
+    "droppedUnpairedRows": 102804,
+    "pairedRowShare": 0.8549416685009905,
+    "pairedActualShare": 0.7750612413705341,
+    "fullChampionWape": 0.28183395924785415,
+    "pairedChampionWape": 0.2474582348476286,
+    "droppedChampionWape": 0.40028082802665277,
+    "seasonalNaiveWapeOnPairedRows": 0.5317751158823504,
+    "descriptivePairedRelativeWapeImprovementPct": 53.4656234455363,
+    "comparisonComplete": false,
+    "pairedRowsIdentical": true,
+    "pairedKeySha256": "2c14a4cf21baa5bee5bc175cdc1d8b6e491ac5b8ba7b93951634199738f79e0",
+    "a1Passed": false
+  },
+  "markets": {
+    "india-west": {
+      "eligibleChampionRows": 341844,
+      "pairedRows": 294368,
+      "droppedUnpairedRows": 47476,
+      "pairedRowShare": 0.8611179368366857,
+      "pairedActualShare": 0.8276517137591974,
+      "fullChampionWape": 0.2700878835296077,
+      "pairedChampionWape": 0.23482181717128514,
+      "droppedChampionWape": 0.43944274568489594,
+      "seasonalNaiveWapeOnPairedRows": 0.5165862594090705,
+      "descriptivePairedRelativeWapeImprovementPct": 54.543541781405345,
+      "comparisonComplete": false,
+      "pairedKeySha256": "be0542647736a4866b970483351ecc68de49da41c32a0a53be576e5781635425",
+      "a1Passed": false
+    },
+    "us-new-york": {
+      "eligibleChampionRows": 366864,
+      "pairedRows": 311536,
+      "droppedUnpairedRows": 55328,
+      "pairedRowShare": 0.8491866195647433,
+      "pairedActualShare": 0.7095413178716808,
+      "fullChampionWape": 0.29646782632521373,
+      "pairedChampionWape": 0.2658219357486187,
+      "droppedChampionWape": 0.3713305414891636,
+      "seasonalNaiveWapeOnPairedRows": 0.5538481135029931,
+      "descriptivePairedRelativeWapeImprovementPct": 52.004542532908324,
+      "comparisonComplete": false,
+      "pairedKeySha256": "62d2dd9caa5ad763461753a936b5b7e961c792163578bf77892a56c171a204a0",
+      "a1Passed": false
+    }
+  },
+  "repairStatus": {
+    "D1_forged_verdict_and_publish_inputs": "closed",
+    "D2_context_feed_lineage": "closed_with_full_feed_sweep_and_all_null_invariant",
+    "D3_seasonal_naive_pairing": "closed_fail_closed",
+    "D4_confidence": "closed",
+    "D5_runtime_409_503": "code_closed_router_level_stale_activation_test_open",
+    "D6_superseded_evidence": "closed",
+    "D7_first_call_materialization": "open_state_independent_test_required",
+    "D8_developer_gate_coverage": "closed",
+    "D9_gate_predicate_tests": "closed"
+  },
+  "blockingNextDecision": {
+    "decision": 82,
+    "topic": "short-history A1 comparator and evaluation eligibility",
+    "ruleUntilResolved": "strict complete pairing remains mandatory; no forecast may be accepted"
+  },
+  "validation": {
+    "status": "component_suites_pass_phase_exit_no_go_expected",
+    "execution": "12 passed / 17 subtests",
+    "contracts": "82 passed",
+    "datagen": "52 passed / 8 subtests",
+    "ingestion": "67 passed",
+    "database": "1 passed",
+    "ml": "77 passed / 1 accepted-run PostgreSQL integration skip; no verifier-v3 accepted run exists",
+    "go": "uncached race pass",
+    "ui": "8 passed; typecheck pass; build pass",
+    "phaseExit": "exit 2: no independently recomputed verifier-v3 accepted forecast run is available"
+  }
+}

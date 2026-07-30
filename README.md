@@ -20,11 +20,14 @@ European representative market (Germany). This monorepo is where the PoC behind 
 >
 > **Phase 3 status:** the v12 source rebaseline is accepted and frozen as the ML input pin.
 > Native effective-dated `storeAssortment.observedAt` makes all 4,275,653 materialized
-> zero-demand rows origin-safe after local business-day close. The fixed H1–H26 acceptance
-> battery passed without threshold tuning and published accepted run `fr_b2f18d0e2999a36d`.
-> Its immutable bundle is transactionally materialized into the local PostgreSQL read model and
-> explicitly active for the Phase 3 API. Demand Forecast parity freeze, React delivery and manual
-> Windows/Linux portability evidence remain open; Phase 3 is therefore not yet complete.
+> zero-demand rows origin-safe after local business-day close. Forecast authorization is
+> **NO-GO** after Review #2: run `fr_92135aa7b5215b69` reports a 53.47% paired seasonal-naive
+> improvement but drops 102,804 systematically harder champion rows, so acceptance-v2 fails A1's
+> complete overall comparison. Feature schema v4 preserves origin-observed events, removes
+> unavailable future calendar-event features and binds the Parquet descriptor into identity.
+> Forecast-run v2/verifier v3 and migration 0005 prevent the former verifier-v2 materialization
+> from serving. A new feature build, backtest, immutable publication and activation are required;
+> no accepted Phase 3 forecast currently exists under the repaired authority.
 
 ## What this is (and is not)
 
@@ -137,13 +140,15 @@ reverse, so `datagen/` can later be lifted with that small operational package w
 | Component | First required phase | Why it is not required earlier |
 |---|---|---|
 | PostgreSQL | **Phase 3 serving** | Phase 3 uses an Alembic-owned, read-only forecast projection so the API does not scan Parquet and the same schema can move to AWS RDS. Phase 6 adds mutable workflow state: approvals, overrides, recommendations, idempotency, RBAC and audit. |
-| MLflow tracking | **Phase 3** | Demand training/backtests need run parameters, metrics, model artifacts and lineage. The accepted run retains its original file-backed telemetry, while future runs use the shared Compose MLflow server backed by PostgreSQL. MLflow remains telemetry; immutable governed forecast artifacts remain authoritative. |
+| MLflow tracking | **Phase 3** | Demand training/backtests need run parameters, metrics, model artifacts and lineage. Historical candidate telemetry remains in its original file store, while the repaired rerun and future runs use the shared Compose MLflow server backed by PostgreSQL. MLflow remains telemetry; immutable governed forecast artifacts remain authoritative. |
 | Docker Compose | **Phase 3 serving** | Docker Desktop provides PostgreSQL for the forecast API projection and a shared MLflow server. Phase 6 extends the same stack with mutable workflow state and API/UI services; batch data jobs remain explicit commands. |
 
 Do not add GitHub Actions or another repository CI workflow during this PoC or later hardening.
 Use the authoritative `tools/dev.py` commands and component tests; collect required portability
 evidence manually on supported operating-system hosts. `contracts/validation-policy.yaml` is the
 committed authority, and contract validation rejects repository workflow files.
+`python3 tools/dev.py verify` is the single stateful local phase-exit gate; it requires the
+Compose PostgreSQL service and an activated verified forecast projection.
 
 ## End-to-end local runbook
 
@@ -434,7 +439,7 @@ Keep immutable raw landing, curated Parquet/DuckDB, evidence and benchmark summa
 the environment's retention policy. `finalize` never deletes source data, raw snapshots or curated
 data.
 
-### 8. Start PostgreSQL and MLflow, then activate the accepted forecast
+### 8. Start PostgreSQL and MLflow; activate only a new verifier-v3 forecast
 
 Docker Desktop must be running. From the repository root:
 
@@ -442,19 +447,22 @@ Docker Desktop must be running. From the repository root:
 python3 tools/dev.py services up
 python3 tools/dev.py db-upgrade
 python3 tools/dev.py forecast-materialize \
-  --forecast-run ml/data/artifacts/forecast_run_accepted_db3784fdcc4cb833_v12
+  --forecast-run <accepted-forecast-run-v2-directory>
 python3 tools/dev.py forecast-activate \
-  --forecast-run-id fr_b2f18d0e2999a36d \
-  --activation-scope-fingerprint fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6 \
+  --forecast-run-id <forecastRunId-from-materialize-output> \
+  --activation-scope-fingerprint <activationScopeFingerprint-from-materialize-output> \
   --actor <your-name>
 python3 tools/dev.py services status
 ```
 
 The commands are cross-platform Python commands; replace `python3` with `py -3` on Windows when
-that is the installed launcher. Materialization verifies the current curated pin and all ten
-immutable forecast artifacts before one PostgreSQL transaction. Acceptance and activation remain
-separate and both commands are safe to repeat for the same identities. The local endpoints are
-PostgreSQL at `127.0.0.1:5432` and MLflow at `http://127.0.0.1:5000`.
+that is the installed launcher. Materialization independently verifies A1–A5, every immutable
+artifact and current curated lineage before one PostgreSQL transaction; activation is a separate
+append-only event. Both commands are safe to repeat for the same identity. Review #2 leaves no
+currently accepted verifier-v3 run, so the placeholders must not be replaced with the rejected
+v12 or `fr_92135aa7b5215b69` identities. Until a new run passes, forecast API routes intentionally
+return unavailable. The local endpoints are PostgreSQL at `127.0.0.1:5432` and MLflow at
+`http://127.0.0.1:5000`.
 
 ### 9. Start the API
 
@@ -464,7 +472,8 @@ Windows PowerShell:
 
 ```powershell
 $env:RETAIL_POSTGRES_DSN = "postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence"
-$env:RETAIL_FORECAST_ACTIVATION_SCOPE = "fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6"
+$env:RETAIL_FORECAST_ACTIVATION_SCOPE = (docker compose -f deploy/compose.yaml exec -T postgres psql -U retail -d retail_intelligence -Atc "SELECT activation_scope_fingerprint FROM retail_serving.active_forecast_versions ORDER BY recorded_at DESC LIMIT 1").Trim()
+if (-not $env:RETAIL_FORECAST_ACTIVATION_SCOPE) { throw "Materialize and activate a verifier-v3 forecast before starting the API." }
 go run ./cmd/server `
   -address 127.0.0.1:8080 `
   -gate-a-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-a.json `
@@ -479,7 +488,8 @@ macOS/Linux:
 
 ```bash
 export RETAIL_POSTGRES_DSN='postgresql://retail:retail-local-only@127.0.0.1:5432/retail_intelligence'
-export RETAIL_FORECAST_ACTIVATION_SCOPE='fa716919a28233b9e12c1eb010c19ec1e2ecee20c1c51aff386a480d5bdb82b6'
+export RETAIL_FORECAST_ACTIVATION_SCOPE="$(docker compose -f deploy/compose.yaml exec -T postgres psql -U retail -d retail_intelligence -Atc 'SELECT activation_scope_fingerprint FROM retail_serving.active_forecast_versions ORDER BY recorded_at DESC LIMIT 1')"
+test -n "$RETAIL_FORECAST_ACTIVATION_SCOPE" || { echo "Materialize and activate a verifier-v3 forecast before starting the API." >&2; exit 1; }
 go run ./cmd/server \
   -address 127.0.0.1:8080 \
   -gate-a-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-a.json \
@@ -495,14 +505,17 @@ Available URLs:
 - API health: `http://127.0.0.1:8080/healthz`
 - Live Data Management payload: `http://127.0.0.1:8080/api/v1/data-management/dashboard`
 - Live accepted FX rates: `http://127.0.0.1:8080/api/v1/fx/rates`
-- Live accepted forecast: `http://127.0.0.1:8080/api/v1/forecast/summary`
+- Forecast summary (503 until a verifier-v3 run is accepted and active):
+  `http://127.0.0.1:8080/api/v1/forecast/summary`
 - Swagger UI: `http://127.0.0.1:8080/docs`
 - ReDoc: `http://127.0.0.1:8080/redoc`
 - OpenAPI YAML: `http://127.0.0.1:8080/openapi.yaml`
 
 The server fails closed when Gate A, Gate B and the publication manifest do not identify the same
 accepted snapshot, or when PostgreSQL has no active forecast matching both the publication and
-requested activation scope.
+requested activation scope. Each forecast read revalidates that the activation is still current
+and was materialized under `retail-forecast-verifier/v3`; a legacy or superseded process therefore
+fails closed without relying on a restart.
 
 ### 10. Start the UI
 
@@ -557,12 +570,8 @@ Windows PowerShell:
 ```powershell
 py -3 tools\dev.py contracts
 py -3 tools\dev.py test
-py -3 tools\dev.py db-test
-py -3 tools\dev.py test --pinned-only
+py -3 tools\dev.py verify
 py -3 tools\dev.py wheels --offline
-py -3 tools\dev.py api-test
-py -3 tools\dev.py ui-test
-py -3 tools\dev.py ui-build
 ```
 
 macOS/Linux:
@@ -570,12 +579,8 @@ macOS/Linux:
 ```bash
 python3 tools/dev.py contracts
 python3 tools/dev.py test
-python3 tools/dev.py db-test
-python3 tools/dev.py test --pinned-only
+python3 tools/dev.py verify
 python3 tools/dev.py wheels --offline
-python3 tools/dev.py api-test
-python3 tools/dev.py ui-test
-python3 tools/dev.py ui-build
 ```
 
 See `datagen/README.md`, `ingestion/README.md`, `api/README.md` and `ui/README.md` for

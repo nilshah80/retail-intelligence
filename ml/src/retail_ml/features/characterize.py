@@ -10,6 +10,12 @@ from typing import Any
 
 import duckdb
 
+from retail_contracts.fingerprint import semantic_fingerprint
+from retail_ml.features.build import (
+    FEATURE_MANIFEST_VOLATILE_POINTERS,
+    weekly_features_sql,
+)
+
 
 class CharacterizationError(RuntimeError):
     """The feature artifact is absent, corrupt, or incompatible."""
@@ -37,8 +43,25 @@ def characterize_features(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CharacterizationError(f"invalid feature manifest: {exc}") from exc
-    if manifest.get("schemaVersion") != "retail-weekly-features/v1":
+    if manifest.get("schemaVersion") != "retail-weekly-features/v6":
         raise CharacterizationError("unsupported weekly feature schemaVersion")
+    fingerprint_payload = dict(manifest)
+    recorded_fingerprint = fingerprint_payload.pop(
+        "semanticFingerprint",
+        None,
+    )
+    if (
+        recorded_fingerprint
+        != semantic_fingerprint(
+            fingerprint_payload,
+            volatile_pointers=FEATURE_MANIFEST_VOLATILE_POINTERS,
+        )
+        or manifest.get("featurePolicy", {}).get("featureSqlSha256")
+        != hashlib.sha256(weekly_features_sql().encode("utf-8")).hexdigest()
+    ):
+        raise CharacterizationError(
+            "weekly feature semantic identity does not match its policy"
+        )
     expected = manifest["objects"]["weeklyFeatures"]
     if (
         feature_path.stat().st_size != expected["bytes"]
@@ -150,12 +173,19 @@ def characterize_features(
         for row in rows
     }
     result: dict[str, Any] = {
-        "schemaVersion": "retail-series-characterization/v1",
+        "schemaVersion": "retail-series-characterization/v2",
         "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "featureSemanticFingerprint": manifest["semanticFingerprint"],
         "thresholdPolicy": {
             "slowMoverZeroShare52w": "0.60",
             "descriptiveOnly": True,
+        },
+        "unavailableDiagnostics": {
+            "futureCalendarEventPlans": "NO_ORIGIN_VISIBLE_FUTURE_EVENT_PLANS",
+            "futureLocalEventPlans": "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN",
+            "futureMarketDisruptionPlans": (
+                "NO_ORIGIN_VISIBLE_MARKET_DISRUPTION_PLAN"
+            ),
         },
         "markets": markets,
         "objects": {

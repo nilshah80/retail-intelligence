@@ -43,7 +43,7 @@ def main() -> int:
     driver_semantics = yaml.safe_load(
         (ml_contract_root / "driver-semantics.yaml").read_text(encoding="utf-8")
     )
-    if driver_semantics.get("schemaVersion") != "retail-ml-driver-semantics/v1":
+    if driver_semantics.get("schemaVersion") != "retail-ml-driver-semantics/v3":
         raise ValueError("unsupported ML driver-semantics schemaVersion")
     classification_policy = json.loads(
         (
@@ -74,6 +74,8 @@ def main() -> int:
         or validation_policy.get("repositoryCI", {}).get("allowed") is not False
         or validation_policy.get("validation", {}).get("mode")
         != "developer_run"
+        or validation_policy.get("validation", {}).get("phaseExitCommand")
+        != "tools/dev.py verify"
     ):
         raise ValueError("invalid repository validation policy")
     workflow_root = REPO_ROOT / ".github" / "workflows"
@@ -111,10 +113,11 @@ def main() -> int:
         responses = openapi["paths"][path]["get"]["responses"]
         if responses != {
             "200": {"$ref": "#/components/responses/ForecastLive"},
+            "409": {"$ref": "#/components/responses/ForecastStale"},
             "503": {"$ref": "#/components/responses/ForecastUnavailable"},
         }:
             raise ValueError(
-                f"{path} must declare both the live projection and fail-closed states"
+                f"{path} must declare live, stale, and unavailable states"
             )
     print(
         json.dumps(
@@ -131,10 +134,13 @@ def main() -> int:
                 "apiContract": {
                     "version": openapi["info"]["version"],
                     "forecastRoutes": len(FORECAST_API_PATHS),
-                    "forecastState": "live_or_fail_closed",
+                    "forecastState": "live_stale_or_fail_closed",
                 },
                 "validationPolicy": {
                     "mode": validation_policy["validation"]["mode"],
+                    "phaseExitCommand": validation_policy["validation"][
+                        "phaseExitCommand"
+                    ],
                     "repositoryCI": "prohibited",
                 },
             },

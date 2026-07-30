@@ -262,10 +262,15 @@ PostgreSQL into Phase 3 for subsequent runs without making telemetry the publica
 **Exit criteria:** forecast beats seasonal-naive ≥25%; P90 coverage ∈ [0.85, 0.95]; monotonic
 P50≤P90 globally and for every supported market; artifacts include market/config fingerprints.
 The read-only API and Demand Forecast vertical slice are delivered with the model.
-**Demo checkpoint 3:** the screen renders live Mumbai + New York P50/P90, accuracy, confidence
-and drivers. The accepted v12 forecast, PostgreSQL read model and React vertical slice now meet
-these code/data criteria locally. Strict phase sign-off remains pending only on manual
-Windows/Linux portability evidence and explicit user visual approval of the running UI.
+**Demo checkpoint 3:** **NO-GO after Review #2.** The source-v12 publication remains the accepted
+ML input, but there is no accepted forecast. The historical feature-schema-v3 run
+`fr_92135aa7b5215b69` compared only 605,904 of 708,708 champion rows with seasonal naive and
+dropped 102,804 harder rows, so decision #81's complete-overall A1 gate rejects it. Migration 0005
+excludes verifier-v2 materializations from the active view and the API fails closed until a
+feature-schema-v6 / acceptance-v2 / verifier-v3 run passes. A new run also needs a pre-result
+resolution for short-history series that cannot form lag-52 seasonal naive. Manual Windows/Linux
+portability evidence, the full safe/performance benchmark comparison and explicit user visual
+approval remain open.
 
 ### Phase 4 — Inventory & replenishment (`ml/engines`)
 

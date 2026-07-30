@@ -49,9 +49,6 @@ BASE_MODEL_COLUMNS: Final[tuple[str, ...]] = (
     "competitor_available",
     "competitor_in_stock",
     "competitor_age_days",
-    "local_event_count_h1",
-    "local_event_impact_h1",
-    "disruption_demand_factor_h1",
     "origin_year",
     "market_id",
     "store_id",
@@ -89,13 +86,7 @@ def _external_horizon_columns(horizon: int) -> str:
             WHEN {horizon} = 1
              AND weather_forecast_coverage_days_h1 = 7
             THEN 0 ELSE 1
-        END AS weather_fallback_used,
-        CASE WHEN {horizon} = 1 THEN local_event_count_h1 ELSE NULL END
-            AS local_event_count_horizon,
-        CASE WHEN {horizon} = 1 THEN local_event_impact_h1 ELSE NULL END
-            AS local_event_impact_horizon,
-        CASE WHEN {horizon} = 1 THEN disruption_demand_factor_h1 ELSE NULL END
-            AS disruption_demand_factor_horizon
+        END AS weather_fallback_used
     """.strip()
 
 
@@ -155,7 +146,6 @@ def load_training_horizon(
             {selected},
             forecast_origin,
             {horizon} AS horizon,
-            event_count_h{horizon} AS event_count_horizon,
             working_days_h{horizon} AS working_days_horizon,
             {_external_horizon_columns(horizon)},
             target_units_h{horizon} AS target_units,
@@ -197,7 +187,6 @@ def load_evaluation_horizon(
                 AS DATE
             ) AS target_week_start,
             {horizon} AS horizon,
-            event_count_h{horizon} AS event_count_horizon,
             working_days_h{horizon} AS working_days_horizon,
             {_external_horizon_columns(horizon)},
             target_units_h{horizon} AS actual_units
@@ -255,7 +244,6 @@ def load_current_horizon(
                 AS DATE
             ) AS target_week_start,
             {horizon} AS horizon,
-            event_count_h{horizon} AS event_count_horizon,
             working_days_h{horizon} AS working_days_horizon,
             {_external_horizon_columns(horizon)}
         FROM read_parquet('{source}')

@@ -184,7 +184,7 @@ const responses: Record<string, unknown> = {
       ["promotion_calendar", "Promotion calendar", "NO_ORIGIN_VISIBLE_PROMOTION_PLAN"],
       ["competitor_pricing", "Competitor pricing", "SIGNAL_FRESHNESS_NOT_MATERIALIZED"],
       ["weather", "Weather feed", "SIGNAL_FRESHNESS_NOT_MATERIALIZED"],
-      ["local_events", "Local event feed", "SIGNAL_FRESHNESS_NOT_MATERIALIZED"],
+      ["local_events", "Local event feed", "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN"],
       ["macro", "Macroeconomic index", "SIGNAL_FRESHNESS_NOT_MATERIALIZED"]
     ].map(([signal, label, reasonCode]) => ({
       signal,

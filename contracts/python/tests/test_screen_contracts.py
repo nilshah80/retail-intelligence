@@ -23,8 +23,14 @@ def test_demand_forecast_contract_is_frozen_and_authorized() -> None:
     assert set(contract["reviewGate"]["resolvedDecision"]) == {
         *(f"Q{number}" for number in range(1, 19)),
     }
-    assert contract["activation"]["currentState"] == "accepted_active"
-    assert contract["activation"]["forecastRunId"] == "fr_b2f18d0e2999a36d"
+    assert contract["activation"]["currentState"] == "no_accepted_forecast"
+    assert contract["activation"]["forecastRunId"] is None
+    assert contract["activation"]["versionId"] is None
+    assert contract["activation"]["semanticFingerprint"] is None
+    assert (
+        contract["activation"]["rejectedHistoricalRunId"]
+        == "fr_92135aa7b5215b69"
+    )
 
 
 def test_demand_forecast_reference_order_is_machine_readable() -> None:

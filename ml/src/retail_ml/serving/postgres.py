@@ -27,8 +27,9 @@ from retail_ml.io.bundle import VerifiedInputBundle
 from retail_ml.publish.verify import VerifiedForecastRun
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0003_forecast_series_dimensions"
+MIGRATION_REVISION: Final[str] = "0005_complete_pairing_verifier"
 ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v1"
+FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v3"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "forecast_versions": (
@@ -642,6 +643,7 @@ def _existing_materialization(
             run_semantic_fingerprint,
             publication_semantic_fingerprint,
             activation_scope_fingerprint,
+            verification_contract,
             row_counts
         FROM {SERVING_SCHEMA}.forecast_materializations
         WHERE forecast_run_id = %s
@@ -655,7 +657,7 @@ def _existing_materialization(
         run.manifest["inputBundle"]["publicationSemanticFingerprint"]
     )
     expected_counts = projection.row_counts
-    recorded_counts = dict(row[4])
+    recorded_counts = dict(row[5])
     recorded_counts_match = all(
         name in expected_counts and expected_counts[name] == count
         for name, count in recorded_counts.items()
@@ -665,6 +667,7 @@ def _existing_materialization(
         and row[1] == run.semantic_fingerprint
         and row[2] == expected_publication
         and row[3] == projection.activation_scope_fingerprint
+        and row[4] == FORECAST_VERIFICATION_CONTRACT
         and recorded_counts_match,
         "existing materialization disagrees with the verified immutable run",
     )
@@ -769,6 +772,7 @@ def materialize_forecast_run(
                         run_semantic_fingerprint,
                         publication_semantic_fingerprint,
                         feature_semantic_fingerprint,
+                        verification_contract,
                         activation_scope_fingerprint,
                         decision_as_of,
                         lifecycle_status,
@@ -780,7 +784,7 @@ def materialize_forecast_run(
                         row_counts,
                         markets
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, 'accepted',
+                        %s, %s, %s, %s, %s, %s, %s, %s, 'accepted',
                         %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
@@ -790,6 +794,7 @@ def materialize_forecast_run(
                         run.semantic_fingerprint,
                         publication_fingerprint,
                         manifest["featureSemanticFingerprint"],
+                        FORECAST_VERIFICATION_CONTRACT,
                         projection.activation_scope_fingerprint,
                         manifest["decisionAsOf"],
                         Jsonb(manifest["inputBundle"]),
@@ -950,6 +955,7 @@ def activate_forecast_version(
 
 __all__ = [
     "ACTIVATION_SCOPE_SCHEMA",
+    "FORECAST_VERIFICATION_CONTRACT",
     "ForecastActivation",
     "ForecastMaterialization",
     "ForecastServingError",

@@ -39,7 +39,6 @@ NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "week_cos",
     "event_count_origin",
     "working_days_origin",
-    "event_count_horizon",
     "working_days_horizon",
     "weather_tavg_origin",
     "weather_precip_origin",
@@ -51,9 +50,6 @@ NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "competitor_available",
     "competitor_in_stock",
     "competitor_age_days",
-    "local_event_count_horizon",
-    "local_event_impact_horizon",
-    "disruption_demand_factor_horizon",
     "origin_year",
 )
 CATEGORICAL_FEATURES: Final[tuple[str, ...]] = (
@@ -79,7 +75,6 @@ DRIVER_FEATURE_GROUPS: Final[dict[str, frozenset[str]]] = {
             "zero_share_52w",
             "demand_trend_4v13",
             "macro_index_value",
-            "disruption_demand_factor_horizon",
         }
     ),
     "seasonality": frozenset(
@@ -115,17 +110,14 @@ DRIVER_FEATURE_GROUPS: Final[dict[str, frozenset[str]]] = {
     ),
     "weather_local_events": frozenset(
         {
-            "event_count_origin",
             "working_days_origin",
-            "event_count_horizon",
             "working_days_horizon",
             "weather_tavg_origin",
             "weather_precip_origin",
             "weather_tavg_horizon",
             "weather_precip_horizon",
             "weather_fallback_used",
-            "local_event_count_horizon",
-            "local_event_impact_horizon",
+            "event_count_origin",
         }
     ),
 }

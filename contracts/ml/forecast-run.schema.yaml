@@ -27,7 +27,7 @@ required:
   - artifacts
 properties:
   schemaVersion:
-    const: retail-forecast-run/v1
+    const: retail-forecast-run/v2
   forecastRunId:
     type: string
     pattern: ^fr_[0-9a-f]{16}$
@@ -73,6 +73,7 @@ properties:
       - marketFeature
       - metricAggregation
       - promotionFeature
+      - acceptanceEvaluation
     properties:
       horizonWeeks:
         type: array
@@ -106,6 +107,8 @@ properties:
         const: additive_components
       promotionFeature:
         const: unavailable
+      acceptanceEvaluation:
+        const: paired-seasonal-complete-recomputation/v3
   randomSeeds:
     type: object
     minProperties: 1
@@ -286,7 +289,7 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-acceptance/v1
+                const: retail-forecast-acceptance/v2
 $defs:
   sha256:
     type: string

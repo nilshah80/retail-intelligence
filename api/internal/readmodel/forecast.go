@@ -15,13 +15,33 @@ import (
 
 const (
 	ForecastUnavailableSchema = "retail-forecast-unavailable/v1"
+	ForecastMigrationRevision = "0005_complete_pairing_verifier"
 
-	ForecastReasonMissing        = "FORECAST_ARTIFACT_MISSING"
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
-	ForecastReasonRejected       = "FORECAST_RUN_REJECTED"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
 	ForecastReasonUnmaterialized = "FORECAST_READ_MODEL_UNAVAILABLE"
 )
+
+type ForecastReadError struct {
+	reasonCode string
+	message    string
+}
+
+func (e *ForecastReadError) Error() string {
+	return e.message
+}
+
+func forecastReadError(reasonCode, message string) error {
+	return &ForecastReadError{reasonCode: reasonCode, message: message}
+}
+
+func ForecastReadErrorReason(err error) string {
+	var forecastError *ForecastReadError
+	if errors.As(err, &forecastError) {
+		return forecastError.reasonCode
+	}
+	return ForecastReasonUnmaterialized
+}
 
 var (
 	forecastRunIDPattern = regexp.MustCompile(`^fr_[0-9a-f]{16}$`)
@@ -107,6 +127,25 @@ func LoadForecast(ctx context.Context, config ForecastConfig) *ForecastStore {
 			"The PostgreSQL forecast projection is unavailable.",
 		)
 	}
+	var migrationRevision string
+	err = pool.QueryRow(
+		ctx,
+		"SELECT version_num FROM retail_intelligence_alembic_version",
+	).Scan(&migrationRevision)
+	if err != nil {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonUnmaterialized,
+			"The PostgreSQL forecast schema could not be verified.",
+		)
+	}
+	if migrationRevision != ForecastMigrationRevision {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonInvalid,
+			"The PostgreSQL forecast schema is not at the required migration.",
+		)
+	}
 
 	var store ForecastStore
 	store.pool = pool
@@ -177,11 +216,20 @@ func (s *ForecastStore) Available() bool {
 	return s != nil && s.pool != nil
 }
 
+func (s *ForecastStore) UnavailableReason() string {
+	if s == nil || s.reasonCode == "" {
+		return ForecastReasonUnmaterialized
+	}
+	return s.reasonCode
+}
+
 func (s *ForecastStore) Unavailable() map[string]any {
-	reasonCode := s.reasonCode
-	message := s.message
-	if reasonCode == "" {
-		reasonCode = ForecastReasonUnmaterialized
+	reasonCode := s.UnavailableReason()
+	message := ""
+	if s != nil {
+		message = s.message
+	}
+	if message == "" {
 		message = "The PostgreSQL forecast projection is unavailable."
 	}
 	return map[string]any{
@@ -233,6 +281,38 @@ func (s *ForecastStore) Read(
 ) (map[string]any, error) {
 	if !s.Available() {
 		return nil, errors.New("forecast store is unavailable")
+	}
+	var stillActive bool
+	err := s.pool.QueryRow(
+		ctx,
+		`
+		SELECT EXISTS (
+			SELECT 1
+			FROM retail_serving.active_forecast_versions
+			WHERE activation_scope_fingerprint = $1
+			  AND forecast_run_id = $2
+			  AND version_id = $3
+			  AND run_semantic_fingerprint = $4
+			  AND publication_semantic_fingerprint = $5
+		)
+		`,
+		s.activationScopeFingerprint,
+		s.forecastRunID,
+		s.versionID,
+		s.semanticFingerprint,
+		s.publicationFingerprint,
+	).Scan(&stillActive)
+	if err != nil {
+		return nil, forecastReadError(
+			ForecastReasonUnmaterialized,
+			"forecast activation could not be revalidated",
+		)
+	}
+	if !stillActive {
+		return nil, forecastReadError(
+			ForecastReasonLineage,
+			"forecast activation is no longer current or independently verified",
+		)
 	}
 	query = normalizedForecastQuery(query)
 	switch path {
@@ -641,7 +721,12 @@ func (s *ForecastStore) workbench(
 				stores.city AS store_city,
 				SUM(series.yhat_p50) AS ai_forecast,
 				SUM(series.yhat_p90) AS ai_forecast_p90,
-				MIN(series.confidence) AS confidence,
+				SUM(
+					series.confidence * GREATEST(series.yhat_p50, 1.0)
+				) / NULLIF(
+					SUM(GREATEST(series.yhat_p50, 1.0)),
+					0
+				) AS confidence,
 				CASE MAX(
 					CASE series.data_quality_class
 						WHEN 'Issue' THEN 3
@@ -1445,7 +1530,7 @@ func (s *ForecastStore) signals() map[string]any {
 		{
 			"signal": "local_events", "label": "Local event feed",
 			"status":     "unavailable",
-			"reasonCode": "SIGNAL_FRESHNESS_NOT_MATERIALIZED",
+			"reasonCode": "NO_ORIGIN_VISIBLE_LOCAL_EVENT_PLAN",
 			"knownAsOf":  nil,
 		},
 		{

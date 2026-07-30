@@ -1,11 +1,11 @@
 # Retail Intelligence — local development entry points.
 #
-# Three Python environments, deliberately separate (decision #38):
+# Four Python environments, deliberately separate (decision #38):
 #   datagen/.venv     source generator, imports nothing downstream
 #   ingestion/.venv   landing -> gates -> staging -> transforms -> curated
 #   ml/.venv          curated consumers (Phase 3 onward)
-# Both ingestion and ml install the two shared packages: retail-contracts
-# (semantics) and retail-intelligence-execution (bounded throughput).
+#   db/.venv          Alembic/PostgreSQL schema and integration tests
+# Each installs the shared contract/execution packages it is allowed to use.
 #
 # This Makefile is an optional POSIX convenience wrapper. The authoritative,
 # Windows-compatible interface is:
@@ -19,7 +19,7 @@ SOURCE_ROOT ?=
 LANDING_ROOT ?= ingestion/data/raw
 
 .DEFAULT_GOAL := help
-.PHONY: help envs boundaries wheels wheels-offline test test-pinned-run contracts \
+.PHONY: help envs boundaries wheels wheels-offline test verify test-pinned-run contracts \
         land gate-a gate-b bench lint-plan config-hash run-status clean-envs
 
 help: ## Show available targets
@@ -28,10 +28,10 @@ help: ## Show available targets
 
 # ---------------------------------------------------------------- environments
 
-envs: ## Create/refresh the ingestion and ml environments
+envs: ## Create/refresh datagen, ingestion, ML and database environments
 	$(DEV) envs
 
-clean-envs: ## Remove the ingestion and ml environments (datagen/.venv is left alone)
+clean-envs: ## Remove ingestion/ml environments; leave datagen/db environments intact
 	rm -rf ingestion/.venv ml/.venv
 
 # ---------------------------------------------------------------- verification
@@ -47,6 +47,9 @@ wheels-offline: ## Run the actual-wheel check without resolving external depende
 
 test: ## Run every fast suite
 	$(DEV) test
+
+verify: ## Run the authoritative stateful local phase-exit gate
+	$(DEV) verify
 
 test-pinned-run: ## Pinned-run acceptance only
 	$(DEV) test --pinned-only

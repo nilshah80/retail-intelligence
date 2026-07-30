@@ -119,6 +119,20 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	}
 }
 
+func TestForecastUnavailableStatus(t *testing.T) {
+	if status := forecastUnavailableStatus(readmodel.ForecastReasonLineage); status != http.StatusConflict {
+		t.Fatalf("lineage mismatch status = %d", status)
+	}
+	for _, reason := range []string{
+		readmodel.ForecastReasonInvalid,
+		readmodel.ForecastReasonUnmaterialized,
+	} {
+		if status := forecastUnavailableStatus(reason); status != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d", reason, status)
+		}
+	}
+}
+
 func TestOpenAPIDocumentationRoutes(t *testing.T) {
 	directory := t.TempDir()
 	store, err := readmodel.Load(readmodel.Paths{
