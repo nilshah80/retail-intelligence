@@ -107,12 +107,10 @@ def build_location_crosswalk(
             "MISSING_ROLE:locations -- no source staged the location role, so no "
             "location key can be resolved to a canonical identity"
         )
-    # staging-v2's `location` role declares `name` and `location_kind`, but the
-    # shopify adapter has always emitted `location_name` and `location_type`, so the
-    # neutral relation carries the dialect spelling in the generator path and the
-    # contract spelling for a mapped-files retailer. Both are accepted here so neither
-    # source is locked out; the divergence itself is a contract-versus-implementation
-    # defect that needs a decision, not a silent rename underneath a frozen contract.
+    # Decision #88 resolved: every provider now emits staging-v2's declared field
+    # names, so this reads the contract directly instead of tolerating a dialect
+    # spelling. A provider that does not conform gets a reason-coded refusal naming the
+    # absent field rather than a raw binder error.
     present = {
         str(row[0])
         for row in connection.execute(
@@ -120,19 +118,16 @@ def build_location_crosswalk(
             "WHERE schema_name = 'stage_data' AND table_name = 'locations'"
         ).fetchall()
     }
-    name_column = "location_name" if "location_name" in present else "name"
-    kind_column = "location_type" if "location_type" in present else "location_kind"
-    missing = sorted({name_column, kind_column} - present)
+    missing = sorted({"name", "location_kind"} - present)
     if missing:
         raise LocationMappingError(
-            "MISSING_FIELD:locations -- the location role must present a name and a "
-            f"kind column; absent: {', '.join(missing)}"
+            "MISSING_FIELD:locations -- the location role must present the staging-v2 "
+            f"field names; absent: {', '.join(missing)}"
         )
-    market_column = "market_id" if "market_id" in present else "_market_id"
     role_locations = connection.execute(
-        f"""
-        SELECT source_system, source_instance, {market_column}, location_source_key,
-               {name_column}, {kind_column}
+        """
+        SELECT source_system, source_instance, market_id, location_source_key,
+               name, location_kind
         FROM stage_data.locations
         """
     ).fetchall()

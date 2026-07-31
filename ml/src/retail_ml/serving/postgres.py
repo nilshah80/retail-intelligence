@@ -30,9 +30,29 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: Decision #82 made migration 0006 v4-only: the cohorted verifier and the v4
 #: acceptance generation are the only shapes serving will accept, so 0005 is
 #: immutable but no longer eligible to back a new activation.
-MIGRATION_REVISION: Final[str] = "0006_cohorted_verifier_v4"
-ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v1"
-FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v4"
+#: Paired with acceptance-v5 / verifier-v5. 0007 retires decision #90's v1 activation
+#: scopes and admits only runs scored against decision #85's HARD per-cohort coverage
+#: gate, so materialising against 0006 would load evidence the schema no longer accepts.
+MIGRATION_REVISION: Final[str] = "0007_activation_and_coverage"
+#: v2 removes modelPolicy and classificationPolicies from the authority scope.
+#:
+#: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
+#: feature fingerprint and markets minted a parallel scope. The supersession lookup is
+#: keyed on the scope, found nothing under the new one, and left both rows `active` with
+#: `prior_event_id = NULL`. Two forecasts were then simultaneously authoritative over one
+#: bundle, and Go -- which filters on a single configured fingerprint -- could not see the
+#: competing authority. Serving happened to work only because the API took the most
+#: recent row, an arbitrary tiebreak rather than a supersession rule.
+#:
+#: The policy fingerprints stay in RUN and VERSION identity, which is where they belong
+#: and where they were deliberately added so a corrected remediation bundle cannot collide
+#: with a mislabelled champion over byte-identical forecasts. The defect was reusing
+#: policy-bearing lineage as the authority scope, not carrying policy in lineage.
+ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v2"
+#: v5 pairs with acceptance-v5 and migration 0007: only a run scored against decision
+#: #85's HARD per-cohort coverage gate may serve. v4 materialisations are not
+#: reinterpreted, they simply stop being eligible, so no accepted artifact is rewritten.
+FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v5"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "forecast_versions": (
@@ -382,12 +402,13 @@ def _activation_scope(
     *,
     markets: tuple[str, ...],
 ) -> str:
+    # What makes two forecasts rivals for the same audience: the same curated input, the
+    # same features, the same markets. A different model policy over that input is a
+    # SUCCESSOR to be superseded, not a separate authority to be served beside it.
     descriptor = {
         "schemaVersion": ACTIVATION_SCOPE_SCHEMA,
         "inputBundle": manifest["inputBundle"],
         "featureSemanticFingerprint": manifest["featureSemanticFingerprint"],
-        "modelPolicy": manifest["modelPolicy"],
-        "classificationPolicies": manifest["classificationPolicies"],
         "markets": list(markets),
     }
     return semantic_fingerprint(descriptor)
@@ -943,6 +964,24 @@ def activate_forecast_version(
                 activated = cursor.fetchone()
                 _require(activated is not None, "failed to record forecast activation")
                 event_id = int(activated[0])
+                # Decision #90 fails closed on competing authority. The scope change
+                # above prevents a NEW parallel scope, but a scope minted under v1 can
+                # still be sitting active, and a future scope-definition change could
+                # reintroduce the same class of defect. Assert the invariant rather than
+                # trusting the derivation that is supposed to guarantee it.
+                cursor.execute(
+                    f"""
+                    SELECT count(*) FROM {SERVING_SCHEMA}.active_forecast_versions
+                    """
+                )
+                active_rows = cursor.fetchone()
+                _require(
+                    active_rows is not None and int(active_rows[0]) == 1,
+                    "decision #90 requires exactly one active forecast version; found "
+                    f"{None if active_rows is None else active_rows[0]}. A scope minted "
+                    "under retail-forecast-activation-scope/v1 is probably still active; "
+                    "retire it before activating.",
+                )
     except ForecastServingError:
         raise
     except psycopg.Error as exc:

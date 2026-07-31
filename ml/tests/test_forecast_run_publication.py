@@ -890,3 +890,126 @@ def test_display_cell_metric_reproduces_the_served_grain() -> None:
     # Had market_id been dropped from the cell key the errors would cancel exactly and
     # this would read 100.0 -- a perfect score built out of two wrong forecasts.
     assert accuracy != pytest.approx(100.0)
+
+
+def test_a_broken_display_cell_now_refuses_the_bundle() -> None:
+    """§2.4 stopped being advisory; prove it blocks rather than annotates.
+
+    It shipped report-only because the metric had to be shown to reproduce the served
+    display cell first -- three earlier formulations each produced a plausible number the
+    UI does not show. Once a real C5 bundle reported five clean cells, leaving it
+    advisory meant a criterion that could see a regression and let it through.
+    """
+
+    from retail_ml.publish.run_artifacts import (
+        DECISION_86_DISPLAY_GATE_MODE,
+        ForecastPublicationError,
+        _validate_remediation_candidate,
+    )
+
+    assert DECISION_86_DISPLAY_GATE_MODE == "refusing"
+
+    evaluation = _full_schedule()
+    evaluation["champion_p50"] = evaluation["yhat_p50"]
+    evaluation["champion_p90"] = evaluation["yhat_p90"]
+    evaluation["cohort"] = "cold_start"
+    # Degrade only the served p50, so the untargeted-rows and leakage checks stay clean
+    # and §2.4 is unambiguously the criterion that fires.
+    evaluation["yhat_p50"] = evaluation["yhat_p50"] * 1.5
+
+    with pytest.raises(ForecastPublicationError) as excinfo:
+        _validate_remediation_candidate(evaluation, {"candidateId": "C-test"})
+
+    message = str(excinfo.value)
+    assert "§2.4" in message
+    # The refusal names the cells, so the failure is actionable without re-deriving it.
+    assert "target" in message
+
+
+def test_uncalibrated_cold_start_intervals_are_withheld_not_served() -> None:
+    """Decision #92: the gate may only be scoped to published intervals if the
+    unpublished ones are genuinely not served.
+
+    Without this the gate measures h1-h4 at 0.8603 while the screen shows an h13 interval
+    measured at 0.8024 -- telling the truth about a number nobody reads and staying silent
+    about the one they do.
+    """
+
+    from retail_ml.policies.interval_availability import (
+        COLD_START_CALIBRATED_MAX_HORIZON,
+        UNCALIBRATED_REASON_CODE,
+    )
+    from retail_ml.publish.run_artifacts import (
+        withhold_uncalibrated_cold_start_intervals,
+    )
+
+    evaluation = _full_schedule()
+    evaluation["cohort"] = "cold_start"
+    current = _current_forecasts()
+
+    served, evidence = withhold_uncalibrated_cold_start_intervals(evaluation, evaluation)
+
+    beyond = pd.to_numeric(served["horizon"], errors="coerce") > (
+        COLD_START_CALIBRATED_MAX_HORIZON
+    )
+    within = ~beyond
+    # Withheld beyond the calibrated range...
+    assert served.loc[beyond, "yhat_p90"].isna().all()
+    assert served.loc[beyond, "confidence"].isna().all()
+    assert (
+        served.loc[beyond, "interval_unavailable_reason"] == UNCALIBRATED_REASON_CODE
+    ).all()
+    # ...and untouched within it.
+    assert served.loc[within, "yhat_p90"].notna().all()
+    assert served.loc[within, "interval_available"].all()
+    # P50 survives at EVERY horizon. This withdraws a distribution claim, never a
+    # forecast, which is the whole basis for scoping the gate.
+    assert served["yhat_p50"].notna().all()
+    assert evidence["withheldRows"] == int(beyond.sum())
+    assert evidence["reasonCode"] == UNCALIBRATED_REASON_CODE
+
+
+def test_established_intervals_are_never_withheld() -> None:
+    """The limit is cold-start only; the established cohort passes at every horizon."""
+
+    from retail_ml.publish.run_artifacts import (
+        withhold_uncalibrated_cold_start_intervals,
+    )
+
+    evaluation = _full_schedule()
+    evaluation["cohort"] = "established_history"
+
+    served, evidence = withhold_uncalibrated_cold_start_intervals(evaluation, evaluation)
+
+    assert evidence["withheldRows"] == 0
+    assert served["yhat_p90"].notna().all()
+    assert served["interval_available"].all()
+
+
+def test_a_consumer_needing_a_longer_horizon_fails_closed() -> None:
+    """The h1-h4 boundary is load-bearing, so it is asserted rather than assumed.
+
+    Reorder currently reads about h1 because every suppliers_leadtimes row carries
+    lead_time_days = 5. A new overseas supplier would push the required horizon past the
+    calibrated range, and silently reading past it is how an under-covered interval becomes
+    an under-stocked order.
+    """
+
+    from retail_ml.policies.interval_availability import (
+        IntervalHorizonUnavailableError,
+        horizon_for_lead_time,
+        require_cold_start_interval_horizon,
+    )
+
+    # 5-day lead time plus a weekly review cycle: inside the calibrated range.
+    assert horizon_for_lead_time(5) == 2
+    require_cold_start_interval_horizon(
+        horizon_for_lead_time(5), consumer="phase4-reorder"
+    )
+
+    # A 60-day overseas lead time is refused, and the error carries the measurement.
+    with pytest.raises(IntervalHorizonUnavailableError) as excinfo:
+        require_cold_start_interval_horizon(
+            horizon_for_lead_time(60), consumer="phase4-reorder"
+        )
+    assert "0.7798" in str(excinfo.value) or "h14-h26" in str(excinfo.value)

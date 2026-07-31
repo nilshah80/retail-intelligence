@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "retail-forecast-candidate-result/v1",
+  "recordType": "rejected_candidate",
+  "recordedAt": "2026-07-31",
+  "candidateId": "C7",
+  "decisionIds": [
+    85,
+    87
+  ],
+  "verdict": "REJECTED",
+  "mechanism": "split-conformal: p90' = p50 + max(quantile_0.90(actual - p50), 0)",
+  "rejectedBy": [
+    "criterion 5 (coverage on the untouched final 5 confirmation origins): us-new-york cold_start reached 0.9620, above the 0.95 ceiling. OVER-coverage, not under-coverage -- the intervals became too wide. #85's band is symmetric for a reason: an over-wide P90 inflates safety stock exactly as an under-wide one starves it.",
+    "criterion 4 (confidence): mean cold-start confidence fell 46.9%, 0.5899 -> 0.3130, past the declared 33% limit taken from the C4 precedent."
+  ],
+  "measured": {
+    "allThirteenOrigins": {
+      "cold_start": 0.9178,
+      "established_history": 0.9047,
+      "evaluation_ineligible": 0.9183
+    },
+    "confirmationOriginsOnly": {
+      "cold_start": 0.9459,
+      "established_history": 0.914,
+      "perMarketColdStart": {
+        "india-west": 0.9282,
+        "us-new-york": 0.962
+      }
+    },
+    "confidenceColdStart": {
+      "before": 0.5899,
+      "after": 0.313,
+      "relativeChange": -0.469
+    },
+    "segmentsFitted": 52,
+    "shrunkToParent": 0
+  },
+  "criteriaThatDidPass": [
+    "criterion 2: p50 byte-identical, so A1, WAPE, bias and every #77 display cell are unchanged by construction.",
+    "criterion 3: established_history P90 byte-identical.",
+    "criterion 1 at the global and india-west level: cold_start 0.9178 all-origins and 0.9282 india-west confirmation both sit inside the band."
+  ],
+  "whyItFailed": "The residual quantile is measured on development origins and applied to confirmation origins whose dispersion differs. Fitting the 90th percentile of residuals gave india-west a width that holds up and us-new-york one that overshoots, so a single conformal level per market x horizon does not transfer across time for this cohort. Combined with the 46.9% confidence loss, the reading is that honest cold-start dispersion at h12-h26 is simply very wide: calibrating to it produces an interval near twice p50, and the interval is then barely decision-useful even when its coverage is nominally correct.",
+  "conclusion": "Two mechanisms in the post-hoc calibration class have now been rejected on preregistered criteria: C6 could not reach the target by rescaling a mis-shaped spread, and C7 reached it on average while breaching the band on held-out data and destroying nearly half the displayed confidence. Decision #87's own stop rule says a C7 failure authorises no third calibration attempt. The cold-start interval needs a MODELLED quantile head fitted on cold-start dispersion, not a correction applied to one fitted elsewhere -- which is a scope change with its own decision, not a variant of #87.",
+  "refusedRemedies": [
+    "Relaxing the 0.95 ceiling to admit us-new-york's 0.9620. The band is symmetric because over-wide intervals over-stock; #85 already refused loosening the floor and the ceiling is the same principle.",
+    "Dropping criterion 4 after it bound. It is arguably mis-specified -- it can conflate width that buys calibration with width that buys nothing -- but C7 fails criterion 5 independently, so nothing turns on that argument and it is not used as a route to acceptance.",
+    "Refitting the conformal level on all 13 origins to make confirmation agree. That is fitting on the confirmation data, which is the one thing decision #74 exists to prevent."
+  ]
+}

@@ -10,8 +10,8 @@ _Validation authority: `contracts/validation-policy.yaml`; repository CI is proh
 
 **Revision 11 — 2026-07-31. FORECAST ACCEPTED under decisions #84/#86; PP3-A1+ IMPLEMENTED,
 AUTHORIZATION STILL PENDING THE RETROSPECTIVE.**
-Accepted run `fr_422e1113355eb05b` (`candidateClass: gate_remediation`, version
-`fv_86cd60c37be7e203`) passes A1-A5 and is verified, materialized and activated. C5 repairs the
+Accepted run `fr_b2ef3d33f398095b` (`candidateClass: gate_remediation`, version
+`fv_23722eff8e3b8995`) passes A1-A5 and is verified, materialized and activated. C5 repairs the
 us-new-york cold-start gate from -2.399% to +4.446%; decision #75 is published at +1.754% against
 its 5% floor and is **not** satisfied, so C5 carries no accuracy claim. Decision #85 per-cohort
 coverage is report-only until Phase 4 entry and its cold-start failure is published.

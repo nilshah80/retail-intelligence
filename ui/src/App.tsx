@@ -647,7 +647,10 @@ function FooterKpis({
     ],
     [
       "model-accuracy",
-      "Model Accuracy",
+      // Labelled "all horizons" because the Demand Forecast tiles above are scoped to
+      // the selected window. 92.8 here beside 93.8 there is not a discrepancy, it is a
+      // different horizon span, and decision #78 requires that to be visible.
+      "Model Accuracy (all horizons)",
       formatPct(modelAccuracyPct ?? dashboard.footer.modelAccuracyPct)
     ]
   ];

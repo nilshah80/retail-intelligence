@@ -257,3 +257,103 @@ def test_land_cli_uses_the_shared_execution_profile(
     output = json.loads(capsys.readouterr().out)
     assert output["objectCount"] == 3
     assert output["idempotentReplay"] is False
+
+
+def test_snapshot_identity_ignores_a_non_byte_deterministic_mirror() -> None:
+    """Decision #89: an identity over byte hashes must exclude unstable bytes.
+
+    `source-run.duckdb` is a restricted browsing mirror that `capabilities.duckdbRole`
+    calls "non-authoritative" and ordinary ingestion never reads, and the generator
+    declares its `contentDeterminism` as `logical`. Including it meant a rebuilt mirror
+    changed the identity of unchanged authoritative data: two independent generations of
+    the same pinned scenario produced 508 byte-identical Parquet objects and one DuckDB
+    file differing in size and hash. Every fingerprint downstream inherited that, and
+    `expected-pin.json` fail-closed the ML stages on data that had not changed.
+    """
+
+    from retail_ingestion.landing.snapshot_id import source_snapshot_id
+
+    authoritative = [
+        {
+            "path": "public/sales/week=1/part-0.parquet",
+            "logicalPath": "sales/week=1",
+            "bytes": 2048,
+            "sha256": "a" * 64,
+            "contentDeterminism": "byte",
+        },
+        # Restricted but byte-stable: real generated content in the hidden-truth lane.
+        # It must stay IN the identity; permission is not the discriminator.
+        {
+            "path": "_truth/demand_factors.parquet",
+            "logicalPath": "_truth/demand_factors",
+            "bytes": 512,
+            "sha256": "b" * 64,
+            "contentDeterminism": "byte",
+            "restricted": True,
+        },
+    ]
+    mirror_first = {
+        "path": "source-run.duckdb",
+        "logicalPath": "source-run.duckdb",
+        "bytes": 116_142_080,
+        "sha256": "c" * 64,
+        "contentDeterminism": "logical",
+        "restricted": True,
+    }
+    # Same logical content, mirror rebuilt: different size, different hash.
+    mirror_second = dict(mirror_first, bytes=117_977_088, sha256="d" * 64)
+
+    identity = dict(source_instance="acme", extract_boundary="2026-07-28")
+    first = source_snapshot_id(**identity, objects=[*authoritative, mirror_first])
+    second = source_snapshot_id(**identity, objects=[*authoritative, mirror_second])
+
+    assert first == second
+    # And the mirror contributes nothing at all, rather than merely being stable.
+    assert first == source_snapshot_id(**identity, objects=authoritative)
+
+
+def test_a_byte_stable_object_still_changes_the_snapshot_identity() -> None:
+    """The exclusion must not become a hole that hides a real data change."""
+
+    from retail_ingestion.landing.snapshot_id import source_snapshot_id
+
+    identity = dict(source_instance="acme", extract_boundary="2026-07-28")
+    base = {
+        "path": "public/sales/week=1/part-0.parquet",
+        "logicalPath": "sales/week=1",
+        "bytes": 2048,
+        "sha256": "a" * 64,
+        "contentDeterminism": "byte",
+    }
+    changed = dict(base, sha256="e" * 64)
+
+    assert source_snapshot_id(**identity, objects=[base]) != source_snapshot_id(
+        **identity, objects=[changed]
+    )
+
+
+def test_an_inventory_of_only_unstable_objects_fails_closed() -> None:
+    """Excluding everything must refuse, not mint an identity over nothing."""
+
+    from retail_ingestion.landing.snapshot_id import (
+        SnapshotIdentityError,
+        source_snapshot_id,
+    )
+
+    with pytest.raises(SnapshotIdentityError) as excinfo:
+        source_snapshot_id(
+            source_instance="acme",
+            extract_boundary="2026-07-28",
+            objects=[
+                {
+                    "path": "source-run.duckdb",
+                    "logicalPath": "source-run.duckdb",
+                    "bytes": 1,
+                    "sha256": "c" * 64,
+                    "contentDeterminism": "logical",
+                }
+            ],
+        )
+    # The reason names what was dropped, so "empty inventory" is not mistaken for
+    # "no objects were supplied".
+    assert "source-run.duckdb" in str(excinfo.value)

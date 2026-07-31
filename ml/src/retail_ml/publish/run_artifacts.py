@@ -798,6 +798,85 @@ def _validated_current_forecasts(
     ).reset_index(drop=True)
 
 
+def withhold_uncalibrated_cold_start_intervals(
+    current: pd.DataFrame,
+    evaluation: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Decision #92: do not serve a cold-start P90 beyond the calibrated horizon.
+
+    Scoping the acceptance gate to published intervals is only defensible if the
+    unpublished ones are genuinely not served. Without this the gate would measure h1-h4
+    while the UI showed an h13 interval measured at 0.8024 coverage -- the gate would be
+    telling the truth about a number nobody reads and staying silent about the one they do.
+
+    P50 is untouched at every horizon, so the forecast stays complete; only the
+    distribution claim is withdrawn where it was never calibrated.
+    """
+
+    from retail_ml.models.cold_start_blend import COHORT_COLUMN, COLD_START_COHORT
+    from retail_ml.policies.interval_availability import (
+        COLD_START_CALIBRATED_MAX_HORIZON,
+        POLICY_ID as INTERVAL_POLICY_ID,
+        UNCALIBRATED_REASON_CODE,
+    )
+
+    result = current.copy()
+    # Cohort membership is taken from the evaluated series rather than recomputed, so a
+    # row cannot be classified one way for scoring and another way for serving.
+    cold_series: set[tuple[str, str, str]] = set()
+    if COHORT_COLUMN in evaluation.columns:
+        cold = evaluation[
+            evaluation[COHORT_COLUMN].astype(str).eq(COLD_START_COHORT)
+        ]
+        cold_series = {
+            (str(sku), str(store), str(channel))
+            for sku, store, channel in zip(
+                cold["sku_id"], cold["store_id"], cold["channel_id"], strict=False
+            )
+        }
+
+    keys = list(
+        zip(
+            result["sku_id"].astype(str),
+            result["store_id"].astype(str),
+            result["channel_id"].astype(str),
+            strict=False,
+        )
+    )
+    is_cold = pd.Series([key in cold_series for key in keys], index=result.index)
+    horizons = pd.to_numeric(result["horizon"], errors="coerce")
+    withhold = is_cold & (horizons > COLD_START_CALIBRATED_MAX_HORIZON)
+
+    result["interval_available"] = ~withhold
+    result["interval_unavailable_reason"] = np.where(
+        withhold, UNCALIBRATED_REASON_CODE, None
+    )
+    if withhold.any():
+        result.loc[withhold, "yhat_p90"] = np.nan
+        result.loc[withhold, "confidence"] = np.nan
+
+    evidence = {
+        "policyId": INTERVAL_POLICY_ID,
+        "decisionIds": [85, 87, 91, 92],
+        "calibratedMaxHorizon": COLD_START_CALIBRATED_MAX_HORIZON,
+        "reasonCode": UNCALIBRATED_REASON_CODE,
+        "coldStartSeries": len(cold_series),
+        "servedRows": int(len(result)),
+        "withheldRows": int(withhold.sum()),
+        "withheldShareOfServed": (
+            float(withhold.sum()) / len(result) if len(result) else 0.0
+        ),
+        "p50Withheld": 0,
+        "note": (
+            "P50 is served at every horizon; only the interval and its derived confidence "
+            "are withdrawn beyond the calibrated range. A consumer that needs an interval "
+            "further out must fail closed via "
+            "require_cold_start_interval_horizon rather than read a null as zero spread."
+        ),
+    }
+    return result, evidence
+
+
 def _canonical_current_artifacts(
     current: pd.DataFrame,
     evaluation: pd.DataFrame,
@@ -1093,14 +1172,19 @@ def _write_acceptance(
     }
 
 
-#: Decision #86 §2.4 and §2.7 mode. Both criteria are computed and published from this
-#: version; neither refuses a bundle yet. They were hand-asserted for C5 and no version
-#: has ever been measured against them, so the same phased introduction decision #85
-#: used applies -- publish every cell first, then make it fail closed once real numbers
-#: have been reviewed. Nothing that passed before is excused: the numbers are in the
-#: manifest either way, and a violation is visible rather than absent.
-DECISION_86_DISPLAY_GATE_MODE: Final[str] = "report_only"
-DECISION_86_DISPLAY_GATE_HARD_AT: Final[str] = "phase_4_entry"
+#: Decision #86 §2.4 and §2.7 now refuse a bundle.
+#:
+#: They were introduced report-only because they had been hand-asserted for C5 and no
+#: version had ever been measured against them, and because the metric had to be proved
+#: to reproduce the served display cell before it could block a publication -- three
+#: earlier formulations each produced a plausible number the UI does not show. That is
+#: settled: the metric is checked against the serving handler's own absErrorSum and
+#: actualSum, and a real C5 bundle reported five measured cells with zero violations
+#: (h1 95.180, h4 92.731, h8 92.683, h13 92.309, h26 93.684, all passing their #77
+#: targets). A criterion that computes correctly and has been reviewed on a real bundle
+#: has no remaining reason to be advisory.
+DECISION_86_DISPLAY_GATE_MODE: Final[str] = "refusing"
+DECISION_86_DISPLAY_GATE_HARD_AT: Final[str] = "already_hard"
 
 #: §2.4's own bound: a display cell may not move by more than display rounding.
 DISPLAY_REGRESSION_TOLERANCE_PCT: Final[float] = 0.1
@@ -1300,6 +1384,18 @@ def _validate_remediation_candidate(
             f"signals={leakage['signals']}"
         )
     display_evidence = _decision_86_display_evidence(evaluation)
+    if not display_evidence["passed"]:
+        rendered = "; ".join(
+            f"h{cell['horizon']} {cell['championAccuracyPct']:.3f}"
+            f" -> {cell['candidateAccuracyPct']:.3f}"
+            f" (target {cell['targetPct']},"
+            f" passToFail={cell['passToFail']})"
+            for cell in display_evidence["violations"]
+        )
+        raise ForecastPublicationError(
+            "decision #86 §2.4 forbids breaking a decision #77 display cell: "
+            f"{rendered}"
+        )
     remediation["structuralChecks"] = {
         "untargetedRowsByteIdentical": unchanged,
         "leakage": leakage,
@@ -1308,8 +1404,8 @@ def _validate_remediation_candidate(
         # §2.3 and §2.5 refuse the bundle. §2.4/§2.7 are computed and published under
         # DECISION_86_DISPLAY_GATE_MODE and do not refuse yet; the distinction is
         # recorded here so a reader cannot mistake published evidence for a passed gate.
-        "refusingCriteria": ["§2.3", "§2.5"],
-        "reportOnlyCriteria": ["§2.4", "§2.7"],
+        "refusingCriteria": ["§2.3", "§2.4", "§2.5", "§2.7"],
+        "reportOnlyCriteria": [],
     }
 
 

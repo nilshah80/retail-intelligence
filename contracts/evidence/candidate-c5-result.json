@@ -2,8 +2,8 @@
   "adoption": {
     "notUnder": "decision #75, whose 5% global floor it does not meet (+1.754%)",
     "on": "2026-07-31",
-    "publishedRunId": "fr_422e1113355eb05b",
-    "publishedVersionId": "fv_86cd60c37be7e203",
+    "publishedRunId": "fr_b2ef3d33f398095b",
+    "publishedVersionId": "fv_23722eff8e3b8995",
     "status": "adopted",
     "structuralChecksEnforcedAtPublication": {
       "leakageCorrelationUplift": 0.014016192862268961,
@@ -86,5 +86,5 @@
   "schemaVersion": "retail-candidate-result-record/v1",
   "verdict": "C5 repairs the A1 blocker in every scope and does not satisfy decision #75. It is adopted under decision #86 as a gate-remediation candidate, not as an accuracy improvement, and #86 forbids presenting it as one. The #75 shortfall below is published rather than suppressed.",
   "rebuiltOn": "2026-07-31",
-  "rebuildNote": "Re-published by the authorized clean-slate rebuild. The prior identities (fr_8e73fb0f8d3c502c, fr_f48fd0ab1380bc49 / fv_fe38d1f029dbcc30, fv_8e7be33eaa236160) are superseded, not corrected: the earlier run was real, its bundle is simply no longer the served one. See decision #89 for why the input fingerprints moved while the data did not."
+  "rebuildNote": "Re-published by the authorized clean-slate rebuild. The prior identities (fr_8e73fb0f8d3c502c, fr_f48fd0ab1380bc49, fr_422e1113355eb05b, fr_9aaa1d4431381570, fr_cee27c1618c9f9bb / fv_fe38d1f029dbcc30, fv_8e7be33eaa236160, fv_86cd60c37be7e203, fv_efcbbc03d991007f) are superseded, not corrected: the earlier run was real, its bundle is simply no longer the served one. See decision #89 for why the input fingerprints moved while the data did not."
 }

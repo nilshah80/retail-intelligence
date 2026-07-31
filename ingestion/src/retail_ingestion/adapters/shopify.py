@@ -172,8 +172,14 @@ class ShopifyAdapter(SourceAdapter):
                 '{profile_version}'::VARCHAR AS profile_version,
                 '{self.adapter_version}'::VARCHAR AS adapter_version,
                 id::VARCHAR AS location_source_key,
-                name::VARCHAR AS location_name,
-                upper(locationType)::VARCHAR AS location_type,
+                -- Decision #88: staging-v2 freezes the `location` role's required
+                -- fields as location_source_key, name and location_kind. This adapter
+                -- emitted location_name and location_type for as long as it has
+                -- existed, so the neutral `locations` relation never presented the
+                -- field names its own contract declares, and a retailer whose adapter
+                -- conformed produced columns the crosswalk could not find.
+                name::VARCHAR AS name,
+                upper(locationType)::VARCHAR AS location_kind,
                 _market_currency_code AS currency_code,
                 coalesce(nullif(timezone, ''), _business_timezone)::VARCHAR
                     AS timezone,

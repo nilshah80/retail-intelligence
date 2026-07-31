@@ -145,6 +145,11 @@ class HorizonModel:
     horizon: int
     p50_model: LGBMRegressor
     p90_model: LGBMRegressor
+    #: Decision #91. None when the cohort had too few training rows to fit its own head,
+    #: in which case the shared head is used and `cold_start_head_fallback` records it, so
+    #: an absent model is visible rather than looking like a deliberate choice.
+    p90_cold_model: LGBMRegressor | None
+    cold_start_head_rows: int
     categories: dict[str, tuple[str, ...]]
     global_calibration: CalibrationAdjustment
     market_calibrations: dict[str, CalibrationAdjustment]
@@ -254,6 +259,21 @@ def _adjustment(
     )
 
 
+#: Decision #91. A training row with no origin-visible lag-52 has no seasonal history, so
+#: it is the training-side analogue of decision #82's cold-start cohort.
+def _cold_start_training_mask(frame: pd.DataFrame) -> pd.Series:
+    lag = pd.to_numeric(frame.get("units_lag_52"), errors="coerce")
+    if lag is None:
+        return pd.Series(False, index=frame.index)
+    return lag.isna()
+
+
+#: Below this the cohort-specific head is not fitted and the shared head is used, with the
+#: fallback recorded. A quantile head fitted on a handful of rows is noise with a
+#: confidence interval attached.
+MIN_COLD_START_TRAINING_ROWS: Final[int] = 2_000
+
+
 def _fit_pair(
     train: pd.DataFrame,
     calibration: pd.DataFrame,
@@ -261,7 +281,7 @@ def _fit_pair(
     categories: dict[str, tuple[str, ...]],
     threads_per_model: int,
     seed: int,
-) -> tuple[LGBMRegressor, LGBMRegressor]:
+) -> tuple[LGBMRegressor, LGBMRegressor, LGBMRegressor | None]:
     common: dict[str, Any] = {
         "objective": "quantile",
         "n_estimators": 400,
@@ -296,7 +316,39 @@ def _fit_pair(
     train_y = pd.to_numeric(train["target_units"], errors="coerce").fillna(0.0)
     p50.fit(train_x, train_y, **fit_kwargs)
     p90.fit(train_x, train_y, **fit_kwargs)
-    return p50, p90
+
+    # Decision #91: a dedicated cold-start P90 head.
+    #
+    # Both heads above are fitted on one frame in which established-history rows
+    # outnumber cold-start rows roughly six to one, so the shared P90 head learns
+    # established dispersion and is then asked to bound a cohort whose spread is much
+    # wider -- decision #84 measured the cold-start champion at std 93.66 against an
+    # actual 132.54. Two post-hoc corrections were rejected for exactly that reason: C6
+    # could not rescale a mis-shaped spread into the band, and C7's measured constant
+    # offset per segment overshot on held-out data and cost 46.9% of displayed confidence.
+    # Fitting the quantile on the cohort's own rows lets the width vary per row with the
+    # features, instead of applying one number to a whole segment.
+    #
+    # P50 is deliberately NOT refitted per cohort. A1 non-inferiority, WAPE, bias and every
+    # decision #77 display cell must stay unchanged by construction, not by measurement.
+    cold_mask = _cold_start_training_mask(train)
+    p90_cold: LGBMRegressor | None = None
+    if int(cold_mask.sum()) >= MIN_COLD_START_TRAINING_ROWS:
+        cold_kwargs: dict[str, Any] = {
+            "categorical_feature": list(CATEGORICAL_FEATURES)
+        }
+        cold_calibration = calibration[_cold_start_training_mask(calibration)]
+        if not cold_calibration.empty:
+            cold_kwargs["eval_X"] = prepare_model_frame(
+                cold_calibration, categories=categories
+            )
+            cold_kwargs["eval_y"] = pd.to_numeric(
+                cold_calibration["target_units"], errors="coerce"
+            ).fillna(0.0)
+            cold_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
+        p90_cold = LGBMRegressor(alpha=0.90, **common)
+        p90_cold.fit(train_x[cold_mask.to_numpy()], train_y[cold_mask], **cold_kwargs)
+    return p50, p90, p90_cold
 
 
 def _tail_replay_preferred_keys(
@@ -415,7 +467,7 @@ def fit_horizon_model(
     calibration = frame[origin_values.isin(calibration_origins)].copy()
     train = frame[~origin_values.isin(calibration_origins)].copy()
     categories = _categories(frame)
-    p50, p90 = _fit_pair(
+    p50, p90, p90_cold = _fit_pair(
         train,
         calibration,
         categories=categories,
@@ -482,6 +534,8 @@ def fit_horizon_model(
         horizon=horizon,
         p50_model=p50,
         p90_model=p90,
+        p90_cold_model=p90_cold,
+        cold_start_head_rows=int(_cold_start_training_mask(train).sum()),
         categories=categories,
         global_calibration=global_adjustment,
         market_calibrations=market_adjustments,
@@ -496,6 +550,17 @@ def score_horizon_model(frame: pd.DataFrame, model: HorizonModel) -> pd.DataFram
     prepared = prepare_model_frame(result, categories=model.categories)
     raw_p50 = np.clip(model.p50_model.predict(prepared), 0.0, None)
     raw_p90 = np.clip(model.p90_model.predict(prepared), 0.0, None)
+    # Decision #91: cold-start rows take their own quantile head. The row-level mask is
+    # the same no-lag-52 condition the head was fitted on, so a row is bounded by the
+    # model trained on rows like it.
+    if model.p90_cold_model is not None:
+        cold = _cold_start_training_mask(frame).to_numpy()
+        if cold.any():
+            cold_p90 = np.clip(
+                model.p90_cold_model.predict(prepared[cold]), 0.0, None
+            )
+            raw_p90 = raw_p90.copy()
+            raw_p90[cold] = cold_p90
     p50_adjustments = np.array(
         [
             model.market_calibrations.get(

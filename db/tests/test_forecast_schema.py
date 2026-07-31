@@ -31,7 +31,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0006_cohorted_verifier_v4",)
+            assert cursor.fetchone() == ("0007_activation_and_coverage",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -73,7 +73,10 @@ def test_forecast_serving_schema_integration() -> None:
             )
             view_definition = cursor.fetchone()[0]
             assert "verification_contract" in view_definition
-            # Migration 0006 admits decision-#82 verifier-v4 evidence only;
-            # verifier-v2/v3 materializations stop being eligible to serve.
-            assert "retail-forecast-verifier/v4" in view_definition
+            # Migration 0007 admits decision-#85 verifier-v5 evidence only: a run scored
+            # against the HARD per-cohort coverage gate. Every earlier contract stops
+            # being eligible to serve without being reinterpreted, which is the
+            # fail-closed version boundary #85 promised and originally never created.
+            assert "retail-forecast-verifier/v5" in view_definition
+            assert "retail-forecast-verifier/v4" not in view_definition
             assert "retail-forecast-verifier/v3" not in view_definition

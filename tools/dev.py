@@ -32,6 +32,10 @@ ACCEPTANCE_EVALUATION_VERSION = (
     "cohorted-seasonal-cold-start-recomputation/v4"
 )
 
+#: Kept beside the evaluation version because the two move together: the hard per-cohort
+#: coverage gate is what acceptance-v5 means, and a v4 document was scored before it bound.
+ACCEPTANCE_SCHEMA_GENERATION = "retail-forecast-acceptance/v5"
+
 
 def venv_python(root: Path) -> Path:
     return (
@@ -337,6 +341,13 @@ def _discover_forecast_run() -> tuple[Path, str]:
             acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        # Decision #85's hard coverage gate ships as acceptance-v5, paired with
+        # verifier-v5 and migration 0007. A v4 bundle was scored while the gate was
+        # report-only, so the current verifier refuses it and materialisation refuses it:
+        # offering it here would fail the gate on a superseded bundle instead of on the
+        # one that would actually serve. Same intent as the filters above.
+        if acceptance.get("schemaVersion") != ACCEPTANCE_SCHEMA_GENERATION:
+            continue
         if acceptance.get("candidateClass") != model_policy["candidateClass"]:
             continue
         entry = (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
@@ -606,6 +617,453 @@ def command_ingest_stage(args: argparse.Namespace) -> int:
     return _run(command)
 
 
+def _host_execution_profile() -> str:
+    """Pick an execution profile from the host, not from a README assumption.
+
+    The README prescribes ``safe`` for "the 16-GiB-available demo machine". Following
+    that on a 128 GB / 16-core host throttled the forecast trainer to two threads and
+    one rolling origin took twenty-two minutes; the same schedule on ``performance``
+    finished thirteen origins in thirty-seven. The profile does not change results --
+    ``ml/reports/w7-profile-invariance-local.json`` records identical forecast run ids
+    and semantic fingerprints across ``safe`` and ``ultra-performance``, and agreement
+    to 1e-12 across thread counts -- so this is purely about not wasting hours.
+
+    Deliberately conservative: it never returns ``ultra-performance``, whose ML tier
+    asks for 6 model workers x 4 threads against however many cores exist, so on a
+    16-core host it oversubscribes and contends rather than going faster.
+    """
+
+    try:
+        import multiprocessing
+
+        cores = multiprocessing.cpu_count()
+    except (ImportError, NotImplementedError):
+        cores = 1
+    memory_gb = 0
+    if hasattr(os, "sysconf") and "SC_PAGE_SIZE" in os.sysconf_names:
+        try:
+            memory_gb = (
+                os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+            ) // (1024**3)
+        except (OSError, ValueError):
+            memory_gb = 0
+    if memory_gb == 0:
+        try:
+            memory_gb = int(
+                subprocess.run(
+                    ["sysctl", "-n", "hw.memsize"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout.strip()
+                or 0
+            ) // (1024**3)
+        except (OSError, ValueError):
+            memory_gb = 0
+    if memory_gb >= 32 and cores >= 8:
+        return "performance"
+    if memory_gb >= 16 and cores >= 4:
+        return "balanced"
+    return "safe"
+
+
+def command_datagen(args: argparse.Namespace) -> int:
+    """Generate a source run. Deliberately NOT part of `pipeline`.
+
+    Generation is ~90 minutes and 15 GB for the ten-year demo, and the pinned scenario
+    is deterministic in its business data -- a regeneration reproduces every control
+    total to the cent -- so repeating it is almost always wasted time. Keeping it out of
+    the pipeline command means the fast loop cannot accidentally spend an hour and a half
+    reproducing data it already has.
+    """
+
+    datagen = _require_python(DATAGEN_ENV, "datagen")
+    profile = args.execution_profile or _host_execution_profile()
+    if args.execution_profile is None:
+        print(f"selected execution profile {profile!r} from host resources")
+    output = args.output.resolve()
+
+    existing = sorted(output.glob("*/run-*"))
+    if existing and not args.regenerate:
+        print(
+            "a promoted source run already exists; generation refused:\n  "
+            + "\n  ".join(str(path.relative_to(REPO_ROOT)) for path in existing)
+            + "\n\nThe pinned scenario reproduces its business data exactly, so "
+            "regenerating usually costs ~90 minutes for no change. Pass --regenerate "
+            "to do it anyway.\n\nNote decision #89: a regeneration DOES move "
+            "sourceSnapshotId and every fingerprint derived from it, because "
+            "source_snapshot_id hashes Parquet bytes. The ML stages will fail closed "
+            "against contracts/ml/expected-pin.json until the pin is re-established "
+            "with equivalence evidence."
+        )
+        return 1
+
+    code = _run(
+        [
+            str(datagen),
+            "-m",
+            "retail_datagen.cli",
+            "generate",
+            "-c",
+            str(args.config),
+            "-o",
+            str(output),
+            "--execution-profile",
+            profile,
+        ]
+    )
+    if code:
+        return code
+    promoted = sorted(output.glob("*/run-*"))
+    if promoted:
+        print("\npromoted source run:")
+        for path in promoted:
+            print(f"  {path}")
+        print(
+            "\nNext: tools/dev.py pipeline --source-root <run dir> "
+            "--to activate"
+        )
+    return 0
+
+
+#: Ordered pipeline stages. `datagen` is absent on purpose -- see command_datagen.
+PIPELINE_STAGES: tuple[str, ...] = (
+    "land",
+    "ingest",
+    "finalize",
+    "features",
+    "characterize",
+    "backtest",
+    "score-current",
+    "classify",
+    "publish",
+    "materialize",
+    "activate",
+)
+
+
+def _stage_slice(start: str, end: str) -> tuple[str, ...]:
+    order = list(PIPELINE_STAGES)
+    return tuple(order[order.index(start) : order.index(end) + 1])
+
+
+def _pipeline_step(label: str, command: list[str], *, cwd: Path = REPO_ROOT) -> dict:
+    """Run one stage, capturing stdout so later stages can read its identities."""
+
+    print(f"\n===== {label} =====", flush=True)
+    completed = subprocess.run(
+        command, cwd=cwd, check=False, capture_output=True, text=True
+    )
+    if completed.stdout:
+        print(completed.stdout, end="")
+    if completed.stderr:
+        print(completed.stderr, end="", file=sys.stderr)
+    if completed.returncode:
+        raise _PipelineFailure(label, completed.returncode)
+    try:
+        start = completed.stdout.index("{")
+        return json.loads(completed.stdout[start:])
+    except (ValueError, json.JSONDecodeError):
+        return {}
+
+
+class _PipelineFailure(RuntimeError):
+    def __init__(self, stage: str, code: int) -> None:
+        super().__init__(stage)
+        self.stage = stage
+        self.code = code
+
+
+def _free_port(port: int) -> None:
+    """Release a TCP listener by socket owner, not by process name.
+
+    `go run` compiles to a temporary binary and execs it, so the process holding the
+    port is not the one whose command line contains "cmd/server". Killing by name left
+    the old listener alive, the replacement died with "bind: address already in use",
+    and because it died in the background the API appeared to restart while still
+    serving the previous forecast version.
+    """
+
+    listing = subprocess.run(
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for line in listing.stdout.split():
+        try:
+            os.kill(int(line), 9)
+        except (ValueError, ProcessLookupError, PermissionError):
+            continue
+
+
+def command_pipeline(args: argparse.Namespace) -> int:
+    """Chain land through activate. Everything after datagen, in one command.
+
+    Before this, `tools/dev.py run` covered only gate-a..publish and the ML half had no
+    orchestrator at all -- `retail_ml.cli run` and `train` are declared subcommands wired
+    to a "workstream has not landed yet" stub. Rebuilding the stack therefore meant
+    hand-written scripts, and every wiring detail below is a failure that actually
+    happened during one such rebuild rather than a hypothetical.
+    """
+
+    ingestion = _require_python(INGESTION_ENV, "ingestion")
+    ml = _require_python(ML_ENV, "ml")
+    profile = args.execution_profile or _host_execution_profile()
+    if args.execution_profile is None:
+        print(f"selected execution profile {profile!r} from host resources")
+
+    stages = _stage_slice(args.from_stage, args.to_stage)
+    print(f"stages: {' -> '.join(stages)}")
+
+    source_root = args.source_root
+    if source_root is None and "land" in stages:
+        promoted = sorted((REPO_ROOT / "datagen" / "output").glob("*/run-*"))
+        if not promoted:
+            print(
+                "no promoted source run; run tools/dev.py datagen first",
+                file=sys.stderr,
+            )
+            return 2
+        source_root = promoted[-1]
+        print(f"source run: {source_root.relative_to(REPO_ROOT)}")
+    run_id = (source_root or Path(args.run_id or "run-unknown")).name
+
+    work = args.work_root or REPO_ROOT / "ingestion" / "data" / "work" / run_id
+    curated = (
+        args.publication_root or REPO_ROOT / "ingestion" / "data" / "curated" / run_id
+    )
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
+    artifacts = REPO_ROOT / "ml" / "data" / "artifacts"
+    # --label names the ARTIFACT directories for this cycle. The feature directory is
+    # separate and defaults to matching, because features are expensive and routinely
+    # reused across several artifact labels -- resuming `--from backtest` with a new label
+    # otherwise looks for features that were never built under that name, which is exactly
+    # how this command failed the first time it was used for real.
+    features = (
+        args.feature_dir
+        if args.feature_dir is not None
+        else REPO_ROOT / "ml" / "data" / "features" / args.label
+    )
+    if not (features / "manifest.json").is_file() and "features" not in stages:
+        print(
+            f"no feature manifest at {features}. Build features first, or pass "
+            "--feature-dir pointing at an existing feature set.",
+            file=sys.stderr,
+        )
+        return 2
+    backtest = artifacts / f"backtest_{args.label}"
+    current = artifacts / f"current_{args.label}"
+    classifications = artifacts / f"classifications_{args.label}"
+    bundle = artifacts / f"forecast_run_{args.label}"
+
+    horizons = ",".join(str(h) for h in range(1, args.horizons + 1))
+    decision_as_of = args.decision_as_of
+
+    try:
+        if "land" in stages:
+            _pipeline_step(
+                "land",
+                [
+                    str(ingestion), "-m", "retail_ingestion.cli", "land",
+                    "--source-root", str(source_root),
+                    "--landing-root", str(REPO_ROOT / "ingestion" / "data" / "raw"),
+                    "--execution-profile", profile,
+                ],
+            )
+
+        snapshots = sorted(
+            (REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots").glob("*")
+        )
+        snapshot = args.snapshot_root or (snapshots[-1] if snapshots else None)
+        if snapshot is None and any(
+            stage in stages for stage in ("ingest", "finalize")
+        ):
+            print("no landed snapshot found", file=sys.stderr)
+            return 2
+
+        if "ingest" in stages:
+            # gate-a, stage, transform, gate-b and publish in order.
+            _pipeline_step(
+                "ingest (gate-a, stage, transform, gate-b, publish)",
+                [
+                    str(ingestion), "-m", "retail_ingestion.cli", "run",
+                    "--snapshot-root", str(snapshot),
+                    "--source-profile",
+                    str(REPO_ROOT / "ingestion" / "src" / "retail_ingestion"
+                        / "profiles" / "retail_datagen.yaml"),
+                    "--work-root", str(work),
+                    "--publication-root", str(curated),
+                    "--execution-profile", profile,
+                ],
+            )
+
+        if "finalize" in stages:
+            # Retains the small evidence bundle. Skipping it left
+            # ingestion/data/evidence/<run>/gate-a.json absent, which the pinned-run
+            # tests read directly, so two of them failed on a complete pipeline.
+            _pipeline_step(
+                "finalize",
+                [
+                    str(ingestion), "-m", "retail_ingestion.cli", "finalize",
+                    "--work-root", str(work),
+                    "--publication-root", str(curated),
+                    "--evidence-root", str(evidence),
+                ],
+            )
+
+        if "features" in stages:
+            _pipeline_step(
+                "features",
+                [
+                    str(ml), "-m", "retail_ml.cli", "features",
+                    "--output-dir", str(features),
+                    "--execution-profile", profile,
+                ],
+            )
+
+        if "characterize" in stages:
+            _pipeline_step(
+                "characterize",
+                [
+                    str(ml), "-m", "retail_ml.cli", "characterize",
+                    "--feature-dir", str(features),
+                    "--report",
+                    str(REPO_ROOT / "ml" / "reports"
+                        / f"{args.label}-characterization.json"),
+                ],
+            )
+
+        if "backtest" in stages:
+            # --horizons takes a comma list. Passing the range "1-26" raises
+            # "invalid literal for int() with base 10: '1-26'", so it is derived here
+            # from a horizon COUNT and the caller never formats it.
+            _pipeline_step(
+                "backtest",
+                [
+                    str(ml), "-m", "retail_ml.cli", "backtest",
+                    "--feature-dir", str(features),
+                    "--output-dir", str(backtest),
+                    "--tracking-uri", args.tracking_uri,
+                    "--horizons", horizons,
+                    "--origin-count", str(args.origin_count),
+                    "--execution-profile", profile,
+                ],
+            )
+
+        if "score-current" in stages:
+            # The frozen decision #84 blend must come from the accepted backtest, or the
+            # cycle certifies one estimator and serves another.
+            command = [
+                str(ml), "-m", "retail_ml.cli", "score-current",
+                "--feature-dir", str(features),
+                "--output-dir", str(current),
+                "--decision-as-of", decision_as_of,
+                "--execution-profile", profile,
+            ]
+            blend = backtest / "cold_start_blend_model.json"
+            if blend.is_file():
+                command.extend(["--blend-model", str(blend)])
+            _pipeline_step("score-current", command)
+
+        if "classify" in stages:
+            # score-current writes current_cycle_classification_input.parquet for this
+            # stage and current_forecast_predictions.parquet for publish. There is no
+            # current_cycle_forecasts.parquet; guessing that name failed a rebuild after
+            # the expensive stages had already succeeded.
+            _pipeline_step(
+                "classify",
+                [
+                    str(ml), "-m", "retail_ml.cli", "classify",
+                    "--current-cycle",
+                    str(current / "current_cycle_classification_input.parquet"),
+                    "--output-dir", str(classifications),
+                    "--decision-as-of", decision_as_of,
+                ],
+            )
+
+        published: dict = {}
+        if "publish" in stages:
+            # --classification-policies wants the file classify EMITS, carrying policy
+            # ids and fingerprints. Passing contracts/ml/forecast-classification-policy
+            # .json instead fails with "must contain exceptions and dataQuality".
+            published = _pipeline_step(
+                "publish",
+                [
+                    str(ml), "-m", "retail_ml.cli", "publish",
+                    "--feature-dir", str(features),
+                    "--backtest-dir", str(backtest),
+                    "--exceptions",
+                    str(classifications / "forecast_exceptions.parquet"),
+                    "--data-quality",
+                    str(classifications / "forecast_data_quality.parquet"),
+                    "--classification-policies",
+                    str(classifications / "classification-policies.json"),
+                    "--current-forecasts",
+                    str(current / "current_forecast_predictions.parquet"),
+                    "--output-dir", str(bundle),
+                    "--decision-as-of", decision_as_of,
+                    "--execution-profile", profile,
+                ],
+            )
+
+        materialized: dict = {}
+        if "materialize" in stages:
+            materialized = _pipeline_step(
+                "materialize",
+                [
+                    str(ml), "-m", "retail_ml.cli", "materialize-serving",
+                    "--forecast-run", str(bundle),
+                    # Supplied here for the same reason forecast-materialize supplies
+                    # it: the ML CLI requires a DSN and will not invent one, and a
+                    # developer should not have to export RETAIL_POSTGRES_DSN to run
+                    # the pipeline on the local compose stack.
+                    "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+                ],
+            )
+
+        if "activate" in stages:
+            # Identity threading: publish mints the run id, materialize mints the
+            # activation scope, activate needs both. All three were copied by hand.
+            run = materialized.get("forecast_run_id") or published.get(
+                "forecast_run_id"
+            )
+            scope = materialized.get("activation_scope_fingerprint")
+            if not run or not scope:
+                print(
+                    "activate needs a run id and activation scope from materialize; "
+                    "rerun with --from materialize",
+                    file=sys.stderr,
+                )
+                return 2
+            _pipeline_step(
+                "activate",
+                [
+                    str(ml), "-m", "retail_ml.cli", "activate-serving",
+                    "--forecast-run-id", run,
+                    "--activation-scope-fingerprint", scope,
+                    "--actor", args.actor,
+                    "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+                ],
+            )
+            print(
+                f"\nserving {run} / {materialized.get('version_id')}\n"
+                "Start the API separately; it reads the activation scope from "
+                "PostgreSQL at boot."
+            )
+    except _PipelineFailure as failure:
+        print(
+            f"\npipeline failed at stage {failure.stage!r} (exit {failure.code})\n"
+            f"resume with: tools/dev.py pipeline --from {failure.stage.split()[0]} "
+            f"--to {args.to_stage} --label {args.label}",
+            file=sys.stderr,
+        )
+        if "expected pin" in str(failure.stage):
+            pass
+        return failure.code
+    return 0
+
+
 def command_config_hash(_: argparse.Namespace) -> int:
     datagen = _require_python(DATAGEN_ENV, "datagen")
     return _run(
@@ -832,6 +1290,63 @@ def build_parser() -> argparse.ArgumentParser:
     wheels.add_argument("--offline", action="store_true")
 
     subparsers.add_parser("contracts", help="validate machine-readable contracts")
+    datagen = subparsers.add_parser(
+        "datagen",
+        help="generate a source run (separate from pipeline: ~90 min, ~15 GB)",
+    )
+    datagen.add_argument(
+        "--config",
+        type=Path,
+        default=REPO_ROOT / "datagen" / "configs" / "multi-market-10-year-demo.yaml",
+    )
+    datagen.add_argument(
+        "--output", type=Path, default=REPO_ROOT / "datagen" / "output"
+    )
+    datagen.add_argument(
+        "--execution-profile", choices=("safe", "balanced", "performance", "ultra-performance"),
+        default=None
+    )
+    datagen.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="regenerate even when a promoted run already exists",
+    )
+
+    pipeline = subparsers.add_parser(
+        "pipeline",
+        help="land -> ingest -> ML -> materialize -> activate in one command",
+    )
+    pipeline.add_argument("--from", dest="from_stage", choices=PIPELINE_STAGES,
+                          default="land")
+    pipeline.add_argument("--to", dest="to_stage", choices=PIPELINE_STAGES,
+                          default="activate")
+    pipeline.add_argument("--source-root", type=Path, default=None)
+    pipeline.add_argument("--snapshot-root", type=Path, default=None)
+    pipeline.add_argument("--work-root", type=Path, default=None)
+    pipeline.add_argument("--publication-root", type=Path, default=None)
+    pipeline.add_argument("--run-id", default=None)
+    pipeline.add_argument(
+        "--feature-dir",
+        type=Path,
+        default=None,
+        help="reuse an existing feature set; defaults to ml/data/features/<label>",
+    )
+    pipeline.add_argument(
+        "--label",
+        default="current",
+        help="names the ML ARTIFACT directories for this cycle, not the feature set",
+    )
+    pipeline.add_argument("--horizons", type=int, default=26,
+                          help="horizon COUNT; the comma list is derived")
+    pipeline.add_argument("--origin-count", type=int, default=13)
+    pipeline.add_argument("--decision-as-of", default="2026-07-31T00:00:00Z")
+    pipeline.add_argument("--tracking-uri", default="http://127.0.0.1:5000")
+    pipeline.add_argument("--actor", default=os.environ.get("USER", "developer"))
+    pipeline.add_argument(
+        "--execution-profile", choices=("safe", "balanced", "performance", "ultra-performance"),
+        default=None
+    )
+
     subparsers.add_parser("config-hash", help="validate the pinned datagen config")
     subparsers.add_parser("run-status", help="show promoted/staging source runs")
     subparsers.add_parser("api-test", help="run portable Go API race tests")
@@ -1076,6 +1591,8 @@ def main(argv: list[str] | None = None) -> int:
         "verify": command_verify,
         "wheels": command_wheels,
         "contracts": command_contracts,
+        "datagen": command_datagen,
+        "pipeline": command_pipeline,
         "config-hash": command_config_hash,
         "run-status": command_run_status,
         "api-test": command_api_test,

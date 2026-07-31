@@ -424,3 +424,57 @@ def test_tail_replay_learns_before_series_crosses_slow_mover_threshold() -> None
     )
 
     assert len(preferred) == 1
+
+
+def test_per_cohort_coverage_is_now_binding(monkeypatch) -> None:
+    """Decision #85 became a hard gate; prove it can fail a run.
+
+    While report-only it was excluded from the verdict by name. Making it binding is the
+    Phase 4 entry dependency #85 set, because reorder point and safety stock derive from
+    the quantile spread, so an under-covered P90 becomes an under-stocked order.
+    """
+
+    _disable_bootstrap(monkeypatch)
+    frame = _passing_acceptance_frame()
+    # Narrow P90 below the actual on most rows: whole-population A2 and the per-cohort
+    # gate should both see the under-coverage.
+    frame["yhat_p90"] = 9.2
+
+    result = evaluate_acceptance(frame)
+
+    assert result["passed"] is False
+    gate = result["global"]["gates"]["A2_per_cohort"]
+    assert gate["gateMode"] == "hard"
+    assert gate["passed"] is False
+    # Excluded-by-name is gone; nothing may sit outside the verdict silently.
+    assert result["global"]["reportOnlyGates"] == []
+
+
+def test_an_absent_cohort_does_not_block_but_an_unmeasurable_one_does(
+    monkeypatch,
+) -> None:
+    """Two different things that both look like "no number".
+
+    Decision #85 names the zero-actual and decision-#52 cases as
+    `insufficient_evidence` and never a pass. It does not address a cohort with no rows,
+    and treating that the same way would make the gate unsatisfiable for any population
+    that legitimately has one cohort -- a retailer whose whole assortment is established
+    would be permanently blocked by the absence of cold-start rows.
+    """
+
+    _disable_bootstrap(monkeypatch)
+    result = evaluate_acceptance(_passing_acceptance_frame())
+    cohorts = result["global"]["gates"]["A2_per_cohort"]["cohorts"]
+
+    verdicts = {name: entry["verdict"] for name, entry in cohorts.items()}
+    # The fixture carries no lag-52 history, so every row is cold_start and the
+    # established cohort is absent rather than unmeasurable.
+    assert "not_applicable" in verdicts.values()
+    assert result["global"]["gates"]["A2_per_cohort"]["passed"] is True
+
+    # An absent cohort must not be the ONLY thing the gate sees, or it would pass on no
+    # evidence at all.
+    empty = _passing_acceptance_frame().iloc[0:0]
+    assert evaluate_acceptance(empty)["global"]["gates"]["A2_per_cohort"][
+        "passed"
+    ] is False

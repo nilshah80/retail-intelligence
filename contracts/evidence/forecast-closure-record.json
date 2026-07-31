@@ -12,7 +12,7 @@
       }
     },
     "candidateClass": "gate_remediation",
-    "forecastRunId": "fr_422e1113355eb05b",
+    "forecastRunId": "fr_b2ef3d33f398095b",
     "gates": {
       "A1_cold_start_global": "+6.891%",
       "A1_cold_start_india_west": "+9.478%",
@@ -36,7 +36,7 @@
       "A2_per_cohort": "decision #85, report-only until Phase 4 entry; the cold-start cohort remains below the 0.85 floor and that failure is published, not hidden"
     },
     "semanticFingerprint": "96e031f9b726ff4266949fcbb8eeebc7ba001c5e0b872657e90fe8eca0f18cf0",
-    "versionId": "fv_86cd60c37be7e203"
+    "versionId": "fv_23722eff8e3b8995"
   },
   "backtest": {
     "acceptanceSha256": "13a9c6aa7b5f9ff67d4334634fe8d2d49663276f1e0fb2db1ffe6c2e3fec9d26",
@@ -82,7 +82,7 @@
       "created a separate activation record",
       "left decision #85 per-cohort coverage published and report-only"
     ],
-    "appliedToRunId": "fr_422e1113355eb05b",
+    "appliedToRunId": "fr_b2ef3d33f398095b",
     "branch": "all_required_gates_passed",
     "stillRequired": [
       "human visual approval of the accepted live state",
@@ -184,7 +184,7 @@
     "note": "Acceptance advanced to v4 under decision #85. Recomputation and verifier were already v4 from #82, so no version boundary was created -- see the correction in docs/decision-85-per-cohort-coverage.md.",
     "quality": "retail-forecast-data-quality/v2",
     "runBundle": "retail-forecast-run/v3",
-    "servingMigration": "0006_cohorted_verifier_v4",
+    "servingMigration": "0007_activation_and_coverage",
     "verifier": "retail-forecast-verifier/v4"
   },
   "profileAndMemoryEvidence": {
@@ -358,7 +358,7 @@
   },
   "schemaVersion": "retail-forecast-closure-record/v1",
   "statefulLocalGate": {
-    "candidate": "forecast_run_rebuild",
+    "candidate": "forecast_run_final",
     "command": "tools/dev.py verify",
     "discovery": "The gate keyed on the manifest, not the directory name, and selected forecast_run_v6_d83 over the superseded cohort82 bundle automatically.",
     "failClosedEvidence": [
@@ -377,7 +377,7 @@
       "contractTests": "122 passed",
       "contracts": "valid; forecastRun retail-forecast-run/v3; 35 staging-v2 roles; generated types current",
       "database": "1 passed",
-      "databaseMigration": "0006_cohorted_verifier_v4",
+      "databaseMigration": "0007_activation_and_coverage",
       "datagen": "52 passed, 8 subtests (161.94s)",
       "execution": "12 passed, 17 subtests",
       "goRaceUncached": "execution, fingerprint, httpapi, readmodel all ok",
@@ -468,23 +468,40 @@
     "acceptanceCandidateClass": "gate_remediation",
     "authority": "retail-forecast-verifier/v4",
     "candidateClass": "gate_remediation",
-    "forecastRunId": "fr_422e1113355eb05b",
+    "forecastRunId": "fr_b2ef3d33f398095b",
     "notAnAccuracyImprovement": "Decision #86 \u00a73. C5 makes no accuracy claim: decision #75 is published at +1.754% against its 5% floor and is not satisfied. The served bundle declares candidateClass gate_remediation so no consumer can read it as a champion improvement.",
     "reason": "All A1-A5 gates pass. The us-new-york cold-start non-inferiority failure that held this record at explicit_no_go is repaired by decision #84 candidate C5, adopted under decision #86 as a gate-remediation candidate: -2.399% to +4.446%, with india-west at +9.478% and the global cohort at +6.891%.",
     "servingAuthorized": true,
     "status": "accepted",
     "supersedes": "This file previously recorded explicit_no_go for the rejected pre-C5 bundle. That bundle remains immutable and is listed under supersededRejectedBundles.",
-    "forecastVersionId": "fv_86cd60c37be7e203"
+    "forecastVersionId": "fv_23722eff8e3b8995"
   },
   "supersededIdentities": [
     {
       "runIds": [
+        "fr_b2ef3d33f398095b",
+        "fr_b2ef3d33f398095b"
+      ],
+      "versionIds": [
+        "fv_23722eff8e3b8995",
+        "fv_23722eff8e3b8995"
+      ],
+      "supersededOn": "2026-07-31",
+      "reason": "authorized clean-slate rebuild; see decision #89"
+    },
+    {
+      "runIds": [
         "fr_8e73fb0f8d3c502c",
-        "fr_f48fd0ab1380bc49"
+        "fr_f48fd0ab1380bc49",
+        "fr_422e1113355eb05b",
+        "fr_9aaa1d4431381570",
+        "fr_cee27c1618c9f9bb"
       ],
       "versionIds": [
         "fv_fe38d1f029dbcc30",
-        "fv_8e7be33eaa236160"
+        "fv_8e7be33eaa236160",
+        "fv_86cd60c37be7e203",
+        "fv_efcbbc03d991007f"
       ],
       "supersededOn": "2026-07-31",
       "reason": "authorized clean-slate rebuild; see decision #89"
@@ -493,12 +510,15 @@
   "rebuildCounts": {
     "evaluationRows": 708708,
     "trainingRows": 65021190,
-    "coldStartRows": 102388,
+    "coldStartRowsScored": 15752,
+    "coldStartRowsWithheld": 86636,
     "establishedRows": 605904,
-    "usNewYorkColdStartRelPct": 4.446,
+    "coldStartCoverage": 0.8603,
+    "establishedCoverage": 0.9047,
+    "a1ColdStartRelPct": 6.8912,
     "forecastSeriesRows": 52884,
     "driverRows": 10199,
-    "exceptionRows": 643,
+    "exceptionRows": 662,
     "dataQualityRows": 2034
   }
 }

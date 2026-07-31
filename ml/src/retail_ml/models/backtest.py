@@ -11,6 +11,11 @@ import numpy as np
 import pandas as pd
 
 from retail_ml.models.baselines import AdditiveMetrics, metric_for_column
+from retail_ml.policies.interval_availability import (
+    COLD_START_CALIBRATED_MAX_HORIZON,
+    POLICY_ID as INTERVAL_AVAILABILITY_POLICY_ID,
+    UNCALIBRATED_REASON_CODE,
+)
 from retail_ml.models.cohorts import (
     COHORT_KEY_COLUMNS,
     COHORT_RECOMPUTATION_VERSION,
@@ -28,7 +33,16 @@ ORIGIN_STEP_WEEKS: Final[int] = 2
 SCORING_ORIGINS: Final[int] = 13
 TRAINING_ORIGINS: Final[int] = 104
 SLOW_MOVER_THRESHOLD: Final[float] = 0.60
-ACCEPTANCE_SCHEMA_VERSION: Final[str] = "retail-forecast-acceptance/v4"
+#: v5 is the fail-closed boundary decision #85 promised and never created.
+#:
+#: #85's own correction records the gap: "only the acceptance id moved. Recomputation and
+#: verifier were already v4 from #82, so the promised fail-closed version boundary was
+#: never created and migration 0006 still admits verifier-v4 materialisations." Nothing
+#: distinguished a run evaluated against the per-cohort coverage gate from one that
+#: predated it, which is tolerable only while the gate is report-only. Making the gate
+#: hard without the boundary would leave every report-only-era run still eligible to
+#: serve under a policy it was never scored against.
+ACCEPTANCE_SCHEMA_VERSION: Final[str] = "retail-forecast-acceptance/v5"
 
 #: Decision #85. Per-cohort P90 coverage is computed and published at every scope,
 #: but does not fail acceptance for this version. The gate turns hard at Phase 4
@@ -36,8 +50,14 @@ ACCEPTANCE_SCHEMA_VERSION: Final[str] = "retail-forecast-acceptance/v4"
 #: service level, so a P90 covering 78% while claiming 90% feeds an under-stocked
 #: reorder point. A phased introduction, not a repeal; no version was ever
 #: evaluated against this gate, so nothing that passed is being excused.
-COVERAGE_GATE_MODE: Final[str] = "report_only"
-COVERAGE_GATE_HARD_AT: Final[str] = "phase_4_entry"
+#: Decision #85's deadline was "not a date -- a dependency ... Phase 4 may not start
+#: until it does", because reorder point and safety stock derive from the quantile spread,
+#: so an under-covered P90 becomes an under-stocked order rather than a reported metric.
+#: That dependency is now due, and decision #87 supplies the interval remedy that makes
+#: the band reachable. The 0.85-0.95 band is unchanged: relaxing the floor for the cohort
+#: that fails is the tuning #85 already refused once.
+COVERAGE_GATE_MODE: Final[str] = "hard"
+COVERAGE_GATE_HARD_AT: Final[str] = "already_hard"
 
 #: Decision #86. A remediation candidate repairs a named failing gate and is
 #: forbidden from being presented as an accuracy improvement, so the class travels
@@ -47,7 +67,10 @@ CANDIDATE_CLASS_CHAMPION: Final[str] = "champion"
 
 #: Gates that are computed and published but do not decide acceptance. Removing a
 #: name from this tuple is the single edit that turns its gate hard.
-REPORT_ONLY_GATES: Final[tuple[str, ...]] = ("A2_per_cohort",)
+#: Empty: A2_per_cohort now decides the verdict like every other gate. Kept as a named
+#: mechanism rather than deleted, so a future phased introduction has somewhere to go
+#: and is excluded by name rather than by silence.
+REPORT_ONLY_GATES: Final[tuple[str, ...]] = ()
 A1_IMPROVEMENT_THRESHOLD_PCT: Final[float] = 25.0
 P90_COVERAGE_MIN: Final[float] = 0.85
 P90_COVERAGE_MAX: Final[float] = 0.95
@@ -417,12 +440,44 @@ def _scope_gates(frame: pd.DataFrame) -> dict[str, Any]:
     # Decision #85: the same 0.85-0.95 band applied per cohort. Published with an
     # explicit verdict even while report-only, so a reader cannot mistake a
     # measured failure for a pass.
+    # Decision #92: the cold-start interval is published only within the calibrated
+    # horizon range, so the gate measures what the platform offers. An interval that is
+    # never published cannot mislead a consumer, and failing acceptance forever on a
+    # number nobody can read would block every future run on a metric we deliberately
+    # stopped serving. The withheld rows are counted below rather than dropped quietly --
+    # and they are still fully scored for P50 accuracy, bias and A1, so this withholds a
+    # distribution claim, never a weak forecast.
+    # A frame without `horizon` cannot be split by it, so every row is scored. That is
+    # the STRICTER choice -- it includes the uncalibrated long horizons -- so the fallback
+    # cannot be used to slip past the gate, and `applied` records which path ran.
+    horizon_limit_applied = "horizon" in cold_start.columns
+    if horizon_limit_applied:
+        cold_horizons = pd.to_numeric(cold_start["horizon"], errors="coerce")
+        cold_published = cold_start[
+            cold_horizons <= COLD_START_CALIBRATED_MAX_HORIZON
+        ]
+    else:
+        cold_published = cold_start
+    cold_withheld_rows = int(len(cold_start) - len(cold_published))
+
     cohort_coverage: dict[str, Any] = {}
-    for label, subset in (("established_history", established), ("cold_start", cold_start)):
+    for label, subset in (
+        ("established_history", established),
+        ("cold_start", cold_published),
+    ):
         actual_sum = float(pd.to_numeric(subset.get("actual_units"), errors="coerce").sum())
         metric = metric_for_column(subset, "yhat_p50", upper_column="yhat_p90")
         coverage = metric.coverage
-        if coverage is None or actual_sum <= 0:
+        if len(subset) == 0:
+            # A cohort with no rows is not a cohort that failed to demonstrate coverage;
+            # there is nothing to cover. Decision #85 names the zero-actual and #52
+            # cases but not this one, and conflating them would make the gate
+            # unsatisfiable for any population that legitimately has one cohort -- a
+            # retailer whose entire assortment is established, for instance. Kept
+            # distinct from insufficient_evidence, which DOES block, because that is a
+            # cohort we have rows for and still cannot measure.
+            verdict, passed = "not_applicable", None
+        elif coverage is None or actual_sum <= 0:
             verdict, passed = "insufficient_evidence", None
         elif P90_COVERAGE_MIN <= coverage <= P90_COVERAGE_MAX:
             verdict, passed = "pass", True
@@ -437,17 +492,55 @@ def _scope_gates(frame: pd.DataFrame) -> dict[str, Any]:
             "verdict": verdict,
             "passed": passed,
         }
+    # `passed` requires every scored cell to be True. An `insufficient_evidence` cell is
+    # None, not True, so it cannot satisfy the gate -- a cohort nobody could measure is
+    # not a cohort that passed, and #85 says so explicitly.
+    cohort_coverage["cold_start"]["intervalAvailability"] = {
+        "policyId": INTERVAL_AVAILABILITY_POLICY_ID,
+        "applied": horizon_limit_applied,
+        "calibratedMaxHorizon": COLD_START_CALIBRATED_MAX_HORIZON,
+        "reasonCode": UNCALIBRATED_REASON_CODE,
+        "scoredRows": int(len(cold_published)),
+        "withheldRows": cold_withheld_rows,
+        "withheldShareOfCohort": (
+            cold_withheld_rows / len(cold_start) if len(cold_start) else 0.0
+        ),
+        "withheldShareOfEvaluation": (
+            cold_withheld_rows / len(eligible) if len(eligible) else 0.0
+        ),
+        "note": (
+            "Decision #92. Coverage is measured over published intervals only. Withheld "
+            "rows are still scored for P50 accuracy, bias and A1, so this is per-field "
+            "withholding and not row exclusion -- the difference from decision #83's "
+            "evaluation_ineligible, which removes a row from a comparison entirely and is "
+            "capped at 1%."
+        ),
+    }
+
+    scored_cells = [
+        entry
+        for entry in cohort_coverage.values()
+        if entry["verdict"] != "not_applicable"
+    ]
+    per_cohort_passed = bool(scored_cells) and all(
+        entry["passed"] is True for entry in scored_cells
+    )
     gates["A2_per_cohort"] = {
+        "passed": per_cohort_passed,
         "gateMode": COVERAGE_GATE_MODE,
         "hardGateAt": COVERAGE_GATE_HARD_AT,
         "cohorts": cohort_coverage,
-        "wouldPassIfHard": all(
-            entry["passed"] is True for entry in cohort_coverage.values()
-        ),
+        # Retained under its old name so a reader comparing bundles across the boundary
+        # can see that the measurement did not change when the gate became binding, only
+        # its authority did.
+        "wouldPassIfHard": per_cohort_passed,
         "note": (
-            "Decision #85. Report-only for this version; does not fail acceptance. "
-            "Becomes a hard gate at Phase 4 entry because safety stock is derived "
-            "from the quantile spread."
+            "Decision #85, hard from acceptance-v5. Every scored cohort cell must sit "
+            "inside 0.85-0.95 globally and per supported market; an insufficient cell is "
+            "not a pass. The band is unchanged from the whole-population gate, because "
+            "loosening the floor for the cohort that fails would be tuning against a "
+            "visible result. Decision #87 supplies the interval remedy that makes the "
+            "band reachable for the cold-start cohort."
         ),
     }
     established_paired = _paired_rows(established)

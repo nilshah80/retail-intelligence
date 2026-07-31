@@ -313,7 +313,7 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-acceptance/v4
+                const: retail-forecast-acceptance/v5
 $defs:
   sha256:
     type: string

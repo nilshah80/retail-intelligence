@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0006_cohorted_verifier_v4"
+	ForecastMigrationRevision = "0007_activation_and_coverage"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"

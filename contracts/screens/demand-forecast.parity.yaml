@@ -113,9 +113,15 @@ shell:
       - label: Data Freshness
         source: contextual known_as_of relative to decision_as_of
         status: live_when_forecast_accepted
-      - label: Model Accuracy
+      - label: Model Accuracy (all horizons)
         source: forecast_metrics global champion accuracy
         status: live_when_forecast_accepted
+        horizonScope: h1-h26
+        scopeNote: >-
+          Labelled "all horizons" because the Demand Forecast accuracy tile is scoped to
+          the selected horizon window. Both figures are correct; unlabelled they read as
+          a contradiction (92.8 here, 93.8 there). Decision #78 requires exact grain and
+          horizon to be visible.
 
 actions:
   - selector: "#acceptForecastBtn"
@@ -199,7 +205,11 @@ kpis:
       format: percentage_1dp
       delta:
         status: unavailable_until_comparable_accepted_version
-      note: "Target: 90%"
+      note: "Target: 90% · h1-h{selected}, {metricGrain}"
+      horizonScope: selected_window
+      scopeNote: >-
+        The scope suffix is derived from the live horizon selector and the grain the API
+        reports, never hard-coded, so the label cannot drift from the number beside it.
       status: live_when_forecast_accepted
     - order: 2
       label: Forecast Bias
@@ -208,7 +218,12 @@ kpis:
       format: signed_percentage_1dp
       delta:
         status: unavailable_until_comparable_accepted_version
-      note: "Target range: ±5%"
+      note: "Target range: ±5% · h1-h{selected}, {metricGrain}"
+      horizonScope: selected_window
+      scopeNote: >-
+        Labelling matters more here than for accuracy: bias reads -2.1% over h1-h4
+        against the stated +/-5% target but -5.41% over h1-h26, so an unlabelled tile can
+        appear to pass a target the full panel does not.
       status: live_when_forecast_accepted
     - order: 3
       label: Demand at Risk

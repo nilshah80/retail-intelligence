@@ -2,13 +2,34 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from typing import Any, Final, Iterable, Mapping
 
 from retail_contracts.fingerprint import semantic_fingerprint
 
 
 class SnapshotIdentityError(ValueError):
     """The source object inventory cannot establish a safe identity."""
+
+
+#: An object declaring this cannot contribute to a byte-level identity.
+#:
+#: The generator marks each object's ``contentDeterminism`` as ``byte`` or ``logical``.
+#: Exactly one object declares ``logical``: ``source-run.duckdb``, the restricted
+#: browsing mirror that ``capabilities.duckdbRole`` describes as "non-authoritative
+#: mirror of generated source objects" and that ordinary ingestion never reads.
+#:
+#: Including it made the snapshot identity irreproducible. Two independent generations
+#: of the same pinned scenario, same seed, same execution profile, produced 508
+#: byte-identical Parquet objects and one DuckDB file differing in both size and hash
+#: (116,142,080 vs 117,977,088 bytes) -- so the identity of the authoritative data
+#: moved because a convenience mirror was rebuilt. Excluding it, the derived id
+#: reproduced exactly across both runs.
+#:
+#: Restricted objects are NOT excluded. 245 of them in the ten-year demo declare
+#: ``byte`` determinism and are real generated content that happens to sit in the
+#: hidden-truth lane; dropping them would weaken the identity rather than stabilise it.
+#: The discriminator is byte-stability, which the producer declares, not permission.
+NON_BYTE_DETERMINISTIC: Final[str] = "logical"
 
 
 def source_snapshot_id(
@@ -21,6 +42,10 @@ def source_snapshot_id(
 
     Native snapshot/run IDs are deliberately absent. They are retained separately
     and checked for corrupt reuse, but never replace the ingestion-owned identity.
+
+    Objects that declare themselves non-byte-deterministic are excluded, so an
+    identity over byte hashes is not defeated by an artifact whose producer has already
+    said its bytes may vary. See decision #89.
     """
 
     if (
@@ -34,7 +59,11 @@ def source_snapshot_id(
         )
     inventory: list[dict[str, Any]] = []
     seen_object_paths: set[str] = set()
+    excluded: list[str] = []
     for row in objects:
+        if str(row.get("contentDeterminism", "byte")) == NON_BYTE_DETERMINISTIC:
+            excluded.append(str(row.get("path", row.get("logicalPath", "<unnamed>"))))
+            continue
         object_path = row.get("path", row.get("logicalPath"))
         logical_path = row.get("logicalPath", object_path)
         byte_count = row.get("bytes")
@@ -69,7 +98,15 @@ def source_snapshot_id(
             }
         )
     if not inventory:
-        raise SnapshotIdentityError("source inventory cannot be empty")
+        raise SnapshotIdentityError(
+            "source inventory cannot be empty"
+            + (
+                f" (every object declared {NON_BYTE_DETERMINISTIC} determinism: "
+                f"{', '.join(sorted(excluded))})"
+                if excluded
+                else ""
+            )
+        )
     inventory.sort(key=lambda row: row["object_path"])
     payload = {
         "source_instance": source_instance,
@@ -79,4 +116,8 @@ def source_snapshot_id(
     return semantic_fingerprint(payload, volatile_pointers=())
 
 
-__all__ = ["SnapshotIdentityError", "source_snapshot_id"]
+__all__ = [
+    "NON_BYTE_DETERMINISTIC",
+    "SnapshotIdentityError",
+    "source_snapshot_id",
+]

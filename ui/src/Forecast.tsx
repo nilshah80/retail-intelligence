@@ -878,6 +878,12 @@ export function DemandForecast({
     };
   }, [data.horizons?.items, horizonWeeks]);
 
+  // Derived from the live selector and the grain the API reports, never hard-coded, so
+  // the label cannot drift from the number beside it.
+  const metricScopeLabel = `h1–h${horizonWeeks}, ${
+    (data.horizons?.metricGrain ?? "market_portfolio").replace(/_/g, " ")
+  }`;
+
   function exportWorkbench() {
     if (!data.workbench?.items.length) return;
     const headings = [
@@ -965,17 +971,25 @@ export function DemandForecast({
       </div>
 
       <div className="kpi-grid forecast-kpis">
+        {/* Both tiles are scoped to the selected horizon window, while the Forecast
+            Value Add card and the footer Model Accuracy report the full 26-week panel.
+            Every figure is correct, but unlabelled they read as a contradiction: 93.8%
+            beside 92.8% with nothing saying why. Decision #78 requires the exact grain
+            and horizon to be labelled, and these were the only cells on the screen
+            without it. Bias makes it more than cosmetic -- -2.1% over h1-h4 against a
+            stated +/-5% target becomes -5.4% over h1-h26, so an unlabelled tile can read
+            as passing a target the full panel does not. */}
         <div className="kpi">
           <small>Forecast Accuracy</small>
           <div className="value">{percentage(scopedMetrics.accuracy)}</div>
           <span className="delta unavailable">Delta: Not available</span>
-          <p>Target: 90%</p>
+          <p>Target: 90% · {metricScopeLabel}</p>
         </div>
         <div className="kpi">
           <small>Forecast Bias</small>
           <div className="value">{percentage(scopedMetrics.bias, true)}</div>
           <span className="delta unavailable">Delta: Not available</span>
-          <p>Target range: ±5%</p>
+          <p>Target range: ±5% · {metricScopeLabel}</p>
         </div>
         <div className="kpi"><small>Demand at Risk</small><div className="value unavailable">Not available</div><p>Available in Phase 4</p></div>
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>

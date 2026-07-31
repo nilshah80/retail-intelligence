@@ -209,7 +209,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             l.region::VARCHAR AS region,
             l.city::VARCHAR AS city,
             NULL::VARCHAR AS parent_dc,
-            lower(l.location_type)::VARCHAR AS format,
+            lower(l.location_kind)::VARCHAR AS format,
             coalesce(try_cast(l.active_raw AS BOOLEAN), true)::BOOLEAN AS active,
             l.known_as_of,
             l.evidence_grade::VARCHAR AS known_as_of_evidence_grade
