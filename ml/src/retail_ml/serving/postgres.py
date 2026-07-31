@@ -33,7 +33,9 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: Paired with acceptance-v5 / verifier-v5. 0007 retires decision #90's v1 activation
 #: scopes and admits only runs scored against decision #85's HARD per-cohort coverage
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
-MIGRATION_REVISION: Final[str] = "0007_activation_and_coverage"
+#: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
+#: interval can be stored, and pairs them with an attributable reason.
+MIGRATION_REVISION: Final[str] = "0008_nullable_withheld_interval"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
@@ -82,6 +84,7 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "yhat_p50",
         "yhat_p90",
         "confidence",
+        "interval_unavailable_reason",
         "data_quality_class",
     ),
     "forecast_eval_predictions": (
@@ -487,6 +490,20 @@ def prepare_serving_projection(
     _require(
         not quality_join.duplicated(series_keys).any(),
         "forecast data quality violates SeriesKey grain",
+    )
+    # Decision #92. A withheld interval must carry WHY, and the reason comes from the
+    # bundle's own `intervalAvailability.reasonCode` rather than being invented here: the
+    # publisher decided what was withheld, so the serving layer must not author its own
+    # explanation for it. Migration 0008 enforces the pairing in the database.
+    interval_reason = str(
+        (run.manifest.get("intervalAvailability") or {}).get("reasonCode")
+        or "INTERVAL_UNAVAILABLE"
+    )
+    series = series.copy()
+    series["interval_unavailable_reason"] = np.where(
+        pd.to_numeric(series["yhat_p90"], errors="coerce").isna(),
+        interval_reason,
+        None,
     )
     serving_series = series.merge(
         dimensions,

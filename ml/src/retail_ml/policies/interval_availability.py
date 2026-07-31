@@ -33,6 +33,46 @@ MEASURED_COVERAGE_BY_BAND: Final[dict[str, float]] = {
 P90_COVERAGE_MIN: Final[float] = 0.85
 
 
+def _band_upper_bound(band: str) -> int:
+    return int(band.split("-h")[-1])
+
+
+def calibrated_bands() -> tuple[str, ...]:
+    """Bands whose measured coverage clears the floor, derived not asserted."""
+
+    return tuple(
+        band
+        for band, coverage in MEASURED_COVERAGE_BY_BAND.items()
+        if coverage >= P90_COVERAGE_MIN
+    )
+
+
+def _assert_limit_matches_evidence() -> None:
+    """The limit must equal what the measurements support.
+
+    MEASURED_COVERAGE_BY_BAND was previously only interpolated into an error string, so
+    raising COLD_START_CALIBRATED_MAX_HORIZON to 8 would have contradicted this module's
+    own data (h5-h8 measured 0.8433, below the 0.85 floor) with nothing failing. A policy
+    that carries its evidence should be checked against it, at import, rather than relying
+    on whoever edits the constant also reading the dict above it.
+    """
+
+    supported = max(
+        (_band_upper_bound(band) for band in calibrated_bands()), default=0
+    )
+    if COLD_START_CALIBRATED_MAX_HORIZON != supported:
+        raise AssertionError(
+            f"COLD_START_CALIBRATED_MAX_HORIZON is {COLD_START_CALIBRATED_MAX_HORIZON} "
+            f"but the measured bands support {supported}: "
+            f"{MEASURED_COVERAGE_BY_BAND} against a {P90_COVERAGE_MIN} floor. Extending "
+            "the range needs a new mechanism with its own preregistered protocol under "
+            "decision #92, not a raised constant."
+        )
+
+
+_assert_limit_matches_evidence()
+
+
 class IntervalHorizonUnavailableError(RuntimeError):
     """A consumer asked for a cold-start interval beyond the calibrated range."""
 
@@ -79,6 +119,7 @@ def horizon_for_lead_time(lead_time_days: int, *, review_period_days: int = 7) -
 
 __all__ = [
     "COLD_START_CALIBRATED_MAX_HORIZON",
+    "calibrated_bands",
     "IntervalHorizonUnavailableError",
     "MEASURED_COVERAGE_BY_BAND",
     "POLICY_ID",

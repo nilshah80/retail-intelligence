@@ -1025,9 +1025,18 @@ blocker.
       Resolution takes one explicit path and fails closed on absent, scope-mismatched, non-active,
       under-capable, insufficient or moved publications; an AST check proves no glob, scan or
       newest-wins path exists. Rollback emits new records and never edits history.
-- [x] Replace the single demo `contracts/ml/expected-pin.json` deployment assumption with a
-      reviewed per-retailer/per-tenant publication-selection and pinning mechanism before
-      multi-retailer use. Each selected publication must still pass the same Gate A/Gate B,
+- [ ] **NOT DONE — the claim was premature and is corrected here.** Replace the single demo
+      `contracts/ml/expected-pin.json` deployment assumption with a reviewed
+      per-retailer/per-tenant publication-selection and pinning mechanism before
+      multi-retailer use.
+      The library contract exists and is tested: `resolve_selection()` checks scope,
+      lifecycle, declared readiness and path existence, and `verify_against_publication()`
+      checks the real publication fingerprint. But **neither has a caller outside its own
+      definition**, and nor does `build_readiness_report()`. Features, training,
+      publication, materialisation and activation all still resolve through
+      `contracts/ml/expected-pin.json`, so the architectural onboarding boundary is
+      designed and unit-tested, not operational. Marking this complete described the
+      library rather than the runtime. Each selected publication must still pass the same Gate A/Gate B,
       reconciliation, capability, object-hash and lineage checks; changing retailer data must not
       require ML source-code changes.
 - [x] **PP3-A8 done 2026-07-31, corrected 2026-07-31 after review.** Both fixtures exist and
@@ -1067,14 +1076,24 @@ blocker.
       `locations` name a source-neutral consumer imports. `test_a_mapped_retailer_completes_the_whole_builder`
       now runs the real entrypoint end to end and
       `test_identity_resolution_must_be_declared_not_inferred` pins the fail-closed default.
-      **Still open:** decision #88 — the frozen `location` role declares `name`/`location_kind`
+      **Decision #88 is now closed** (option (a): the Shopify adapter emits the frozen
+      contract's `name`/`location_kind`, the canonical transform and crosswalk follow, and
+      staging-v2 was not amended). Retained for history — the frozen `location` role declares `name`/`location_kind`
       while the Shopify adapter emits `location_name`/`location_type`, so the neutral relation has
       never presented its contract's field names. The crosswalk accepts both spellings as an
       interim measure. Readiness and selection (`resolve_selection`, `verify_against_publication`)
       remain library-only with no runtime consumer; `resolve_selection` checks path existence only.
-- [x] Add at least one fully non-Shopify/non-Business-Central retailer fixture that reaches the
-      same canonical roles through `mapped_files`, and one fixture whose genuinely different
-      semantics require a bounded custom adapter. Prove both reach shared transforms without
+- [x] **Corrected 2026-07-31.** Add at least one fully non-Shopify/non-Business-Central
+      retailer fixture that reaches the same canonical roles through `mapped_files`, and one
+      fixture whose genuinely different semantics require a bounded custom adapter.
+      The mapped-files fixture is proven through the real `build_staging()` entrypoint. The
+      custom ledger-ERP fixture reaches the standardized role, but its money handling
+      encoded the same 100x double-conversion that was fixed in `mapped_files`: it applied
+      `exact_minor_sql` and stored the result in `net_amount_major`, which the canonical
+      transform converts again, so EUR 24.00 became 240000 minor units. Fixed, and the two
+      tests that asserted the defective 2400 now assert Decimal("24.00"). The earlier
+      "both fixtures reach shared transforms" claim was true of the column shape and false
+      of the values. Prove both reach shared transforms without
       platform-named staging tables or downstream branches; also include missing-temporal-evidence,
       ambiguous-mapping and incomplete-capability negative fixtures.
 - [x] **PP3-A6/A8 done 2026-07-31.** Sufficiency is a separate field from readiness and
@@ -1502,3 +1521,59 @@ changing datagen merely to manufacture greener metrics.
       production-scale benchmark may run once on the designated machine, but its orchestration
       and artifact semantics must not be host-specific.
 - [ ] **Exit:** full run passes; all screens live.
+
+- [x] **Decision #92 closed end to end 2026-08-01.** Cold-start intervals are published only
+      within the calibrated horizon and withheld beyond it, and the withholding now reaches
+      serving rather than stopping at the bundle.
+      Three candidates failed to calibrate the full range first (#87 C6 pinned at its grid
+      ceiling, C7 overshot to 0.9620 on held-out origins and cost 46.9% of confidence, #91's
+      dedicated cold-start quantile head reached 0.8063 while preserving confidence), and
+      the failure is monotonic in horizon: 0.8603 h1-h4, 0.8433 h5-h8, 0.8024 h9-h13,
+      0.7798 h14-h26. Reorder is unaffected because every `suppliers_leadtimes` row carries
+      `lead_time_days = 5`, which resolves to h2.
+      **A review caught that the withholding helper was written, tested and never called**,
+      so the gate measured h1-h4 while every served row still carried an h5-h26 interval --
+      the gate telling the truth about a number nobody reads. Wiring it then exposed that it
+      could not be stored at all: `forecast_series.yhat_p90` and `confidence` were NOT NULL,
+      and the Go read model scanned them as non-pointer `float64`, which fails outright on a
+      NULL. All three layers are now done: migration `0008_nullable_withheld_interval` with
+      CHECK constraints pairing the interval to its confidence and requiring a reason, Go
+      scanning `*float64` and surfacing `intervalAvailable`, and a nullable UI schema.
+      Measured in PostgreSQL: 8,756 withheld, 202,780 served, one reason code, **zero P50
+      nulls**. Null was chosen over a sentinel deliberately -- safety stock is quantile
+      spread x service level, so a placeholder is consumed arithmetically and a zero would
+      return zero safety stock on the least predictable products.
+      Serving `fr_357575f586905b11` / `fv_3d66e3bd9939430d`. `tools/dev.py verify` exit 0.
+      **Still bounded, not solved:** cold-start P90 covers 17.9% of series and 22.47% of
+      demand and is calibrated only to h4. Extending the range needs a new mechanism with
+      its own preregistered protocol.
+
+- [x] **Post-Phase 3 review findings fixed 2026-08-01.** An external review of the two
+      unpushed commits found several guarantees overstated; all are corrected.
+      The custom ledger-ERP fixture still encoded the 100x money defect that was fixed in
+      `mapped_files` -- it applied `exact_minor_sql` and stored the result in
+      `net_amount_major`, which the canonical transform converts again, so EUR 24.00 became
+      240000 minor units. Adapter-level rejects reached no governed quarantine: the mapped
+      adapter recorded them in `<role>_candidate` and excluded them, while `_build_quarantine`
+      only inspected dialect relations, so an invalid row was neither served nor traceable.
+      A generic `_drain_adapter_rejects` pass now moves every adapter's rejects into
+      `stage_data.adapter_quarantine`, proven through the real builder.
+      The closure record mixed several generations of evidence -- stale artifact hashes, a
+      stale fingerprint, a materialization action naming a superseded version, an A5 line
+      reporting a fixed failure, and the current run listed as superseded by itself -- and no
+      validator checked it, so the gate passed on a record that contradicted the run it
+      described. It is now generated by `tools/build_closure_record.py` from the bundle and
+      the live activation, with five contract tests.
+      Decision #86's display protection covered only `market_portfolio` of three governed
+      grains and the verifier never replayed it; it now covers all three, a skipped grain
+      blocks the gate, and the verifier replays the evidence instead of reading it back.
+      Snapshot identity trusted a producer-controlled `contentDeterminism` string, so a
+      source could label an authoritative object `logical` and change its bytes freely; the
+      exclusion is now gated on the governed mirror's dataset, format and path.
+      Also fixed from my own review: `location_role_identity` wrongly enforced name
+      uniqueness, refusing two distinct stores that share a display name even though
+      identity resolution never reads the name; `interval_calibration.py` was 400 lines of
+      unreachable rejected-candidate code, removed after checking imports, dynamic loading,
+      contracts and `__init__`; `_free_port` was never called; the horizon limit did not
+      validate against its own measured bands and now asserts at import; and the pipeline
+      orchestration had no tests, now nine.

@@ -774,29 +774,6 @@ class _PipelineFailure(RuntimeError):
         self.code = code
 
 
-def _free_port(port: int) -> None:
-    """Release a TCP listener by socket owner, not by process name.
-
-    `go run` compiles to a temporary binary and execs it, so the process holding the
-    port is not the one whose command line contains "cmd/server". Killing by name left
-    the old listener alive, the replacement died with "bind: address already in use",
-    and because it died in the background the API appeared to restart while still
-    serving the previous forecast version.
-    """
-
-    listing = subprocess.run(
-        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    for line in listing.stdout.split():
-        try:
-            os.kill(int(line), 9)
-        except (ValueError, ProcessLookupError, PermissionError):
-            continue
-
-
 def command_pipeline(args: argparse.Namespace) -> int:
     """Chain land through activate. Everything after datagen, in one command.
 

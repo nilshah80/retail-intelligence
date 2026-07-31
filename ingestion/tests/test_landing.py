@@ -295,6 +295,8 @@ def test_snapshot_identity_ignores_a_non_byte_deterministic_mirror() -> None:
     mirror_first = {
         "path": "source-run.duckdb",
         "logicalPath": "source-run.duckdb",
+        "dataset": "sourceRunDuckdb",
+        "format": "duckdb",
         "bytes": 116_142_080,
         "sha256": "c" * 64,
         "contentDeterminism": "logical",
@@ -357,3 +359,38 @@ def test_an_inventory_of_only_unstable_objects_fails_closed() -> None:
     # The reason names what was dropped, so "empty inventory" is not mistaken for
     # "no objects were supplied".
     assert "source-run.duckdb" in str(excinfo.value)
+
+
+def test_only_the_governed_mirror_may_claim_logical_determinism() -> None:
+    """A source must not be able to redefine what the identity covers.
+
+    `contentDeterminism` is producer-supplied and the landing manifest is only checked to
+    be an object with an objects array. Without this gate a source could label an
+    authoritative sales object `logical`, change its bytes and keep the same
+    sourceSnapshotId. Current datagen only uses the field for source-run.duckdb; this
+    makes that restriction enforced rather than merely true today.
+    """
+
+    from retail_ingestion.landing.snapshot_id import (
+        SnapshotIdentityError,
+        source_snapshot_id,
+    )
+
+    forged = {
+        "path": "public/sales/week=1/part-0.parquet",
+        "logicalPath": "sales/week=1",
+        "dataset": "shopifyMerchandise",
+        "format": "parquet",
+        "bytes": 2048,
+        "sha256": "a" * 64,
+        # An authoritative sales object claiming the mirror's exemption.
+        "contentDeterminism": "logical",
+    }
+
+    with pytest.raises(SnapshotIdentityError) as excinfo:
+        source_snapshot_id(
+            source_instance="acme",
+            extract_boundary="2026-07-28",
+            objects=[forged],
+        )
+    assert "governed non-authoritative mirror" in str(excinfo.value)

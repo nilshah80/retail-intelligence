@@ -299,6 +299,26 @@ def _published_shape(frame: pd.DataFrame) -> pd.DataFrame:
     return published.drop(columns=["c5_p50", "c5_p90"])
 
 
+def _with_display_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Give the fixture the columns a published frame actually carries.
+
+    `_decision_86_display_evidence` keys its cells on the grain columns plus
+    forecast_origin and target_week_start, mirroring the serving handler. A fixture
+    missing them exercised a replay that no real bundle would take.
+    """
+
+    out = frame.copy()
+    if "target_week_start" not in out.columns:
+        out["target_week_start"] = pd.to_datetime(
+            out["forecast_origin"]
+        ) + pd.to_timedelta(pd.to_numeric(out["horizon"], errors="coerce") * 7, "D")
+    for column, value in (("category", "cat-a"), ("store_id", "store-1"),
+                          ("channel_id", "channel-1"), ("market_id", "market-1")):
+        if column not in out.columns:
+            out[column] = value
+    return out
+
+
 def _recorded_checks(published: pd.DataFrame) -> dict:
     from retail_ml.diagnostics.comparison import detect_leakage
 
@@ -306,10 +326,16 @@ def _recorded_checks(published: pd.DataFrame) -> dict:
     leakage = detect_leakage(
         cold.assign(_candidate=cold["yhat_p50"]), "_candidate", "champion_p50"
     )
+    # The display-cell record is produced by the REAL publisher helper rather than
+    # hand-written, so this fixture cannot drift from what a bundle actually carries and
+    # cannot accidentally satisfy the verifier's replay with a fabricated shape.
+    from retail_ml.publish.run_artifacts import _decision_86_display_evidence
+
     return {
         "structuralChecks": {
             "untargetedRowsByteIdentical": {"passed": True},
             "leakage": {"suspected": leakage["suspected"]},
+            "displayCellIntegrity": _decision_86_display_evidence(published),
         },
         "confirmationOriginsHeldOut": ["x"],
     }
@@ -318,7 +344,7 @@ def _recorded_checks(published: pd.DataFrame) -> dict:
 def test_the_verifier_replays_the_checks_on_an_honest_bundle() -> None:
     from retail_ml.publish.verify import _recompute_remediation_checks
 
-    published = _published_shape(_plausible_frame())
+    published = _with_display_columns(_published_shape(_plausible_frame()))
 
     _recompute_remediation_checks(published, _recorded_checks(published))
 
@@ -331,7 +357,7 @@ def test_the_verifier_rejects_a_tampered_untargeted_row() -> None:
         _recompute_remediation_checks,
     )
 
-    published = _published_shape(_plausible_frame())
+    published = _with_display_columns(_published_shape(_plausible_frame()))
     recorded = _recorded_checks(published)
     established = published["cohort"] != COLD_START_COHORT
     published.loc[published.index[established][0], "yhat_p50"] *= 1.5
@@ -348,7 +374,7 @@ def test_the_verifier_rejects_a_record_that_disagrees_with_the_replay() -> None:
         _recompute_remediation_checks,
     )
 
-    published = _published_shape(_plausible_frame())
+    published = _with_display_columns(_published_shape(_plausible_frame()))
     recorded = _recorded_checks(published)
     recorded["structuralChecks"]["leakage"]["suspected"] = True
 
@@ -364,8 +390,7 @@ def test_the_verifier_refuses_a_bundle_missing_its_replay_columns() -> None:
         _recompute_remediation_checks,
     )
 
-    published = _published_shape(_plausible_frame()).drop(columns=["champion_p50"])
+    published = _with_display_columns(_published_shape(_plausible_frame())).drop(columns=["champion_p50"])
 
     with pytest.raises(ForecastRunVerificationError, match="replayed rather than trusted"):
         _recompute_remediation_checks(published, {"confirmationOriginsHeldOut": ["x"]})
-

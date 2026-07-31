@@ -46,5 +46,6 @@
     "Relaxing the 0.95 ceiling to admit us-new-york's 0.9620. The band is symmetric because over-wide intervals over-stock; #85 already refused loosening the floor and the ceiling is the same principle.",
     "Dropping criterion 4 after it bound. It is arguably mis-specified -- it can conflate width that buys calibration with width that buys nothing -- but C7 fails criterion 5 independently, so nothing turns on that argument and it is not used as a route to acceptance.",
     "Refitting the conformal level on all 13 origins to make confirmation agree. That is fitting on the confirmation data, which is the one thing decision #74 exists to prevent."
-  ]
+  ],
+  "implementationDisposition": "C7's split-conformal offset lived in ml/src/retail_ml/models/interval_calibration.py, removed 2026-07-31. It had no importer in production or tests and was reachable only by someone finding it -- a rejected candidate left callable is a trap, not reproducibility. This record carries the mechanism, segmentation, frozen grid, target and measured result, which is what a re-verification needs. Decision #91's accepted mechanism is the cold-start quantile head in ml/src/retail_ml/models/train_lgbm.py."
 }

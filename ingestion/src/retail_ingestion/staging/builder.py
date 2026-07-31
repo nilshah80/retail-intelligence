@@ -214,6 +214,75 @@ def _build_quarantine(connection: duckdb.DuckDBPyConnection) -> int:
     return _table_count(connection, "stage_data.adapter_quarantine")
 
 
+def _drain_adapter_rejects(connection: duckdb.DuckDBPyConnection) -> int:
+    """Move every adapter's row-level rejects into the shared quarantine.
+
+    `_build_quarantine` only inspects dialect relations, so an adapter that does its own
+    row validation had nowhere governed to put a reject. The mapped_files adapter records
+    them in `<role>_candidate._reject_reason` and then excludes them from the accepted
+    role, which means an invalid row vanished from staging while both
+    `manifest.quarantineRows` and `stage_data.adapter_quarantine` stayed at zero -- the
+    row was neither served nor traceable, which is the one outcome the contract forbids.
+
+    This is source-neutral by construction: it discovers candidate relations and their
+    reject column rather than naming any adapter or dialect, so a new adapter is governed
+    by adopting the convention instead of by editing this function.
+    """
+
+    candidates = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT table_name FROM duckdb_tables()
+            WHERE schema_name = 'stage_data' AND table_name LIKE '%\_candidate' ESCAPE '\\'
+            """
+        ).fetchall()
+    ]
+    drained = 0
+    for relation in candidates:
+        columns = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT column_name FROM duckdb_columns() WHERE schema_name = "
+                f"'stage_data' AND table_name = '{relation}'"
+            ).fetchall()
+        }
+        if "_reject_reason" not in columns:
+            continue
+        dataset = relation[: -len("_candidate")]
+        # Lineage columns are optional across adapters, so absent ones become NULL rather
+        # than failing the drain: a reject with partial lineage is still better recorded
+        # than dropped.
+        def col(name: str) -> str:
+            return name if name in columns else "NULL"
+
+        connection.execute(
+            f"""
+            INSERT INTO stage_data.adapter_quarantine
+            SELECT
+                {col("source_system")},
+                {col("source_instance")},
+                '{dataset}',
+                {col("native_record_id")},
+                _reject_reason,
+                {col("raw_object_path")},
+                sha256(
+                    coalesce({col("native_record_id")}, '') || ':' ||
+                    coalesce({col("raw_object_path")}, '') || ':' || _reject_reason
+                )
+            FROM stage_data.{relation}
+            WHERE _reject_reason IS NOT NULL
+            """
+        )
+        drained += int(
+            connection.execute(
+                f"SELECT count(*) FROM stage_data.{relation} "
+                "WHERE _reject_reason IS NOT NULL"
+            ).fetchone()[0]
+        )
+    return drained
+
+
 def _relation_exists(
     connection: duckdb.DuckDBPyConnection,
     name: str,
@@ -635,6 +704,8 @@ def build_staging(
         )
         crosswalk_rows = build_location_crosswalk(connection, catalog)
         quarantine_rows = _build_quarantine(connection)
+        # Every adapter's own rejects, not just the dialect relations'.
+        quarantine_rows += _drain_adapter_rejects(connection)
         table_counts = {
             name: _table_count(connection, name)
             for name in sorted(

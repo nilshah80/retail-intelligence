@@ -317,7 +317,9 @@ def test_a_custom_retailer_reaches_the_same_role_without_downstream_change() -> 
     ).fetchone()
     assert row[0] == "S-1"
     assert int(row[1]) == 3
-    assert int(row[2]) == 2400
+    # Major units at the staging layer: EUR 24.00, not 2400 minor units. The canonical
+    # transform is what converts to minor, and doing it twice was a 100x error.
+    assert Decimal(str(row[2])) == Decimal("24.00")
     assert row[3] == "merchandise"
     assert row[4] == "ledgerErp"
 
@@ -797,3 +799,114 @@ def test_identity_resolution_must_be_declared_not_inferred(tmp_path: Path) -> No
     # Defaulting to upstream_topology means the missing manifest is reported, rather
     # than the retailer's own keys being promoted to canonical identity by accident.
     assert "topology evidence" in str(excinfo.value)
+
+
+def test_an_adapter_reject_reaches_the_shared_quarantine(tmp_path: Path) -> None:
+    """Every invalid row must be traceable, whichever adapter rejected it.
+
+    `_build_quarantine` only inspects dialect relations, so a mapped-files reject had
+    nowhere governed to go: the row was excluded from `stage_data.merchandise` while both
+    `manifest.quarantineRows` and `stage_data.adapter_quarantine` stayed at zero. Neither
+    served nor traceable is the one outcome the contract forbids, and it is invisible
+    precisely because the accepted role looks clean.
+    """
+
+    from retail_ingestion.staging.builder import build_staging
+
+    snapshot, profile_path = _mapped_only_snapshot(tmp_path)
+    # Break one required field on one row: a non-numeric quantity.
+    sales = snapshot / "public" / "sales" / "weekly.csv"
+    sales.write_text(
+        "ccy,net,qty,day,chan,shop,item,line_no,order_no,posted_at\n"
+        "GBP,12.50,3,05/01/2026,1,store-1,SKU-1,1,A-1,2026-01-06 08:00:00\n"
+        "GBP,7.25,NOT-A-NUMBER,05/01/2026,2,store-1,SKU-2,1,A-2,2026-01-06 08:05:00\n",
+        encoding="utf-8",
+    )
+    manifest_path = snapshot / "landing-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for entry in manifest["objects"]:
+        if entry["dataset"] == "weekly_sales":
+            entry["bytes"] = sales.stat().st_size
+            entry["sha256"] = hashlib.sha256(sales.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = build_staging(
+        snapshot,
+        profile_path,
+        tmp_path / "stage.duckdb",
+        execution_profile={"duckdbThreads": 2, "memoryLimitGb": 2},
+    )
+
+    counts = result.table_counts
+    # The bad row is excluded from the accepted role...
+    assert counts["stage_data.merchandise"] == 1
+    # ...and is recorded in the shared quarantine rather than vanishing.
+    assert counts["stage_data.adapter_quarantine"] == 1
+    assert result.quarantine_rows == 1
+
+    staged = duckdb.connect(str(result.staging_database), read_only=True)
+    row = staged.execute(
+        """
+        SELECT dataset, reason_code, payload_hash IS NOT NULL
+        FROM stage_data.adapter_quarantine
+        """
+    ).fetchone()
+    # The reason code names WHY, and the dataset names which role it came from, so the
+    # reject is attributable without reading adapter internals.
+    assert row[0] == "merchandise"
+    assert "UNPARSABLE" in str(row[1]) or "REQUIRED" in str(row[1])
+    assert row[2] is True
+
+
+def test_duplicate_display_names_are_allowed_under_identity_resolution() -> None:
+    """Name uniqueness is a topology-matching requirement, not an identity one.
+
+    `upstream_topology` resolves a topology entry to a role row BY NAME, so an ambiguous
+    name would silently bind the wrong location and must fail. `location_role_identity`
+    never reads the name -- the source key IS the canonical key -- so enforcing it there
+    rejected valid client data: two distinct stores both called "Main Street" in one
+    market, with distinct source keys, refused for a collision that cannot affect the
+    result.
+    """
+
+    from retail_ingestion.mappings.locations import build_location_crosswalk
+
+    class _Catalog:
+        snapshot_root = Path("/nonexistent")
+        profile = {
+            "locationResolution": {"mode": "location_role_identity"},
+            "sourceInstances": [
+                {
+                    "sourceInstance": "acme-1",
+                    "marketId": "gb",
+                    "currencyCode": "GBP",
+                    "timezone": "UTC",
+                }
+            ],
+        }
+
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA stage_data")
+    con.execute(
+        """
+        CREATE TABLE stage_data.locations AS SELECT * FROM (VALUES
+          ('generic-flat-file','acme-1','gb','store-1','Main Street','store'),
+          ('generic-flat-file','acme-1','gb','store-2','Main Street','store'))
+          AS t(source_system, source_instance, market_id,
+               location_source_key, name, location_kind)
+        """
+    )
+    con.execute(
+        "CREATE TABLE stage_data.merchandise AS SELECT 'generic-flat-file' "
+        "AS source_system, 'gb' AS market_id, 'store-1' AS demand_location_source_key"
+    )
+
+    rows = build_location_crosswalk(con, _Catalog())
+
+    # Both locations resolve, keyed on their distinct source keys.
+    assert rows == 2
+    resolved = con.execute(
+        "SELECT source_location_key, canonical_location_key "
+        "FROM stage_data.location_crosswalk ORDER BY 1"
+    ).fetchall()
+    assert resolved == [("store-1", "store-1"), ("store-2", "store-2")]

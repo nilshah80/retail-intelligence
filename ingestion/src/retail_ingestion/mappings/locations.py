@@ -132,6 +132,7 @@ def build_location_crosswalk(
         """
     ).fetchall()
     by_name: dict[tuple[str, str], tuple[str, str, str, str]] = {}
+    by_source_key: dict[tuple[str, str], tuple[str, str, str, str]] = {}
     for (
         source_system,
         source_instance,
@@ -141,16 +142,26 @@ def build_location_crosswalk(
         location_type,
     ) in role_locations:
         key = (str(market_id), str(name).strip().casefold())
-        if key in by_name:
+        if key in by_name and mode == "upstream_topology":
+            # Only topology matching needs names to be unique, because it resolves a
+            # topology entry to a role row BY NAME and an ambiguous name would silently
+            # bind the wrong location. Identity resolution never reads the name, so
+            # enforcing it there refused valid client data: two distinct stores both
+            # called "Main Street" in one market, with distinct source keys, were rejected
+            # for a collision that could not affect the result.
             raise LocationMappingError(
                 f"duplicate location name in the location role: {key!r}"
             )
-        by_name[key] = (
+        entry = (
             str(source_instance),
             str(source_key),
             str(location_type),
             str(source_system),
         )
+        by_name[key] = entry
+        # Keyed by source key as well, because identity mode resolves on the key and must
+        # not lose a row whose display name collides with another's.
+        by_source_key[(str(market_id), str(source_key))] = entry
 
     rows: list[tuple[str, str, str, str, str, str, str, str]] = []
     for row in stores:
@@ -252,11 +263,7 @@ def build_location_crosswalk(
             _key,
             location_type,
             source_system,
-        ) in (
-            ((market, key), value)
-            for (market, _name), value in by_name.items()
-            for key in (value[1],)
-        ):
+        ) in by_source_key.items():
             rows.append(
                 (
                     "source_native",

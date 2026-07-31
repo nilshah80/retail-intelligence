@@ -151,6 +151,18 @@ properties:
     enum:
       - rejected
       - accepted
+  intervalAvailability:
+    # Decision #92. Which served rows carry no interval and why. Declared in the contract
+    # rather than left free-form so a consumer can rely on it being present: a null P90
+    # read as zero spread would return zero safety stock on the least predictable rows.
+    type: object
+    additionalProperties: true
+    required:
+      - policyId
+      - calibratedMaxHorizon
+      - reasonCode
+      - withheldRows
+      - servedRows
   classificationPolicies:
     type: object
     additionalProperties: false

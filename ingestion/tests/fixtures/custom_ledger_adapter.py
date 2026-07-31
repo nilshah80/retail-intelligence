@@ -121,9 +121,13 @@ class LedgerErpAdapter(SourceAdapter):
                 'store'::VARCHAR AS channel_source_key,
                 try_cast(business_day AS DATE) AS business_date,
                 try_cast(qty AS BIGINT) AS units,
-                {exact_minor_sql(
-                    "try_cast(net_major AS DECIMAL(38, 12))", "header_currency"
-                )} AS net_amount_major,
+                -- staging-v2 declares this field in MAJOR units and the canonical
+                -- transform applies exact_minor_sql to it, so converting here too made
+                -- EUR 24.00 arrive as 240000 minor units instead of 2400. Same 100x
+                -- defect that was fixed in the mapped_files adapter; this fixture still
+                -- encoded it, which invalidated the custom-adapter round-trip evidence.
+                -- Normalise the type and leave the scale alone.
+                try_cast(net_major AS DECIMAL(38, 12)) AS net_amount_major,
                 header_currency::VARCHAR AS currency_code
             FROM resolved
             WHERE revision_rank = 1

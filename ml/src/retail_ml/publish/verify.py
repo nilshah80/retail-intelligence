@@ -173,6 +173,36 @@ def _recompute_remediation_checks(
         f"recomputed leakage battery is not clean: {leakage['signals']}",
     )
 
+    # Decision #86 §2.4, replayed rather than read back. The publisher stored a
+    # displayCellIntegrity record; without recomputing it, a bundle could carry an
+    # altered record -- or a real store/category regression with a clean-looking record --
+    # and `independentlyVerified` would mean only "the publisher said so", which is the
+    # exact failure §2.3 and §2.5 are replayed to avoid.
+    from retail_ml.publish.run_artifacts import _decision_86_display_evidence
+
+    recorded = (remediation.get("structuralChecks") or {}).get("displayCellIntegrity")
+    _require(
+        isinstance(recorded, dict),
+        "a remediation bundle must publish its decision #86 §2.4 display-cell record",
+    )
+    replayed = _decision_86_display_evidence(evaluation)
+    _require(
+        replayed["passed"],
+        "recomputed decision #86 §2.4 check failed: "
+        f"{[c['grain'] + '/h' + str(c['horizon']) for c in replayed['violations']]}",
+    )
+    _require(
+        sorted(replayed["grainsEvaluated"]) == sorted(recorded.get("grainsEvaluated", [])),
+        "published display-cell evidence covers different grains than a replay does: "
+        f"recorded {recorded.get('grainsEvaluated')}, replayed "
+        f"{replayed['grainsEvaluated']}",
+    )
+    _require(
+        bool(recorded.get("passed")) == bool(replayed["passed"])
+        and len(recorded.get("violations") or []) == len(replayed["violations"]),
+        "published display-cell verdict disagrees with a replay of it",
+    )
+
     recorded = remediation.get("structuralChecks") or {}
     _require(
         bool((recorded.get("untargetedRowsByteIdentical") or {}).get("passed"))
@@ -341,20 +371,29 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         ("evaluation", evaluation, "yhat_p50", "yhat_p90"),
         ("current series", frames["forecast_series"], "yhat_p50", "yhat_p90"),
     ):
-        expected_confidence = forecast_confidence(
-            frame[p50_column],
-            frame[p90_column],
+        # Decision #92 withholds the cold-start interval beyond the calibrated horizon,
+        # so those rows carry no P90 and therefore no confidence -- confidence is DERIVED
+        # from the interval, so publishing one without the other would assert a certainty
+        # nothing supports. Those rows are exempted from the decision #12 identity and
+        # required to be null on BOTH fields, so "withheld" cannot become a hiding place
+        # for a confidence value that disagrees with its interval.
+        upper = pd.to_numeric(frame[p90_column], errors="coerce")
+        actual_confidence = pd.to_numeric(frame["confidence"], errors="coerce")
+        withheld = upper.isna()
+        _require(
+            bool(actual_confidence[withheld].isna().all()),
+            f"{label} withholds an interval but still publishes a confidence",
         )
-        actual_confidence = pd.to_numeric(
-            frame["confidence"],
-            errors="coerce",
-        ).to_numpy(dtype=float)
+        present = ~withheld
+        expected_confidence = forecast_confidence(
+            frame.loc[present, p50_column],
+            frame.loc[present, p90_column],
+        )
+        served_confidence = actual_confidence[present].to_numpy(dtype=float)
         _require(
             bool(
-                pd.notna(actual_confidence).all()
-                and (
-                    abs(actual_confidence - expected_confidence) <= 1e-12
-                ).all()
+                pd.notna(served_confidence).all()
+                and (abs(served_confidence - expected_confidence) <= 1e-12).all()
             ),
             f"{label} confidence violates decision #12",
         )

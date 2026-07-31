@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import duckdb
@@ -221,7 +222,8 @@ def test_the_custom_adapter_reaches_the_same_role(roles: dict) -> None:
     assert len(rows) == 1
     assert rows[0][0] == "S-1"
     assert int(rows[0][2]) == 3
-    assert int(rows[0][3]) == 2400
+    # EUR 24.00 in major units; see the mapped_files money guard for why.
+    assert Decimal(str(rows[0][3])) == Decimal("24.00")
     assert rows[0][4] == "EUR"
     assert rows[0][5] == "merchandise"
     assert rows[0][7] == "derived"

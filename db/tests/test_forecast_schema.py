@@ -31,7 +31,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0007_activation_and_coverage",)
+            assert cursor.fetchone() == ("0008_nullable_withheld_interval",)
             cursor.execute(
                 """
                 SELECT table_name

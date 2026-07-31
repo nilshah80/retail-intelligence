@@ -263,7 +263,10 @@ export const forecastWorkbenchSchema = z.object({
     accuracyGrain: z.literal("series_key"),
     demandSharePct: nullableNumber,
     bias: nullableNumber,
-    confidence: z.number(),
+    // Decision #92 withholds the cold-start interval beyond the calibrated horizon, and
+    // confidence is derived from that interval, so both can legitimately be absent. A
+    // non-nullable schema would have rejected the payload outright.
+    confidence: nullableNumber,
     primaryDriver: z.string().nullable(),
     dataQuality: z.string(),
     priority: z.string(),

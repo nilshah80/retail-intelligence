@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0007_activation_and_coverage"
+	ForecastMigrationRevision = "0008_nullable_withheld_interval"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -1111,7 +1111,7 @@ func (s *ForecastStore) series(
 			COUNT(*) OVER(),
 			market_id, sku_id, store_id, channel_id, dept_id, category,
 			horizon_week, target_week_start, yhat_p50, yhat_p90,
-			confidence, data_quality_class
+			confidence, interval_unavailable_reason, data_quality_class
 		FROM retail_serving.forecast_series
 		WHERE %s
 		ORDER BY market_id, store_id, sku_id, channel_id, horizon_week
@@ -1134,13 +1134,22 @@ func (s *ForecastStore) series(
 			qualityClass                                          string
 			horizon                                               int
 			targetWeek                                            time.Time
-			p50, p90, confidence                                  float64
+			p50                                                   float64
+			// Decision #92 withholds the cold-start interval beyond the calibrated
+			// horizon, so these arrive NULL. Non-pointer float64 made the scan fail
+			// outright with "converting NULL to float64 is unsupported", which is why
+			// migration 0008 could not be adopted without this. A null must reach the
+			// client as null rather than as a zero: zero spread would be consumed
+			// arithmetically as certainty on the least predictable rows.
+			p90, confidence                                       *float64
+			intervalReason                                        *string
 			rowTotal                                              int64
 		)
 		if err := rows.Scan(
 			&rowTotal,
 			&marketID, &skuID, &storeID, &channelID, &deptID, &category,
-			&horizon, &targetWeek, &p50, &p90, &confidence, &qualityClass,
+			&horizon, &targetWeek, &p50, &p90, &confidence, &intervalReason,
+			&qualityClass,
 		); err != nil {
 			return nil, err
 		}
@@ -1150,6 +1159,10 @@ func (s *ForecastStore) series(
 			"channelId": channelID, "departmentId": deptID, "category": category,
 			"horizonWeek": horizon, "targetWeekStart": targetWeek.Format("2006-01-02"),
 			"p50": p50, "p90": p90, "confidence": confidence,
+			// Present so a client can distinguish "no interval was published, here is
+			// why" from "the field is missing", per decision #92.
+			"intervalAvailable": p90 != nil,
+			"intervalUnavailableReason": intervalReason,
 			"dataQuality": qualityClass,
 		})
 	}

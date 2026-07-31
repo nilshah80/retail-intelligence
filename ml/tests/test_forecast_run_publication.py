@@ -800,7 +800,14 @@ def test_display_cell_integrity_is_computed_not_asserted() -> None:
     # Portfolio grain, not row level: the additive components are summed to the
     # portfolio before the metric is read, so offsetting SeriesKey errors cancel and
     # the number is materially higher than a row-level WAPE accuracy would be.
-    assert all(cell["grain"] == "market_portfolio" for cell in evidence["cells"])
+    # Every decision #77 grain is now protected, not just the portfolio: checking one
+    # left a store/category or SeriesKey regression free to publish.
+    assert set(evidence["grainsEvaluated"]) == {
+        "market_portfolio",
+        "store_category",
+        "series_key",
+    }
+    assert evidence["grainsSkipped"] == []
     assert evidence["passed"] is True
     assert evidence["violations"] == []
     for cell in evidence["cells"]:
@@ -871,7 +878,7 @@ def test_display_cell_metric_reproduces_the_served_grain() -> None:
     offsetting errors, which cancel unless market_id is part of the cell key.
     """
 
-    from retail_ml.publish.run_artifacts import _portfolio_horizon_accuracy
+    from retail_ml.publish.run_artifacts import _grain_horizon_accuracy
 
     frame = pd.DataFrame(
         {
@@ -884,7 +891,7 @@ def test_display_cell_metric_reproduces_the_served_grain() -> None:
         }
     )
 
-    accuracy = _portfolio_horizon_accuracy(frame, "yhat_p50")
+    accuracy = _grain_horizon_accuracy(frame, "yhat_p50")
     # Per market-week cell: |20| each, four cells -> 80 absolute error on 400 actual.
     assert accuracy == pytest.approx(80.0)
     # Had market_id been dropped from the cell key the errors would cancel exactly and

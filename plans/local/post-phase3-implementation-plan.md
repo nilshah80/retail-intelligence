@@ -14,10 +14,25 @@ Accepted run `fr_b2ef3d33f398095b` (`candidateClass: gate_remediation`, version
 `fv_23722eff8e3b8995`) passes A1-A5 and is verified, materialized and activated. C5 repairs the
 us-new-york cold-start gate from -2.399% to +4.446%; decision #75 is published at +1.754% against
 its 5% floor and is **not** satisfied, so C5 carries no accuracy claim. Decision #85 per-cohort
-coverage is report-only until Phase 4 entry and its cold-start failure is published.
-Track A and Track B are implemented at library level. **Track A is not yet wired to the real
-pipeline**: the staging builder still binds standardized views to Shopify/Business Central sources,
-so a mapped-files-only retailer cannot complete an end-to-end run, and readiness and tenant
+coverage is now a HARD gate (acceptance-v5 / verifier-v5, migration 0007) and the accepted run
+passes it over published intervals under decision #92.
+
+**Superseded status text, corrected 2026-07-31.** The paragraph below said the builder still binds
+standardized views to Shopify/Business Central sources and that a mapped-files-only retailer cannot
+complete an end-to-end run. That is no longer true and was left contradicting the rest of this
+document: `build_staging()` now completes for a mapped-files-only retailer, proven by
+`test_a_mapped_retailer_completes_the_whole_builder`, after six couplings were fixed (standardized
+views, the quarantine pass, the profile schema and injected role catalog, the location crosswalk's
+topology dependency, its coverage union, and the upstream manifest requirement). Adapter-level
+rejects now also reach the shared quarantine through a generic drain pass.
+
+What remains genuinely unwired is **readiness and tenant selection**: `resolve_selection()`,
+`verify_against_publication()` and `build_readiness_report()` have no caller outside their own
+definitions, so every ML stage still resolves through `contracts/ml/expected-pin.json`. That is a
+designed and unit-tested library, not an operational onboarding boundary, and the task ledger now
+says so rather than claiming the pin assumption was replaced.
+
+Historical text follows, retained for provenance rather than as current state: readiness and tenant
 selection have no runtime callers. PP3-A1-A3 go-ahead still requires the retrospective.
 
 **Revision 10 — superseded 2026-07-31. DECISIONS FINALIZED; FORECAST NO-GO; PP3-A1+ NOT AUTHORIZED.**

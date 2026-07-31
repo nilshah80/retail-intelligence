@@ -863,10 +863,41 @@ def withhold_uncalibrated_cold_start_intervals(
         "coldStartSeries": len(cold_series),
         "servedRows": int(len(result)),
         "withheldRows": int(withhold.sum()),
-        "withheldShareOfServed": (
-            float(withhold.sum()) / len(result) if len(result) else 0.0
+        # Canonical decimal string, not a binary float: the fingerprint contract refuses
+        # binary floats because two hosts can render the same ratio differently and the
+        # run identity would drift for no data reason.
+        # Exact Decimal, not a binary float: the fingerprint contract refuses floats
+        # because two hosts can render the same ratio differently and the run identity
+        # would then drift for no data reason.
+        "withheldShareOfServed": canonical_decimal_string(
+            (
+                Decimal(int(withhold.sum())) / Decimal(len(result))
+                if len(result)
+                else Decimal(0)
+            ).quantize(Decimal("0.000001"))
         ),
         "p50Withheld": 0,
+        # The loop is closed end to end, recorded here so a consumer can rely on it
+        # rather than infer it: migration 0008 stores a withheld interval, the Go read
+        # model scans it as nullable and surfaces `intervalAvailable`, and the UI accepts
+        # an absent confidence. Before that the publisher withheld correctly and
+        # PostgreSQL refused the row, which left serving carrying the uncalibrated value
+        # while the gate was already scoped to the calibrated range.
+        "servingLayer": {
+            "withholdingEffective": True,
+            "servingMigration": "0008_nullable_withheld_interval",
+            "storage": (
+                "retail_serving.forecast_series.yhat_p90 and confidence are nullable and "
+                "paired by CHECK constraint; a withheld row must carry "
+                "interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws "
+                "a distribution claim and never a forecast."
+            ),
+            "representation": (
+                "Null, deliberately not a sentinel. Safety stock is quantile spread x "
+                "service level, so any placeholder is consumed arithmetically and a zero "
+                "would return zero safety stock on the least predictable products."
+            ),
+        },
         "note": (
             "P50 is served at every horizon; only the interval and its derived confidence "
             "are withdrawn beyond the calibrated range. A consumer that needs an interval "
@@ -1220,9 +1251,20 @@ def _health_accuracy_targets() -> dict[str, dict[int, float]]:
     }
 
 
-def _portfolio_horizon_accuracy(
+#: Grain columns per decision #77 grain, mirroring `resolveHealthGrain` in
+#: api/internal/readmodel/forecast.go. Kept as data so a grain cannot be protected in the
+#: gate but absent from the screen, or the reverse.
+DISPLAY_GRAIN_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
+    "market_portfolio": ("market_id",),
+    "store_category": ("store_id", "category"),
+    "series_key": ("sku_id", "store_id", "channel_id"),
+}
+
+
+def _grain_horizon_accuracy(
     frame: pd.DataFrame,
     prediction_column: str,
+    grain_columns: tuple[str, ...] = ("market_id",),
 ) -> float | None:
     """Reproduce the served market_portfolio display cell exactly.
 
@@ -1232,9 +1274,10 @@ def _portfolio_horizon_accuracy(
     ``target_week_start`` -- BEFORE any error is taken, then absolute cell errors and
     cell actuals are summed per horizon and ``accuracy = 100 * (1 - wape)``.
 
-    market_portfolio carries ``market_id`` as its grain column (`resolveHealthGrain`),
-    so a cell is one (market, horizon, origin, target week) total and errors do not
-    cancel between markets.
+    The cell key is the grain's columns plus ``forecast_origin`` and
+    ``target_week_start``, matching `resolveHealthGrain`: market_portfolio carries
+    ``market_id``, store_category carries ``store_id`` and ``category``, series_key
+    carries the full SeriesKey. Errors do not cancel across cells.
 
     Three earlier versions of this were wrong, and naming them matters because a guard
     that does not reproduce the served cell is worse than no guard -- it reports a
@@ -1246,7 +1289,7 @@ def _portfolio_horizon_accuracy(
     percentage.
     """
 
-    cell_keys = ["market_id", "forecast_origin", "target_week_start"]
+    cell_keys = list(grain_columns) + ["forecast_origin", "target_week_start"]
     working = frame[cell_keys + [prediction_column, "actual_units"]].copy()
     working["_actual"] = pd.to_numeric(working["actual_units"], errors="coerce")
     working["_pred"] = pd.to_numeric(working[prediction_column], errors="coerce")
@@ -1283,34 +1326,54 @@ def _decision_86_display_evidence(evaluation: pd.DataFrame) -> dict[str, Any]:
         if horizon in {1, 4, 8, 13, 26}
     )
     cells: list[dict[str, Any]] = []
-    # market_portfolio is the grain every published cell resolves to when no store,
-    # category or SeriesKey is selected, and it is the grain the KPI tiles show.
-    for horizon in display_horizons:
-        at_horizon = evaluation[evaluation["horizon"].astype(int).eq(horizon)]
-        if at_horizon.empty:
+    # Every grain decision #77 governs, not just the portfolio. Checking one grain left a
+    # store/category or SeriesKey regression free to publish while the gate reported
+    # clean -- and store_category is reachable on the screen by selecting either.
+    skipped_grains: list[dict[str, Any]] = []
+    for grain, grain_columns in DISPLAY_GRAIN_COLUMNS.items():
+        if grain not in targets:
             continue
-        served = _portfolio_horizon_accuracy(at_horizon, "yhat_p50")
-        champion = _portfolio_horizon_accuracy(at_horizon, "champion_p50")
-        if served is None or champion is None:
+        # The cell key needs the time columns too. A missing one becomes a recorded skip
+        # rather than a KeyError, so the gate reports a hole instead of crashing -- and
+        # because a skip blocks the gate, it cannot be a quiet way to pass.
+        missing = [
+            c
+            for c in (*grain_columns, "forecast_origin", "target_week_start")
+            if c not in evaluation.columns
+        ]
+        if missing:
+            # Recorded, never silently dropped: an unevaluated grain is a hole in the
+            # gate and must be visible as one.
+            skipped_grains.append({"grain": grain, "absentColumns": missing})
             continue
-        target = targets["market_portfolio"][horizon]
-        delta = served - champion
-        cells.append(
-            {
-                "grain": "market_portfolio",
-                "horizon": horizon,
-                "targetPct": target,
-                "championAccuracyPct": champion,
-                "candidateAccuracyPct": served,
-                "deltaPct": delta,
-                "championPasses": champion >= target,
-                "candidatePasses": served >= target,
-                "passToFail": bool(champion >= target and served < target),
-                "regressionBeyondRounding": bool(
-                    delta < -DISPLAY_REGRESSION_TOLERANCE_PCT
-                ),
-            }
-        )
+        for horizon in display_horizons:
+            at_horizon = evaluation[evaluation["horizon"].astype(int).eq(horizon)]
+            if at_horizon.empty or horizon not in targets[grain]:
+                continue
+            served = _grain_horizon_accuracy(at_horizon, "yhat_p50", grain_columns)
+            champion = _grain_horizon_accuracy(
+                at_horizon, "champion_p50", grain_columns
+            )
+            if served is None or champion is None:
+                continue
+            target = targets[grain][horizon]
+            delta = served - champion
+            cells.append(
+                {
+                    "grain": grain,
+                    "horizon": horizon,
+                    "targetPct": target,
+                    "championAccuracyPct": champion,
+                    "candidateAccuracyPct": served,
+                    "deltaPct": delta,
+                    "championPasses": champion >= target,
+                    "candidatePasses": served >= target,
+                    "passToFail": bool(champion >= target and served < target),
+                    "regressionBeyondRounding": bool(
+                        delta < -DISPLAY_REGRESSION_TOLERANCE_PCT
+                    ),
+                }
+            )
     violations = [
         cell
         for cell in cells
@@ -1323,9 +1386,12 @@ def _decision_86_display_evidence(evaluation: pd.DataFrame) -> dict[str, Any]:
         "reportOnlyTolerancePct": REPORT_ONLY_REGRESSION_TOLERANCE_PCT,
         "mode": DECISION_86_DISPLAY_GATE_MODE,
         "hardGateAt": DECISION_86_DISPLAY_GATE_HARD_AT,
+        "grainsEvaluated": sorted({cell["grain"] for cell in cells}),
+        "grainsSkipped": skipped_grains,
         "cells": cells,
         "violations": violations,
-        "passed": not violations,
+        # A skipped grain is a hole in the gate, so it cannot pass while one exists.
+        "passed": not violations and not skipped_grains,
     }
 
 
@@ -1446,6 +1512,14 @@ def publish_forecast_run(
     current_artifact = _validated_current_forecasts(
         current_forecasts,
         decision_as_of=decision_as_of,
+    )
+    # Decision #92. This MUST run: A2_per_cohort is scoped to published intervals, and
+    # that scoping is only defensible if the unpublished ones are genuinely not served.
+    # The helper existed and was not called, so the gate measured h1-h4 while every
+    # served row still carried an h5-h26 interval -- the gate telling the truth about a
+    # number nobody reads and staying silent about the one they do.
+    current_artifact, interval_availability = (
+        withhold_uncalibrated_cold_start_intervals(current_artifact, evaluation)
     )
     evaluation_artifact = derive_evaluation_predictions(
         evaluation,
@@ -1659,6 +1733,10 @@ def publish_forecast_run(
             },
             "lifecycleStatus": lifecycle_status,
             "classificationPolicies": governed_policies,
+            # Decision #92. Published so a consumer can see WHICH rows carry no interval
+            # and why, rather than inferring it from a null. A null read as zero spread
+            # would return zero safety stock on the least predictable products.
+            "intervalAvailability": interval_availability,
             "executionProfile": runtime_profile.as_manifest_dict(),
             "stageTelemetry": stage_telemetry,
             "mlflowRunId": mlflow_run_id,

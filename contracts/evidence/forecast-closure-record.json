@@ -1,524 +1,80 @@
 {
-  "acceptedRun": {
-    "acceptanceDocumentCandidateClass": "gate_remediation",
-    "activated": true,
-    "activationScopeFingerprint": "08e14c384dc2f5be8bb923dc8f34b268c784dabd102cfc71d1a99da85c45b7f5",
-    "artifacts": {
-      "forecast-run-manifest.json": {
-        "sha256": "1bb5547c348826474b9d61da531a41cfbcc10823eea1764b68bd6f695cd49f1b"
-      },
-      "forecast_acceptance.json": {
-        "sha256": "fdfceba59403bdf56fb7454105898a2e20c741361c0411d5effc663bfc828b45"
-      }
-    },
+  "acceptance": {
     "candidateClass": "gate_remediation",
-    "forecastRunId": "fr_b2ef3d33f398095b",
+    "coverageGateMode": "hard",
     "gates": {
-      "A1_cold_start_global": "+6.891%",
-      "A1_cold_start_india_west": "+9.478%",
-      "A1_cold_start_us_new_york": "+4.446%",
-      "A1_established": "+53.481%",
-      "A2": "pass",
-      "A3": "pass",
-      "A4": "pass",
-      "A5": "pass, no failed markets"
+      "A1_cold_start": true,
+      "A1_established": true,
+      "A2": true,
+      "A2_per_cohort": true,
+      "A3": true,
+      "A4": true
     },
-    "independentVerification": {
-      "basis": "Decision #86 structural checks are RECOMPUTED by the verifier from the published artifacts, not read back from stored booleans. The bundle publishes champion_p50, champion_p90 and cohort so the replay has something to recompute against, and the verifier refuses a bundle missing them, a tampered artifact, and a record that disagrees with the recomputation. Four tests cover those paths.",
-      "claim": "independentlyVerified",
-      "notCovered": "#86 \u00a72.4 display-cell regression and \u00a72.7 bounded report-only regression are not recomputed at publication. They were evaluated once by measurement and are recorded in decision #86 \u00a74; treat them as reviewed rather than enforced."
+    "passed": true,
+    "perCohortCoverage": {
+      "cold_start": 0.8603351955307262,
+      "established_history": 0.9046994243312472
     },
-    "independentlyVerified": true,
-    "lifecycleStatus": "accepted",
-    "logicalPath": "ml/data/artifacts/forecast_run_v6_c5_final",
-    "materialized": true,
-    "reportOnly": {
-      "A2_per_cohort": "decision #85, report-only until Phase 4 entry; the cold-start cohort remains below the 0.85 floor and that failure is published, not hidden"
-    },
-    "semanticFingerprint": "96e031f9b726ff4266949fcbb8eeebc7ba001c5e0b872657e90fe8eca0f18cf0",
-    "versionId": "fv_23722eff8e3b8995"
+    "schemaVersion": "retail-forecast-acceptance/v5"
   },
-  "backtest": {
-    "acceptanceSha256": "13a9c6aa7b5f9ff67d4334634fe8d2d49663276f1e0fb2db1ffe6c2e3fec9d26",
-    "elapsedSeconds": 2323.974152,
-    "evaluationRows": 708708,
-    "executionProfile": "performance",
-    "fullSchedule": true,
-    "horizons": 26,
-    "logicalPath": "ml/data/artifacts/forecast_h1_h26_origins13_v6_d83",
-    "scoringOrigins": 13,
-    "trainingRows": 65021190
-  },
-  "blockers": [
-    {
-      "confirmedBy": "This run. rowsWithoutComparator is 0 in every scope and the cold-start cohort now returns a comparison instead of insufficient_evidence. Of the 1,820 rows previously blocked, 1,404 are admitted into cold_start (100,984 -> 102,388) and 416 are true zero-observation residue classified evaluation_ineligible at 0.0587% of rows, against the 1% cap.",
-      "detail": "Decision #82's 'complete origin-visible weeks' wording made acceptance structurally unreachable for any rolling-origin panel containing a series' launch week: every affected pair had exactly one partial prior week and none had zero.",
-      "id": "COLD_START_LAUNCH_WEEK_UNSATISFIABLE",
-      "masksBlocker": "US_COLD_START_NON_INFERIORITY",
-      "originSeriesPairs": 54,
-      "resolution": "decision #83, option (a): the most recent partial origin-visible week is admitted at exposure-normalised weekly_units_equivalent when no complete week exists",
-      "rows": 1820,
-      "severity": "specification_defect_resolved_and_confirmed"
-    },
-    {
-      "detail": "US New York cold-start champion WAPE 0.371740 versus comparator 0.363030, a -2.399% relative result on 55,224 fully paired rows. Now directly observable because #83 made the comparison complete; it is the sole remaining acceptance failure.",
-      "id": "US_COLD_START_NON_INFERIORITY",
-      "isSoleRemainingGateFailure": true,
-      "resolution": "Registered as the first PP3-B3 lifecycle/cold-start hypothesis. PP3-B5 scoped C3 to it and C3 was rejected at -0.149% all-13 and -12.285% final-5. Decision #84's C5 cold-start shrinkage blend then resolved it.",
-      "severity": "model_quality",
-      "status": "resolved",
-      "confirmedBy": "C5 under decision #86's gate_remediation class: us-new-york cold-start moved -2.399% -> +4.446% and every scope passes. Established-cohort rows are byte-identical, verified structurally at publication rather than asserted. Decision #75's battery is published at +1.754% against its 5% floor and is NOT satisfied, so this is a repaired gate and not an accuracy improvement."
-    }
-  ],
-  "closureBranch": {
-    "actionsNotTaken": [
-      "no rollback record: no prior decision-#82-verifier accepted version exists to roll back to",
-      "no accuracy-improvement claim: decision #75 is published at +1.754% against its 5% floor"
-    ],
-    "actionsTaken": [
-      "published a new immutable accepted run declaring candidateClass gate_remediation",
-      "verified every artifact, with decision #86 structural checks recomputed from the published artifacts rather than read back from stored booleans",
-      "materialized transactionally into PostgreSQL as fv_86cd60c37be7e203 (superseding fv_fe38d1f029dbcc30 and fv_8e7be33eaa236160, both retired by the 2026-07-31 clean-slate rebuild)",
-      "created a separate activation record",
-      "left decision #85 per-cohort coverage published and report-only"
-    ],
-    "appliedToRunId": "fr_b2ef3d33f398095b",
-    "branch": "all_required_gates_passed",
-    "stillRequired": [
-      "human visual approval of the accepted live state",
-      "Phase 3 retrospective",
-      "Windows and Linux developer-host runs"
-    ]
-  },
-  "cohortEvidence": {
-    "a5": {
-      "failedMarkets": [
-        "us-new-york"
-      ],
-      "passed": false,
-      "supportedMarketCount": 2
-    },
-    "ineligibleRowSharePct": 0.058698,
-    "keyGrain": "forecast_origin x horizon x SeriesKey",
-    "maximumIneligibleRowSharePct": 1.0,
-    "reasonCodes": {
-      "LAG52_UNAVAILABLE_SHORT_HISTORY": 102388,
-      "NO_PRIOR_OBSERVATION_AT_FIRST_ORIGIN": 416,
-      "ORIGIN_VISIBLE_LAG52_AVAILABLE": 605904
-    },
-    "scopes": {
-      "global": {
-        "a2P90Coverage": 0.8887,
-        "a3": "pass",
-        "a4": true,
-        "coldStartChampionWape": 0.40031,
-        "coldStartComparatorWape": 0.406329,
-        "coldStartRelativeMarginPct": 1.4813,
-        "coldStartRows": 102388,
-        "coldStartRowsWithoutComparator": 0,
-        "coldStartVerdict": "pass",
-        "establishedImprovementPct": 53.4808,
-        "establishedRows": 605904,
-        "establishedVerdict": "pass",
-        "passed": true
-      },
-      "india-west": {
-        "a2P90Coverage": 0.8925,
-        "a3": "pass",
-        "a4": true,
-        "coldStartChampionWape": 0.439012,
-        "coldStartComparatorWape": 0.464983,
-        "coldStartRelativeMarginPct": 5.5855,
-        "coldStartRows": 47164,
-        "coldStartRowsWithoutComparator": 0,
-        "coldStartVerdict": "pass",
-        "establishedImprovementPct": 54.5534,
-        "establishedRows": 294368,
-        "establishedVerdict": "pass",
-        "passed": true
-      },
-      "us-new-york": {
-        "a2P90Coverage": 0.8851,
-        "a3": "pass",
-        "a4": true,
-        "coldStartChampionWape": 0.37174,
-        "coldStartComparatorWape": 0.36303,
-        "coldStartRelativeMarginPct": -2.3993,
-        "coldStartRows": 55224,
-        "coldStartRowsWithoutComparator": 0,
-        "coldStartVerdict": "fail",
-        "establishedImprovementPct": 52.0268,
-        "establishedRows": 311536,
-        "establishedVerdict": "pass",
-        "passed": false
-      }
-    },
-    "scoredRows": 708292,
-    "unassignedRows": 0
-  },
-  "decision83Effect": {
-    "claim": "Decision #83 changed evaluation semantics only. It changed no forecast.",
-    "evidence": "forecast_eval_predictions.parquet is byte-identical between the pre-#83 bundle fr_2f4c50d1d7717b23 and this one: sha256 dc81e841d6ce7f75b580df2349c2d22405a2cb19c8c9515a9cad015b0d15d096, 27,146,170 bytes in both. Only the cohort partition, the comparator population and the acceptance document differ.",
-    "globalGateChange": "cold_start moved from insufficient_evidence to pass at +1.481%; every global gate A1-A4 now passes. A5 previously failed both supported markets and now fails only us-new-york.",
-    "supersededBundleNoLongerVerifies": "verify_forecast_run on ml/data/artifacts/forecast_run_rejected_v6_cohort82 now raises ForecastRunVerificationError: \"forecast acceptance document does not match recomputed A1-A5 gates\". The pre-#83 bundle is fail-closed against the current authority rather than silently readable, which is why this record had to be regenerated rather than annotated."
-  },
-  "inputAuthority": {
-    "expectedPinMatch": true,
-    "featureSemanticFingerprint": "f3ff8725d36d78fff9422155d2e4362bcdac174af8e39f383040e7c587de42c5",
-    "publicationSemanticFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
-    "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b"
-  },
-  "note": "Named for its subject, not for a work package or a verdict. Work-package ids are planning direction and do not survive the plan; the run identity, fingerprints and verdict all live in the document, so an accepted rerun replaces this same file.",
-  "openEvidence": [
-    "manual Windows portability evidence",
-    "manual Linux portability evidence",
-    "Demand Forecast visual approval of the accepted live state",
-    "Phase 3 retrospective and PP3-A1 to PP3-A3 go-ahead",
-    "decision #85 cold-start quantile calibration before Phase 4 entry",
-    "Track A runtime integration: the staging builder still binds standardized views to Shopify/Business Central sources, so a mapped-files-only retailer cannot yet complete a real pipeline run. PP3-A8 is library-level only."
-  ],
-  "policyVersions": {
-    "acceptance": "retail-forecast-acceptance/v4",
-    "evaluationRecomputation": "cohorted-seasonal-cold-start-recomputation/v4",
-    "featureSchema": "retail-weekly-features/v6",
-    "note": "Acceptance advanced to v4 under decision #85. Recomputation and verifier were already v4 from #82, so no version boundary was created -- see the correction in docs/decision-85-per-cohort-coverage.md.",
-    "quality": "retail-forecast-data-quality/v2",
-    "runBundle": "retail-forecast-run/v3",
-    "servingMigration": "0007_activation_and_coverage",
-    "verifier": "retail-forecast-verifier/v4"
-  },
-  "profileAndMemoryEvidence": {
-    "featureSchema": "retail-weekly-features/v6",
-    "host": "macOS 26.5 Darwin arm64, 16 logical CPUs",
-    "memoryLimitGiB": 16,
-    "note": "macOS only; Windows and Linux portability evidence remain outstanding.",
-    "parquetByteIdentical": true,
-    "peakRssGiB": "4.680267",
-    "record": "contracts/evidence/profile-invariance-record.json",
-    "result": "pass",
-    "semanticFingerprintIdentical": true
-  },
-  "recordType": "forecast_closure",
-  "recordedAt": "2026-07-31T00:00:00Z",
-  "rejectedCandidate": {
-    "artifacts": {
-      "forecast-run-manifest.json": {
-        "sha256": "c50a7d0089e816b3585f5acd3a8b2910912152d3660c35575ab7d439ba04bd63"
-      },
-      "forecast_acceptance.json": {
-        "sha256": "de8e278ed9ce5b64f936b1be8683281ef469e0853205d7f18153553b099f00fc"
-      },
-      "forecast_eval_predictions.parquet": {
-        "bytes": 27146170,
-        "sha256": "dc81e841d6ce7f75b580df2349c2d22405a2cb19c8c9515a9cad015b0d15d096"
-      }
-    },
+  "acceptedRun": {
     "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_a5b88c2ef23091ee",
-    "independentlyVerified": true,
-    "lifecycleStatus": "rejected",
-    "logicalPath": "ml/data/artifacts/forecast_run_v6_d83",
-    "objectCount": 11,
-    "rowCounts": {
-      "forecast_acceptance": 1,
-      "forecast_baseline_predictions": 3543540,
-      "forecast_calibration": 1014,
-      "forecast_data_quality": 2034,
-      "forecast_drivers": 10199,
-      "forecast_eval_predictions": 708708,
-      "forecast_exceptions": 643,
-      "forecast_metrics": 417906,
-      "forecast_series": 52884,
-      "forecast_versions": 1
-    },
-    "semanticFingerprint": "4cd19c4ceebb9ae6882b9e6abc06c588d62f3cdeaf7ea54457428a6543baa079"
+    "forecastRunId": "fr_357575f586905b11",
+    "forecastVersionId": "fv_3d66e3bd9939430d",
+    "lifecycleStatus": "accepted",
+    "runSemanticFingerprint": "fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3"
   },
-  "remainingDistance": {
-    "failingCohort": {
-      "absoluteError": 942576,
-      "actualUnits": 2535577,
-      "championWape": 0.37174,
-      "comparatorWape": 0.36303,
-      "rows": 55224,
-      "scope": "us-new-york x cold_start",
-      "shareOfGlobalActualPct": 12.93,
-      "shareOfGlobalErrorPct": 17.053
-    },
-    "globalErrorMass": {
-      "absoluteError": 5527232,
-      "actualUnits": 19614192,
-      "wape": 0.281798
-    },
-    "governanceGate": "This is not a free implementation. The task ledger already requires that any alternative cold-start, hierarchical or pooling method carry its own versioned model-policy decision plus untouched holdout evidence. So a decision #84 must be framed and frozen BEFORE the candidate is built and scored, or the work is unusable no matter how it performs.",
-    "measuredOn": "fr_a5b88c2ef23091ee",
-    "soleGateFailure": "us-new-york A1_cold_start non-inferiority",
-    "twoDistinctBars": {
-      "a5NonInferiority": {
-        "errorToShed": 22085,
-        "note": "This is the bar that actually blocks Phase 3, and it is small.",
-        "requirement": "champion error must not exceed the cold_start_mean comparator",
-        "shareOfCohortErrorPct": 2.34,
-        "shareOfGlobalErrorPct": 0.4
-      },
-      "decision75Materiality": {
-        "errorToShed": 276362,
-        "note": "Reachable. A perfect fix to this cohort would yield 17.053% global improvement, so the 5% floor sits well inside the ceiling rather than above it.",
-        "requirement": ">=5% global relative WAPE improvement for a candidate to change the champion",
-        "shareOfCohortErrorPct": 29.3
-      }
-    },
-    "untriedRemedy": "Shrink the cold-start estimate toward the origin-safe comparator: p50 = w * lgbm_p50 + (1-w) * cold_start_mean, with w fitted on development origins only, segmented at most by market x horizon, shrunk to parent when a segment misses the frozen sufficiency rule. Both inputs are origin-safe, so this does not leak -- unlike the assortment exit signal PP3-B6 rejected. Non-inferiority is reachable by construction as w approaches 0, while w > 0 retains whatever signal the model does carry. This changes the estimator rather than rescaling it, which is why it is a different experiment from C1 and C3 rather than a variant of them.",
-    "whatHasAlreadyFailed": "Five candidates rejected: C1 global bias correction (worsens WAPE because P50 is a median and WAPE is median-optimal), C2 quantile calibration (+0.000%, the gate is WAPE-only), C1+C2, C3 segmented champion factors scoped to this cohort (-0.149% all-13, -12.285% final-5), C4 hierarchical reconciliation. All five adjust a scale factor or an interval; none replaces the estimator. The champion losing to a mean-of-last-13-weeks on thin-history series is an estimator problem, so a sixth scale factor is not the next experiment.",
-    "whyThisIsTheRightTarget": "The cold-start cohort carries 31.9% of global error mass on 22.5% of volume, and us-new-york is 57.5% of the cold-start actual volume. It is simultaneously the largest concentrated block of addressable error in the bundle and the one gate that fails, so it is the only place where fixing the gate and improving the forecast are the same work. PP3-B3 ranked causes across the whole population, which spread this signal across category and lifecycle hypotheses; the cohort view concentrates it."
+  "artifactHashes": {
+    "forecast-run-manifest.json": "867d4915573bd24dbeaa925fa42c09d51fb65d7168983da8edbd2647cdd9e082",
+    "forecast_acceptance.json": "cc03472ad568aa4ed2aedaf87eebb96cb40cf49951b1403bcc60b0b0d507aa64"
   },
-  "requiredChecks": {
-    "checks": {
-      "a1_cold_start": {
-        "evidence": "global +1.481% and india-west +5.586% pass; us-new-york -2.399% fails non-inferiority. Comparison complete everywhere (rowsWithoutComparator=0).",
-        "status": "fail"
-      },
-      "a1_established_history": {
-        "evidence": "+53.481% vs seasonal naive on 605,904 paired rows, all scopes",
-        "status": "pass"
-      },
-      "a2_p90_coverage": {
-        "evidence": "global 0.8887, india-west 0.8925, us-new-york 0.8851, all inside 0.85-0.95",
-        "status": "pass"
-      },
-      "a3_slow_mover": {
-        "evidence": "established-history slow movers no worse than seasonal naive under decision #52 sufficiency; 13 origins, 0 dropped unpaired rows",
-        "status": "pass"
-      },
-      "a4_quantile_order": {
-        "evidence": "P90 >= P50 row-wise in all scopes",
-        "status": "pass"
-      },
-      "a5_no_hidden_market_failure": {
-        "evidence": "us-new-york fails; the global scope passes, which is precisely the hiding A5 exists to prevent",
-        "status": "fail"
-      },
-      "additive_metric_consistency": {
-        "evidence": "manifest modelPolicy.metricAggregation = additive_components; covered by ml/tests/test_forecast_run_publication.py and test_model_primitives.py",
-        "status": "pass"
-      },
-      "api_projection_mapping": {
-        "evidence": "9 forecast routes validated at contract version 0.3.1; Go readmodel tests in the stateful gate",
-        "status": "pass"
-      },
-      "calibration_sufficiency": {
-        "evidence": "forecast_calibration.parquet, 1,014 rows; A3 sufficiency rule satisfied at 13 origins",
-        "status": "pass"
-      },
-      "candidate_improvement_gate_75": {
-        "evidence": "C1, C2, C1+C2 rejected in PP3-B4; C3 and C4 rejected in PP3-B5. Five candidates evaluated, none met the 5% floor on both populations.",
-        "status": "no_candidate_passed"
-      },
-      "classification_policy_fingerprint": {
-        "evidence": "retail-forecast-data-quality/v1 fingerprint 3c80b69f...; retail-forecast-exceptions/v1 fingerprint 6a061db9...",
-        "status": "pass"
-      },
-      "deterministic_profile_invariance": {
-        "evidence": "contracts/evidence/profile-invariance-record.json; safe and performance produce byte-identical parquet and semantic fingerprint; peak RSS 4.68 GiB against a 16 GiB limit",
-        "status": "pass"
-      },
-      "human_visual_approval": {
-        "evidence": "Requires a person. Listed in openEvidence.",
-        "status": "not_run"
-      },
-      "leakage_checks": {
-        "evidence": "detect_leakage in ml/src/retail_ml/diagnostics/comparison.py, wired as the LEAKAGE stop rule. Caught a real defect: the first top_down draft scored +59.2% accepted and is now rejected. Calibrated against honest candidates on the live bundle.",
-        "status": "pass"
-      },
-      "point_in_time_eligibility": {
-        "evidence": "manifest pitEligibility.eligible=false, reasonCode LANDING_BACKFILL_DEPENDENCY. Independent of acceptance; it caps the capability mask, not this gate.",
-        "status": "not_eligible"
-      },
-      "retrospective": {
-        "evidence": "Requires review. Listed in openEvidence.",
-        "status": "not_run"
-      },
-      "role_readiness_input_lineage": {
-        "evidence": "Gate A e1e16e33b689cc95..., Gate B e4bd23a1b4b4e28a..., publication db3784fdcc4cb833..., expected pin matched",
-        "status": "pass"
-      },
-      "supported_os_evidence": {
-        "evidence": "macOS 26.5 Darwin arm64 complete. A static portability audit was run in place of the two missing hosts and found exactly one hard blocker, now fixed: datagen/src/retail_datagen/generator.py imported the POSIX-only `resource` module at module scope, which would raise ModuleNotFoundError on Windows and make datagen unimportable. Replaced by retail_datagen/process_usage.py, which keeps the POSIX reading byte-identical (verified against getrusage directly) and adds a stdlib ctypes path for Windows. Audit found clean: no POSIX signals or fork, no shell=True or /bin/sh, no hardcoded POSIX paths, no symlinks, no case-colliding tracked filenames, .gitattributes normalises all text to LF with CRLF reserved for .bat/.cmd, the CSV writer sets encoding and newline explicitly, tools/dev.py and check_isolated_wheels.py both resolve Scripts/python.exe when os.name == \"nt\", and the Go tree has no build tags or syscalls. A static audit is not a run: it cannot catch behavioural divergence, so the two host runs remain open evidence.",
-        "status": "partial_with_static_audit"
-      },
-      "ui_data_value_and_parity": {
-        "evidence": "demandForecast and dataManagement screen contracts; four exact-horizon rows per decision #80 in ui/src/Forecast.tsx",
-        "status": "pass"
-      },
-      "verifier_materialization_eligibility": {
-        "evidence": "lifecycleStatus rejected, so materialization is refused and serving stays fail-closed. This is the required behaviour on the no-go branch, not a failure.",
-        "status": "correctly_withheld"
-      }
-    },
-    "note": "Every check the closure plan requires before an accepted publication, with its disposition on this run. A check that passed does not make the run acceptable -- A5 decides that -- but a check that was never run must not read as passed, which is why the not-run items carry a reason instead of a blank."
-  },
-  "schemaVersion": "retail-forecast-closure-record/v1",
-  "statefulLocalGate": {
-    "candidate": "forecast_run_final",
-    "command": "tools/dev.py verify",
-    "discovery": "The gate keyed on the manifest, not the directory name, and selected forecast_run_v6_d83 over the superseded cohort82 bundle automatically.",
-    "failClosedEvidence": [
-      "ml/tests/test_serving_postgres.py::test_rejected_candidate_keeps_serving_fail_closed",
-      "api/internal/readmodel::TestForecastServesGovernedUnavailableOnNoGo"
+  "bundlePath": "ml/data/artifacts/forecast_run_final2",
+  "decision86StructuralChecks": {
+    "displayGrainsEvaluated": [
+      "market_portfolio",
+      "series_key",
+      "store_category"
     ],
-    "host": {
-      "logicalCpuCount": 16,
-      "platform": "macOS 26.5 Darwin arm64"
-    },
-    "mode": "accepted",
-    "note": "Re-run end to end on the clean-slate rebuild of 2026-07-31 on macOS. Suites: contracts 122, ingestion 177, ml 179 (2 skipped), UI 11, boundaries clean across 100 files. Supersedes the earlier governed_no_go record, which described the pre-C5 state.",
-    "ranAt": "2026-07-31T06:57:00Z",
-    "result": "pass",
-    "stages": {
-      "contractTests": "122 passed",
-      "contracts": "valid; forecastRun retail-forecast-run/v3; 35 staging-v2 roles; generated types current",
-      "database": "1 passed",
-      "databaseMigration": "0007_activation_and_coverage",
-      "datagen": "52 passed, 8 subtests (161.94s)",
-      "execution": "12 passed, 17 subtests",
-      "goRaceUncached": "execution, fingerprint, httpapi, readmodel all ok",
-      "importBoundaries": "clean, 98 files across 3 trees",
-      "ingestion": "170 passed",
-      "ml": "158 passed, 1 skipped",
-      "ui": "11 tests across 3 files, typecheck and production build pass"
-    }
-  },
-  "subject": "Acceptance record for the demand-forecast capability against curated publication db3784fdcc4cb833.",
-  "supersededClosureBranch": {
-    "actionsRefused": [
-      "materialization",
-      "activation",
-      "serving authorization",
-      "rollback record"
+    "displayPassed": true,
+    "refusingCriteria": [
+      "\u00a72.3",
+      "\u00a72.4",
+      "\u00a72.5",
+      "\u00a72.7"
     ],
-    "actionsTaken": [
-      "published a rejected immutable candidate with full evidence",
-      "did not materialize into PostgreSQL",
-      "did not create an activation record",
-      "left forecast serving fail-closed with no accepted active version"
+    "reportOnlyCriteria": []
+  },
+  "generatedBy": "tools/build_closure_record.py",
+  "inputBundle": {
+    "gateASemanticFingerprint": "594566312da4f81c2887b125f26778ead2045ee762ea1e95f5d1729ce89e1ec6",
+    "gateBSemanticFingerprint": "cdb41e026ee927ef2cd48de863875bcd5aa432795213a6de35445a1b654f94dd",
+    "publicationSemanticFingerprint": "fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0",
+    "sourceSnapshotId": "e010c5499de1a53cb2d02edbed2c1b0fef350c12f1d30317f495415ecf7cdd09"
+  },
+  "intervalAvailability": {
+    "calibratedMaxHorizon": 4,
+    "coldStartSeries": 398,
+    "decisionIds": [
+      85,
+      87,
+      91,
+      92
     ],
-    "appliedToRunId": "fr_a5b88c2ef23091ee",
-    "branch": "required_gate_failed",
-    "supersededBy": "decision #84 candidate C5 adopted under #86 repaired the us-new-york cold-start gate, so the current branch is all_required_gates_passed. This record is retained because the refusals it describes were correct at the time; leaving it as the top-level branch made the file assert accepted and rejected at once.",
-    "supersededOn": "2026-07-31"
+    "note": "P50 is served at every horizon; only the interval and its derived confidence are withdrawn beyond the calibrated range. A consumer that needs an interval further out must fail closed via require_cold_start_interval_horizon rather than read a null as zero spread.",
+    "p50Withheld": 0,
+    "policyId": "retail-forecast-interval-availability/v1",
+    "reasonCode": "COLD_START_INTERVAL_UNCALIBRATED",
+    "servedRows": 52884,
+    "withheldRows": 8756,
+    "withheldShareOfServed": "0.16557"
   },
-  "supersededDiagnosticEvidence": {
-    "historicalEvaluationArtifact": "ml/data/artifacts/forecast_run_accepted_db3784fdcc4cb833_pitfix_v15/forecast_eval_predictions.parquet",
-    "historicalEvaluationByteCount": 27145713,
-    "historicalEvaluationSha256": "96d8db758983cdb9b0607fa4394ee6661a90511d7621df0486528079fdecc606",
-    "historicalForecastGeneration": "pitfix_v15",
-    "historicalForecastRunId": "fr_92135aa7b5215b69",
-    "recomputedWithPolicy": {
-      "a1Population": "complete_overall_champion_actual_seasonal_naive",
-      "acceptanceSchemaVersion": "retail-forecast-acceptance/v2",
-      "minimumRelativeWapeImprovementPct": 25.0,
-      "verifierPolicy": "retail-forecast-verifier/v3"
-    }
+  "liveActivation": {
+    "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+    "forecastRunId": "fr_357575f586905b11",
+    "forecastVersionId": "fv_3d66e3bd9939430d"
   },
-  "supersededRejectedBundles": {
-    "authority": "external_rejection_supersession",
-    "bundles": [
-      {
-        "acceptanceArtifactSha256": "78dc584c3fff81e96cec34ed77347f3e62a202e729f3d8de5e24eafd753bbc57",
-        "currentDisposition": "rejected_superseded_policy",
-        "generation": "pitfix_v12",
-        "manifestSha256": "9b3e271b0ddc19f70555aa4ff9a5938c2eaaa048b9a124955b83dafde036f4e6",
-        "originalDirectory": "ml/data/artifacts/forecast_run_accepted_db3784fdcc4cb833_v12",
-        "originalLifecycle": "accepted",
-        "runId": "fr_b2f18d0e2999a36d"
-      },
-      {
-        "acceptanceArtifactSha256": "f453bfa27731882f30c8837a499c2aa9997b260cfd3909ba1b7b1cb90a0071ca",
-        "currentDisposition": "rejected_superseded_policy",
-        "generation": "pitfix_v14",
-        "manifestSha256": "5975d9186e3bcd46690d73d61805cec677f2c383ae5873ee616e341e8cc20788",
-        "originalDirectory": "ml/data/artifacts/forecast_run_invalid_db3784fdcc4cb833_pitfix_v14",
-        "originalLifecycle": "accepted",
-        "runId": "fr_ab5be7296a2c416e"
-      },
-      {
-        "acceptanceArtifactSha256": "4a65eb93f2c817d0da9be88fad4668e29e51617a365b0ab91d38cbbe467dd758",
-        "currentDisposition": "rejected_incomplete_seasonal_naive_comparison",
-        "generation": "pitfix_v15",
-        "manifestSha256": "0d9d67567e0b98193ad03d132ada26b13998b1724da44b706da1f32325f458da",
-        "originalDirectory": "ml/data/artifacts/forecast_run_accepted_db3784fdcc4cb833_pitfix_v15",
-        "originalLifecycle": "accepted",
-        "runId": "fr_92135aa7b5215b69"
-      },
-      {
-        "acceptanceArtifactSha256": "fda490c91b0f558d9683c7e5b6df09b6701550fcc0a80ad3bb3f3d4bfe23e2fc",
-        "currentDisposition": "rejected_superseded_comparator_semantics",
-        "generation": "v6_cohort82",
-        "manifestSha256": "f92724e8d9d40f1c436ed573cdc0ef25f61225a16fd26f05e1cd18d9f8b59cdb",
-        "note": "Published under decision #82 before #83 resolved the launch-week comparator. It no longer verifies: the recomputed A1-A5 gates disagree with its stored acceptance document, because #83 moved 1,404 rows into the cold-start comparison and 416 into evaluation_ineligible. Superseded by fr_a5b88c2ef23091ee over byte-identical forecasts.",
-        "originalDirectory": "ml/data/artifacts/forecast_run_rejected_v6_cohort82",
-        "originalLifecycle": "rejected",
-        "runId": "fr_2f4c50d1d7717b23"
-      }
-    ],
-    "preserveOriginalBytesAndManifests": true,
-    "reason": "The first three bundles self-declare accepted under a superseded v1 policy and are rejected by the current independently recomputed comparison authority. The fourth self-declares rejected and is superseded instead by decision #83 changing the cold-start comparator population; its forecasts are byte-identical to the current candidate.",
-    "relocatedFrom": "ml/reports/review2-acceptance-reassessment-db3784fdcc4cb833.json"
-  },
-  "verdict": {
-    "acceptanceCandidateClass": "gate_remediation",
-    "authority": "retail-forecast-verifier/v4",
-    "candidateClass": "gate_remediation",
-    "forecastRunId": "fr_b2ef3d33f398095b",
-    "notAnAccuracyImprovement": "Decision #86 \u00a73. C5 makes no accuracy claim: decision #75 is published at +1.754% against its 5% floor and is not satisfied. The served bundle declares candidateClass gate_remediation so no consumer can read it as a champion improvement.",
-    "reason": "All A1-A5 gates pass. The us-new-york cold-start non-inferiority failure that held this record at explicit_no_go is repaired by decision #84 candidate C5, adopted under decision #86 as a gate-remediation candidate: -2.399% to +4.446%, with india-west at +9.478% and the global cohort at +6.891%.",
-    "servingAuthorized": true,
-    "status": "accepted",
-    "supersedes": "This file previously recorded explicit_no_go for the rejected pre-C5 bundle. That bundle remains immutable and is listed under supersededRejectedBundles.",
-    "forecastVersionId": "fv_23722eff8e3b8995"
-  },
-  "supersededIdentities": [
-    {
-      "runIds": [
-        "fr_b2ef3d33f398095b",
-        "fr_b2ef3d33f398095b"
-      ],
-      "versionIds": [
-        "fv_23722eff8e3b8995",
-        "fv_23722eff8e3b8995"
-      ],
-      "supersededOn": "2026-07-31",
-      "reason": "authorized clean-slate rebuild; see decision #89"
-    },
-    {
-      "runIds": [
-        "fr_8e73fb0f8d3c502c",
-        "fr_f48fd0ab1380bc49",
-        "fr_422e1113355eb05b",
-        "fr_9aaa1d4431381570",
-        "fr_cee27c1618c9f9bb"
-      ],
-      "versionIds": [
-        "fv_fe38d1f029dbcc30",
-        "fv_8e7be33eaa236160",
-        "fv_86cd60c37be7e203",
-        "fv_efcbbc03d991007f"
-      ],
-      "supersededOn": "2026-07-31",
-      "reason": "authorized clean-slate rebuild; see decision #89"
-    }
-  ],
-  "rebuildCounts": {
-    "evaluationRows": 708708,
-    "trainingRows": 65021190,
-    "coldStartRowsScored": 15752,
-    "coldStartRowsWithheld": 86636,
-    "establishedRows": 605904,
-    "coldStartCoverage": 0.8603,
-    "establishedCoverage": 0.9047,
-    "a1ColdStartRelPct": 6.8912,
-    "forecastSeriesRows": 52884,
-    "driverRows": 10199,
-    "exceptionRows": 662,
-    "dataQualityRows": 2034
-  }
+  "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
+  "recordType": "generated_closure_record",
+  "schemaVersion": "retail-forecast-closure-record/v2",
+  "servingMigration": "0007_activation_and_coverage"
 }

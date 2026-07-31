@@ -11,38 +11,47 @@ _Presentation authority: `docs/ai_retail_intelligence_dashboard_multicurrency_v6
 approved parity/data matrix per screen._
 _Validation authority: `contracts/validation-policy.yaml`; repository CI remains prohibited._
 
-**Revision 7 — 2026-07-31. DRAFT FOR REVIEW. PHASE 4 IS NOT AUTHORIZED TO START.**
+**Revision 10 — 2026-07-31. DRAFT FOR REVIEW. POST-PHASE-3 INTERVAL PUBLICATION AND MIGRATION 0008 ARE NOW
+LIVE; PHASE 4 MAY START AT `P4-0` ONLY. RESULT-BEARING PACKAGES REMAIN GATED.**
 
 This plan turns the revised Phase 4 assessment into staged, testable work packages. Creating and
 reviewing this plan is planning activity, not Phase 4 implementation. Decision #85 is now a hard,
-fail-closed per-cohort P90 gate under acceptance-v5/verifier-v5 and migration
-`0007_activation_and_coverage`. Decision #87 closed C6/C7 and decision #91's stop path rejected C8
-as the third full-range remedy;
-decision #92 instead bounds the cold-start interval capability to calibrated horizons H1–H4 while
-retaining P50 at every horizon. The measured scoped gate passes, but the real publisher, artifact
-contracts, exception policy, consumers, and verifier do not yet implement that decision end to end.
-Every interval-consuming or result-bearing Phase 4 package therefore remains serialized behind
-`P4-1`. A proposed narrow amendment may allow contract and parity work that cannot read or produce
-forecast intervals, but the amendment must be recorded before that work begins; this plan does not
-grant it by implication.
+fail-closed per-cohort P90 gate under acceptance-v5/verifier-v5. Migration
+`0007_activation_and_coverage` created that boundary; the applied/current client head is now
+`0008_nullable_withheld_interval`. The earlier completed suite totals remain historical evidence,
+and the new 0008/publication/API changes require their own final stateful rerun. Decision #87
+closed C6/C7 and Decision #91's stop path rejected C8 as the third full-range remedy; Decision #92 instead bounds the
+cold-start interval capability to calibrated horizons H1–H4 while retaining P50 at every horizon.
 
-The former C5 bundle generation is no longer present in `ml/data/artifacts/`. An authorized
-clean-slate rebuild has repinned source and feature identities and published an accepted 13-origin,
-H1–H26 forecast bundle at `ml/data/artifacts/forecast_run_rebuild`. That bundle identifies run
-`fr_422e1113355eb05b`, version `fv_86cd60c37be7e203`, and semantic fingerprint `08858011…`; an
-independent local verifier completes without exception. It was nevertheless materialized and
-activated before the source received an explicit decision-#73 selection. An earlier rebuild,
-`fr_9aaa1d4431381570` / `fv_efcbbc03d991007f`, was simultaneously active under a different
-policy-derived activation-scope fingerprint even though both rows share the same input bundle,
-feature fingerprint, and markets; its local bundle bytes are now gone. Decision #90 has since
-adopted option (a), and migration `0007_activation_and_coverage` appended supersession events for
-both legacy scopes and made verifier-v5 mandatory. The local active view therefore returns zero
-rows rather than two. That is the correct hard-gate fail-closed state, but it does not create a
-corrected current authority. `P4-0` preserves the duplicate entry proof and completes the remaining
-selection, migration-integration, cross-scope chain, Go revalidation, and closure work before
-`P4-1` may activate a passing decision-#92 bounded-capability result.
-The deleted `forecast_run_v6_c5_final` identity remains historical evidence under decision #86,
-not a path that Phase 4 may rediscover or reconstruct.
+The new implementation closes the former acceptance-versus-serving contradiction. Bundle
+`forecast_run_final2` publishes 52,884 current rows, retains P50 everywhere, and withholds P90 and
+confidence on exactly 8,756 H5–H26 cold-start rows covering 398 series. Migration 0008 stores the
+null pair plus `interval_unavailable_reason`; PostgreSQL has the same counts, Go scans nullable
+values and returns explicit availability/reason fields, and activation event 8 supersedes event 7
+before event 9 activates the replacement with `prior_event_id = 8`. Exactly one authority is live.
+
+Entry reconciliation is nevertheless incomplete: Go still selects the configured activation scope
+without first proving the global active count, no Decision-#73 selection record is discoverable,
+and the generated closure record still says migration 0007 even though DB/ML/Go/DB tests require
+0008. The v2 closure format also needs an explicit disposition for Decision #93's retained
+historical supersession/attestation ledger rather than silently dropping it. The interval contract
+still lacks the versioned `cold_start_interval_unavailable` series exception and a fully enforced
+availability/reason/nullability truth table: the Parquet row has no explicit availability/reason,
+materialization derives the reason from manifest metadata, Go derives availability from P90
+nullability, and migration 0008 does not forbid a reason on an available interval. `P4-0` closes the
+authority/selection/closure residue;
+`P4-1` completes the bounded contract on the final selected Phase 4 pin. No result-bearing package
+may consume an interval before those exits pass.
+
+The current immutable bundle is `ml/data/artifacts/forecast_run_final2`, run
+`fr_357575f586905b11`, version `fv_3d66e3bd9939430d`. PostgreSQL migration 0008 is applied and the
+active view returns exactly that verifier-v5 version. Events 5 and 6 retain retirement of the two
+earlier authority-generation-1 scopes; event 7's null-predecessor incident remains immutable,
+event 8 supersedes it, and event 9 continues the chain with the bounded replacement. The earlier
+rebuilds and deleted C5 generations remain historical evidence, not paths Phase 4 may rediscover or
+reconstruct. `P4-0` records this as-built Decision-#93 outcome, corrects closure/selection, and
+completes global Go revalidation. `P4-1` finishes the exception and strict contract work and repeats
+the frozen bounded publication after the Phase 4 source pin changes.
 
 ---
 
@@ -52,22 +61,21 @@ not a path that Phase 4 may rediscover or reconstruct.
 
 The recommended implementation order is:
 
-1. Complete the clean-slate rebuild's missing source selection, retain the decision-#90 retirement
-   of both policy-derived legacy activations, repair the migration/version and supersession-chain
-   integration gaps, record honest supersession of artifact-missing/deleted generations, and close
-   the remaining Phase 3 authorization evidence while serving stays fail-closed.
-2. Decide whether decision #85 permits the source-only Phase 4 track to establish the final Phase 4
-   input pin before the interval remedy is fitted. This plan recommends that narrow carve-out so the
-   remedy is fitted once, on the final pin.
+1. Reconcile the completed Phase 3 implementation with its records: preserve the one live bounded
+   v5 authority and events 7→8→9; create the missing source selection; correct the closure
+   migration/head and historical-ledger disposition; and implement global Go authority counting.
+2. Treat the former `P4-D0` ordering question as resolved by the implementation: the bounded
+   current-pin publication already ran. Proceed with source-only contract/publication work after
+   `P4-0`; no result-bearing Phase 4 work is authorized by that ordering.
 3. Version the source/canonical contracts for store inventory, typed service lanes, historical
    inbound state, origin-safe supplier terms, and corrected event visibility; generate, publish,
    select, and pin the resulting source run without producing Phase 4 engine values.
-4. Retain decision #87's C6/C7 and decision #91's C8 rejection evidence. Bind the C8 cold-start
-   quantile head as the producer for the calibrated H1–H4 range and implement decision #92's
-   per-field withholding, strict nullable contract, counts, reason codes, and exception policy.
+4. Retain decision #87's C6/C7 and decision #91's C8 rejection evidence. On the final source pin,
+   repeat the implemented decision-#92 withholding and complete the strict availability/reason
+   contract plus versioned series exception without reviving C8 as a remedy.
 5. Recompute decision #85 over published intervals only, independently verify every withheld and
-   published row, and activate only a verifier-v5 `capability_scope_remediation` bundle whose P50
-   remains complete at H1–H26.
+   published row/exception, and activate only a verifier-v5 bounded bundle whose P50 remains
+   complete at H1–H26.
 6. Freeze the Phase 4 policy, run/acceptance/verifier contracts, OpenAPI, channel policy, replay
    clock, and all 14 screen matrices.
 7. Port the reusable M5 engine modules and implement the net-new engines.
@@ -77,10 +85,11 @@ The recommended implementation order is:
 10. Deliver the PostgreSQL-only Go read models and 14 React pages, then complete per-page visual,
     DOM, data-value, portability, and human-review gates.
 
-The source-only ordering in steps 2–3 requires explicit approval of `P4-D0`. Without it, apply the
-strict sequence in §12.1: fit the remedy on the entry authority, complete the source track, then
-repeat the frozen remedy on the final pin. No engine, replay, policy score, API value, or UI value
-may consume `yhat_p90` before the final-pin `P4-1` pass.
+The current-pin bounded publication has already selected the strict branch that `P4-D0` formerly
+asked the reviewer to choose. There is no remaining pre-start ordering decision: source-only work
+may follow `P4-0`, and the frozen bounded publication must be repeated once on the final source pin.
+No engine, replay, policy score, API value, or UI value may consume `yhat_p90` before that final-pin
+`P4-1` pass.
 
 ### 0.2 Why source remediation precedes the inventory engines
 
@@ -105,20 +114,21 @@ must form one fingerprinted lineage before any recommendation is trusted.
 
 | Gate | Current state | Required before |
 |---|---|---|
-| One current forecast authority | Blocking: decision #90 retired both duplicate legacy scopes and the verifier-v5 view has zero active versions. The retained `fr_422e1113355eb05b` / `fv_86cd60c37be7e203` bundle was accepted under report-only v4 and is intentionally ineligible | `P4-1` |
-| Forecast activation authority scope | Decision #90 option (a) is decided and substantially implemented, but integration is incomplete: Python and Go still require migration 0006, Go still reads only a configured scope, and the first v2 activation would currently write `prior_event_id = NULL` instead of chaining across the retired v1 authority | `P4-0` completion and `P4-1` activation |
-| Decision-#73 selection for the rebuilt source pin | Open: both forecast materializations/activations already occurred, but `expected-pin.json` was replaced without a candidate→approved→active selection record or prior-pin supersession event | Corrected activation in `P4-0` |
-| Prior C5 generation supersession | Open: the deleted generation must be superseded from retained run ids/original paths; hashes for four C5 siblings were not retained and must never be retroactively reconstructed | `P4-1` |
-| Phase 3 visual approval, retrospective, Windows/Linux execution evidence, and Track-A mapped-files runtime integration | Open in `forecast-closure-record.json` | Any Phase 4 implementation authorization |
+| One current forecast authority | Verified live: exactly one active verifier-v5 row, `fr_357575f586905b11` / `fv_3d66e3bd9939430d`, with 52,884 rows and 8,756 withheld interval rows | Retain through `P4-0`; final-pin replacement in `P4-1` |
+| Forecast activation authority scope | Migration 0007 established authority generation 2; current head 0008 is applied. Event 8 supersedes event 7 and event 9 points to 8. Go still reads only the configured scope instead of validating the global active count | `P4-0` |
+| Decision-#73 selection for the rebuilt source pin | Still open: no candidate→approved→active source-selection record or selection id is discoverable for `e010c549…` / `fa1bf883…` | `P4-0` |
+| Prior C5 generation supersession | The generated v2 closure no longer self-supersedes the current identity, but it drops the former historical supersession/attestation ledger instead of recording its governed disposition | `P4-0` closure reconciliation |
+| Phase 3 implementation and suites | Earlier suite completion remains evidence. The v2 closure now derives v5/hard/current-run facts, but hard-codes `servingMigration: 0007_activation_and_coverage` while live DB/ML/Go/DB test pins are 0008 | `P4-0` pin regression and stateful rerun |
 | Full safe/performance benchmark comparison | Satisfied: the closure record retains byte-identical Parquet/fingerprint evidence and the reviewed peak-RSS comparison | No remaining gate |
-| Decision #85 per-cohort P90 coverage | Hard. Full-range cold-start coverage fails; under decided #92 the published H1–H4 interval coverage is 0.8603 globally, 0.8641 India West, and 0.8571 US New York. The scoped result is measured but not yet published, independently verified, materialized, or activated | Any interval consumer and any result-bearing Phase 4 start |
-| Decision #85 version boundary | Created as acceptance-v5/verifier-v5 plus migration 0007; serving-client migration constants and tests still need alignment from 0006 to 0007 | `P4-1` materialization/activation |
+| Decision #85 per-cohort P90 coverage | Hard and active under acceptance-v5/verifier-v5. The scoped H1–H4 cells pass at 0.8603 global, 0.8641 India West, and 0.8571 US New York; the active artifact now performs the matching per-field withholding | Retain; complete exception/truth-table controls in `P4-1` before interval consumption |
+| Decision #85 version boundary | Migration 0007 remains the v5 boundary and active-view authority. Migration 0008 inherits it and is the current required head; ML, Go and DB tests name 0008, while the closure generator/record still says 0007 | `P4-0` pin reconciliation, then retain |
 | Decision #86 enforcement | Complete in the publication path: structural identity, leakage, display-cell, and bounded report-only criteria all refuse | Retain in every #92 publication |
 | Decision #87 cold-start calibration | Closed: C6 and C7 rejected under their frozen criteria; neither may be rescued, retuned, or reused as the Phase 4 remedy | Historical evidence for `P4-1` |
-| Decision #91 modelled cold-start P90 head | Decided; its C8 outcome is rejected as a full-range remedy after achieving 0.8063 cold-start coverage, below the 0.85 floor. Its outputs are retained as the bounded H1–H4 producer selected by #92, not re-labelled as a passing full-range candidate | Historical and model-lineage evidence for `P4-1` |
-| Decision #92 interval horizon limit | Decided: cold-start P90/confidence publish only at H1–H4; H5–H26 retain P50 and withhold interval fields with `COLD_START_INTERVAL_UNCALIBRATED`. The helper and focused tests exist, but publication wiring, strict null schema, exception-policy version, verifier/materialization/serving fields, and Phase 4 consumer integration are missing | `P4-1`, `P4-4`, `P4-5`, and every interval-consuming feature |
+| Decision #91 modelled cold-start P90 head | Decided; C8 is rejected as a full-range remedy after achieving 0.8063 cold-start coverage, below the 0.85 floor. Its outputs remain rejected evidence and are not the bounded H1–H4 serving producer | Historical and model-lineage evidence for `P4-1` |
+| Decision #92 interval horizon limit | Decided on instruction and now live for serving fields: 8,756 current rows/398 series are withheld beyond H4; DB/API preserve null plus reason. Remaining gaps are the versioned series exception, exact availability/reason truth table, final-pin repeat, and consumer integration | `P4-1`, `P4-4`, `P4-5`, and every interval-consuming feature |
+| Decision #93 Phase 3 closure and serving reconciliation | Decided on instruction. Events 8/9 now satisfy the append-only successor-chain invariant through an actual #92 replacement rather than the planned same-version reactivation. Global Go validation, #73 adoption, closure migration pin, and historical-ledger disposition remain | `P4-0` |
 | Decision #88 neutral `location` fields | Decided and implemented as option (a): `location_source_key`, `name`, and `location_kind`; staging-v2 remains unchanged | `P4-2` verification only |
-| Decision #89 source snapshot identity semantics | Decided: exclude only producer-declared `contentDeterminism: logical` objects from snapshot identity; retain every byte-stable public/restricted object. The implementation and one-time next-landing re-pin/adoption evidence remain to be accepted | `P4-2` |
+| Decision #89 source snapshot identity semantics | Decided and implemented; the rebuilt pin still matches snapshot, Gate A, Gate B, and publication evidence. Decision-#73 selection remains a separate missing authority step | `P4-0` selection, then retain in `P4-2` |
 | Store-grain inventory | Missing | Store Inventory, Stock Health, store transfer/allocation, full replay |
 | Typed service lanes | Missing | Multi-echelon resolution and DC dependent demand |
 | Historical inbound status | Missing | Replay capability |
@@ -132,10 +142,10 @@ must form one fingerprinted lineage before any recommendation is trusted.
 
 | Workstream | State at plan creation | Authorization rule |
 |---|---|---|
-| `P4-0` Phase 3 authority reconciliation | In progress prerequisite | Decision #90 and migration 0007 are established; complete migration-client alignment, cross-scope chaining, #73 selection, and closure evidence while active count remains zero |
-| `P4-1` decision-#92 bounded interval publication | Required prerequisite | Runs once on the final pin if `P4-D0` is approved, otherwise repeats after source repin; only a passing verifier-v5 bounded-capability bundle may restore authority |
-| `P4-2` source and canonical contract vNext | Planned | After `P4-1`, or before it under approved source-only `P4-D0` |
-| `P4-3` new source publication and selection | Planned | After reviewed `P4-2`; source-only before `P4-1` under approved `P4-D0` |
+| `P4-0` Phase 3 entry reconciliation | First authorized Phase 4 package | Finish decision #93 against the as-built events 7→8→9 without rewriting history or immutable bundles |
+| `P4-1` decision-#92 bounded interval completion/final-pin publication | Required before interval/result-bearing work | The current-pin field withholding is implemented; complete strict exception/truth-table coverage and repeat once after `P4-3` on the final source pin |
+| `P4-2` source and canonical contract vNext | Planned | After `P4-0`; source-only and non-result-bearing |
+| `P4-3` new source publication and selection | Planned | After reviewed `P4-2`; source-only before final-pin `P4-1` under the as-built ordering disposition |
 | `P4-4` Phase 4 contract freeze | Planned | After `P4-1`; may use reviewed `P4-2` shapes |
 | `P4-5` reusable engine foundation | Planned | After `P4-3` and `P4-4` |
 | `P4-6` net-new engines | Planned | After foundation golden vectors pass |
@@ -205,7 +215,7 @@ At plan creation:
 
 - `ml/src/retail_ml/engines/` does not exist;
 - no inventory/replenishment run, acceptance, or verifier contract exists;
-- database migrations end at `0006_cohorted_verifier_v4.py` and contain forecast serving only;
+- database migrations end at `0008_nullable_withheld_interval.py` and contain forecast serving only;
 - `contracts/api/openapi.yaml` has 17 paths and no inventory/replenishment path;
 - `contracts/screens/` contains only Data Management and Demand Forecast contracts;
 - React navigation contains the inventory/replenishment labels, but `App.tsx` supports only
@@ -214,63 +224,43 @@ At plan creation:
 
 Phase 4 is therefore a complete vertical build, not an extension of an existing hidden engine.
 
-### 1.2 Forecast authority after the clean-slate rebuild
+### 1.2 Forecast authority after Phase 3 completion
 
-The former local C5 artifact generation has been cleared. The corrected rebuild chain has now
-published an accepted bundle. At this revision's verification point:
+The clean-slate chain now publishes and serves one accepted verifier-v5 bundle. At this revision's
+verification point:
 
 | Field | Verified state |
 |---|---|
-| Rebuild outputs | `backtest_rebuild`, `current_rebuild`, `classifications_rebuild`, and governed `forecast_run_rebuild` exist |
-| Backtest result | 708,708 rows, 13 origins, H1–H26, `accepted: true` under report-only decision #85 |
+| Serving bundle | `ml/data/artifacts/forecast_run_final2` |
+| Backtest result | 708,708 rows, 13 origins, H1–H26, `passed: true` under hard acceptance-v5 |
 | Current cycle | 52,884 rows at origin 2026-07-27 and 26 horizons |
 | Rebuilt features | `ml/data/features/rebuild/weekly_features.parquet` plus manifest |
 | Feature identity | `c72ebd9c679fbba4ff8e6f5a9c5f134b02733504ef3d73aa2a7629b9bf229e78` |
 | Source snapshot | `e010c5499de1a53cb2d02edbed2c1b0fef350c12f1d30317f495415ecf7cdd09` |
 | Curated publication | `fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0` |
 | Feature horizons | Exactly integers 1–26 in the feature manifest |
-| Forecast publication | `forecast_run_rebuild`; run `fr_422e1113355eb05b`; version `fv_86cd60c37be7e203`; semantic fingerprint `0885801180a0b612629fed4623ec5172c81566c3d3c419437f1dd73dba2a589a`; lifecycle `accepted`; class `gate_remediation` |
+| Forecast publication | run `fr_357575f586905b11`; version `fv_3d66e3bd9939430d`; lifecycle `accepted`; class `gate_remediation` |
 | Forecast verification | Local independent `verify_forecast_run` completed without exception |
-| PostgreSQL materialization/activation entry evidence | `fr_9aaa1d4431381570` / `fv_efcbbc03d991007f` materialized 13:25:37 UTC and activated 13:25:58; `fr_422e1113355eb05b` / `fv_86cd60c37be7e203` materialized 13:40:37 and activated 13:40:52; both original activation events have null `prior_event_id` |
-| Current local DB projection | The applied working-tree migration `0007_activation_and_coverage` appended `superseded` events at 14:43:15 UTC chained to both original events; the verifier-v5 active view now returns zero rows. Two v4 materializations and 105,768 `forecast_series` rows remain |
-| Retained bundles | Only `forecast_run_rebuild` / `fr_422e1113355eb05b` remains in `ml/data/artifacts`; the superseded `fr_9aaa1d4431381570` bundle bytes are gone and cannot be independently re-verified |
-| Forecast authority | None current: decision #90 has retired the legacy scopes, but there is no verifier-v5 active row, no #73 source selection, and no accepted decision-#92 bounded-capability bundle |
-| Serving authority | Governed unavailable: zero active rows is preferable to selecting a legacy winner, but it is not a repaired current authority |
+| Migration/client pins | Applied DB, ML, Go, and DB test name `0008_nullable_withheld_interval`; migration 0007 remains the inherited verifier-v5 boundary. The generated closure record is stale at 0007 |
+| Historical activation evidence | Events 1/2 are the two null-predecessor authority-generation-1 activations; events 5/6 retire them; event 7 is the immutable null-predecessor incident; event 8 supersedes 7; event 9 activates the bounded replacement with `prior_event_id = 8` |
+| Current local DB projection | Exactly one row: `fr_357575f586905b11` / `fv_3d66e3bd9939430d` |
+| Decision-#92 acceptance evidence | H1–H4 scoped coverage passes and declares 86,636 evaluation rows withheld |
+| Decision-#92 served-field evidence | 52,884 rows / 2,034 current served SeriesKeys; exactly 8,756 H5–H26 cold-start rows have null P90/confidence and a DB reason, covering 398 series. Parquet has no row-level availability/reason, Go infers availability from null, the DB allows a reason on a present interval, and the versioned series exception remains for `P4-1` |
+| Source authority | Snapshot/publication pin matches, but no decision-#73 selection record is discoverable |
+| Closure authority | Generated v2 record matches the active run and v5/hard evidence, but still hard-codes migration 0007 and omits the former historical supersession/attestation ledger without an explicit disposition |
 
-The surviving bundle is a governed accepted publication and was independently verified, but
-acceptance, materialization, and activation do not repair a missing source selection or establish a
-unique authority. Both original activations occurred before the explicit decision-#73
-candidate→approved→active record required to make the source repin authoritative. `P4-0` must
-preserve that historical order honestly, complete decision #90's integration, create the source
-selection lifecycle, and reconcile the migration supersessions, active view, closure record, and
-API. Only `P4-1` may append a corrected active event after a decision-#92 verifier-v5 bundle passes.
-
-The rebuild correctly has a new run and semantic identity; it is not expected to recover
-`fr_f48fd0ab1380bc49`. The directory name `forecast_run_rebuild` is not the run id: consumers must
-copy run `fr_422e1113355eb05b` and version `fv_86cd60c37be7e203` from governed content. The manifest
-proves exactly 26 integer horizons and binds source snapshot `e010c549…`, publication `fa1bf883…`,
-and feature fingerprint `c72ebd9c…`. A first pre-publication classify/publish-chain attempt failed
-because it looked for `current_cycle_forecasts.parquet`; the actual produced file is
-`current_forecast_predictions.parquet`. The corrected rerun succeeded and produced the governed
-publication. The failed attempt is retained as execution history, not described as a failed
-publication.
-
-The retained closure record is historical evidence, not current serving truth. It names
-`forecast_run_v6_c5_final` / `fr_f48fd0ab1380bc49` / `fv_8e7be33eaa236160`, while its actions text
-names the earlier `fv_fe38d1f029dbcc30`; neither old local bundle now exists. `P4-0` therefore does
-not attempt to reconcile or reactivate one of five sibling directories. It also treats the
-artifact-missing `fr_9aaa1d4431381570` generation, active at entry and now superseded, as
-non-reactivatable evidence: record its
-known database ids, timestamps, and retained descriptors, set `bundleBytesRetained: false`, never
-claim a fresh verification or reconstruct its bundle, and retain its decision-#90 supersession.
-The surviving rebuild publication is independently re-verified as the pre-#92 comparator, not
-reactivated under verifier-v5.
+The current bundle is genuinely accepted, independently verified, materialized, field-withheld, and
+live. Those facts close the old zero-active, migration-0008 adoption, served-nullability, and event-7
+successor-chain blockers. They do not create Decision-#73 source authority, global Go validation,
+or a complete exception/closure contract. `P4-0` closes the remaining #93 authority and evidence
+work. `P4-1` completes the bounded exception/truth-table contract and republishes it on the final
+Phase 4 source pin.
 
 Supersession must distinguish retained evidence from missing evidence:
 
-- the closure record retains manifest and acceptance hashes for the older `pitfix_v12`,
+- the pre-v2 closure ledger retained manifest and acceptance hashes for the older `pitfix_v12`,
   `pitfix_v14`, and `pitfix_v15` generations and for the separately rejected `v6_cohort82` bundle;
-- it retains hashes for `forecast_run_v6_c5_final` only among the five C5 siblings;
+- it retained hashes for `forecast_run_v6_c5_final` only among the five C5 siblings;
 - the `_c5` (`fr_463f53be6353e481`), `_v2` (`fr_f62041e95fe7c305`), `_grain`
   (`fr_b55046df351c1a65`), and `_gov` (`fr_8e73fb0f8d3c502c`) sibling bytes are gone without
   retained manifest/acceptance hashes.
@@ -280,17 +270,16 @@ generation label, and reason, with `hashesRetained: false`. A deterministic reru
 used to fill those historical hashes: that would be a reconstruction presented as an original
 record. No historical manifest is edited.
 
-### 1.3 Coverage gate that holds Phase 4
+### 1.3 Hard coverage gate and bounded serving capability
 
-The retained final-C5 evidence and the completed rebuild backtest both publish the same historical
-decision-#85 result in report-only v4 mode. Decision #85 is now hard under v5, so neither bundle is
-eligible to activate:
+The current acceptance-v5 bundle makes decision #85 hard. Full-range cold-start coverage remains
+outside the band, while decision #92's calibrated H1–H4 published-interval scope passes:
 
-| Scope | Cold-start coverage | Established coverage | Required band |
-|---|---:|---:|---:|
-| Global | 0.784740 | 0.904699 | 0.85–0.95 |
-| India West | 0.805148 | 0.905414 | 0.85–0.95 |
-| US New York | 0.767311 | 0.904024 | 0.85–0.95 |
+| Scope | Cold-start H1–H26 diagnostic (not gate) | Cold-start published H1–H4 (gate) | Established published (gate) | Required band |
+|---|---:|---:|---:|---:|
+| Global | 0.784740 | 0.860335 | 0.904699 | 0.85–0.95 |
+| India West | 0.805148 | 0.8641 | 0.905414 | 0.85–0.95 |
+| US New York | 0.767311 | 0.8571 | 0.904024 | 0.85–0.95 |
 
 Cold-start represents 14.45% of evaluation rows and 22.47% of actual demand volume. Coverage is
 row-counted, so these facts establish material under-coverage and under-buffering risk; they do not
@@ -300,13 +289,17 @@ The whole-population coverage passes because established history masks the cold-
 Decision #87 rejected C6 after its frozen ceiling stop and rejected C7 after untouched US New York
 confirmation over-covered at 0.9620 while mean cold-start confidence fell 46.9%. Decision #91's C8
 dedicated cold-start P90 head then reached only 0.8063 full-range coverage and was also rejected as a
-full-range remedy. Decision #92 records the actual capability boundary: C8 cold-start intervals are
-calibrated at H1–H4 (0.8603 global, 0.8641 India West, 0.8571 US New York) and are withheld at
-H5–H26, where band coverage declines from 0.8433 to 0.7798. P50 remains published and scored at all
-26 horizons. `P4-1` must independently recompute that bounded claim, publish withheld-population
-counts, and prove the API cannot expose a withdrawn interval. Phase 4 cannot treat the historical
-C5 evidence, accepted report-only rebuild, or the currently standalone withholding helper as an
-interval-ready authority.
+full-range remedy. Decision #92 records the actual capability boundary: the accepted forecast
+interval is calibrated at H1–H4 (0.8603 global, 0.8641 India West, 0.8571 US New York) and is
+unavailable at H5–H26, where measured coverage declines from 0.8433 to 0.7798. C8 remains rejected
+evidence; it is not the H1–H4 serving producer.
+
+Acceptance recomputes the bounded claim and reports 86,636 withheld evaluation rows. The current
+artifact now applies the same boundary to 8,756 rows, PostgreSQL retains the null pair and reason,
+and Go exposes explicit availability. `P4-1` must still add/reconcile the one-per-series governed
+exception, enforce the exact availability/reason/nullability truth table, and repeat the verified
+contract on the final source pin. Phase 4 may start with `P4-0`, but no interval-consuming feature
+may treat this partial implementation as the final Phase 4 interval authority.
 
 ### 1.4 Current inventory and supply evidence
 
@@ -317,8 +310,9 @@ publication fingerprint `fa1bf883…`. This was a file-level repin, not a decisi
 logical directory name is unchanged. Equivalence therefore rests on the expected-pin record's
 unchanged control totals and ordered row-digest evidence across all 40 entities / 36,224,122
 published rows, not on retained old artifacts. `P4-0` must create the missing selection lifecycle
-and supersede the prior pin explicitly before `P4-1` may append a decision-#92 verifier-v5
-activation event.
+and record the prior pin as a `legacy_unselected_predecessor`; it must not fabricate a superseded
+selection that never existed. `P4-1` may append a decision-#92 verifier-v5 activation only after
+that adoption is active.
 
 | Evidence | Verified state | Phase 4 use |
 |---|---|---|
@@ -790,10 +784,10 @@ value is not decided merely because it appears here.
 
 ### P4-D0 · Decision-#85 non-interval/source-only carve-out
 
-**Recommendation:** amend decision #85 narrowly so source contracts, source generation/ingestion,
-source publication/selection, screen matrices, OpenAPI/read-model shapes, and inactive DB schema
-may proceed before the interval fix. This lets `P4-1` fit the remedy once on the final Phase 4
-source pin. The carve-out forbids:
+**Resolved by implementation order:** the current-pin Decision-#92 bounded publication and
+migration 0008 have already run. Source contracts, source generation/ingestion, source publication/
+selection, screen matrices, OpenAPI/read-model shapes, and inactive DB schema may therefore proceed
+after `P4-0` without another ordering decision. The source-only path still forbids:
 
 - reading P50/P90 artifacts in Phase 4 code;
 - calculating safety stock/reorder/replay/policy results;
@@ -802,10 +796,9 @@ source pin. The carve-out forbids:
 - presenting sample/static values as live.
 
 The source track may update `expected-pin.json` only after its own capability and selection gates
-pass; it may not train, publish, materialize, or activate a forecast. Without the recorded
-amendment, apply decision #85 literally: run `P4-1` on the rebuild entry pin, run `P4-2/3`,
-then repeat the same frozen remediation method and all gates on the new source pin. That strict
-choice knowingly pays for two fits and accepts that the second fit may fail a gate the first passed.
+pass; it may not train, publish, materialize, or activate a forecast. `P4-1` then repeats the frozen
+C5/Decision-#92 method once on the final pin, and that final fit may honestly fail a gate the current
+pin passed.
 
 ### P4-D1 · Decisions #87/#91 rejections and decision #92 bounded interval capability
 
@@ -817,9 +810,10 @@ post-hoc calibration under a new label.
 
 Decision #91's C8 dedicated LightGBM alpha-0.90 cold-start head is also rejected as a full-range
 remedy: its untouched result is 0.8063, below the 0.85 floor. Preserve its training-side no-lag-52
-cohort, unchanged shared P50, 2,000-row fallback, seeds, features, and per-horizon evidence in model
-lineage because decision #92 uses its published H1–H4 outputs. Do not describe C8 itself as passing
-or refit it after the boundary was selected.
+cohort, unchanged shared P50, 2,000-row fallback, seeds, features, and per-horizon evidence as
+rejected decision evidence. Decision #92 scopes the accepted C5 interval already measured in the
+current acceptance-v5 bundle; it does not adopt C8's outputs. Do not describe C8 itself as passing,
+bind it into the serving model policy, or refit it after the boundary was selected.
 
 Decision #92 freezes `retail-forecast-interval-availability/v1`: cold-start P90 and confidence are
 published only at H1–H4; at H5–H26 they are null with
@@ -828,6 +822,12 @@ P50 stays non-null and fully scored at H1–H26. Decision #85's 0.85–0.95 band
 interval rows, while withheld evaluation/current rows, shares, series, and reason-code digests are
 independently recomputed and disclosed. Extending the boundary requires a new preregistered
 mechanism; changing 4 as a convenient configuration value is forbidden.
+
+Decisions #92 and #93 were frozen on explicit user instruction. Phase 4 does not reopen either
+because a source distribution or implementation detail changes. Decision #92 may be superseded only
+by a new preregistered mechanism with untouched evaluation evidence that supports a longer range;
+Decision #93 authority semantics require a new recorded decision to change. Recording the as-built
+events 7→8→9 is reconciliation of its append-only invariant, not permission to rewrite event 7.
 
 ### P4-D2 · Capability policy v2
 
@@ -973,19 +973,22 @@ priority string is not sufficient.
 
 ### P4-D17 · Interval consumer degradation and systemic viability
 
-**Recommendation:** separate row-level evidence gaps from consumer-wide incompatibility. Every
-interval consumer declares its required horizon at startup. A core consumer whose maximum resolved
-lead-time/review horizon exceeds H4 refuses startup; it may not start and then silently drop all
-cold-start demand. Current replenishment resolves lead time 5 days plus a 7-day review to H2, so it
-passes and all 2,228 series remain eligible for a calibrated reorder interval.
+**Decision:** do not constrain v13 supplier lead times merely to keep cold-start protection within
+H4. Reorder/safety-stock remains a core feature for rows with an available interval, while
+`cold_start_long_horizon_replenishment` is a declared partial sub-capability. Every consumer derives
+its required horizon from the selected row's origin-safe lead time plus review period; the current
+landing-backfill fixture's 5 + 7 days resolves to H2, but that is only a fact about the current pin,
+not a generation constraint or a promise about v13.
 
-An explicitly partial-capability long-horizon feature may continue when an individual row has
-`interval_available=false`: skip only the interval-dependent output for that row, retain its P50
-where the feature uses central demand, and emit or project one governed
-`cold_start_interval_unavailable` exception per affected series with the unavailable horizon range
-and feature/consumer evidence. Never coerce null P90 or confidence to zero. The contract review must
-freeze which consumers are core versus partial and the count/share/demand-share threshold at which
-an apparent row-level issue becomes systemic and the whole consumer is unavailable.
+For an H5+ cold-start row, skip only the interval-dependent recommendation, retain P50 where central
+demand is independently authorized, and emit/project one governed
+`cold_start_interval_unavailable` exception with horizon, consumer, and lineage evidence. Never
+coerce null P90 or confidence to zero. If 100% of the cold-start SeriesKeys or cold-start demand in
+any supported market is skipped, mark that market's cold-start replenishment sub-capability
+`unavailable`; the broader replenishment capability remains explicitly partial for its supported
+rows rather than silently passing. If no recommendation row remains for a market, the whole market
+consumer is unavailable. P4-4 may freeze stricter pre-result count/share/demand-share limits, but it
+may not weaken these floors after replay results are visible.
 
 ---
 
@@ -997,6 +1000,7 @@ an apparent row-level issue becomes systemic and the whole consumer is unavailab
 |---|---|
 | Reconciled authority target/retirement record, followed by one verifier-v5 current authority | contracts/evidence + ML/DB/API |
 | Decision #90 completion: migration/client alignment, cross-scope activation chain, and Go fail-closed rule | docs + ML + DB + API |
+| Decision #93 reconciliation: retained events 7→8→9, authority-wide Go validation, #73 selection lifecycle, migration-0008 closure pin, and historical attestation-ledger disposition | docs + contracts/evidence + ingestion + ML + DB + API |
 | Decision #87/#91 rejection records, decision #92 interval-availability policy, strict nullable artifact contract, exception-policy v2, and hard-gate evidence | docs + contracts/ml + ML + DB + API |
 | Source config/spec v13 | datagen |
 | Typed `service_lanes` canonical entity and staging role | contracts + ingestion |
@@ -1079,6 +1083,7 @@ docs/
   decision-90-forecast-activation-authority-scope.md
   decision-91-modelled-cold-start-p90-head.md
   decision-92-cold-start-interval-horizon-limit.md
+  decision-93-phase3-closure-and-serving-reconciliation.md
   OPEN_DECISIONS.md
 
 contracts/
@@ -1111,6 +1116,10 @@ contracts/
     replenishment-exceptions.parity.yaml
     stock-health.parity.yaml
   evidence/
+    publication-selections/
+      retailer-demo-demand-forecast-local-candidate.json
+      retailer-demo-demand-forecast-local-approved.json
+      retailer-demo-demand-forecast-local-active.json
     candidate-c6-result.json
     candidate-c7-result.json
     candidate-c8-result.json
@@ -1162,7 +1171,9 @@ ml/src/retail_ml/
 
 db/migrations/versions/
   0007_activation_and_coverage.py
-  0008_*_inventory_replenishment_serving.py
+  0008_nullable_withheld_interval.py
+  0009_*_forecast_interval_contract_completion.py
+  0010_*_inventory_replenishment_serving.py
 
 api/internal/
   inventory/
@@ -1175,8 +1186,9 @@ ui/src/
   replenishment/
 ```
 
-If Alembic head changes before implementation, migration numbers advance; semantic migration
-purpose does not.
+Migration 0008 is applied and must not be rewritten to finish the stricter contract. `P4-1` uses
+0009 for the explicit availability/reason truth table, so `P4-8` inventory serving begins at 0010.
+If Alembic head changes again, later numbers advance; semantic migration purpose does not.
 
 ---
 
@@ -1184,145 +1196,138 @@ purpose does not.
 
 ### P4-0 · Reconcile Phase 3 lineage and authorize Phase 4 prerequisites
 
-**Entry:** the authorized clean-slate rebuild; repinned source/feature identities without a
-decision-#73 selection record; accepted publication `forecast_run_rebuild`; retained Phase 3
-evidence; duplicate-at-entry proof for two active policy-derived scopes; and a current
-non-authoritative, zero-active-row local projection produced by the decided decision-#90/
-decision-#85 migration. Migration 0007 is applied locally but its implementation is still
-uncommitted and its Python/Go consumers still declare migration 0006.
+**Entry:** completed Phase 3/Post-Phase-3 implementation and prior cross-stack suites; immutable
+accepted bundle `forecast_run_final2`; one live verifier-v5 authority
+`fr_357575f586905b11` / `fv_3d66e3bd9939430d`; applied migration 0008 aligned across DB/ML/Go/DB
+test; retained duplicate-at-entry history; events 7→8→9 forming the current successor chain; no
+discoverable Decision-#73 selection; configured-scope-only Go validation; and a generated v2
+closure record whose migration pin and historical-ledger disposition remain incomplete.
 
 **Tasks:**
 
-1. Retain the entry-state proof: two active materializations, 105,768 forecast-series rows, distinct
-   model-policy/activation-scope fingerprints, null `prior_event_id` on both active events, and Go's
-   configured-scope query that cannot detect the duplicate authority.
-2. Verify decision #90 option (a), `retail-forecast-activation-scope/v2`, and the append-only
-   retirement of both v1 scopes. Keep the active view/API governed unavailable while active count
-   is zero; do not choose whichever legacy scope was configured and do not reactivate a v4 bundle.
-3. Verify the corrected backtest/current-cycle/classification chain and the existing accepted
-   `forecast_run_rebuild` publication. Retain the earlier missing-filename failure as
-   pre-publication execution history; do not call it a failed publication.
-4. Verify the rebuilt feature manifest is bound to source snapshot `e010c549…`, publication
-   `fa1bf883…`, feature fingerprint `c72ebd9c…`, and exactly integer horizons 1–26 with no empty
-   parsed element.
-5. Verify governed content identifies run `fr_422e1113355eb05b`, version
-   `fv_86cd60c37be7e203`, semantic fingerprint `08858011…`, lifecycle `accepted`, and exactly 26
-   integer horizons. The directory name is never substituted for run identity.
-6. Re-run and retain the independent forecast verifier over every artifact; recompute current
-   decision-#86 structural checks and all applicable forecast gates on the new fingerprints.
-7. Verify the rebuild publication declares `candidateClass: gate_remediation`, preserves the
-   frozen C5 method, recomputed only its 52 market × horizon weights, and remained inside decision
-   #74's already-consumed configuration cap. This is a refit, not a second search.
-8. Record `fr_9aaa1d4431381570` / `fv_efcbbc03d991007f` as an active-at-entry but
-   artifact-missing generation. Retain its database ids, timestamps, descriptors, and original
-   activation event, set `bundleBytesRetained: false`, refuse fresh verification/rollback, and never
-   reconstruct it as original evidence.
-9. Create immutable decision-#73 candidate→approved→active selection events for the rebuilt source
+1. Retain the full authority history: authority-generation-1 active events 1/2, their append-only
+   supersession events 5/6, event 7's null-predecessor incident, event 8's supersession of 7, and
+   event 9's bounded active replacement pointing to 8. Never edit event 7 to make history look clean.
+2. Verify the current bundle, database row, and API configuration all identify
+   `fr_357575f586905b11` / `fv_3d66e3bd9939430d`, publication `fa1bf883…`, feature
+   `c72ebd9c…`, 52,884 current rows, 2,034 current served SeriesKeys, 708,708 evaluation rows, and
+   exactly H1–H26.
+3. Retain the completed suite totals and commands as linked evidence. Do not rerun Windows/Linux,
+   visual, retrospective, Track-A, or safe/performance work merely because stale strings remain if
+   their actual completion artifacts exist; if an artifact does not exist, the summary is not a
+   substitute and that evidence remains open.
+4. Create the three immutable decision-#73 candidate→approved→active documents decided by #93 for
+   `retailer-demo × tenant-demo × demand_forecast_non_pit × local`. They share one derived
+   `selectionId`, chain distinct lifecycle record ids, and bind the real retained readiness
+   fingerprint. Record the prior pin as `legacy_unselected_predecessor`; do not fabricate a
+   historical superseded selection.
+5. Verify that those selection documents bind the rebuilt source
    snapshot `e010c549…` / publication `fa1bf883…` at the required demand capability and supported
-   scope. Record an explicit supersession event for the prior `681090ee…` / `db3784fd…` pin and bind
-   the expected-pin control-total and row-digest equivalence evidence. File replacement is not an
-   activation mechanism.
-10. Verify and finalize `0007_activation_and_coverage.py` as the shared decision-#90 authority and
-    decision-#85 hard-gate migration. Update Python `MIGRATION_REVISION`, Go
-    `ForecastMigrationRevision`, schema tests, upgrade/downgrade tests, and all integration fixtures
-    from 0006 to `0007_activation_and_coverage`; do not add the obsolete separate 0007/0008 pair.
-11. Complete the activation writer and Go read model. The first v2 activation must explicitly chain
-    to the selected retired v1 predecessor event rather than writing `prior_event_id = NULL` merely
-    because the v2 scope has no earlier row. Preserve the v2 advisory-lock serialization, count
-    across the full active view at Go startup and per-request revalidation, and fail closed on zero
-    or more than one row rather than trusting a configured fingerprint. Model/classification policy
-    remains in run/version lineage and is not dropped from identity.
-12. Retain events 5 and 6 as the actual append-only retirement of entry events 1 and 2. Do not
-    rewrite their timestamps, remove them on downgrade, or append a replacement active event until
-    `P4-1` produces an independently verified, accepted verifier-v5 bundle after source selection.
-13. Prove the pre-`P4-1` state is exactly zero active rows across
-    `(inputBundle, featureSemanticFingerprint, markets)` and every legacy scope fingerprint. API
-    `dataMode: live` is forbidden in this state; governed 503 is the expected result.
-14. Create a new forecast-authority-target/supersession record naming the surviving rebuild as the
-    pre-#92 comparator, the artifact-missing transient rebuild it supersedes, and the prior C5
-    generation. Do not call the comparator current and do not reactivate `fr_f48fd0ab1380bc49`
-    merely to make the old closure record true.
-15. Record the four deleted C5 siblings by run id and original directory:
-   `_c5`/`fr_463f53be6353e481`, `_v2`/`fr_f62041e95fe7c305`,
-   `_grain`/`fr_b55046df351c1a65`, and `_gov`/`fr_8e73fb0f8d3c502c`.
-16. For each sibling set `hashesRetained: false`, retain the supersession reason, and forbid
-   retroactive hashes from any deterministic reconstruction. Retain `_final`'s recorded original
-   manifest/acceptance hashes and never edit historical manifests.
-17. Correct the closure record's mixed old version id and separate historical claims from current
-    activation; refresh `requiredChecks` so it describes the rebuild authority's actual verdict.
-18. Repoint the post-Phase-3 plan and C5 result to the rebuild comparator lineage while retaining
-    their historical ids and the `cold_start_mean` / `cold_start_baseline` compatibility disclosure.
-19. Record C5's accepted leakage-margin disclosure.
-20. Complete Demand Forecast visual approval, Phase 3 retrospective/authorization, Windows/Linux
-    execution evidence, and Track-A mapped-files runtime integration. Retain the already-passing
-    safe/performance comparison as closure evidence rather than rerunning it without cause.
-21. Run the complete stateful local gate against migration 0007 and the selected authority target,
-    expecting governed unavailability until a passing `P4-1` bundle is activated.
+   scope, Gate A `59456631…`, Gate B `cdb41e02…`, and object count 2,069. Bind the expected-pin
+   control-total and row-digest equivalence evidence. File replacement is not activation.
+6. Keep migration 0007 as the inherited verifier-v5/active-view boundary and require current head
+   `0008_nullable_withheld_interval` across DB, ML, Go, DB test, closure generator, and closure
+   record. Add an executable regression that fails on any cross-file pin disagreement or regression
+   to 0007/0006 as the current required head.
+7. Make Go count and validate the entire `active_forecast_versions` projection at startup and
+   per request before resolving the configured fingerprint. Zero or more than one row fails closed;
+   the configuration may select the one proven row, never hide another.
+8. Reconcile Decision #93 to the append-only as-built result: event 8 superseded event 7 and event 9
+   activated the real #92 replacement with a non-null predecessor. Do not append a redundant
+   same-version reactivation now or reactivate the interval-incomplete version. Add regression
+   coverage that every future replacement continues from the currently active event through a
+   supersession event and never mints another null-predecessor authority-generation-2 chain.
+9. Reconcile `forecast-closure-record.json` and its generator: current v5 verifier/acceptance ids and
+   hashes; hard A2 mode; migration 0008; current materialization/activation; no stale
+   `stillRequired`/`openEvidence` item without an explicit Decision-#93 disposition; no served
+   run/version inside `supersededIdentities`; and an explicit retained reference or governed
+   disposition for the historical supersession/attestation ledger removed by the v2 simplification.
+10. Replace each former open item with a linked completion artifact, the explicit user attestation
+    classification, or the decision-#85/#92 served-field transfer to `P4-1` exactly as decided in
+    #93. Do not call attested Windows/Linux/Track-A evidence `locally_verified` unless its retained
+    execution artifact exists.
+11. Preserve all five earlier superseded run ids and four earlier version ids exactly once, including
+   retained versus missing bundle/hash status. Never reconstruct deleted bytes or hashes.
+12. Reconcile `candidate-c5-result.json`, the Post-Phase-3 plan, and Phase 4 entry evidence to the
+    current served identity while retaining historical ids and the no-accuracy-improvement claim.
+13. Record the implemented #92 state explicitly: 86,636 withheld evaluation rows and 8,756 of
+    52,884 current rows across 398 cold-start series, with matching PostgreSQL null/reason counts.
+    Also record the missing series exception and strict truth-table work handed to `P4-1`.
+14. Run the complete stateful local gate against migration 0008 and the selected one-live authority;
+    confirm API `dataMode: live` and nullable interval serialization while Phase 4 interval
+    consumers remain disabled until final-pin `P4-1`.
 
 **Required evidence:**
 
-- decided #90 record plus executable authority-scope, cross-scope predecessor, global-count, and
+- decided #90 record plus executable authority-scope, events-7→8→9 successor-chain, global-count, and
   concurrent-activation vectors;
-- finalized migration `0007_activation_and_coverage.py`, matching Python/Go required-revision
-  constants, and upgrade/downgrade evidence;
+- finalized migrations `0007_activation_and_coverage.py` and
+  `0008_nullable_withheld_interval.py`, matching Python/Go/DB/closure required-head evidence,
+  v5-only active-view evidence, nullable-interval constraints, and upgrade/downgrade evidence;
 - retained before/after evidence for the duplicate active state and its repair;
 - exactly one selected authority target across input bundle + feature fingerprint + markets,
-  independent of model/classification-policy or legacy activation-scope hash, with zero active rows
-  until `P4-1` passes;
-- one immutable active decision-#73 source selection id plus a supersession transition for the
-  prior pin, with the 40-entity / 36,224,122-row equivalence record linked;
-- a tested first-v2-activation path that records a non-null cross-scope `prior_event_id` to the
-  selected retired predecessor; activation itself occurs only in `P4-1`;
+  independent of model/classification-policy or legacy activation-scope hash;
+- three immutable decision-#73 lifecycle documents sharing one selection id, chaining distinct
+  record ids, and naming the prior pin only as `legacy_unselected_predecessor`;
+- event 7's immutable null-predecessor incident plus events 8/9, ending in one bounded active event
+  with a non-null predecessor;
 - `fr_9aaa1d4431381570` / `fv_efcbbc03d991007f` recorded with
   `bundleBytesRetained: false`, non-current status, and activation/rollback refusal evidence;
-- API governed-unavailable evidence on zero active rows, including global-count rather than
-  configured-scope-only revalidation;
-- accepted rebuild manifest with run `fr_422e1113355eb05b`, version evidence
-  `fv_86cd60c37be7e203`, exactly 26 integer horizons, and no directory/staging path as authority;
-- retained independent-verifier success for the immutable rebuild bundle;
+- API live evidence on exactly one active row plus governed-unavailable evidence for zero/duplicate
+  fixtures, using global-count rather than configured-scope-only validation;
+- accepted final manifest with run `fr_357575f586905b11`, version
+  `fv_3d66e3bd9939430d`, exactly 26 integer horizons, and no directory path as authority;
+- retained independent-verifier success for the immutable final bundle;
 - supersession records for every earlier C5 run, explicitly distinguishing retained and missing
   hashes;
 - verifier/activation refusal evidence for every non-current C5 identity still presented;
 - closure record with no current/superseded semantic collision;
-- completed Phase 3 visual/retrospective, Windows/Linux, and Track-A mapped-files runtime evidence;
+- a closure record whose Phase 3 completed-evidence links and v5/hard metadata agree internally;
+- a recorded decision-#92 served-field implementation plus its remaining exception/truth-table gap
+  handed to `P4-1`;
 - relevant authority changes committed and reviewable.
 
-**Exit:** Phase 3 lineage and authorization evidence are reconciled, one authority target and its
-source selection are explicit, both v1 activations remain append-only retired, migration clients
-agree on 0007, and the API honestly remains unavailable until `P4-1` passes.
+**Exit:** decision #93's authority/evidence invariant is fully reconciled: Phase 3 implementation,
+closure evidence, source selection, and serving lineage agree on one live bounded v5 authority;
+events 7/8/9 are retained; both authority-generation-1 activations remain retired; all required-head
+clients and the closure record agree on 0008; Go validates globally; and the remaining #92
+exception/truth-table work is gated to final-pin `P4-1`.
 
-**Stop:** if migration clients disagree on the required revision, either legacy scope remains
-active, a first v2 activation cannot chain to the selected retired predecessor, the rebuild fails
-independent verification, contains an unexpected horizon set, or lacks a valid source selection,
-retain governed 503. Do not choose a configured legacy scope, reactivate a v4 bundle, republish
-merely to change identity, select a directory, reconstruct a deleted bundle, or cosmetically edit
-evidence to match the database.
+**Stop:** if migration clients disagree, more than one authority is active, global Go validation is
+absent, events 7→8→9 do not verify, the final bundle fails verification, source selection is absent,
+or claimed completed evidence has no artifact, keep result-bearing Phase 4 gated. Do not edit event
+history, choose a configured winner, reactivate the interval-incomplete version/v4, reconstruct
+deleted bytes, or clear evidence strings without linking the completion evidence.
 
-### P4-1 · Implement decision #92 and restore one bounded hard-gated forecast authority
+### P4-1 · Complete decision #92 and publish it on the final Phase 4 source pin
 
-**Entry:** `P4-0` complete; decisions #85, #86, #90, and #92 decided; decision #87 closed with C6
-and C7 rejected; decision #91's C8 outcome rejected as a full-range remedy. Under the recommended
-`P4-D0` sequence, the source-only `P4-2/3` track is also complete and this package runs once on its
-final selected pin. Under strict serialization, this package runs on the rebuild entry pin and the
-unchanged #91-head/#92-boundary method must run again after `P4-3`.
+**Entry:** `P4-0` and the source-only `P4-2/3` track complete; decisions #85, #86, #90, and #92
+decided; decision #87 closed with C6/C7 rejected; decision #91's C8 rejected as a full-range remedy.
+The current-pin bounded authority proves the publication/migration/API path and is the comparator;
+it is not the final Phase 4 authority because the source pin will change and its series-exception/
+truth-table contract is incomplete.
 
 **Tasks:**
 
 1. Retain executable C6, C7, and C8 rejection evidence. C8's 0.8063 full-range result remains a
-   rejection even though decision #92 publishes its calibrated H1–H4 subset.
+   rejection and is not adopted for H1–H4 serving.
 2. Bind `retail-forecast-interval-availability/v1`, maximum horizon 4, reason code
-   `COLD_START_INTERVAL_UNCALIBRATED`, the #91 head/fallback identity, and the unchanged P50 method
-   into model policy, run/version lineage, manifest evidence, and the independent verifier.
-3. On the selected source pin, refit the frozen C5 base by recomputing only its 52 market × horizon
-   weights and reproduce the frozen #91 head without reopening either method, the decision #74
-   configuration cap, or the already-read confirmation origins.
-4. Wire `withhold_uncalibrated_cold_start_intervals` into the real publication flow before current-
-   artifact canonicalization, fingerprinting, export, verification, and materialization. A unit-
-   tested helper that only a test calls is not implementation of decision #92.
+   `COLD_START_INTERVAL_UNCALIBRATED`, the accepted C5 model identity, the rejected #91/C8 evidence
+   reference, and the unchanged P50 method into run/version lineage, manifest evidence, and the
+   independent verifier.
+3. On the existing selected pin, preserve the accepted C5 P50/P90 values byte-for-byte before field
+   withholding. On a later Phase 4 source pin, refit only the frozen C5 base's 52 market × horizon
+   weights as already authorized; do not fit or substitute the rejected #91 head, reopen decision
+   #74's configuration cap, or reread confirmation to select a mechanism.
+4. Retain and regression-test the now-live invocation of
+   `withhold_uncalibrated_cold_start_intervals` before current-artifact canonicalization,
+   fingerprinting, export, verification, and materialization; repeat it on the final source pin.
 5. Version the current-forecast artifact/schema so `interval_available` and
    `interval_unavailable_reason` are required. Permit null P90/confidence only when availability is
    false with the exact reason; reject null with true/missing availability, non-null interval fields
-   with false availability, P90 below P50 when available, and any null/non-finite P50.
+   with false availability, P90 below P50 when available, and any null/non-finite P50. Add
+   `0009_*_forecast_interval_contract_completion.py` to backfill/store the explicit availability
+   field and enforce the two valid row states; do not edit already-applied migration 0008.
 6. Keep evaluation rows for A1, A3, A4, A5 and display-cell scoring at every horizon. Recompute A2
    only over published intervals, and independently publish total, cohort, market, horizon-band,
    withheld-row, withheld-series, share, and demand-share counts/digests so gate scoping cannot hide
@@ -1336,17 +1341,18 @@ unchanged #91-head/#92-boundary method must run again after `P4-3`.
 8. Version the forecast manifest/schema and policy fingerprints for the new exception and interval-
    availability contracts; update generated Python/Go/TypeScript types and refuse a bundle that
    advertises #92 without both artifacts and their reconciled controls.
-9. Update PostgreSQL materialization, active views, Go read models, OpenAPI, and UI forecast types so
-   the availability flag and reason survive end to end. No layer may coalesce null P90/confidence to
-   zero or compute spread/confidence/safety stock from a withheld interval.
-10. Publish under acceptance-v5/verifier-v5 and migration 0007. Prior v4 bundles remain immutable
-    and ineligible rather than being reinterpreted under the scoped gate.
+9. Retain the migration-0008 PostgreSQL materialization and nullable Go/UI path, then complete the
+   OpenAPI/types and exact availability/reason contract so it survives end to end. No layer may
+   coalesce null P90/confidence to zero or compute spread/confidence/safety stock from a withheld
+   interval.
+10. Publish under acceptance-v5/verifier-v5 and migration 0009. Prior v4 and
+    interval-incomplete bundles remain immutable and ineligible rather than being reinterpreted.
 11. Independently verify both sides of the contract: every published cold-start H1–H4 interval and
     every withheld cold-start H5–H26 field/reason/count/exception; recompute rather than trust stored
     booleans.
 12. Publish, independently verify, materialize, and separately activate the bounded forecast under
-    decision #90's v2 scope. The event must carry the non-null cross-scope predecessor prepared in
-    `P4-0` rather than minting an unchained first-v2 event.
+    Decision #90's authority-generation-2 scope. Append a supersession of current event 9, then make
+    the new active event point to that supersession; never mint another null-predecessor chain.
 13. Record the exact current authority and bounded interval capability in the Phase 4 entry record.
 
 **Acceptance:**
@@ -1362,16 +1368,19 @@ unchanged #91-head/#92-boundary method must run again after `P4-3`.
   scoring;
 - P50≤P90 for every available interval; nullable-domain invariants pass for every unavailable one;
 - A1/A3/A5 and every decision-#77 P50 display cell remain byte-identical;
-- established-history P50/P90 rows remain byte-identical and C8 full-range rejection is retained;
+- all P50 and all available accepted-C5 P90 values remain byte-identical before withholding;
+  established-history P90 remains complete and C8's full-range rejection is retained;
 - all decision-#86 refusal criteria pass, C5 disclosure remains, and interval/exception controls
   reconcile across Parquet, DuckDB, manifest, PostgreSQL, API, and verifier evidence;
-- old verifier/materializations fail the new active view;
+- the interval-incomplete v5 materialization remains immutable but is no longer active after the
+  corrected version supersedes it;
 - exactly one active authority remains across all policy/config fingerprints, and the new active
   event chains to the selected superseded event.
 
 **Exit:** decision #85 is hard and passing for the decision-#92 published interval capability on one
-independently verified verifier-v5 generation; P50 remains complete; bounded availability and
-exceptions are servable; and exactly one decision-#90 v2 authority is active.
+independently verified verifier-v5 generation over the final Phase 4 source pin; P50 remains
+complete; bounded availability and exceptions are servable; and exactly one Decision-#90
+authority-generation-2 authority is active.
 
 **Stop:** stop if the scoped bundle, nullable contract, withheld counts, series exceptions, or
 cross-layer values do not reconcile. Do not return to C6/C7, describe C8 as a passing full-range
@@ -1380,8 +1389,9 @@ retune after confirmation. Extending the calibrated range requires a new preregi
 
 ### P4-2 · Freeze source, staging, canonical, and readiness vNext
 
-**Entry:** `P4-1`, or the explicitly approved `P4-D0` source-only carve-out. No result-bearing Phase
-4 engine work is authorized by that carve-out. Decision #88 option (a) is already decided and
+**Entry:** `P4-0` complete. The current-pin bounded publication has already resolved the former
+`P4-D0` ordering question, so this package is source-only and authorizes no result-bearing Phase 4
+engine work. Decision #88 option (a) is already decided and
 implemented and must be verified unchanged. Decision #89's byte-determinism exclusion contract and
 one-time next-landing adoption/re-pin evidence are mandatory inputs.
 
@@ -1477,9 +1487,9 @@ adapter/role contract; do not branch canonical transforms.
 
 ### P4-3 · Generate, ingest, publish, select, and re-pin
 
-**Entry:** `P4-2` complete plus either (a) the approved `P4-D0` source-only carve-out or (b) an entry-
-pin `P4-1` pass under strict serialization. The frozen decision-#89 policy fingerprint and its
-accepted adoption evidence are mandatory inputs.
+**Entry:** `P4-2` complete and `P4-0` closed. The current-pin bounded publication is the recorded
+entry pass; the frozen Decision-#89 policy fingerprint and its accepted adoption evidence are
+mandatory inputs.
 
 **Tasks:**
 
@@ -1503,17 +1513,16 @@ accepted adoption evidence are mandatory inputs.
 10. Publish a new immutable curated publication and retained evidence.
 11. Create candidate → approved → active #73 selections for the required capabilities.
 12. Update the expected ML pin only after selection activation.
-13. Under the recommended carve-out, stop the source track here and hand the final selected pin to
-    `P4-1`; do not fit a forecast inside this package.
-14. Under strict serialization only, repeat the already frozen `P4-1` work on the new publication
-    fingerprint using unchanged #82/#83/#84/#85 semantics. Recompute only the frozen C5 method's
-    52 market × horizon weights, then reproduce the unchanged decision-#91 dedicated cold-start P90
-    head and decision-#92 H1–H4 availability boundary; do not reopen decision #74's configuration
-    cap, return to rejected #87 calibrations, or search a second mechanism.
-15. Re-run all published-interval forecast acceptance cells and withheld-population controls, then
-    materialize/activate only if every gate passes. Apply
-    decision #90 and supersede the prior forecast authority; never leave the old and new source-pin
-    forecasts active in parallel. A changed source fingerprint creates a new run even when forecast
+13. Stop the source track here and hand the final selected pin to `P4-1`; do not fit, publish,
+    materialize, or activate a forecast inside this package.
+14. `P4-1` repeats the frozen work on the new publication fingerprint using unchanged
+    #82/#83/#84/#85/#92 semantics. It recomputes only the frozen C5 method's 52 market × horizon
+    weights and preserves Decision #92's H1–H4 availability boundary; it does not reopen Decision
+    #74's configuration cap, return to rejected #87/#91 mechanisms, or search a second mechanism.
+15. `P4-1` re-runs all published-interval acceptance cells and withheld-population controls, then
+    materializes/activates only if every gate passes. Apply Decision #90 and supersede the prior
+    forecast authority; never leave the old and new source-pin forecasts active in parallel. A
+    changed source fingerprint creates a new run even when forecast
     bytes happen to match.
 
 **Expected source outcomes:**
@@ -1630,9 +1639,10 @@ vectors pass.
 4. Replace M5 store-only keys with typed market/location/lane keys.
 5. Replace source-local config with verified inventory-policy-v2 resolution.
 6. Make weekly horizons and lead+review protection explicit.
-7. Wrap every interval consumer with a shared horizon declaration and startup viability check. The
-   resolved lead-time/review maximum, not a hand-entered example, is passed to
-   `require_cold_start_interval_horizon` for each core consumer.
+7. Wrap every interval consumer with a shared horizon declaration and viability check. Derive the
+   required horizon per selected row from origin-safe lead time plus review period. Use
+   `require_cold_start_interval_horizon` only for a contractually all-or-nothing consumer; the
+   declared partial cold-start replenishment path branches row-by-row and exposes aggregate status.
 8. Add the shared row-level helper for explicitly partial consumers: branch on
    `interval_available`, skip only the interval-dependent output, retain allowed P50 use, and emit/
    link the governed `cold_start_interval_unavailable` exception. Never branch on `p90 IS NULL`
@@ -1650,8 +1660,11 @@ vectors pass.
 - RSS over weekly spreads;
 - service-level scale A/B/C;
 - fractional lead/review protection rule;
-- current 5-day lead plus 7-day review resolves H2 and passes the H4 startup boundary for all 2,228
-  series; a longer-term fixture resolving H5+ refuses a core consumer before any rows run;
+- current 5-day lead plus 7-day review resolves H2 and passes the H4 boundary for all 2,034 current
+  served SeriesKeys; the separate evaluation population is 398 cold-start, 1,926 established, and
+  16 ineligible keys and must not be substituted for the serving grain;
+- a varied v13 fixture may resolve H5+ without being artificially capped; affected cold-start rows
+  take the declared partial path, while an all-or-nothing consumer refuses before rows run;
 - an optional partial consumer skips only unavailable interval-dependent rows, emits one governed
   series exception with an affected horizon range, retains P50 where authorized, and refuses when
   its frozen systemic threshold is breached;
@@ -1707,18 +1720,19 @@ report paths is redesigned or dropped; it is not preserved for reuse credit.
 
 **Interval-consumer tasks:**
 
-1. Reorder and safety stock derive the required horizon from resolved supplier lead time plus review
-   period and assert core-consumer viability before replay/current execution. On the measured input,
-   5 + 7 days resolves to H2, within H4, so no cold-start row is skipped and all 2,228 series receive
-   a calibrated reorder interval.
-2. Long-horizon planning, seasonal-buy, and scenario features declare partial capability if their
-   contract allows it. At H5+ they omit only the interval-dependent row/output, publish
+1. Reorder and safety stock derive the required horizon per row from resolved supplier lead time
+   plus review period. On the current measured input, 5 + 7 days resolves to H2, within H4, so no
+   cold-start row is skipped and all 2,034 current served SeriesKeys receive a calibrated reorder
+   interval. This is a current-pin observation, not a cap on v13 terms.
+2. Cold-start H5+ replenishment, long-horizon planning, seasonal-buy, and scenario features declare
+   partial capability. They omit only the interval-dependent row/output, publish
    `cold_start_interval_unavailable`, and expose manual-judgment/unavailable status. They do not
    suppress the underlying forecast row or its P50.
 3. Reconcile per-feature skipped-row, series, unit-demand, and actual-demand shares with the source
-   forecast availability artifact and exception projection. If a core consumer is incompatible or
-   a partial consumer breaches its frozen systemic threshold, make the whole feature unavailable
-   rather than emitting an exception storm that looks operational.
+   forecast availability artifact and exception projection. Mark a supported market's cold-start
+   replenishment sub-capability unavailable when 100% of its cold-start SeriesKeys or demand is
+   skipped; mark the whole market consumer unavailable if no recommendation row remains. Apply any
+   stricter pre-result P4-4 threshold without post-result weakening.
 
 The current canonical `quality_violations` Parquet and DuckDB artifact contains B15/B21, but its
 manifest controls incorrectly attest zero rows because the publisher inserts those outcomes after
@@ -1760,9 +1774,9 @@ decision; do not derive a visually convenient proxy.
     hide a market failure.
 11. Independently recompute replay gates, policy gates, cohort hashes, and artifact fingerprints.
 12. Publish either an accepted immutable Phase 4 run or an honest rejected run.
-13. Recompute interval-consumer viability at every replay origin from origin-visible terms. A term
-    change that moves a core consumer beyond H4 stops that origin/run; optional partial consumers
-    retain their governed row skips and exception/share evidence.
+13. Recompute interval-consumer viability at every replay origin from origin-visible terms. H5+
+    cold-start rows follow the declared partial path with governed row skips and exception/share
+    evidence; market sub-capability and whole-market refusal floors from `P4-D17` remain binding.
 
 **Required replay evidence:**
 
@@ -1789,8 +1803,9 @@ thresholds, cohorts, incumbent, or tolerance after reading holdout.
 **Tasks:**
 
 1. Verify every run artifact before opening a PostgreSQL transaction.
-2. Add `0008_*_inventory_replenishment_serving.py` after
-   `0007_activation_and_coverage.py`.
+2. Add `0010_*_inventory_replenishment_serving.py` after
+   `0009_*_forecast_interval_contract_completion.py`; advance every exact-head DB/ML/Go/test/
+   evidence pin to 0010 while preserving the inherited 0007/0008/0009 forecast constraints.
 3. Create one version/materialization/activation lifecycle and normalized read projections.
 4. Suggested serving tables:
    - inventory versions/materializations/activation events;
@@ -1842,9 +1857,10 @@ files, sample JSON, a prior verifier, or a stale active row.
    per page.
 10. Obtain separate human sign-off for every destination; no page approval stands in for another.
 11. Run manual Windows/macOS/Linux developer evidence and the full stateful local gate.
-12. Render `cold_start_interval_unavailable` as manual-judgment/unavailable for affected optional
-    long-horizon rows. Do not show zero safety stock, zero risk, a collapsed row, or a fake confidence
-    value; current H2 reorder remains normally available when its startup assertion passes.
+12. Render `cold_start_interval_unavailable` as manual-judgment/unavailable for affected H5+
+    cold-start rows. Do not show zero safety stock, zero risk, a collapsed row, or a fake confidence
+    value; current-pin H2 rows remain normally available and varied-term H5+ rows remain visibly
+    partial.
 
 **Exit:** all 14 pages render live market/location/lane-scoped outputs, approved unavailable
 elements, and no fabricated or mutable behavior. Demo checkpoint 4 is signed off.
@@ -1884,21 +1900,22 @@ screen” is not a reason to remove an element or substitute a new panel.
 
 - `P4-0` lineage/migration integration and Phase 3 authorization complete;
 - decision #90 fully implemented, including migration-client alignment, global Go revalidation,
-  and a non-null first-v2 cross-scope predecessor chain;
+  and the retained authority-generation-2 events 7→8→9 successor chain;
 - decision #87's C6/C7 and decision #91's C8 full-range rejections retained; decision #92 is
   implemented without post-confirmation refit or boundary change;
 - decision #85 hard-gate version boundary created;
 - all six published-interval per-cohort coverage cells pass, while withheld row/series/share/demand-
   share evidence reconciles and P50 remains scored at all horizons;
 - one hard-gated forecast active;
-- any `P4-D0` carve-out explicitly recorded.
+- the as-built `P4-D0` ordering disposition explicitly recorded.
 
 ### 9.2 Data and readiness gates
 
 - decision #88 option (a) remains implemented, decision #89's implementation/adoption evidence is
   accepted, and both policy/contract fingerprints are in run identity;
-- new immutable source publication and active #73 selection, with an explicit supersession event
-  for the entry repin rather than file replacement as authority;
+- new immutable source publication and active #73 selection; decision #93 records the entry repin's
+  prior pin as `legacy_unselected_predecessor`, while every future selected pin must carry a real
+  supersession lifecycle event rather than file replacement as authority;
 - every new Phase 4 role uses the decision-#88 neutral field spellings only;
 - safe/performance profiles have equal canonical schemas, control totals, and canonical ordered row
   digests; exact source-id equality is required for repeated generation under the same pinned
@@ -1924,8 +1941,9 @@ screen” is not a reason to remove an element or substitute a new panel.
 - inventory-policy v2 resolves and is fingerprinted for exactly `india-west`/INR and
   `us-new-york`/USD; negative market/currency cases fail closed;
 - Monday/Thursday/timezone and `P4-D16` channel vectors pass;
-- `P4-D17` consumer declarations, H2 reorder viability, H5+ core-consumer refusal, optional per-row
-  degradation, exception, and systemic-threshold vectors pass;
+- `P4-D17` consumer declarations, current-pin H2 viability, H5+ cold-start partial-row degradation,
+  exception, market sub-capability refusal, no-remaining-row refusal, and any stricter frozen
+  systemic-threshold vectors pass;
 - run/acceptance/verifier schemas valid;
 - exact replay acceptance and holdout rules frozen pre-result;
 - Python↔Go golden vectors pass;
@@ -1986,23 +2004,27 @@ Stop and retain honest evidence when any occurs:
 
 - any published-interval decision-#85 cell is outside 0.85–0.95 or insufficient, a withheld row is
   excluded from non-A2 scoring, or withheld population evidence is incomplete;
-- the decision-#91 head, decision-#92 H4 boundary, feature/policy settings, or fallback were selected/
-  tuned after confirmation origins were read;
+- any rejected #87/#91 mechanism, decision-#92 H4 boundary, feature/policy setting, or fallback is
+  selected/tuned after confirmation origins were read;
 - `interval_available` and its reason disagree with P90/confidence nullability, any layer coerces a
   withheld interval to zero, or the series-level exception projection does not reconcile;
-- a core consumer requires H5+ but starts anyway, or a partial consumer silently drops rows without
-  exceptions/share evidence or continues beyond its frozen systemic threshold;
+- an all-or-nothing consumer requires H5+ but starts anyway; a partial consumer silently drops rows
+  without exceptions/share evidence; a market remains cold-start-capable after 100% of its
+  cold-start SeriesKeys or demand is skipped; or any stricter frozen threshold is breached;
 - old verifier/materialization can satisfy the hard gate;
-- Python/Go migration constants disagree with applied migration 0007, zero or more than one forecast
+- Python/Go/DB/closure migration pins disagree with the required stage head (0008 at `P4-0`, 0009
+  after `P4-1`, and 0010 after `P4-8`), zero or more than one forecast
   is active after `P4-1`, Go validates only a configured scope, an active version's immutable bundle
-  is missing/unverifiable, or the first v2 activation lacks its cross-scope predecessor chain;
+  is missing/unverifiable, events 7→8→9 do not verify, or a later replacement breaks the non-null
+  successor chain;
 - forecast/source/policy/lane fingerprints disagree within a run, cross-profile canonical control
   totals/ordered row digests disagree, or repeated generation under the same pinned writer/profile
   changes source id after logical-only objects are excluded;
 - a new Phase 4 role restores dual location spellings or dialect-shaped fields, decision #89's
   adoption evidence is missing, a logical-only inventory is accepted, a byte-stable object is
   excluded, or implemented snapshot identity otherwise contradicts frozen decision #89;
-- a source pin has no active decision-#73 selection or prior-pin supersession event;
+- a source pin has no active decision-#73 selection, the decision-#93 adoption omits its
+  `legacy_unselected_predecessor`, or any later selected pin lacks its real supersession event;
 - current/replay readiness is unavailable, partial, insufficient, or not evaluated;
 - an inactive zero-residual store cell is generated, or a de-assorted non-zero residual cell is
   omitted;
@@ -2099,8 +2121,8 @@ Stop and retain honest evidence when any occurs:
   authority; an active artifact-missing version is refused;
 - `candidateClass: capability_scope_remediation`, targeted decision-#85/#92 scope, all-P50 byte identity,
   established-P90 byte identity, and cold-start-P90-only change verification;
-- decision-#91 head plus decision-#92 availability/exception-policy model/run/version identity and
-  independent-verifier recomputation;
+- rejected decision-#91/C8 evidence plus accepted-C5 and decision-#92 availability/exception-policy
+  run/version lineage and independent-verifier recomputation;
 - rebuild manifest carries exactly integer horizons 1–26 with no empty element;
 - frozen C5 method recomputes exactly 52 market × horizon weights without increasing decision #74's
   configuration count;
@@ -2120,8 +2142,9 @@ Stop and retain honest evidence when any occurs:
 - transfer feasibility/conservation/tie-breaking;
 - allocation feasibility/conservation/channel priority and no silent channel aggregation;
 - demand-at-risk and exception classification;
-- resolved H2 reorder startup pass, H5+ core-consumer startup refusal, optional partial row skip,
-  one-series exception, systemic-threshold refusal, and no-null-to-zero properties;
+- resolved current-pin H2 pass, varied-term H5+ cold-start partial row skip, one-series exception,
+  100%-cohort market-sub-capability refusal, no-remaining-row market refusal, all-or-nothing
+  consumer startup refusal, any stricter systemic-threshold refusal, and no-null-to-zero properties;
 - deterministic artifact bytes/semantic fingerprints;
 - memory/profile invariance;
 - import boundaries.
@@ -2204,42 +2227,40 @@ Stop and retain honest evidence when any occurs:
 ### 12.1 Default strict sequence
 
 ```text
-decision #90 + migration 0007 established
-  -> P4-0 migration integration + lineage/selection/closure completion
-  -> P4-1 decision-#91-head / decision-#92 bounded publication on rebuild entry pin
-  -> P4-2
-  -> P4-3 source publication + unchanged #91-head/#92-boundary P4-1 repeat on final pin
+decision #90 + migration 0008 + decision #93 established
+  -> current-pin decision-#92 bounded publication already completed (events 8/9)
+  -> P4-0 residual #93 global-Go/selection/closure reconciliation
+  -> P4-2 source/contracts only
+  -> P4-3 source publication/selection only
+  -> P4-1 append migration 0009, complete exception/truth-table contract, and repeat bounded publication on final pin
   -> P4-4
   -> P4-5
   -> P4-6
   -> P4-7
-  -> P4-8
+  -> P4-8 append inventory-serving migration 0010
   -> P4-9
 ```
 
-### 12.2 Sequence if `P4-D0` is approved
+### 12.2 `P4-D0` disposition
 
 ```text
-decision #90 + migration 0007 established
-  -> P4-0 migration integration + lineage/selection/closure completion
-  -> approve P4-D0
-  -> P4-2 source/contracts
-  -> P4-3 source publication/selection only
-  -> P4-1 decision-#91-head / decision-#92 bounded publication once on the final selected pin
-  -> P4-4 -> P4-5 -> P4-6 -> P4-7 -> P4-8 -> P4-9
+resolved by as-built ordering:
+  bounded current-pin publication happened first
+  -> source-only P4-2/P4-3 may follow P4-0
+  -> one required final-pin P4-1 publication remains
 ```
 
-Decision #90 and migration 0007 already retired the duplicate v1 scopes. `P4-0` completes the
-remaining migration-client, Go, cross-scope-chain, selection, and closure work without restoring a
-v4 authority. Decisions #87 and #91 retain the three rejected full-range remedies; decision #92 is
-the active bounded-capability contract.
-The carve-out may publish/select source evidence, but it cannot train a forecast, run interval-
-consuming engines, or publish live Phase 4 values.
+Decision #90 and migration 0007 retired the duplicate authority-generation-1 scopes; migration
+0008 and events 8/9 now serve one bounded v5 authority. `P4-0` implements the remaining global Go
+validation, selection lifecycle, migration-aware closure, and historical-ledger disposition.
+Decisions #87/#91 retain the three rejected full-range remedies and Decision #92 is the active
+bounded-capability contract. Source-only work cannot train a forecast, run interval-consuming
+engines, or publish live Phase 4 values.
 
 ### 12.3 Review gates
 
-1. **Entry review:** decision-#90 implementation gaps, zero-active fail-closed state, authority
-   target/source selection, Phase 3 closure, and migration-0007 alignment.
+1. **Entry review:** one-live bounded v5 authority, events 7→8→9, global Go validation, source
+   selection, Phase 3 closure reconciliation, and migration-0008 alignment.
 2. **Interval review:** decision-#87/#91 rejection integrity; decision-#92 publisher/schema/exception/
    verifier implementation; published-versus-withheld result after untouched confirmation.
 3. **Source-contract review:** lane/store/inbound/term/capability semantics before generation.
@@ -2256,21 +2277,21 @@ consuming engines, or publish live Phase 4 values.
 
 | Risk | Consequence | Mitigation |
 |---|---|---|
-| Decision-#92 helper remains disconnected from real publication | The gate scores H1–H4 while H5+ P90 is still exported or the publisher rejects its nulls | Wire withholding before canonicalization/export; version the strict nullable schema; independently verify served and withheld rows |
+| Decision-#92 publication regresses or remains contract-incomplete | H5+ P90 reappears, or null rows lack an enforceable reason/series exception | Retain the live pre-export withholding regression; complete strict truth-table and exception controls; independently verify served and withheld rows |
 | Withheld P90/confidence is coerced to zero | New and least predictable products receive zero safety stock or risk while appearing confidently served | Require availability+reason branching in schema, DB, API, UI, and engines; add no-null-to-zero properties |
-| Row exceptions mask a systemic consumer mismatch | A lead-time shift can silently remove all cold-start demand from reorder | Core consumers assert resolved maximum horizon at startup; partial consumers have frozen count/share/demand-share thresholds and become unavailable when breached |
+| Row exceptions mask a systemic consumer mismatch | Varied v13 terms can remove an entire market's cold-start demand from reorder | Declare cold-start H5+ as partial, expose all skipped shares, mark the market sub-capability unavailable at 100% skipped SeriesKeys or demand, and permit stricter pre-result thresholds |
 | Exception policy remains v1 while a new class is emitted | Artifact identity and downstream classification disagree | Version the policy/fingerprint/schema; emit one series-level H5–H26 record and reconcile its projection |
 | Rejected C6/C7 calibration is revived because its aggregate number looked attractive | A preregistered stop rule is silently nullified | Keep both rejection records executable; refuse grid extension, band relaxation, and confirmation refit |
 | Deleted prior forecast generation confuses authority | Wrong/nonexistent version selected | Rebuild becomes one authority; honest hashed/unhashed supersession ledger; no reconstruction |
-| Model-policy refit mints a parallel or unchained v2 authority | Multiple forecasts serve one audience or history splits at the scope-version boundary | Enforce decided #90 globally; serialize v2 activation and require the selected retired-v1 predecessor link |
-| Serving clients still require migration 0006 after 0007 is applied | Every verifier-v5 materialization/activation is refused regardless of candidate quality | Align Python/Go constants and schema/integration tests before fitting the final candidate |
+| Model-policy refit mints a parallel or unchained authority-generation-2 authority | Multiple forecasts serve one audience or history splits at the scope-version boundary | Enforce decided #90 globally; serialize activation and require continuation from the selected predecessor |
+| A serving/evidence pin disagrees with the stage head or 0008 is edited after application | Nullable rows are refused, strict truth is bypassed, or migration history diverges | Append 0009 for forecast-contract completion and 0010 for inventory; advance DB/ML/Go/tests/closure together and retain the v5 active-view assertion |
 | Active version's immutable bundle is deleted | Servable projection cannot be independently re-verified or safely rolled back | Fail closed; set `bundleBytesRetained: false`; supersede it; never reconstruct original evidence |
-| File replacement is mistaken for decision-#73 selection | Unapproved source pin becomes forecast authority | Create candidate→approved→active selection plus explicit prior-pin supersession before activation |
+| File replacement is mistaken for decision-#73 selection | Unapproved source pin becomes forecast authority | Implement #93's candidate→approved→active adoption and legacy-unselected disclosure; require real supersession for every later selection |
 | Decision-#89 adoption changes the next source identity | Downstream lineage moves once even when the authoritative source content is unchanged | Record the old→new adoption/re-pin explicitly; exclude only declared logical objects; retain canonical control totals/ordered row digests as semantic evidence |
 | A later adapter restores dual or dialect-shaped location fields | Source-neutral Phase 4 roles regress despite decided #88 | Keep exact option-(a) contract tests and reason-coded refusal for missing neutral fields |
 | Quality findings are inserted after publication controls | Exported rows exist but manifest count/digests attest zero, making critical-row gates unfalsifiable | Compute controls after all inserts, or version an explicit exemption with a separate exported-row count/digest |
 | New source pin changes forecast behavior | Hard gate regresses | Refit/re-accept on new fingerprint; no cosmetic re-pin |
-| Strict ordering fits interval remedy twice | Duplicated work and second-fit gate regression | Prefer source-only `P4-D0`; if rejected, budget and record both full fits without changing method |
+| Final source repin changes a gate the current-pin bounded run passed | Final-pin Phase 4 forecast is rejected | Repeat the frozen method once on the selected pin and retain an honest rejection; do not tune against the result |
 | Fulfillment availability precedes occurrence | Future fulfillment enters replay | V13 derivation + B05 placement; diagnostic max timestamp only before v13 |
 | Store inventory overgenerated or residual stock omitted | False availability or impossible dead stock | Emit active-or-residual cells; omit inactive zero state; time-qualified reconciliation |
 | Fulfillment occurrence mistaken for lane policy | Wrong planning routes | Source-declared lanes; occurrence used only for reconciliation |
@@ -2292,41 +2313,39 @@ consuming engines, or publish live Phase 4 values.
 
 ## 14 · Approval block
 
-### 14.1 Approval or confirmation requested before remaining implementation
+### 14.1 Remaining approvals and freezes
 
-Approve or amend:
+No design decision blocks starting `P4-0`. `P4-D0` is resolved by the as-built ordering; Decisions
+#88, #89, #92, and #93 are frozen. The following actions/freezes gate their owning later package,
+not Phase 4 entry:
 
-1. Choose the recommended `P4-D0` source-only carve-out so the interval remedy is fitted once on
-   the final Phase 4 pin, or choose strict serialization and explicitly accept two full fits plus
-   second-fit gate-regression risk.
-2. Confirm decision #92's end-to-end implementation boundary: C8 remains a rejected full-range
-   result; H1–H4 is the published cold-start interval range; H5–H26 carries strict unavailable
-   fields/counts and a versioned series-level exception. The boundary itself is already decided.
-3. Confirm decision #88 option (a) remains implemented without the interim dual-spelling behavior;
-   no naming choice remains open.
-4. Decision #89 implementation/adoption evidence, including logical-mirror exclusion, byte-stable
-   restricted-object retention, all-excluded refusal, and the one-time next-landing re-pin. The
-   decision itself is already frozen.
-5. Complete decision #90's implementation gaps: migration-0007 client constants, global Go
-   revalidation, and the first-v2 cross-scope predecessor chain. The authority choice is decided.
-6. Capability split and temporal-evidence-policy v2.
-7. Active-or-residual store inventory scope and cost-carrying store transfer receipts.
-8. Source-declared typed replenishment/customer-fulfillment lanes and exact/default-channel
+1. Complete Decision #93's global Go revalidation, Decision-#73 lifecycle, migration-0008 closure
+   reconciliation, and as-built events-7→8→9 evidence.
+2. Complete Decision #92's versioned series exception and strict availability/reason truth table,
+   append migration 0009 without rewriting applied 0008, then repeat the bounded publication on the
+   final selected source pin. C8 remains rejected and H4 remains fixed unless a new preregistered
+   mechanism supersedes #92.
+3. Retain Decision #88 option (a) without interim dual spelling and retain Decision #89's
+   implementation/adoption evidence, including logical-mirror exclusion, byte-stable restricted-
+   object retention, all-excluded refusal, and the one-time next-landing re-pin.
+4. Capability split and temporal-evidence-policy v2.
+5. Active-or-residual store inventory scope and cost-carrying store transfer receipts.
+6. Source-declared typed replenishment/customer-fulfillment lanes and exact/default-channel
    resolution.
-9. External/internal supply-term model and precedence.
-10. ISO-Monday replay clock, preceding-Thursday local bridge, timezones, and lead-time arrival
+7. External/internal supply-term model and precedence; do not cap varied terms at H4.
+8. ISO-Monday replay clock, preceding-Thursday local bridge, timezones, and lead-time arrival
    rounding.
-11. DC dependent-demand operating method and validation-only withdrawal forecast.
-12. Store WAC/ABC basis.
-13. Exact replay acceptance math, incumbent identity, and materiality/tolerances.
-14. Calibration/holdout key and seed.
-15. NRV/provision unavailable scope.
-16. Read-only exception/action/ERP behavior.
-17. `P4-D16` channel-to-node aggregation, constrained allocation, and direct-DC rule.
-18. `P4-D17` core-versus-partial consumer classification and each partial consumer's systemic
-    count/share/demand-share threshold. Current reorder's derived H2 behavior is not an open choice.
-19. One bundle/activation for all 14 screens and the artifact → screen → endpoint mapping.
-20. Work-package ordering and review gates.
+9. DC dependent-demand operating method and validation-only withdrawal forecast.
+10. Store WAC/ABC basis.
+11. Exact replay acceptance math, incumbent identity, and materiality/tolerances.
+12. Calibration/holdout key and seed.
+13. NRV/provision unavailable scope.
+14. Read-only exception/action/ERP behavior.
+15. `P4-D16` channel-to-node aggregation, constrained allocation, and direct-DC rule.
+16. `P4-D17` implementation: cold-start H5+ is partial; current H2 is pin-specific; 100%-skipped
+    market cohort and no-remaining-row floors are fixed. P4-4 may approve stricter pre-result limits.
+17. One bundle/activation for all 14 screens and the artifact → screen → endpoint mapping.
+18. Work-package ordering and review gates.
 
 ### 14.2 Not approved by plan creation
 
@@ -2340,7 +2359,8 @@ Creating this file does not approve:
 - engine, database, API, or UI implementation;
 - NRV/provision values;
 - any workflow or ERP mutation;
-- activation of any forecast or Phase 4 bundle.
+- activation of the final-pin forecast or any Phase 4 bundle beyond the already live bounded
+  Post-Phase-3 authority.
 
 ### 14.3 Evidence required to authorize the next package
 
@@ -2354,13 +2374,15 @@ capability verdict, accepted artifact, or required human approval.
 
 Phase 4 is complete only when all are true:
 
-1. Phase 3 lineage and authorization evidence are complete; decision #90 is enforced across all
-   policy-derived scope fingerprints; migration clients require 0007; and the first v2 activation
-   chains to the selected retired v1 predecessor.
+1. Phase 3 implementation and closure evidence agree; Decision #93 is implemented; Decision #90 is
+   enforced across all policy-derived scope fingerprints; the staged migration chain is 0008 at
+   entry, 0009 after forecast-contract completion, and 0010 after inventory serving, with every
+   client/evidence pin advanced together; event 7's incident and events 8/9 are retained; and every
+   later replacement continues the append-only non-null successor chain.
 2. Decision #85 is a hard fail-closed acceptance-v5/verifier-v5 gate and no v4 materialization can
    satisfy it.
-3. Decision #87's C6/C7 and decision #91's C8 full-range rejections remain immutable; the #91 head
-   and decision #92 availability/exception policies are bound into model/run/version identity;
+3. Decision #87's C6/C7 and decision #91's C8 full-range rejections remain immutable; the accepted
+   C5 identity and decision #92 availability/exception policies are bound into run/version lineage;
    every published cold-start/established P90 cell passes 0.85–0.95 globally and in both markets;
    H5–H26 cold-start rows retain P50 and carry reconciled explicit interval unavailability.
 4. A new immutable source publication supplies active-or-residual store inventory, typed lanes,

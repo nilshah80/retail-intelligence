@@ -31,6 +31,22 @@ class SnapshotIdentityError(ValueError):
 #: The discriminator is byte-stability, which the producer declares, not permission.
 NON_BYTE_DETERMINISTIC: Final[str] = "logical"
 
+#: The ONLY object the identity may exclude, pinned by governed properties rather than by
+#: the producer's own determinism string.
+#:
+#: `contentDeterminism` is source-supplied and the landing manifest is only checked to be
+#: an object with an objects array, so a source could label an authoritative sales object
+#: `logical`, change its bytes and keep the same sourceSnapshotId -- silently redefining
+#: what the identity covers. The exclusion is therefore gated on the mirror's governed
+#: identity: its dataset, format and logical path, all of which the staging contract
+#: declares. Current datagen uses the field only for source-run.duckdb; this makes that
+#: restriction enforced rather than merely true today.
+NON_AUTHORITATIVE_MIRROR: Final[dict[str, str]] = {
+    "dataset": "sourceRunDuckdb",
+    "format": "duckdb",
+    "logical_path": "source-run.duckdb",
+}
+
 
 def source_snapshot_id(
     *,
@@ -62,7 +78,19 @@ def source_snapshot_id(
     excluded: list[str] = []
     for row in objects:
         if str(row.get("contentDeterminism", "byte")) == NON_BYTE_DETERMINISTIC:
-            excluded.append(str(row.get("path", row.get("logicalPath", "<unnamed>"))))
+            declared = {
+                "dataset": str(row.get("dataset", "")),
+                "format": str(row.get("format", "")),
+                "logical_path": str(row.get("logicalPath", row.get("path", ""))),
+            }
+            if declared != NON_AUTHORITATIVE_MIRROR:
+                raise SnapshotIdentityError(
+                    "only the governed non-authoritative mirror may declare "
+                    f"{NON_BYTE_DETERMINISTIC!r} determinism; refusing to exclude "
+                    f"{declared!r} from the snapshot identity. A source cannot redefine "
+                    "what the identity covers by labelling its own object."
+                )
+            excluded.append(declared["logical_path"])
             continue
         object_path = row.get("path", row.get("logicalPath"))
         logical_path = row.get("logicalPath", object_path)
