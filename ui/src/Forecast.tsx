@@ -1,4 +1,13 @@
 import {useMemo, useState} from "react";
+import {
+  FORECAST_HEALTH_ACCURACY_TARGETS,
+  FORECAST_HEALTH_DISPLAY_HORIZONS,
+  FORECAST_HEALTH_FALLBACK_STATUS,
+  FORECAST_HEALTH_TIERS,
+  FORECAST_HEALTH_UNAVAILABLE_STATUS,
+  type ForecastHealthGrain,
+  type ForecastHealthStatus
+} from "./generated/forecastHealthPolicy";
 import {useQuery} from "@tanstack/react-query";
 import {
   createColumnHelper,
@@ -108,11 +117,69 @@ function unavailable(title: string) {
   return <span className="unavailable" title={title}>Not available</span>;
 }
 
+/**
+ * Decision #77 grain resolution: first matching rule wins. A channel filter
+ * never changes the target grain.
+ */
+function resolveHealthGrain(input: {
+  seriesKeySelected: boolean;
+  storeSelected: boolean;
+  categorySelected: boolean;
+}): ForecastHealthGrain {
+  if (input.seriesKeySelected) {
+    return "series_key";
+  }
+  if (input.storeSelected || input.categorySelected) {
+    return "store_category";
+  }
+  return "market_portfolio";
+}
+
+/**
+ * Decision #80 status matrix: ordered tiers, all conditions required within a
+ * tier, and any unavailable metric yields unavailable rather than a badge.
+ * Accuracy and bias are percentage points; coverage is a ratio.
+ */
+function resolveHealthStatus(
+  grain: ForecastHealthGrain,
+  horizon: number,
+  accuracyPct: number | null,
+  biasPct: number | null,
+  coverageRatio: number | null
+): ForecastHealthStatus {
+  if (accuracyPct === null || biasPct === null || coverageRatio === null) {
+    return FORECAST_HEALTH_UNAVAILABLE_STATUS;
+  }
+  const target = FORECAST_HEALTH_ACCURACY_TARGETS[grain][horizon];
+  if (target === undefined) {
+    return FORECAST_HEALTH_UNAVAILABLE_STATUS;
+  }
+  const margin = accuracyPct - target;
+  const absoluteBias = Math.abs(biasPct);
+  for (const tier of FORECAST_HEALTH_TIERS) {
+    if (margin < tier.accuracyVsTargetMinPoints) {
+      continue;
+    }
+    if (absoluteBias > tier.absoluteBiasMaxPct) {
+      continue;
+    }
+    if (
+      coverageRatio < tier.coverageMinRatio ||
+      coverageRatio > tier.coverageMaxRatio
+    ) {
+      continue;
+    }
+    return tier.status;
+  }
+  return FORECAST_HEALTH_FALLBACK_STATUS;
+}
+
 function statusBadge(value: string) {
   const label = value.length > 0
     ? `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`
     : value;
   const style = label === "Good" || label === "Active" || label === "Healthy"
+    || label === "Strong"
     ? "b-green"
     : label === "Issue" || label === "High"
       ? "b-red"
@@ -353,7 +420,17 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
     }),
     columnHelper.accessor("storeName", {
       header: "Store",
-      cell: ({row}) => storeLabel(row.original.storeName, row.original.storeCity)
+      // A workbench row's identity is sku x store x channel. Showing only two of
+      // the three made every pair look duplicated: each SKU legitimately appears
+      // once online and once in-store, and 61 product names cover more than one
+      // SKU variant. The channel goes on a second line rather than in a new column
+      // because it is part of this cell's identity, not a separate fact.
+      cell: ({row}) => (
+        <span className="product-cell">
+          <strong>{storeLabel(row.original.storeName, row.original.storeCity)}</strong>
+          <small>{row.original.channelType === "online" ? "E-commerce" : "Store"}</small>
+        </span>
+      )
     }),
     columnHelper.accessor("baseline", {
       header: "Baseline",
@@ -378,7 +455,29 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
     }),
     columnHelper.accessor("accuracy", {
       header: "Accuracy",
-      cell: (info) => percentage(info.getValue())
+      // A SeriesKey accuracy of -1049% is not a weak number, it is an
+      // uninterpretable one. When absolute error exceeds total demand the
+      // percentage is withheld upstream and the row says so instead, which also
+      // marks exactly the rows a planner should look at.
+      cell: (info) => {
+        const value = info.getValue();
+        const share = info.row.original.demandSharePct;
+        const shareLabel = share === null || share === undefined
+          ? null
+          : `${share.toFixed(2)}% of demand`;
+        if (value === null || value === undefined) {
+          const state = info.row.original.accuracyState;
+          return state === "error_exceeds_demand"
+            ? unavailable("Absolute error exceeds total demand; accuracy is outside 0-100 at this grain")
+            : unavailable("No positive demand in the evaluation window");
+        }
+        return (
+          <span className="product-cell">
+            <strong>{percentage(value)}</strong>
+            {shareLabel ? <small>{shareLabel}</small> : null}
+          </span>
+        );
+      }
     }),
     columnHelper.accessor("bias", {
       header: "Bias",
@@ -440,12 +539,12 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
 
 function Overview({
   data,
-  horizonWeeks,
+  healthGrain,
   granularity,
   setModal
 }: {
   data: ReturnType<typeof useForecastData>;
-  horizonWeeks: number;
+  healthGrain: ForecastHealthGrain;
   granularity: string;
   setModal: (modal: Modal) => void;
 }) {
@@ -468,19 +567,27 @@ function Overview({
       forecast: item.forecast,
       actual: item.actual
     }));
-  const checkpoints = [1, 4, 8, 13, 26].filter((value) => value <= horizonWeeks);
-  const horizonRows = checkpoints.map((checkpoint) => {
-    const metrics = data.horizons!.items.filter((item) => item.horizon <= checkpoint);
-    const absError = metrics.reduce((sum, item) => sum + item.absErrorSum, 0);
-    const signedError = metrics.reduce((sum, item) => sum + item.signedErrorSum, 0);
-    const actual = metrics.reduce((sum, item) => sum + item.actualSum, 0);
-    const hits = metrics.reduce((sum, item) => sum + item.coverageHits, 0);
-    const n = metrics.reduce((sum, item) => sum + item.n, 0);
+  // Decision #80: exactly four exact-horizon rows in reference order, always
+  // rendered. The operational horizon selector changes future scope, not which
+  // diagnostic rows exist, so it must not filter this table.
+  const horizonRows = FORECAST_HEALTH_DISPLAY_HORIZONS.map((checkpoint) => {
+    const exact = data.horizons!.items.find((item) => item.horizon === checkpoint);
+    const actual = exact?.actualSum ?? 0;
+    const accuracy = exact && actual ? 100 * (1 - exact.absErrorSum / actual) : null;
+    const bias = exact && actual ? exact.signedErrorSum / actual : null;
+    const coverage = exact && exact.n ? exact.coverageHits / exact.n : null;
     return {
       checkpoint,
-      accuracy: actual ? 100 * (1 - absError / actual) : null,
-      bias: actual ? signedError / actual : null,
-      coverage: n ? hits / n : null
+      accuracy,
+      bias,
+      coverage,
+      status: resolveHealthStatus(
+        healthGrain,
+        checkpoint,
+        accuracy,
+        bias === null ? null : bias * 100,
+        coverage
+      )
     };
   });
   const exceptionRows = [
@@ -518,16 +625,14 @@ function Overview({
               </thead>
               <tbody>
                 {horizonRows.map((row) => (
-                  <tr key={row.checkpoint}>
-                    <td>Weeks 1–{row.checkpoint}</td>
+                  <tr key={row.checkpoint} data-horizon={row.checkpoint}>
+                    <td>{row.checkpoint === 1 ? "1 week" : `${row.checkpoint} weeks`}</td>
                     <td>{percentage(row.accuracy)}</td>
                     <td>{ratioPercentage(row.bias, true)}</td>
                     <td>{ratioPercentage(row.coverage)}</td>
-                    <td>{statusBadge(
-                      row.coverage !== null && row.coverage >= .85 && row.coverage <= .95
-                        ? "Healthy"
-                        : "Watch"
-                    )}</td>
+                    <td>{row.status === "unavailable"
+                      ? <span className="muted">Not available</span>
+                      : statusBadge(row.status)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -549,10 +654,23 @@ function Overview({
         </Card>
         <Card title="Forecast Value Add" link="AI vs baseline">
           <SimpleRows rows={[
-            {label: "Statistical baseline accuracy", value: percentage(summary.baselineAccuracy)},
-            {label: "AI forecast accuracy", value: percentage(summary.accuracy)},
+            // Portfolio grain, matching the KPI cards and the footer. Reading a
+            // leaf-grain 72.3 beside a portfolio-grain 93.8 for what a viewer takes
+            // to be the same quantity is the confusion this removes. Net FVA falls
+            // to +25.3 as a result, because MA13 gains from aggregation too.
+            {
+              label: "Statistical baseline accuracy",
+              value: percentage(summary.portfolioBaselineAccuracy ?? summary.baselineAccuracy)
+            },
+            {
+              label: "AI forecast accuracy",
+              value: percentage(summary.portfolioAccuracy ?? summary.accuracy)
+            },
             {label: "Planner-adjusted accuracy", value: unavailable("Planner workflow belongs to Phase 6")},
-            {label: "Net FVA", value: percentage(summary.fvaVsMa13Pct, true)},
+            {
+              label: "Net FVA",
+              value: percentage(summary.portfolioFvaVsMa13Pct ?? summary.fvaVsMa13Pct, true)
+            },
             {label: "Overrides adding value", value: unavailable("Planner workflow belongs to Phase 6")}
           ]} />
         </Card>
@@ -733,6 +851,20 @@ export function DemandForecast({
     horizonWeeks
   }), [selectedStore?.marketId, region, storeId, channelType, category, search, horizonWeeks]);
   const data = useForecastData(filters);
+  // Decision #77 grain resolution. A channel filter never changes the grain, and
+  // this screen never selects a single complete SeriesKey, so the resolved grain
+  // is market/portfolio by default and store/category once one is chosen.
+  // The API resolves the same decision #77 rules server-side and returns the grain
+  // it actually measured at. Prefer that value: two independent implementations of
+  // the same rule set is how a 95.18% portfolio number came to be displayed
+  // against a 90% target as 78.27%. The local resolution stays as the pre-response
+  // fallback and as a cross-check that the two agree.
+  const localHealthGrain = useMemo(() => resolveHealthGrain({
+    seriesKeySelected: false,
+    storeSelected: storeId !== "",
+    categorySelected: category !== ""
+  }), [storeId, category]);
+  const healthGrain = data.horizons?.metricGrain ?? localHealthGrain;
   const regions = [...new Set(dashboard.filters.stores.map((store) => store.region))].sort();
   const summary = data.summary?.items[0];
   const scopedMetrics = useMemo(() => {
@@ -849,7 +981,11 @@ export function DemandForecast({
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
         <div className="kpi">
           <small>Forecast Value Add</small>
-          <div className="value">{percentage(summary!.fvaVsMa13Pct, true)}</div>
+          {/* Portfolio grain, same as the Forecast Value Add card below. Two FVA
+              figures on one screen must not disagree. */}
+          <div className="value">
+            {percentage(summary!.portfolioFvaVsMa13Pct ?? summary!.fvaVsMa13Pct, true)}
+          </div>
           <p>Relative improvement vs MA13</p>
         </div>
       </div>
@@ -869,7 +1005,7 @@ export function DemandForecast({
         ))}
       </div>
       <section className="forecast-panel" role="tabpanel">
-        {tab === "Overview" && <Overview data={data} horizonWeeks={horizonWeeks} granularity={granularity} setModal={setModal} />}
+        {tab === "Overview" && <Overview data={data} healthGrain={healthGrain} granularity={granularity} setModal={setModal} />}
         {tab === "Store View" && <StoreView data={data} setModal={setModal} />}
         {tab === "SKU View" && <SkuView data={data} />}
         {tab === "Demand Drivers" && <DriversView data={data} />}

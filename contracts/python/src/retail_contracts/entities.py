@@ -296,6 +296,49 @@ def validate_openapi(path: Path) -> None:
         raise ContractValidationError("OpenAPI operationId values must be unique")
 
 
+def _validate_staging_v2(contract_root: Path) -> int:
+    """Validate `retail-staging/v2` against the reviewed PP3-A1 role map.
+
+    The role catalog and the role map must stay in step: a role added to one and
+    not the other means PP3-A3 would build a relation with no reviewed provider,
+    or leave a consumer unmapped.
+    """
+
+    staging_v2 = load_yaml(contract_root / "staging" / "staging-v2.yaml")
+    if staging_v2.get("schemaVersion") != "retail-staging/v2":
+        raise ContractValidationError("unknown staging v2 contract version")
+    role_map = load_yaml(contract_root / "staging" / "role-map.yaml")
+    if role_map.get("schemaVersion") != "retail-staging-role-map/v1":
+        raise ContractValidationError("unknown staging role-map version")
+
+    roles = staging_v2.get("roles") or {}
+    if "dimension_signal" in roles or "channel" in roles:
+        raise ContractValidationError(
+            "staging v2 must not promote a retired envelope or a canonical "
+            "derivation into a role"
+        )
+    mapped = {
+        role
+        for role, entry in (role_map.get("roleProviderMap") or {}).items()
+        if entry.get("disposition") != "derived_in_transform"
+    }
+    if set(roles) != mapped:
+        difference = sorted(set(roles) ^ mapped)
+        raise ContractValidationError(
+            f"staging v2 roles and the reviewed role map disagree: {difference}"
+        )
+
+    modes = set((staging_v2.get("providerResolution") or {}).get("modes") or {})
+    for name, role in sorted(roles.items()):
+        if role.get("providerResolution") not in modes:
+            raise ContractValidationError(
+                f"role {name} declares no valid provider-resolution mode"
+            )
+        if not role.get("key") or not role.get("requiredFields"):
+            raise ContractValidationError(f"role {name} has no key or no fields")
+    return len(roles)
+
+
 def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
     contract_root = locate_contract_root(root)
     schema = load_yaml(contract_root / "retail_v2" / "schema.yaml")
@@ -337,8 +380,16 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "dimension_signal",
     }:
         raise ContractValidationError("staging contract must define exactly six envelopes")
+    staging_roles = _validate_staging_v2(contract_root)
     validate_json_schema(contract_root / "profiles" / "profile.schema.json")
     validate_json_schema(contract_root / "coverage" / "coverage.schema.json")
+    validate_json_schema(contract_root / "adapters" / "mapped-files.schema.json")
+    validate_json_schema(
+        contract_root / "adapters" / "adapter-manifest.schema.json"
+    )
+    validate_json_schema(
+        contract_root / "onboarding" / "publication-selection.schema.json"
+    )
     validate_openapi(contract_root / "api" / "openapi.yaml")
     from .fingerprint import canonical_json_bytes
     from .guardrails import resolve_guardrails, resolved_guardrail_fingerprint
@@ -369,7 +420,8 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "entities": len(schema["entities"]),
         "tiers": len(tiers["tiers"]),
         "stagingEnvelopes": len(staging["envelopes"]),
-        "jsonSchemas": 2,
+        "stagingV2Roles": staging_roles,
+        "jsonSchemas": 5,
         "openApiContracts": 1,
         "guardrailVectors": len(guardrail_vectors["vectors"]),
         "determinismContracts": 1,

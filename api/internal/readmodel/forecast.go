@@ -15,7 +15,11 @@ import (
 
 const (
 	ForecastUnavailableSchema = "retail-forecast-unavailable/v1"
-	ForecastMigrationRevision = "0005_complete_pairing_verifier"
+	// Decision #82 made 0006 v4-only: the cohorted verifier and v4 acceptance
+	// generation are the only shapes serving accepts. 0005 stays immutable but is
+	// no longer eligible to back an activation, so this pin must move with it or
+	// the API fails closed against a correctly migrated database.
+	ForecastMigrationRevision = "0006_cohorted_verifier_v4"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -593,6 +597,17 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 	if err := categoryRows.Err(); err != nil {
 		return nil, err
 	}
+	// The stored version accuracy is SeriesKey grain and stays exactly as the
+	// accepted record wrote it. The portfolio figures are computed here, under
+	// decision #77's additive semantics, because a headline that says "Model
+	// Accuracy" for the whole portfolio must be measured at portfolio grain: 72.31%
+	// is the SeriesKey number and 92.82% is the portfolio one. Both are published
+	// and both are labelled, which is what decision #78 requires -- the aggregate
+	// must never be readable as SeriesKey accuracy, and vice versa.
+	portfolio, err := s.portfolioGrainSummary(ctx)
+	if err != nil {
+		return nil, err
+	}
 	payload := s.envelope("retail-forecast-summary/v1")
 	payload["items"] = []map[string]any{{
 		"accuracy":            accuracy,
@@ -600,6 +615,14 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 		"p90Coverage":         p90Coverage,
 		"baselineAccuracy":    baselineAccuracy,
 		"fvaVsMa13Pct":        fvaVsMA13,
+		"accuracyGrain":                  "series_key",
+		"baselineAccuracyGrain":          "series_key",
+		"fvaGrain":                       "series_key",
+		"portfolioAccuracy":              portfolio["accuracy"],
+		"portfolioBias":                  portfolio["bias"],
+		"portfolioBaselineAccuracy":      portfolio["baselineAccuracy"],
+		"portfolioFvaVsMa13Pct":          portfolio["fvaVsMa13Pct"],
+		"portfolioAccuracyGrain":         "market_portfolio",
 		"demandUnits":         demandUnits,
 		"seriesCount":         seriesCount,
 		"exceptionCount":      exceptionCount,
@@ -610,6 +633,48 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 		"categories":          categories,
 	}}
 	return payload, nil
+}
+
+// portfolioGrainSummary reads the decision #77 market_portfolio figures the
+// publisher now emits with exact_horizon_additive semantics.
+//
+// The champion, the MA13 baseline and the FVA between them all come from the same
+// grain, because comparing a portfolio-grain champion against a leaf-grain baseline
+// would not be a comparison. That consistency has a cost worth stating: FVA is
+// LOWER at portfolio grain, +25.26 percent against +31.84 at leaf, because
+// aggregation helps MA13 too. The card previously showed the leaf triplet, which
+// was internally consistent but disagreed with every other accuracy figure on the
+// screen; showing the portfolio triplet trades a flattering FVA for a coherent one.
+func (s *ForecastStore) portfolioGrainSummary(
+	ctx context.Context,
+) (map[string]any, error) {
+	var accuracy, bias, baseline, fva *float64
+	err := s.pool.QueryRow(
+		ctx,
+		`
+		SELECT
+			MAX(CASE WHEN model_id = 'champion' THEN accuracy END),
+			MAX(CASE WHEN model_id = 'champion' THEN bias END),
+			MAX(CASE WHEN model_id = 'ma13' THEN accuracy END),
+			MAX(CASE WHEN model_id = 'champion' THEN fva_vs_ma13_pct END)
+		FROM retail_serving.forecast_metrics
+		WHERE forecast_run_id = $1
+		  AND slice_type = 'market_portfolio'
+		  AND slice_id = 'portfolio'
+		  AND horizon = 0
+		  AND model_id IN ('champion', 'ma13')
+		`,
+		s.forecastRunID,
+	).Scan(&accuracy, &bias, &baseline, &fva)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"accuracy":         accuracy,
+		"bias":             bias,
+		"baselineAccuracy": baseline,
+		"fvaVsMa13Pct":     fva,
+	}, nil
 }
 
 func appendSeriesFilters(
@@ -791,18 +856,51 @@ func (s *ForecastStore) workbench(
 			FROM ranked_actual
 			GROUP BY sku_id, store_id, channel_id
 		),
+		-- Row accuracy and bias are scoped to the SAME horizon window the row's
+		-- forecast column shows. The horizon = 0 slice pools all 26 horizons, so a
+		-- SeriesKey reading 74.5 percent at h1 displayed as 21.3 percent next to a
+		-- four-week forecast. Summing leaf errors is correct here because the row's
+		-- subject IS the SeriesKey.
+		--
+		-- Accuracy leaves its domain when absolute error exceeds demand -- 321 of
+		-- 2,212 SeriesKeys read negative, the worst at -1049 percent -- so the
+		-- percentage is withheld and the row carries a state instead.
+		--
+		-- Bias is NOT withheld with it. A signed ratio is bounded below at -100
+		-- percent, a zero forecast, and legitimately unbounded above: +150 percent
+		-- means the forecast was two and a half times demand, which is a bad number
+		-- and a perfectly defined one. Suppressing it because a different metric
+		-- left its own domain hides a fact the truth-visible policy requires, so
+		-- accuracy and bias are now judged on their own terms.
 		series_metrics AS (
 			SELECT
 				slice_id::jsonb ->> 0 AS sku_id,
 				slice_id::jsonb ->> 1 AS store_id,
 				slice_id::jsonb ->> 2 AS channel_id,
-				accuracy,
-				bias
+				CASE
+					WHEN SUM(actual_sum) = 0 THEN NULL
+					WHEN SUM(abs_error_sum) / SUM(actual_sum) > 1 THEN NULL
+					ELSE 100.0 * (1.0 - SUM(abs_error_sum) / SUM(actual_sum))
+				END AS accuracy,
+				CASE
+					WHEN SUM(actual_sum) = 0 THEN NULL
+					ELSE SUM(signed_error_sum) / SUM(actual_sum)
+				END AS bias,
+				CASE
+					WHEN SUM(actual_sum) = 0 THEN NULL
+					ELSE SUM(abs_error_sum) / SUM(actual_sum)
+				END AS wape,
+				CASE
+					WHEN SUM(actual_sum) = 0 THEN 'insufficient_evidence'
+					WHEN SUM(abs_error_sum) / SUM(actual_sum) > 1 THEN 'error_exceeds_demand'
+					ELSE 'measured'
+				END AS accuracy_state
 			FROM retail_serving.forecast_metrics
 			WHERE forecast_run_id = $3
 			  AND slice_type = 'series'
-			  AND horizon = 0
+			  AND horizon BETWEEN 1 AND $2
 			  AND model_id = 'champion'
+			GROUP BY 1, 2, 3
 		),
 		primary_drivers AS (
 			SELECT DISTINCT ON (scope)
@@ -854,7 +952,17 @@ func (s *ForecastStore) workbench(
 			actual_context.last_actual,
 			actual_context.last_actual_week,
 			series_metrics.accuracy,
+			series_metrics.wape,
+			series_metrics.accuracy_state,
 			series_metrics.bias,
+			-- Share of the filtered set's forecast demand. A SeriesKey reading 0.4
+			-- percent accuracy on 1.2 forecast units is arithmetically true and
+			-- commercially irrelevant; without this column a reader cannot tell the
+			-- two apart. Measured across the whole result before LIMIT.
+			100.0 * current_forecast.ai_forecast / NULLIF(
+				SUM(current_forecast.ai_forecast) OVER (),
+				0
+			),
 			current_forecast.confidence,
 			primary_drivers.driver,
 			current_forecast.data_quality_class,
@@ -879,6 +987,16 @@ func (s *ForecastStore) workbench(
 				WHEN 'Medium' THEN 2
 				ELSE 1
 			END DESC,
+			-- Within a severity band, lead with the SeriesKeys that carry demand.
+			-- Alphabetical order put "3M Car Care Glass Cleaner" at 1.2 forecast
+			-- units on the first screen, and the weakest accuracy in this dataset
+			-- sits almost entirely in rows carrying no volume: the 276 withheld rows
+			-- are 0.19 percent of units and everything under 40 percent accuracy is
+			-- 1.15 percent. Sorting by materiality is what a planner wants anyway,
+			-- and the weak tail stays fully reachable by sorting or filtering, which
+			-- is what decision #78 requires -- preserve weak slices, do not lead
+			-- with them.
+			current_forecast.ai_forecast DESC NULLS LAST,
 			current_forecast.market_id,
 			current_forecast.store_name,
 			current_forecast.product_name,
@@ -904,7 +1022,8 @@ func (s *ForecastStore) workbench(
 			productName, channelType, storeName, storeCity              string
 			baseline, aiForecast, aiForecastP90, lastActual             *float64
 			lastActualWeek                                              *time.Time
-			accuracy, bias                                              *float64
+			accuracy, wape, bias, demandSharePct                        *float64
+			accuracyState                                               string
 			confidence                                                  float64
 			primaryDriver                                               *string
 			dataQuality, priority, status                               string
@@ -928,7 +1047,10 @@ func (s *ForecastStore) workbench(
 			&lastActual,
 			&lastActualWeek,
 			&accuracy,
+			&wape,
+			&accuracyState,
 			&bias,
+			&demandSharePct,
 			&confidence,
 			&primaryDriver,
 			&dataQuality,
@@ -952,7 +1074,10 @@ func (s *ForecastStore) workbench(
 			"baseline": baseline, "aiForecast": aiForecast,
 			"aiForecastP90": aiForecastP90, "plannerForecast": nil,
 			"lastActual": lastActual, "lastActualWeek": lastActualDate,
-			"accuracy": accuracy, "bias": bias, "confidence": confidence,
+			"accuracy": accuracy, "wape": wape,
+			"accuracyState": accuracyState, "accuracyGrain": "series_key",
+			"demandSharePct": demandSharePct,
+			"bias": bias, "confidence": confidence,
 			"primaryDriver": primaryDriver, "dataQuality": dataQuality,
 			"priority": priority, "exceptionClass": exceptionClass,
 			"status": status,
@@ -1043,10 +1168,17 @@ func (s *ForecastStore) weeklyActuals(
 	ctx context.Context,
 	query ForecastQuery,
 ) (map[string]any, error) {
+	// "Last 8 weeks" used to mean "the last 8 horizon-1 target weeks". Origins are
+	// biweekly, so those 8 points spanned 15 calendar weeks and stopped at
+	// 2026-01-26 while actuals run to 2026-07-20 -- the chart showed the oldest
+	// slice of the comparison window and labelled it the newest.
+	//
+	// Now: take the most recent 8 target weeks that have actuals, and for each one
+	// use the forecast from the most recent origin that predicted it, i.e. the
+	// smallest available horizon. That is the freshest honest forecast for each
+	// week, and it makes the label true.
 	clauses := []string{
 		"evaluation.forecast_run_id = $1",
-		"evaluation.horizon = 1",
-		"dimensions.version_id = $2",
 	}
 	args := []any{s.forecastRunID, s.versionID}
 	values := []struct {
@@ -1089,29 +1221,63 @@ func (s *ForecastStore) weeklyActuals(
 		weekCount = 52
 	}
 	args = append(args, weekCount)
+	// Same lesson as the stores aggregate: each join is paid on a full scan of the
+	// run, so only add the ones a filter actually needs.
+	weeklyJoins := ""
+	if query.ChannelType != "" || query.Search != "" {
+		weeklyJoins += `
+				JOIN retail_serving.forecast_series_dimensions AS dimensions
+				  ON dimensions.version_id = $2
+				 AND dimensions.sku_id = evaluation.sku_id
+				 AND dimensions.store_id = evaluation.store_id
+				 AND dimensions.channel_id = evaluation.channel_id`
+	}
+	if query.Region != "" || query.Search != "" {
+		weeklyJoins += `
+				JOIN retail_serving.forecast_stores AS stores
+				  ON stores.forecast_run_id = evaluation.forecast_run_id
+				 AND stores.store_id = evaluation.store_id`
+	}
+	// See the note in stores: $2 is asserted rather than merely referenced.
+	weeklyScoped := "evaluation.forecast_run_id = $1 AND length($2) = 19"
+	for _, clause := range clauses[1:] {
+		if strings.HasPrefix(clause, "dimensions.version_id") {
+			continue
+		}
+		weeklyScoped += " AND " + clause
+	}
 	rows, err := s.pool.Query(
 		ctx,
 		fmt.Sprintf(
 			`
+			WITH scoped AS (
+				SELECT
+					evaluation.target_week_start,
+					evaluation.horizon,
+					evaluation.yhat_p50,
+					evaluation.actual_units
+				FROM retail_serving.forecast_eval_predictions AS evaluation%s
+				WHERE %s
+			),
+			freshest AS (
+				SELECT target_week_start, MIN(horizon) AS horizon
+				FROM scoped
+				GROUP BY target_week_start
+			)
 			SELECT
-				evaluation.target_week_start,
-				SUM(evaluation.yhat_p50),
-				SUM(evaluation.actual_units)
-			FROM retail_serving.forecast_eval_predictions AS evaluation
-			JOIN retail_serving.forecast_series_dimensions AS dimensions
-			  ON dimensions.version_id = $2
-			 AND dimensions.sku_id = evaluation.sku_id
-			 AND dimensions.store_id = evaluation.store_id
-			 AND dimensions.channel_id = evaluation.channel_id
-			JOIN retail_serving.forecast_stores AS stores
-			  ON stores.forecast_run_id = dimensions.forecast_run_id
-			 AND stores.store_id = dimensions.store_id
-			WHERE %s
-			GROUP BY evaluation.target_week_start
-			ORDER BY evaluation.target_week_start DESC
+				scoped.target_week_start,
+				SUM(scoped.yhat_p50),
+				SUM(scoped.actual_units)
+			FROM scoped
+			JOIN freshest
+			  ON freshest.target_week_start = scoped.target_week_start
+			 AND freshest.horizon = scoped.horizon
+			GROUP BY scoped.target_week_start
+			ORDER BY scoped.target_week_start DESC
 			LIMIT $%d
 			`,
-			strings.Join(clauses, " AND "),
+			weeklyJoins,
+			weeklyScoped,
 			len(args),
 		),
 		args...,
@@ -1254,6 +1420,29 @@ func metricItem(metric additiveMetric) map[string]any {
 	}
 }
 
+// Decision #77 grain resolution, applied server-side so the metric matches the
+// target the client will compare it against. The same first-matching-rule order
+// the UI uses: a SeriesKey selection wins, then a single store or category, then
+// portfolio. A channel filter never changes the grain.
+func resolveHealthGrain(query ForecastQuery) (string, []string) {
+	// series_key is deliberately unreachable here. Decision #77 grants it only when
+	// "exactly one complete sku_id x store_id x channel_id SeriesKey is explicitly
+	// selected", and this screen has no SeriesKey selector -- the UI says so at the
+	// point it resolves the grain. Free-text search is not a selector: it can match
+	// many SKUs, and because series_key carries no grouping columns those matches
+	// would be summed into one cell and then scored against the SeriesKey target as
+	// though they were a single series.
+	//
+	// A store or category selection narrows the population without changing what a
+	// row is, so it resolves to store_category, and everything else is portfolio.
+	if query.StoreID != "" || query.Category != "" {
+		// Bare column names: these are grouped inside the `cells` CTE, which
+		// selects from `scoped`, not from `evaluation`.
+		return "store_category", []string{"store_id", "category"}
+	}
+	return "market_portfolio", []string{"market_id"}
+}
+
 func (s *ForecastStore) horizons(
 	ctx context.Context,
 	query ForecastQuery,
@@ -1280,29 +1469,99 @@ func (s *ForecastStore) horizons(
 			fmt.Sprintf("dimensions.channel_type = $%d", len(args)),
 		)
 	}
+	grain, grainColumns := resolveHealthGrain(query)
+	// Same treatment as stores and weekly actuals: this aggregate scans every
+	// evaluation row for the run, so a join it does not need is paid on the whole
+	// scan. With several materialisations accumulated the table holds millions of
+	// rows and the unconditional joins pushed the response past the write deadline,
+	// surfacing only "i/o timeout".
+	horizonJoins := ""
+	if query.ChannelType != "" || query.Search != "" {
+		horizonJoins += `
+				JOIN retail_serving.forecast_series_dimensions AS dimensions
+				  ON dimensions.version_id = $2
+				 AND dimensions.sku_id = evaluation.sku_id
+				 AND dimensions.store_id = evaluation.store_id
+				 AND dimensions.channel_id = evaluation.channel_id`
+	}
+	if query.Region != "" || query.Search != "" {
+		horizonJoins += `
+				JOIN retail_serving.forecast_stores AS stores
+				  ON stores.forecast_run_id = evaluation.forecast_run_id
+				 AND stores.store_id = evaluation.store_id`
+	}
+	horizonScoped := "evaluation.forecast_run_id = $1 AND length($2) = 19"
+	for _, clause := range clauses {
+		if strings.HasPrefix(clause, "evaluation.forecast_run_id") ||
+			strings.HasPrefix(clause, "dimensions.version_id") {
+			continue
+		}
+		horizonScoped += " AND " + clause
+	}
+
+	// Decision #77 declares exact_horizon_additive semantics: at a grain above
+	// SeriesKey, actual and predicted are summed into the grain cell BEFORE any
+	// error is taken. Summing per-row abs_error_sum instead -- which is what this
+	// handler used to do -- yields leaf accuracy under whatever label the client
+	// resolved, so the Forecast Health table read 78.27% against a 90% portfolio
+	// target and showed Action on four rows that all pass at 95.18%.
+	//
+	// P90 coverage is measured at leaf grain in the same statement and reported
+	// separately, because a sum of P90s is not the P90 of a sum. Quantiles do not
+	// aggregate, so coverage has exactly one honest grain and it is labelled.
+	cellGrouping := append([]string{}, grainColumns...)
+	cellGrouping = append(
+		cellGrouping,
+		"horizon",
+		"forecast_origin",
+		"target_week_start",
+	)
 	statement := fmt.Sprintf(
 		`
+		WITH scoped AS (
+			SELECT
+				evaluation.horizon,
+				evaluation.forecast_origin,
+				evaluation.target_week_start,
+				evaluation.market_id,
+				evaluation.store_id,
+				evaluation.category,
+				evaluation.actual_units,
+				evaluation.yhat_p50,
+				evaluation.coverage_hits,
+				evaluation.n
+			FROM retail_serving.forecast_eval_predictions AS evaluation%s
+				WHERE %s
+		),
+		cells AS (
+			SELECT
+				horizon,
+				SUM(actual_units) AS actual,
+				SUM(yhat_p50) AS predicted
+			FROM scoped
+			GROUP BY %s
+		),
+		leaf AS (
+			SELECT horizon, SUM(coverage_hits) AS hits, SUM(n) AS rows_counted
+			FROM scoped
+			GROUP BY horizon
+		)
 		SELECT
-			evaluation.horizon,
-			SUM(evaluation.abs_error_sum),
-			SUM(evaluation.signed_error_sum),
-			SUM(evaluation.actual_sum),
-			SUM(evaluation.coverage_hits),
-			SUM(evaluation.n)
-		FROM retail_serving.forecast_eval_predictions AS evaluation
-		JOIN retail_serving.forecast_series_dimensions AS dimensions
-		  ON dimensions.version_id = $2
-		 AND dimensions.sku_id = evaluation.sku_id
-		 AND dimensions.store_id = evaluation.store_id
-		 AND dimensions.channel_id = evaluation.channel_id
-		JOIN retail_serving.forecast_stores AS stores
-		  ON stores.forecast_run_id = dimensions.forecast_run_id
-		 AND stores.store_id = dimensions.store_id
-		WHERE %s
-		GROUP BY evaluation.horizon
-		ORDER BY evaluation.horizon
+			cells.horizon,
+			SUM(ABS(cells.predicted - cells.actual)),
+			SUM(cells.predicted - cells.actual),
+			SUM(cells.actual),
+			COALESCE(MAX(leaf.hits), 0),
+			COALESCE(MAX(leaf.rows_counted), 0),
+			COUNT(*)
+		FROM cells
+		LEFT JOIN leaf ON leaf.horizon = cells.horizon
+		GROUP BY cells.horizon
+		ORDER BY cells.horizon
 		`,
-		strings.Join(clauses, " AND "),
+		horizonJoins,
+		horizonScoped,
+		strings.Join(cellGrouping, ", "),
 	)
 	rows, err := s.pool.Query(ctx, statement, args...)
 	if err != nil {
@@ -1312,19 +1571,28 @@ func (s *ForecastStore) horizons(
 	items := make([]map[string]any, 0, 26)
 	for rows.Next() {
 		var metric additiveMetric
+		var cellCount int64
 		if err := rows.Scan(
 			&metric.Horizon, &metric.AbsErrorSum, &metric.SignedErrorSum,
-			&metric.ActualSum, &metric.CoverageHits, &metric.N,
+			&metric.ActualSum, &metric.CoverageHits, &metric.N, &cellCount,
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, metricItem(metric))
+		item := metricItem(metric)
+		item["metricGrain"] = grain
+		item["coverageGrain"] = "series_key"
+		item["grainCells"] = cellCount
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	payload := s.envelope("retail-forecast-horizons/v1")
 	payload["items"] = items
+	payload["metricGrain"] = grain
+	payload["metricSemantics"] = "exact_horizon_additive"
+	payload["coverageGrain"] = "series_key"
+	payload["coverageNote"] = "P90 coverage is measured at SeriesKey grain because quantiles do not aggregate; a sum of P90 bounds is not the P90 of the sum."
 	return payload, nil
 }
 
@@ -1373,34 +1641,85 @@ func (s *ForecastStore) stores(
 			),
 		)
 	}
-	rows, err := s.pool.Query(
-		ctx,
-		fmt.Sprintf(
-			`
-			WITH filtered_metrics AS (
-				SELECT
-					evaluation.store_id,
-					SUM(evaluation.abs_error_sum) AS abs_error_sum,
-					SUM(evaluation.signed_error_sum) AS signed_error_sum,
-					SUM(evaluation.actual_sum) AS actual_sum,
-					SUM(evaluation.coverage_hits) AS coverage_hits,
-					SUM(evaluation.n) AS n
-				FROM retail_serving.forecast_eval_predictions AS evaluation
+	// The aggregate touches every evaluation row for the run, so each join is paid
+	// on the full scan. Under a generic prepared-statement plan the two joins took
+	// this query from well under a second to roughly 37, past the request deadline,
+	// and the handler surfaced only "context canceled". They are needed for the
+	// region, channel-type and search filters and for nothing else, so they are
+	// added only when one of those is actually in play.
+	joins := ""
+	if query.ChannelType != "" || query.Search != "" {
+		joins += `
 				JOIN retail_serving.forecast_series_dimensions AS dimensions
 				  ON dimensions.version_id = $2
 				 AND dimensions.sku_id = evaluation.sku_id
 				 AND dimensions.store_id = evaluation.store_id
-				 AND dimensions.channel_id = evaluation.channel_id
+				 AND dimensions.channel_id = evaluation.channel_id`
+	}
+	if query.Region != "" || query.Search != "" {
+		joins += `
 				JOIN retail_serving.forecast_stores AS stores
 				  ON stores.forecast_run_id = evaluation.forecast_run_id
-				 AND stores.store_id = evaluation.store_id
+				 AND stores.store_id = evaluation.store_id`
+	}
+	// $2 is the version id. With no join there is no dimensions table to constrain
+	// it against, and forecast_eval_predictions carries no version column, so the
+	// run id is what pins the rows -- forecast_run_id is unique per version. The
+	// assertion is kept as an explicit non-empty check rather than a placeholder
+	// comparison so a caller that lost the version cannot read a bundle by run id
+	// alone.
+	scoped := "evaluation.forecast_run_id = $1 AND length($2) = 19"
+	for _, clause := range clauses[1:] {
+		if strings.HasPrefix(clause, "dimensions.version_id") {
+			continue
+		}
+		scoped += " AND " + clause
+	}
+	rows, err := s.pool.Query(
+		ctx,
+		fmt.Sprintf(
+			`
+			-- A store row's subject is the store, so decision #77's additive
+			-- semantics apply: sum actual and predicted into the store's weekly
+			-- cell first, then take the error. Summing per-row errors reported
+			-- 73.35 accuracy points for Mumbai Bandra where the store's own
+			-- accuracy is 92.90. No literal percent sign belongs in this string --
+			-- it is a fmt.Sprintf format and a stray percent is read as a verb.
+			-- P90 coverage stays leaf-grain and is labelled, because quantiles do
+			-- not aggregate.
+			WITH cells AS (
+				SELECT
+					evaluation.store_id,
+					evaluation.forecast_origin,
+					evaluation.target_week_start,
+					evaluation.horizon,
+					SUM(evaluation.actual_units) AS actual,
+					SUM(evaluation.yhat_p50) AS predicted,
+					SUM(evaluation.coverage_hits) AS coverage_hits,
+					SUM(evaluation.n) AS n
+				FROM retail_serving.forecast_eval_predictions AS evaluation%s
 				WHERE %s
-				GROUP BY evaluation.store_id
+				GROUP BY
+					evaluation.store_id,
+					evaluation.forecast_origin,
+					evaluation.target_week_start,
+					evaluation.horizon
+			),
+			filtered_metrics AS (
+				SELECT
+					store_id,
+					SUM(ABS(predicted - actual)) AS abs_error_sum,
+					SUM(predicted - actual) AS signed_error_sum,
+					SUM(actual) AS actual_sum,
+					SUM(coverage_hits) AS coverage_hits,
+					SUM(n) AS n
+				FROM cells
+				GROUP BY store_id
 			)
 			SELECT
-				stores.store_id, stores.market_id, stores.name, stores.city,
-				stores.region, stores.timezone, stores.currency_code,
-				stores.format, stores.active,
+				store_rows.store_id, store_rows.market_id, store_rows.name,
+				store_rows.city, store_rows.region, store_rows.timezone,
+				store_rows.currency_code, store_rows.format, store_rows.active,
 				CASE
 					WHEN metrics.actual_sum = 0 THEN NULL
 					ELSE 100.0 * (1.0 - metrics.abs_error_sum / metrics.actual_sum)
@@ -1413,13 +1732,18 @@ func (s *ForecastStore) stores(
 					WHEN metrics.n = 0 THEN NULL
 					ELSE metrics.coverage_hits::double precision / metrics.n
 				END
-			FROM retail_serving.forecast_stores AS stores
+			-- Aliased store_rows rather than stores: the cells CTE already binds the
+			-- name stores for the region filter, and reusing it in the outer scope
+			-- leaves each reference ambiguous. No backticks in this string -- it is a
+			-- Go raw literal and a backtick ends it.
+			FROM retail_serving.forecast_stores AS store_rows
 			JOIN filtered_metrics AS metrics
-			  ON metrics.store_id = stores.store_id
-			WHERE stores.forecast_run_id = $1
-			ORDER BY stores.market_id, stores.name, stores.store_id
+			  ON metrics.store_id = store_rows.store_id
+			WHERE store_rows.forecast_run_id = $1
+			ORDER BY store_rows.market_id, store_rows.name, store_rows.store_id
 			`,
-			strings.Join(clauses, " AND "),
+			joins,
+			scoped,
 		),
 		args...,
 	)

@@ -1,0 +1,416 @@
+{
+  "blockersByLeverage": [
+    {
+      "capabilities": [],
+      "phasesBlocked": [
+        "post_phase_3_track_a",
+        "post_phase_3_track_b",
+        "phase_4_inventory",
+        "phase_5_pricing",
+        "phase_6_api_workflow",
+        "phase_7_ui",
+        "phase_8_analytics"
+      ],
+      "reasonCode": "PHASE_3_NOT_CLOSED"
+    },
+    {
+      "capabilities": [],
+      "phasesBlocked": [
+        "phase_3_forecast",
+        "phase_4_inventory"
+      ],
+      "reasonCode": "FORECAST_NOT_ACCEPTED"
+    },
+    {
+      "capabilities": [
+        "replenishment"
+      ],
+      "phasesBlocked": [
+        "phase_4_inventory"
+      ],
+      "reasonCode": "HISTORICAL_INBOUND_STATUS_NOT_VERSIONED"
+    },
+    {
+      "capabilities": [
+        "pricing_elasticity"
+      ],
+      "phasesBlocked": [
+        "phase_5_pricing"
+      ],
+      "reasonCode": "PRICE_AVAILABILITY_BACKFILLED"
+    }
+  ],
+  "capabilityMask": {
+    "competitor_intelligence": {
+      "available": true
+    },
+    "data_management": {
+      "available": true
+    },
+    "demand_forecast_non_pit": {
+      "available": true,
+      "limitation": "historical backfill is not PIT-accurate"
+    },
+    "point_in_time_forecasting": {
+      "available": false,
+      "reasonCode": "LANDING_BACKFILL_DEPENDENCY"
+    },
+    "pricing_elasticity": {
+      "available": false,
+      "reasonCode": "PRICE_AVAILABILITY_BACKFILLED"
+    },
+    "replenishment": {
+      "available": false,
+      "currentSnapshotStatusSplitAvailable": true,
+      "reasonCode": "HISTORICAL_INBOUND_STATUS_NOT_VERSIONED"
+    },
+    "revenue_reporting": {
+      "available": true,
+      "evidence": "B16"
+    }
+  },
+  "forecast": {
+    "governedAcceptedRuns": [],
+    "governedRejectedRuns": [
+      "fr_2f4c50d1d7717b23"
+    ],
+    "requiredAcceptanceEvaluation": "cohorted-seasonal-cold-start-recomputation/v4",
+    "servingAuthorized": false,
+    "state": "fail_closed_no_go"
+  },
+  "gateBEvidence": "ingestion/data/evidence/run-c5eb1506ecd4c550/gate-b.json",
+  "leverageNote": "A capability blocking more than one phase is higher leverage than any single-phase improvement.",
+  "phase3Closure": {
+    "branch": "explicit_no_go",
+    "closed": false,
+    "outstandingEvidence": [
+      "manual Windows portability evidence",
+      "manual Linux portability evidence",
+      "explicit Demand Forecast governed-unavailable visual approval using the section 0.3.1 wording",
+      "Phase 3 retrospective and PP3-A1 to PP3-A3 go-ahead"
+    ],
+    "recordPresent": true,
+    "statefulLocalGate": "pass",
+    "verdict": "explicit_no_go"
+  },
+  "phaseOrder": [
+    "phase_1_datagen",
+    "phase_2_ingestion",
+    "phase_3_forecast",
+    "post_phase_3_track_a",
+    "post_phase_3_track_b",
+    "phase_4_inventory",
+    "phase_5_pricing",
+    "phase_6_api_workflow",
+    "phase_7_ui",
+    "phase_8_analytics"
+  ],
+  "phases": {
+    "phase_1_datagen": {
+      "closed": true,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "accepted source snapshot and run manifest",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "deterministic multi-market synthetic source publications",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [],
+      "requiredCapabilities": [],
+      "startable": true,
+      "status": "closed"
+    },
+    "phase_2_ingestion": {
+      "closed": true,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "Gate B pass with zero reconciliation difference",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "raw -> Gate A -> staging -> canonical retail_v2 -> Gate B -> curated",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [],
+      "requiredCapabilities": [
+        "data_management"
+      ],
+      "startable": true,
+      "status": "closed"
+    },
+    "phase_3_forecast": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "an accepted, independently verified forecast run",
+      "forecastServingBlocked": true,
+      "forecastServingRequired": true,
+      "goal": "accepted demand forecast serving the Demand Forecast screen live",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [],
+      "requiredCapabilities": [
+        "demand_forecast_non_pit"
+      ],
+      "startable": true,
+      "status": "blocked"
+    },
+    "phase_4_inventory": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "replay and policy holdout pass",
+      "forecastServingBlocked": true,
+      "forecastServingRequired": true,
+      "goal": "reorder, safety stock, transfers, allocation, inventory replay",
+      "humanGates": [],
+      "missingCapabilities": [
+        {
+          "capability": "replenishment",
+          "reasonCode": "HISTORICAL_INBOUND_STATUS_NOT_VERSIONED"
+        }
+      ],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a",
+        "post_phase_3_track_b"
+      ],
+      "requiredCapabilities": [
+        "replenishment"
+      ],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "phase_5_pricing": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "gated elasticity series per department per market",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "elasticity, price recommendations, promotion planning",
+      "humanGates": [],
+      "missingCapabilities": [
+        {
+          "capability": "pricing_elasticity",
+          "reasonCode": "PRICE_AVAILABILITY_BACKFILLED"
+        }
+      ],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a",
+        "post_phase_3_track_b",
+        "phase_4_inventory"
+      ],
+      "requiredCapabilities": [
+        "pricing_elasticity"
+      ],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "phase_6_api_workflow": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "planner round-trip into audit_log",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "Go API, workflow/HITL, approvals, audit",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a",
+        "post_phase_3_track_b",
+        "phase_4_inventory",
+        "phase_5_pricing"
+      ],
+      "requiredCapabilities": [
+        "data_management"
+      ],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "phase_7_ui": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "screenshot/DOM/live-data parity per screen",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "every core screen on live API data",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a",
+        "post_phase_3_track_b",
+        "phase_4_inventory",
+        "phase_5_pricing",
+        "phase_6_api_workflow"
+      ],
+      "requiredCapabilities": [
+        "data_management"
+      ],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "phase_8_analytics": {
+      "closed": false,
+      "deliverables": [],
+      "delivered": [],
+      "evidence": "full ingest-to-serve acceptance run",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "registry, drift, adoption, end-to-end acceptance",
+      "humanGates": [],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a",
+        "post_phase_3_track_b",
+        "phase_4_inventory",
+        "phase_5_pricing",
+        "phase_6_api_workflow",
+        "phase_7_ui"
+      ],
+      "requiredCapabilities": [
+        "data_management"
+      ],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "post_phase_3_track_a": {
+      "closed": false,
+      "deliverables": [
+        "A-D1",
+        "A-D2",
+        "A-D3",
+        "A-D4",
+        "A-D5",
+        "A-D6",
+        "A-D7",
+        "A-D8",
+        "A-D9",
+        "A-D10",
+        "A-D11",
+        "A-D12",
+        "A-D13"
+      ],
+      "delivered": [
+        "A-D1",
+        "A-D2",
+        "A-D3",
+        "A-D4",
+        "A-D5",
+        "A-D6",
+        "A-D7",
+        "A-D8",
+        "A-D9",
+        "A-D10",
+        "A-D11",
+        "A-D12",
+        "A-D13"
+      ],
+      "evidence": "A-D1..A-D13 delivered plus a recorded Track A acceptance review",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "retailer-source onboarding hardening: neutral roles, adapters, readiness, pins",
+      "humanGates": [
+        "Track A contract/design review",
+        "staging v2 cutover decision (currently frozen_not_cut_over)",
+        "Track A client-shaped round-trip acceptance"
+      ],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [],
+      "predecessorsOpen": [
+        "phase_3_forecast"
+      ],
+      "requiredCapabilities": [],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    },
+    "post_phase_3_track_b": {
+      "closed": false,
+      "deliverables": [
+        "B-D1",
+        "B-D2",
+        "B-D3",
+        "B-D4",
+        "B-D5",
+        "B-D6",
+        "B-D7",
+        "B-D8",
+        "B-D9",
+        "B-D10",
+        "B-D11",
+        "B-D12"
+      ],
+      "delivered": [
+        "B-D1",
+        "B-D2",
+        "B-D3",
+        "B-D4",
+        "B-D9",
+        "B-D10"
+      ],
+      "evidence": "B-D1..B-D12 plus an accepted publication or a published no-go",
+      "forecastServingBlocked": false,
+      "forecastServingRequired": false,
+      "goal": "forecast quality and presentation hardening",
+      "humanGates": [
+        "Track B diagnostic and candidate protocol review",
+        "Track B UI target/parity review"
+      ],
+      "missingCapabilities": [],
+      "outstandingDeliverables": [
+        "B-D11",
+        "B-D12",
+        "B-D5",
+        "B-D6",
+        "B-D7",
+        "B-D8"
+      ],
+      "predecessorsOpen": [
+        "phase_3_forecast",
+        "post_phase_3_track_a"
+      ],
+      "requiredCapabilities": [],
+      "startable": false,
+      "status": "not_startable_predecessor_open"
+    }
+  },
+  "schemaVersion": "retail-direction-scorecard/v1",
+  "summary": {
+    "highestLeverageBlocker": "PHASE_3_NOT_CLOSED",
+    "phasesBehindHighestLeverageBlocker": 7,
+    "phasesClosed": [
+      "phase_1_datagen",
+      "phase_2_ingestion"
+    ],
+    "phasesNotStartable": [
+      "phase_4_inventory",
+      "phase_5_pricing",
+      "phase_6_api_workflow",
+      "phase_7_ui",
+      "phase_8_analytics",
+      "post_phase_3_track_a",
+      "post_phase_3_track_b"
+    ],
+    "phasesStartable": [
+      "phase_1_datagen",
+      "phase_2_ingestion",
+      "phase_3_forecast"
+    ],
+    "totalPhases": 10,
+    "unblockedCount": 3
+  }
+}

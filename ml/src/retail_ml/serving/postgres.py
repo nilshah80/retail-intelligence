@@ -27,9 +27,12 @@ from retail_ml.io.bundle import VerifiedInputBundle
 from retail_ml.publish.verify import VerifiedForecastRun
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0005_complete_pairing_verifier"
+#: Decision #82 made migration 0006 v4-only: the cohorted verifier and the v4
+#: acceptance generation are the only shapes serving will accept, so 0005 is
+#: immutable but no longer eligible to back a new activation.
+MIGRATION_REVISION: Final[str] = "0006_cohorted_verifier_v4"
 ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v1"
-FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v3"
+FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v4"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "forecast_versions": (

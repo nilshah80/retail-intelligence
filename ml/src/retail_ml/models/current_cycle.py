@@ -23,7 +23,12 @@ from retail_ml.models.dataset import (
     load_current_horizon,
     load_training_horizon,
 )
-from retail_ml.models.forecasting import _history, _verified_feature_path
+from retail_ml.models.cold_start_blend import BLEND_MODEL_FILENAME, apply_frozen_blend
+from retail_ml.models.forecasting import (
+    _history,
+    _partial_history,
+    _verified_feature_path,
+)
 from retail_ml.models.intermittent import route_intermittent_forecasts
 from retail_ml.models.train_lgbm import fit_horizon_model, score_horizon_model
 from retail_ml.runtime.profile import MLRuntimeProfile, model_worker_budget
@@ -230,6 +235,7 @@ def run_current_cycle(
     verified_bundle: VerifiedInputBundle,
     decision_as_of: datetime,
     runtime_profile: MLRuntimeProfile,
+    blend_model_path: str | Path | None = None,
 ) -> CurrentCycleStats:
     """Fit at the decision origin and atomically emit future-only predictions."""
 
@@ -304,6 +310,21 @@ def run_current_cycle(
                 "horizon",
             ]
         ).reset_index(drop=True)
+        # Decision #84/#86: serve the estimator the acceptance gate scored. The
+        # weights are loaded from the accepted backtest and applied, never refitted
+        # -- the current cycle has one origin, so a refit would be both impossible
+        # and a different estimator from the certified one.
+        if blend_model_path is not None:
+            with telemetry.measure("cold_start_remediation"):
+                blend_model = json.loads(
+                    Path(blend_model_path).read_text(encoding="utf-8")
+                )
+                scored = apply_frozen_blend(
+                    scored,
+                    blend_model,
+                    history,
+                    _partial_history(feature_path, origin),
+                )
         training_rows = sum(result[2] for result in results)
         calibration_records = [
             record for result in results for record in result[1]

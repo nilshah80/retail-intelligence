@@ -27,7 +27,7 @@ required:
   - artifacts
 properties:
   schemaVersion:
-    const: retail-forecast-run/v2
+    const: retail-forecast-run/v3
   forecastRunId:
     type: string
     pattern: ^fr_[0-9a-f]{16}$
@@ -74,7 +74,28 @@ properties:
       - metricAggregation
       - promotionFeature
       - acceptanceEvaluation
+      # Decision #86: every bundle declares its candidate class, so a remediation
+      # candidate can never be read as an ordinary champion.
+      - candidateClass
     properties:
+      candidateClass:
+        enum: [champion, gate_remediation]
+      remediation:
+        # Decision #84 provenance. Present only for gate_remediation, and complete
+        # enough that the served estimator is reproducible from the bundle alone --
+        # the fitted weights live here, not in a side file outside the publication.
+        type: object
+        additionalProperties: true
+        required:
+          - candidateId
+          - decisionIds
+          - blendTarget
+          - segmentColumns
+          - segments
+          - fitOrigins
+          - confirmationOriginsHeldOut
+          - appliesToCohort
+          - structuralChecks
       horizonWeeks:
         type: array
         minItems: 26
@@ -108,7 +129,7 @@ properties:
       promotionFeature:
         const: unavailable
       acceptanceEvaluation:
-        const: paired-seasonal-complete-recomputation/v3
+        const: cohorted-seasonal-cold-start-recomputation/v4
   randomSeeds:
     type: object
     minProperties: 1
@@ -150,9 +171,9 @@ properties:
           - $ref: "#/$defs/policy"
           - properties:
               policyId:
-                const: retail-forecast-data-quality/v1
+                const: retail-forecast-data-quality/v2
               semanticFingerprint:
-                const: 3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c
+                const: e0baf3ef64568e0c7ad55bb6ca5d9157ba1a5238f64405d7a432b08bc2b1d0e5
   executionProfile:
     type: object
   stageTelemetry:
@@ -277,6 +298,9 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
+                # Artifact layout, not policy semantics. Decision #76 changed which
+                # grain each check applies at and left the columns alone, so this
+                # stays at v1 while classificationPolicies.dataQuality moves to v2.
                 const: retail-forecast-data-quality/v1
       forecast_calibration:
         allOf:
@@ -289,7 +313,7 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-acceptance/v2
+                const: retail-forecast-acceptance/v4
 $defs:
   sha256:
     type: string

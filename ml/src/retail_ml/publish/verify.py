@@ -14,6 +14,8 @@ import pandas as pd
 from retail_contracts.fingerprint import semantic_fingerprint
 
 from retail_ml.models.backtest import evaluate_acceptance
+from retail_ml.models.cohorts import CohortError
+from retail_ml.models.cohorts import acceptance_frame as _acceptance_frame
 from retail_ml.models.confidence import forecast_confidence
 from retail_ml.publish.run_artifacts import (
     ARTIFACT_SCHEMAS,
@@ -116,6 +118,73 @@ class VerifiedForecastRun:
         return str(self.manifest["lifecycleStatus"])
 
 
+def _recompute_remediation_checks(
+    evaluation: pd.DataFrame,
+    remediation: dict[str, Any],
+) -> None:
+    """Replay decision #86's structural checks from the published artifacts.
+
+    Reading back the booleans the publisher stored would make
+    `independentlyVerified` mean only "the publisher said so". The remediation
+    bundle publishes the champion values and the cohort label for exactly this
+    reason, so the checks are recomputed here and compared against what was
+    recorded. A tampered artifact or a tampered record both fail.
+    """
+
+    from retail_ml.diagnostics.comparison import detect_leakage
+    from retail_ml.models.cold_start_blend import (
+        COHORT_COLUMN,
+        COLD_START_COHORT,
+        established_rows_unchanged,
+    )
+
+    required = ("champion_p50", "champion_p90", COHORT_COLUMN)
+    missing = [name for name in required if name not in evaluation.columns]
+    _require(
+        not missing,
+        f"a remediation bundle must publish {missing} so decision #86 can be "
+        "replayed rather than trusted",
+    )
+
+    frame = evaluation.rename(
+        columns={"yhat_p50": "_served_p50", "yhat_p90": "_served_p90"}
+    ).rename(columns={"champion_p50": "yhat_p50", "champion_p90": "yhat_p90"})
+    unchanged = established_rows_unchanged(
+        frame.assign(_c50=frame["_served_p50"], _c90=frame["_served_p90"]),
+        candidate_column="_c50",
+        candidate_upper_column="_c90",
+    )
+    _require(
+        unchanged["passed"],
+        "recomputed decision #86 check failed: untargeted rows are not "
+        "byte-identical to the champion",
+    )
+
+    cold_start = evaluation[
+        evaluation[COHORT_COLUMN].astype(str).eq(COLD_START_COHORT)
+    ]
+    leakage = detect_leakage(
+        cold_start.assign(_candidate=cold_start["yhat_p50"]),
+        "_candidate",
+        "champion_p50",
+    )
+    _require(
+        not leakage["suspected"],
+        f"recomputed leakage battery is not clean: {leakage['signals']}",
+    )
+
+    recorded = remediation.get("structuralChecks") or {}
+    _require(
+        bool((recorded.get("untargetedRowsByteIdentical") or {}).get("passed"))
+        == unchanged["passed"],
+        "the recorded untargeted-row check disagrees with the recomputation",
+    )
+    _require(
+        (recorded.get("leakage") or {}).get("suspected") == leakage["suspected"],
+        "the recorded leakage verdict disagrees with the recomputation",
+    )
+
+
 def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
     """Verify manifest identity, every object, schedule, and lifecycle binding."""
 
@@ -167,10 +236,27 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         parsed_decision_as_of.tzinfo is not None,
         "decisionAsOf must be timezone-aware",
     )
+    # Rebuild the policy from the bundle's own declared class so a decision #86
+    # remediation bundle verifies against the remediation shape and a champion
+    # against the champion shape -- while still refusing any extra or missing field.
+    declared_policy = manifest.get("modelPolicy") or {}
+    declared_remediation = declared_policy.get("remediation")
     _require(
-        manifest.get("modelPolicy") == model_policy(),
+        declared_policy == model_policy(declared_remediation),
         "forecast-run model/acceptance policy is unsupported",
     )
+    # A class without its evidence, or evidence without its class, is refused: the
+    # point of #86 is that the two travel together.
+    _require(
+        (declared_policy.get("candidateClass") == "gate_remediation")
+        == (declared_remediation is not None),
+        "candidateClass and the remediation record must agree",
+    )
+    if declared_remediation is not None:
+        _require(
+            len(declared_remediation.get("confirmationOriginsHeldOut") or []) > 0,
+            "a remediation bundle must record which origins were held out",
+        )
 
     artifact_paths: dict[str, Path] = {}
     for name, schema_version in ARTIFACT_SCHEMAS.items():
@@ -287,24 +373,21 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         (lifecycle_status == "accepted") == acceptance["passed"],
         "lifecycleStatus disagrees with the acceptance verdict",
     )
-    seasonal = baselines[
-        baselines["baseline_id"].astype(str).eq("seasonal_naive")
-    ][[*EVALUATION_KEY_COLUMNS, "prediction"]].rename(
-        columns={"prediction": "seasonal_naive_baseline"}
-    )
-    _require(
-        len(seasonal) == len(evaluation)
-        and not seasonal.duplicated(list(EVALUATION_KEY_COLUMNS)).any(),
-        "seasonal-naive artifact does not pair one-to-one with evaluation rows",
-    )
-    acceptance_frame = evaluation.merge(
-        seasonal,
-        on=list(EVALUATION_KEY_COLUMNS),
-        how="left",
-        validate="one_to_one",
-    )
     try:
-        derived_acceptance = evaluate_acceptance(acceptance_frame)
+        acceptance_frame = _acceptance_frame(
+            evaluation,
+            baselines,
+            EVALUATION_KEY_COLUMNS,
+        )
+    except CohortError as exc:
+        raise ForecastRunVerificationError(str(exc)) from exc
+    try:
+        derived_acceptance = evaluate_acceptance(
+            acceptance_frame,
+            candidate_class=(
+                "gate_remediation" if declared_remediation is not None else "champion"
+            ),
+        )
     except (TypeError, ValueError, RuntimeError) as exc:
         raise ForecastRunVerificationError(
             f"cannot recompute A1-A5 acceptance gates: {exc}"
@@ -313,6 +396,8 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         derived_acceptance == acceptance,
         "forecast acceptance document does not match recomputed A1-A5 gates",
     )
+    if declared_remediation is not None:
+        _recompute_remediation_checks(evaluation, declared_remediation)
     versions = frames["forecast_versions"]
     series = frames["forecast_series"]
     drivers = frames["forecast_drivers"]
@@ -359,6 +444,10 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
             for name in ARTIFACT_SCHEMAS
         },
         "classificationPolicies": manifest.get("classificationPolicies"),
+        # Must mirror the publisher's run_seed exactly. modelPolicy is part of the
+        # identity so a decision #86 remediation bundle cannot share a run id with a
+        # champion bundle over the same forecasts.
+        "modelPolicy": manifest.get("modelPolicy"),
     }
     expected_run_id = "fr_" + hashlib.sha256(
         json.dumps(

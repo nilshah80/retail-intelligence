@@ -7,3 +7,13 @@ __pycache__/
 data/features/
 data/artifacts/
 mlruns/
+# Newly generated reports stay external; reviewed compact indexes belong in
+# ../contracts/evidence/. Reports already committed are retained rather than
+# deleted -- a superseded record declares `currentAuthority: false` and stays,
+# which is how this repository records supersession.
+reports/*
+!reports/phase3-accepted-publication-db3784fdcc4cb833.json
+!reports/phase3-serving-stack-db3784fdcc4cb833.json
+!reports/review2-acceptance-reassessment-db3784fdcc4cb833.json
+!reports/w0-memory-spike-safe-16gb.json
+!reports/w7-profile-invariance-local.json

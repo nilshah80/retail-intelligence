@@ -37,8 +37,19 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         "run rather than selecting latest or regenerating with another seed"
     )
     raw = MANIFEST.read_bytes()
+    # Re-pinned 2026-07-31 after an authorized clean-slate regeneration. The guard is
+    # kept deliberately byte-exact -- it exists to catch an unnoticed regeneration or a
+    # changed seed, and that is exactly what it did.
+    #
+    # It cannot, however, be satisfied BY a regeneration: the manifest embeds
+    # executionTelemetry (cpuProcessSeconds, cpuUtilizationPct, elapsed and per-worker
+    # wallSeconds/peakRssBytes), so its bytes move on every run regardless of the data.
+    # `runIdentityMethod` already excludes telemetry from runId; this hash does not.
+    # So a rebuild must re-pin, and the exact-value assertions below are what actually
+    # prove the data reproduced -- every one of them passed against the regenerated run
+    # while this hash did not. Decision #89 covers whether that split is acceptable.
     assert hashlib.sha256(raw).hexdigest() == (
-        "3ca63c09ce220c1606a1c73b6d1c8a74268cf437cc1ab620fcd49776747665a9"
+        "a2358732391f3678c2804133f04fcb2eb72d5c5da8adf9b82d9526d384b303c5"
     )
     manifest = json.loads(raw)
     assert manifest["runId"] == "run-c5eb1506ecd4c550"

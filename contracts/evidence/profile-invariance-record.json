@@ -1,0 +1,45 @@
+{
+  "featureSchema": "retail-weekly-features/v6",
+  "host": {
+    "logicalCpuCount": 16,
+    "machine": "arm64",
+    "note": "macOS only. Windows and Linux evidence remain outstanding under decision #61.",
+    "platform": "macOS-26.5.2-arm64-arm-64bit"
+  },
+  "memorySpike": {
+    "boundedBatchingRequired": false,
+    "featureRows": 1072430,
+    "logicalPath": "ml/data/artifacts/evidence/v6-memory-spike-safe-16gb.json",
+    "memoryHeadroomGiB": "11.319733",
+    "memoryLimitGiB": 16,
+    "peakRssGiB": "4.680267",
+    "profile": "safe",
+    "totalSeconds": "14.019107",
+    "verdict": "pass"
+  },
+  "profiles": {
+    "performance": {
+      "logicalPath": "ml/data/features/features_db3784fdcc4cb833_review4_v6",
+      "parquetBytes": 139169153,
+      "parquetSha256": "869a0e62d8709552d3e9407933543440b5ae133d716033f51a2a99543ff0cdf7",
+      "schemaVersion": "retail-weekly-features/v6",
+      "semanticFingerprint": "f3ff8725d36d78fff9422155d2e4362bcdac174af8e39f383040e7c587de42c5"
+    },
+    "safe": {
+      "logicalPath": "ml/data/artifacts/evidence/features_v6_safe",
+      "parquetBytes": 139169153,
+      "parquetSha256": "869a0e62d8709552d3e9407933543440b5ae133d716033f51a2a99543ff0cdf7",
+      "schemaVersion": "retail-weekly-features/v6",
+      "semanticFingerprint": "f3ff8725d36d78fff9422155d2e4362bcdac174af8e39f383040e7c587de42c5"
+    }
+  },
+  "recordedAt": "2026-07-31T00:00:00Z",
+  "schemaVersion": "retail-profile-invariance-record/v1",
+  "subject": "feature-schema-v6 safe vs high-performance execution-profile invariance",
+  "verdict": {
+    "note": "Byte equality is stronger than required. contracts/retail_v2/determinism.yaml sets byteEquality.acceptanceRole to secondary_unless_writer_fully_pinned, so semantic fingerprint equality is the governing criterion; byte equality is reported as a bonus, not as the acceptance basis.",
+    "parquetByteIdentical": true,
+    "result": "pass",
+    "semanticFingerprintIdentical": true
+  }
+}

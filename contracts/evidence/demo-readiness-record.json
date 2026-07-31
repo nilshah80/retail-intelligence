@@ -1,0 +1,124 @@
+{
+  "decisionIds": [
+    77,
+    78,
+    80
+  ],
+  "grains": {
+    "market_portfolio": {
+      "allHorizonsPass": true,
+      "targets": {
+        "h1": {
+          "actualPct": 95.18,
+          "gapPct": 5.18,
+          "passed": true,
+          "targetPct": 90.0
+        },
+        "h13": {
+          "actualPct": 91.63,
+          "gapPct": 9.63,
+          "passed": true,
+          "targetPct": 82.0
+        },
+        "h26": {
+          "actualPct": 90.69,
+          "gapPct": 12.69,
+          "passed": true,
+          "targetPct": 78.0
+        },
+        "h4": {
+          "actualPct": 92.74,
+          "gapPct": 4.74,
+          "passed": true,
+          "targetPct": 88.0
+        },
+        "h8": {
+          "actualPct": 92.71,
+          "gapPct": 7.71,
+          "passed": true,
+          "targetPct": 85.0
+        }
+      }
+    },
+    "series_key": {
+      "allHorizonsPass": false,
+      "targets": {
+        "h1": {
+          "actualPct": 78.27,
+          "gapPct": -1.73,
+          "passed": false,
+          "targetPct": 80.0
+        },
+        "h13": {
+          "actualPct": 70.77,
+          "gapPct": -1.23,
+          "passed": false,
+          "targetPct": 72.0
+        },
+        "h26": {
+          "actualPct": 69.52,
+          "gapPct": 1.52,
+          "passed": true,
+          "targetPct": 68.0
+        },
+        "h4": {
+          "actualPct": 75.54,
+          "gapPct": -2.46,
+          "passed": false,
+          "targetPct": 78.0
+        },
+        "h8": {
+          "actualPct": 72.83,
+          "gapPct": -2.17,
+          "passed": false,
+          "targetPct": 75.0
+        }
+      }
+    },
+    "store_category": {
+      "allHorizonsPass": true,
+      "targets": {
+        "h1": {
+          "actualPct": 87.55,
+          "gapPct": 2.55,
+          "passed": true,
+          "targetPct": 85.0
+        },
+        "h13": {
+          "actualPct": 79.95,
+          "gapPct": 4.95,
+          "passed": true,
+          "targetPct": 75.0
+        },
+        "h26": {
+          "actualPct": 79.19,
+          "gapPct": 9.19,
+          "passed": true,
+          "targetPct": 70.0
+        },
+        "h4": {
+          "actualPct": 83.51,
+          "gapPct": 1.51,
+          "passed": true,
+          "targetPct": 82.0
+        },
+        "h8": {
+          "actualPct": 81.3,
+          "gapPct": 3.3,
+          "passed": true,
+          "targetPct": 78.0
+        }
+      }
+    }
+  },
+  "measuredOn": "fr_a5b88c2ef23091ee",
+  "metric": "exact-horizon additive accuracy = 100 x (1 - WAPE) at the stated grain",
+  "rule": "Decision #77 sets a different target per grain because aggregate error offsets when summed. Decision #78 forbids presenting an aggregate score as SeriesKey accuracy, so each grain is reported only against its own target.",
+  "schemaVersion": "retail-demo-readiness-record/v1",
+  "summary": {
+    "cellsPassing": 11,
+    "cellsTotal": 15,
+    "ninetyPercentGoal": "Met at market_portfolio grain at every horizon: 95.18 / 92.74 / 92.71 / 91.63 / 90.69 against targets 90 / 88 / 85 / 82 / 78. No threshold change is required for this goal.",
+    "seriesKeyGap": "SeriesKey misses 4 of 5 by 1.2 to 2.5 points. Its frozen targets are 80/78/75/72/68, not 90 - weekly SKU x store demand is intermittent and 90% is not attainable at that grain. The cold-start cohort carries 17.053% of global error, so candidate C5 acts directly on this gap."
+  }
+}

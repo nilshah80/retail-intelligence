@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "retail-temporal-evidence-policy/v1",
+  "policyId": "retail-temporal-evidence/v1",
+  "decisionIds": [70, 71],
+  "consumerGate": "PP3-A6",
+  "description": "Which source evidence may establish that a fact was knowable at a model origin, and when a missing sale may become a zero-demand label. Ingestion success is never sufficient on its own.",
+  "grades": {
+    "native_observed": {
+      "rank": 1,
+      "meaning": "the source recorded the observation time",
+      "knownAsOfEligible": true,
+      "supportsHistoricalReplay": true
+    },
+    "native_processed": {
+      "rank": 2,
+      "meaning": "the source recorded a deterministic processing-availability time",
+      "knownAsOfEligible": true,
+      "supportsHistoricalReplay": true
+    },
+    "native_posted_available": {
+      "rank": 3,
+      "meaning": "a retained source posting rule proves availability",
+      "knownAsOfEligible": true,
+      "supportsHistoricalReplay": true,
+      "requires": ["retainedPostingRule"]
+    },
+    "native_extracted": {
+      "rank": 4,
+      "meaning": "an immutable snapshot or CDC extract time is the earliest defensible availability",
+      "knownAsOfEligible": true,
+      "supportsHistoricalReplay": true
+    },
+    "landing_backfill": {
+      "rank": 5,
+      "meaning": "only landing time is known",
+      "knownAsOfEligible": true,
+      "supportsHistoricalReplay": false,
+      "downgrades": ["historical_replay", "point_in_time_forecasting"]
+    }
+  },
+  "neverProvesAvailability": [
+    "business_date",
+    "effective_date",
+    "transaction_date",
+    "start_date",
+    "end_date",
+    "snapshot_date_without_extract_evidence"
+  ],
+  "rules": [
+    "A business-effective date may never be promoted into known_as_of.",
+    "A grade may not be upgraded to improve a capability verdict; it is derived from what the source supplies.",
+    "An unsupported derivation quarantines the row or downgrades the capability, never both silently."
+  ],
+  "zeroDemand": {
+    "decisionId": 71,
+    "description": "A weekly zero-demand label is derived, not assumed. All conditions must hold; otherwise the cell is unknown, not zero.",
+    "conditions": [
+      {
+        "id": "EXTRACT_COMPLETE",
+        "requirement": "the extract is complete for the whole business interval"
+      },
+      {
+        "id": "ASSORTMENT_ACTIVE",
+        "requirement": "SKU x store x channel was actively listed for the interval, from dated assortment evidence"
+      },
+      {
+        "id": "KNOWN_BY_CUTOFF",
+        "requirement": "the observation was knowable by the model fit cutoff"
+      },
+      {
+        "id": "BOUNDARY_EXPOSURE_HANDLED",
+        "requirement": "partial boundary-week exposure is handled under decision #56"
+      },
+      {
+        "id": "NO_UNRESOLVED_GAP",
+        "requirement": "no unresolved source gap or omitted channel applies"
+      }
+    ],
+    "unknownReasonCodes": [
+      "EXTRACT_INCOMPLETE",
+      "ASSORTMENT_UNKNOWN",
+      "ASSORTMENT_INACTIVE",
+      "NOT_KNOWN_BY_CUTOFF",
+      "BOUNDARY_EXPOSURE_PARTIAL",
+      "CHANNEL_COVERAGE_INCOMPLETE"
+    ],
+    "forbidden": [
+      "manufacturing historical zeros from a current catalog snapshot",
+      "treating an absent row as zero without assortment evidence",
+      "inferring assortment from the presence of sales"
+    ]
+  },
+  "capabilities": {
+    "decisionId": 72,
+    "readinessVerdicts": ["ready", "validated_partial", "unavailable", "blocked"],
+    "sufficiencyVerdicts": ["sufficient", "insufficient_evidence", "not_evaluated"],
+    "rule": "Readiness and statistical sufficiency are separate fields. A capability that is ready may still be statistically insufficient, and validated_partial must stop before any consumer whose required capability is incomplete.",
+    "definitions": {
+      "current_descriptive_analytics": {
+        "requiredRoles": ["product", "location", "merchandise"],
+        "requiredEvidence": ["reconciliation"],
+        "minimumGrade": "landing_backfill"
+      },
+      "demand_forecast_non_pit": {
+        "requiredRoles": ["merchandise", "assortment", "product", "location"],
+        "requiredEvidence": ["sufficient_history", "accepted_fallback_semantics"],
+        "minimumGrade": "landing_backfill"
+      },
+      "historical_replay": {
+        "requiredRoles": ["merchandise", "assortment"],
+        "requiredEvidence": ["origin_visible_targets", "origin_visible_features"],
+        "minimumGrade": "native_extracted"
+      },
+      "point_in_time_forecasting": {
+        "requiredRoles": ["merchandise", "assortment", "sell_price", "weather_forecast"],
+        "requiredEvidence": ["all_temporal_entities_origin_safe"],
+        "minimumGrade": "native_extracted"
+      },
+      "inventory_replenishment": {
+        "requiredRoles": ["inventory", "inbound_shipment", "supplier_term", "merchandise"],
+        "requiredEvidence": ["reconciled_demand", "lead_time_evidence"],
+        "minimumGrade": "native_extracted"
+      },
+      "price_revenue": {
+        "requiredRoles": ["sell_price", "merchandise"],
+        "requiredEvidence": ["origin_safe_prices", "demand_response_evidence"],
+        "minimumGrade": "native_extracted"
+      },
+      "price_margin": {
+        "requiredRoles": ["inventory_cost", "sell_price", "merchandise"],
+        "requiredEvidence": ["temporal_cost_ledger_matching_currency_scope"],
+        "minimumGrade": "native_extracted"
+      },
+      "promotion_aware_forecasting": {
+        "requiredRoles": ["promotion", "promotion_target", "merchandise"],
+        "requiredEvidence": ["origin_visible_historical_and_future_plans"],
+        "minimumGrade": "native_extracted"
+      },
+      "competitor_aware_forecasting": {
+        "requiredRoles": ["competitor_match", "competitor_price"],
+        "requiredEvidence": ["origin_visible_match_price_availability"],
+        "minimumGrade": "native_extracted"
+      }
+    }
+  }
+}

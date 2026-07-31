@@ -1,0 +1,68 @@
+{
+  "consequence": "The demo currently understates the product. Portfolio accuracy is 95.18% at h1 and the screen shows 78.3% with an Action badge on all four rows. Decision #78 forbids presenting an easier aggregate as SeriesKey accuracy; this is the mirror image -- the harder SeriesKey number presented against the easier portfolio target. Both are wrong, and this direction happens to harm rather than flatter, which is why it survived review.",
+  "decisionIds": [
+    77,
+    78,
+    80
+  ],
+  "defectId": "FORECAST_HEALTH_GRAIN_MISMATCH",
+  "evidence": {
+    "apiReturnsLeafGrainOnly": "api/internal/readmodel/forecast.go:448 queries slice_type = 'global'. That slice is sum|error| / sum(actual) over SeriesKey rows -- 78.27% at h1 on n=27,878 rows.",
+    "noAdditiveSliceExists": "Every slice_type in retail_serving.forecast_metrics is leaf-grain WAPE partitioned by a dimension, not aggregate-then-difference. slice_type=market for india-west h1 is 78.57% on n=13,486 rows, which is leaf error summed within the market. The additive market figure requires summing actual and predicted to market x origin x target_week FIRST and differencing after.",
+    "uiResolvesGrainCorrectly": "ui/src/Forecast.tsx:124-136 implements decision #77 first-matching-rule resolution. With All Stores and All Categories selected it correctly returns market_portfolio and correctly reads the 90/88/85/82/78 targets from the generated policy.",
+    "whatItShouldShow": {
+      "h1": "95.18% vs 90% -> pass",
+      "h13": "91.63% vs 82% -> pass",
+      "h4": "92.74% vs 88% -> pass",
+      "h8": "92.70% vs 85% -> pass"
+    },
+    "whatTheScreenShows": {
+      "h1": "78.3% vs 90% target -> Action",
+      "h13": "71.0% vs 82% -> Action",
+      "h4": "75.6% vs 88% -> Action",
+      "h8": "72.9% vs 85% -> Action"
+    }
+  },
+  "fix": {
+    "guardrail": "The new slices must be labelled by grain in the payload so decision #78 stays enforceable -- an aggregate figure must never be readable as SeriesKey accuracy.",
+    "scope": "no retrain required; metrics derive from existing eval predictions",
+    "steps": [
+      "add market_portfolio and store_category metric slices with aggregate-then-difference semantics in the publisher metric derivation",
+      "have /api/v1/forecast/horizons carry the resolved grain and return the matching slice",
+      "have the UI request its resolved grain rather than assuming the global slice",
+      "republish and re-materialize (minutes, no backtest)"
+    ]
+  },
+  "measuredOn": "fr_463f53be6353e481",
+  "notFixedYet": false,
+  "resolution": {
+    "after": {
+      "h1": "95.2% Strong",
+      "h13": "92.3% Watch",
+      "h4": "92.7% Healthy",
+      "h8": "92.7% Healthy",
+      "headline": "93.8% against a 90% target"
+    },
+    "before": {
+      "h1": "78.3% Action",
+      "h13": "71.0% Action",
+      "h4": "75.6% Action",
+      "h8": "72.9% Action",
+      "headline": "76.9% against a 90% target"
+    },
+    "h13StillWatch": "Honest and intended. Bias is -6.3%, over the Healthy tier's 5% limit, so the long-horizon under-bias is still marked rather than papered over by the grain fix.",
+    "layers": {
+      "api": "readmodel/forecast.go resolves decision #77 grain server-side and aggregates actual and predicted into the grain cell before differencing. Leaf coverage is measured in the same statement and returned separately with coverageGrain=series_key, because coverage has exactly one honest grain. Payload carries metricGrain, metricSemantics and grainCells.",
+      "metrics": "run_artifacts.py adds market_portfolio and store_category slices computed aggregate-then-difference. Coverage is published NULL there because a sum of P90s is not the P90 of a sum -- emitting the ~1.0 that summing produces would be worse than nothing, since every decision #80 tier requires coverage inside a band and 1.0 forces Action.",
+      "ui": "Forecast.tsx now trusts the API metricGrain and keeps its local resolution only as a pre-response fallback. Two independent implementations of one rule set is how the mismatch arose in the first place."
+    },
+    "noRepublishNeeded": "The serving path computes additive metrics directly from forecast_eval_predictions, so the fix took effect against the already-materialized version. A later republish carrying the new metric slices produced a byte-identical version_id (fv_94f0c84a39b9f2ec) and was refused by the unique constraint -- which is correct, and is proof the change altered no served value.",
+    "status": "FIXED 2026-07-31",
+    "testsGreen": "Go all packages, ml 157 passed 2 skipped, UI 11 passed plus typecheck",
+    "verifiedInBrowser": true
+  },
+  "rootCause": "Contract and implementation diverge. forecast-health-policy.json declares metricSemantics = exact_horizon_additive, but the metric derivation only ever computed leaf-grain WAPE. Same class as the source_quality broadcast: the contract stated the correct semantics and nothing enforced them.",
+  "schemaVersion": "retail-defect-record/v1",
+  "severity": "high_demo_impact",
+  "summary": "The Forecast Health four-row table resolves its target grain correctly and then applies that target to leaf-grain numbers, because no serving metric slice implements decision #77's declared `exact_horizon_additive` semantics above SeriesKey level."
+}

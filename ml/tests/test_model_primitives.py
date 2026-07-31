@@ -56,7 +56,7 @@ def test_seasonal_naive_preserves_missing_lag_52() -> None:
     assert pd.isna(baselines["seasonal_naive_baseline"].iloc[1])
 
 
-def test_acceptance_uses_identical_paired_rows_for_seasonal_comparison() -> None:
+def test_decision_82_splits_cohorts_and_gates_them_separately() -> None:
     frame = pd.DataFrame(
         [
             {
@@ -65,10 +65,12 @@ def test_acceptance_uses_identical_paired_rows_for_seasonal_comparison() -> None
                 "store_id": "store",
                 "channel_id": "channel",
                 "forecast_origin": date(2026, 1, 5),
+                "horizon": 1,
                 "actual_units": 10.0,
                 "yhat_p50": 8.0,
                 "yhat_p90": 12.0,
                 "seasonal_naive_baseline": 5.0,
+                "cold_start_baseline": 5.0,
                 "zero_share_52w": 0.1,
             },
             {
@@ -77,27 +79,128 @@ def test_acceptance_uses_identical_paired_rows_for_seasonal_comparison() -> None
                 "store_id": "store",
                 "channel_id": "channel",
                 "forecast_origin": date(2026, 1, 5),
+                "horizon": 1,
                 "actual_units": 10.0,
                 "yhat_p50": 100.0,
                 "yhat_p90": 101.0,
                 "seasonal_naive_baseline": np.nan,
+                "cold_start_baseline": 12.0,
                 "zero_share_52w": 0.1,
             },
         ]
     )
 
     result = evaluate_acceptance(frame)["global"]
+    cohorts = result["cohorts"]
+    established = result["gates"]["A1_established"]
+    cold_start = result["gates"]["A1_cold_start"]
 
-    assert result["seasonalComparison"]["pairedRows"] == 1
-    assert result["seasonalComparison"]["droppedUnpairedRows"] == 1
-    assert result["seasonalComparison"]["pairedRowsIdentical"] is True
-    assert result["seasonalComparison"]["comparisonComplete"] is False
-    assert result["metrics"]["champion"]["wape"] == 4.6
-    assert result["metrics"]["droppedChampion"]["wape"] == 9.0
-    assert result["metrics"]["pairedChampion"]["n"] == 1
-    assert result["metrics"]["seasonalNaive"]["n"] == 1
-    assert result["gates"]["A1"]["relativeWapeImprovementPct"] == 60.0
-    assert result["gates"]["A1"]["passed"] is False
+    assert cohorts["eligibleRows"] == 2
+    assert cohorts["unassignedRows"] == 0
+    assert cohorts["establishedHistory"]["rows"] == 1
+    assert cohorts["coldStart"]["rows"] == 1
+    assert cohorts["establishedHistory"]["reasonCodes"] == {
+        "ORIGIN_VISIBLE_LAG52_AVAILABLE": 1
+    }
+    assert cohorts["coldStart"]["reasonCodes"] == {
+        "LAG52_UNAVAILABLE_SHORT_HISTORY": 1
+    }
+
+    # The established cohort now pairs completely, so decision #81's
+    # completeness rule is satisfied inside the cohort and A1 passes there.
+    assert established["comparisonComplete"] is True
+    assert established["relativeWapeImprovementPct"] == 60.0
+    assert established["passed"] is True
+
+    # The cold-start row is compared with its own mean-history comparator and
+    # loses, so the run is still unacceptable.
+    assert cold_start["comparisonComplete"] is True
+    assert cold_start["championWape"] == 9.0
+    assert cold_start["comparatorWape"] == 0.2
+    assert cold_start["verdict"] == "fail"
+    assert cold_start["passed"] is False
+
+
+def test_a_row_with_no_prior_observation_is_evaluation_ineligible() -> None:
+    """Decision #83: no observation means no comparator and no skill claim.
+
+    Such a row is reason-coded and counted rather than blocking acceptance
+    forever, which is what decision #82 alone did.
+    """
+
+    rows = []
+    for index in range(200):
+        rows.append(
+            {
+                "market_id": "market",
+                "sku_id": f"sku-{index}",
+                "store_id": "store",
+                "channel_id": "channel",
+                "forecast_origin": date(2026, 1, 5),
+                "horizon": 1,
+                "actual_units": 10.0,
+                "yhat_p50": 9.0,
+                "yhat_p90": 12.0,
+                "seasonal_naive_baseline": 5.0,
+                "cold_start_baseline": 5.0,
+                "zero_share_52w": 0.1,
+            }
+        )
+    # One launch row with no observation of any kind.
+    rows.append(
+        {
+            "market_id": "market",
+            "sku_id": "sku-launch",
+            "store_id": "store",
+            "channel_id": "channel",
+            "forecast_origin": date(2026, 1, 5),
+            "horizon": 1,
+            "actual_units": 10.0,
+            "yhat_p50": 9.0,
+            "yhat_p90": 12.0,
+            "seasonal_naive_baseline": np.nan,
+            "cold_start_baseline": np.nan,
+            "zero_share_52w": 0.1,
+        }
+    )
+    result = evaluate_acceptance(pd.DataFrame(rows))
+    cohorts = result["global"]["cohorts"]
+
+    assert cohorts["evaluationIneligible"]["rows"] == 1
+    assert cohorts["evaluationIneligible"]["reasonCodes"] == {
+        "NO_PRIOR_OBSERVATION_AT_FIRST_ORIGIN": 1
+    }
+    assert cohorts["unassignedRows"] == 0
+    assert cohorts["scoredRows"] == 200
+    # It no longer makes the cold-start gate insufficient.
+    assert result["global"]["gates"]["A1_cold_start"]["verdict"] == "not_applicable"
+    assert cohorts["ineligibleRowSharePct"] < cohorts["maximumIneligibleRowSharePct"]
+
+
+def test_a_systemic_lack_of_observation_fails_closed() -> None:
+    """The ineligible class is capped, so it cannot become an escape hatch."""
+
+    frame = pd.DataFrame(
+        [
+            {
+                "market_id": "market",
+                "sku_id": f"sku-{index}",
+                "store_id": "store",
+                "channel_id": "channel",
+                "forecast_origin": date(2026, 1, 5),
+                "horizon": 1,
+                "actual_units": 10.0,
+                "yhat_p50": 9.0,
+                "yhat_p90": 12.0,
+                "seasonal_naive_baseline": np.nan,
+                "cold_start_baseline": np.nan,
+                "zero_share_52w": 0.1,
+            }
+            for index in range(50)
+        ]
+    )
+    with pytest.raises(Exception, match="systemic evidence problem"):
+        evaluate_acceptance(frame)
 
 
 def _passing_acceptance_frame() -> pd.DataFrame:
@@ -118,6 +221,7 @@ def _passing_acceptance_frame() -> pd.DataFrame:
                         "yhat_p50": 9.0,
                         "yhat_p90": 10.0 if series < 90 else 9.5,
                         "seasonal_naive_baseline": 5.0,
+                        "cold_start_baseline": 5.0,
                         "zero_share_52w": 0.7,
                     }
                 )
@@ -125,7 +229,11 @@ def _passing_acceptance_frame() -> pd.DataFrame:
 
 
 def _disable_bootstrap(monkeypatch: object) -> None:
-    monkeypatch.setattr(backtest, "_clustered_interval", lambda frame: (-0.5, -0.1))
+    monkeypatch.setattr(
+        backtest,
+        "_clustered_interval",
+        lambda frame, **kwargs: (-0.5, -0.1),
+    )
 
 
 def test_all_acceptance_gates_accept_a_legitimate_run(monkeypatch) -> None:
@@ -133,7 +241,7 @@ def test_all_acceptance_gates_accept_a_legitimate_run(monkeypatch) -> None:
     result = evaluate_acceptance(_passing_acceptance_frame())
 
     assert result["passed"] is True
-    assert result["global"]["gates"]["A1"]["passed"] is True
+    assert result["global"]["gates"]["A1_established"]["passed"] is True
     assert result["global"]["gates"]["A2"]["passed"] is True
     assert result["global"]["gates"]["A3"]["passed"] is True
     assert result["global"]["gates"]["A4"]["passed"] is True
@@ -146,17 +254,19 @@ def test_a1_enforces_threshold_and_complete_pairing(monkeypatch) -> None:
     below_threshold["yhat_p50"] = 6.0
     below_threshold["yhat_p90"] = 10.0
     result = evaluate_acceptance(below_threshold)
-    assert result["global"]["gates"]["A1"]["relativeWapeImprovementPct"] == pytest.approx(
-        20.0
-    )
-    assert result["global"]["gates"]["A1"]["passed"] is False
+    established = result["global"]["gates"]["A1_established"]
+    assert established["relativeWapeImprovementPct"] == pytest.approx(20.0)
+    assert established["passed"] is False
 
-    incomplete = _passing_acceptance_frame()
-    incomplete.loc[incomplete.index[0], "seasonal_naive_baseline"] = np.nan
-    result = evaluate_acceptance(incomplete)
-    assert result["global"]["seasonalComparison"]["droppedUnpairedRows"] == 1
-    assert result["global"]["gates"]["A1"]["comparisonComplete"] is False
-    assert result["global"]["gates"]["A1"]["passed"] is False
+    # Losing lag-52 moves a row into the cold-start cohort rather than dropping
+    # it, so the established cohort stays complete and the cold-start gate owns
+    # the row.
+    moved = _passing_acceptance_frame()
+    moved.loc[moved.index[0], "seasonal_naive_baseline"] = np.nan
+    result = evaluate_acceptance(moved)
+    assert result["global"]["gates"]["A1_established"]["comparisonComplete"] is True
+    assert result["global"]["cohorts"]["coldStart"]["rows"] == 1
+    assert result["global"]["cohorts"]["unassignedRows"] == 0
 
 
 def test_a2_enforces_both_coverage_bounds(monkeypatch) -> None:

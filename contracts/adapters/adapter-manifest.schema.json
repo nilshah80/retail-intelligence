@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/adapters/adapter-manifest.schema.json",
+  "title": "retail-adapter-manifest/v1",
+  "description": "Registration declaration for a source adapter. Decision #69 keeps loading static and in-repository for the PoC: an adapter is reviewed application code, never an uploaded artifact discovered at runtime. A bounded custom adapter exists only for semantics the mapped-files language cannot express, and it may emit standardized roles only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceSystem",
+    "adapterVersion",
+    "adapterKind",
+    "supportedSourceSchemaVersions",
+    "supportedProfileVersions",
+    "suppliedRoles",
+    "requiredSourceCapabilities",
+    "providerResolutionCompatibility",
+    "loading",
+    "justification"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-adapter-manifest/v1"
+    },
+    "sourceSystem": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{2,63}$",
+      "description": "Unique registration id. A duplicate fails closed; the registry never silently replaces an adapter."
+    },
+    "adapterVersion": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*/[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "adapterKind": {
+      "enum": [
+        "mapped_files",
+        "bounded_custom"
+      ],
+      "description": "bounded_custom requires a justification naming the semantics mapped files cannot express."
+    },
+    "primaryIdentity": {
+      "enum": [
+        "source_dialect",
+        "retailer_specific"
+      ],
+      "default": "source_dialect",
+      "description": "Prefer the reusable source dialect. retailer_specific is allowed only when the source genuinely is."
+    },
+    "supportedSourceSchemaVersions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "supportedProfileVersions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "suppliedRoles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "providerId",
+          "providerResolution"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "providerResolution": {
+            "enum": [
+              "exclusive",
+              "union",
+              "cross_validate",
+              "fallback"
+            ]
+          },
+          "unionPartitionField": {
+            "type": "string"
+          },
+          "crossValidates": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requiredSourceCapabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "providerResolutionCompatibility": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "exclusive",
+          "union",
+          "cross_validate",
+          "fallback"
+        ]
+      }
+    },
+    "loading": {
+      "const": "static_in_repository_registry",
+      "description": "Decision #69. External or installable packages are deferred pending a separate security decision; no other value validates."
+    },
+    "justification": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Why this adapter exists. For bounded_custom, name the semantics mapped files cannot express."
+    },
+    "forbiddenImports": {
+      "type": "array",
+      "default": [
+        "retail_ingestion.transforms",
+        "retail_ml",
+        "api",
+        "ui"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "An adapter may not import canonical transforms, ML, API or UI code."
+    },
+    "customSemantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "mappedFilesGap"
+      ],
+      "description": "Required for bounded_custom: what the source needs that the declarative language cannot express.",
+      "properties": {
+        "reason": {
+          "enum": [
+            "header_line_version_join",
+            "source_status_machine",
+            "proprietary_ledger_resolution",
+            "multi_dataset_reconciliation"
+          ]
+        },
+        "mappedFilesGap": {
+          "type": "string",
+          "minLength": 20
+        },
+        "sharedHelpersUsed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Shared readers and normalization helpers reused rather than reimplemented."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "adapterKind": {
+            "const": "bounded_custom"
+          }
+        },
+        "required": [
+          "adapterKind"
+        ]
+      },
+      "then": {
+        "required": [
+          "justification",
+          "customSemantics"
+        ]
+      }
+    }
+  ]
+}

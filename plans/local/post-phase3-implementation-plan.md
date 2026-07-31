@@ -8,16 +8,28 @@ _Forecast authority: `docs/demand_forecast_poc_spec.md` §3.1–3.4, §3.9, §4.
 `contracts/ml/*`; `contracts/screens/demand-forecast.parity.yaml`._
 _Validation authority: `contracts/validation-policy.yaml`; repository CI is prohibited._
 
-**Revision 7 — 2026-07-31. CONTEXT-FEED SWEEP COMPLETE; FORECAST NO-GO; W1+ NOT AUTHORIZED.**
+**Revision 11 — 2026-07-31. FORECAST ACCEPTED under decisions #84/#86; PP3-A1+ IMPLEMENTED,
+AUTHORIZATION STILL PENDING THE RETROSPECTIVE.**
+Accepted run `fr_422e1113355eb05b` (`candidateClass: gate_remediation`, version
+`fv_86cd60c37be7e203`) passes A1-A5 and is verified, materialized and activated. C5 repairs the
+us-new-york cold-start gate from -2.399% to +4.446%; decision #75 is published at +1.754% against
+its 5% floor and is **not** satisfied, so C5 carries no accuracy claim. Decision #85 per-cohort
+coverage is report-only until Phase 4 entry and its cold-start failure is published.
+Track A and Track B are implemented at library level. **Track A is not yet wired to the real
+pipeline**: the staging builder still binds standardized views to Shopify/Business Central sources,
+so a mapped-files-only retailer cannot complete an end-to-end run, and readiness and tenant
+selection have no runtime callers. PP3-A1-A3 go-ahead still requires the retrospective.
+
+**Revision 10 — superseded 2026-07-31. DECISIONS FINALIZED; FORECAST NO-GO; PP3-A1+ NOT AUTHORIZED.**
 The final adversarial review invalidates both the former v12 forecast and verifier-v2 run
 `fr_92135aa7b5215b69`. The latter drops 102,804 harder rows from A1's seasonal-naive comparison,
 so acceptance-v2 fails the spec's overall gate despite the paired subset exceeding 25%.
 Feature-schema-v6, forecast-run-v2, verifier-v3 and migration 0005 repairs are implemented
-locally. V6 removes the false h1 local-event availability indicator, its permanently-null future
+and committed on `main`. V6 removes the false h1 local-event availability indicator, its permanently-null future
 features and the unavailable market-disruption feature under driver-semantics-v3. A full-column
 invariant now rejects any structurally all-null feature. A new backtest/publication has not established
 accepted evidence.
-W0 therefore remains open for the full rerun, developer gate, listed manual Phase 3 gates,
+PP3-P0 therefore remains open for the full rerun, developer gate, listed manual Phase 3 gates,
 known Forecast Health visual-parity disposition and retrospective. Track A/B
 implementation begins only after the complete Phase 3 exit and a recorded retrospective
 go-ahead. The plan deliberately orders
@@ -26,9 +38,11 @@ That order protects the central architecture promise: retailer variation is abso
 profiles/adapters and standardized staging roles; canonical transforms, ML, API and UI do not
 gain retailer-specific branches.
 
-The current user direction authorizes the W0 Phase 3 repairs and clean evidence rerun. Do not
-begin W1 or later, create a new input pin, tune thresholds/models, change the UI, or modify
-datagen until the applicable approval gate below is explicitly passed.
+The PP3-P0 repair implementation is committed. Decision #82 is now finalized; its
+acceptance-v3/verifier-v4/migration-0006 implementation and the other PP3-P0 exit evidence remain
+open. Do not begin PP3-A1 or later, create a new input pin, tune thresholds/models, change the UI,
+modify datagen or run a new full backtest until the applicable implementation gate below is
+passed.
 
 ---
 
@@ -45,7 +59,7 @@ The requested order is correct:
 5. Publish and activate a new forecast version only if the unchanged acceptance battery and the
    additional improvement-comparison gates pass.
 
-This document specifies Track B now so the whole program can be reviewed, but W10 and later do
+This document specifies Track B now so the whole program can be reviewed, but PP3-B1 and later do
 not start until Track A is accepted. Otherwise a quality change could accidentally depend on the
 synthetic Shopify/Business Central/companion layout that Track A exists to remove.
 
@@ -69,36 +83,73 @@ then Track B consumes only the capabilities that are actually available.
 
 | Gate | Current state | Required before |
 |---|---|---|
-| Review-#2 semantic repairs and focused tests | Passed locally | Full W0 rerun |
+| Review-#2 semantic repairs and focused tests | Passed and committed | Full PP3-P0 rerun |
 | Feature-schema-v6 build and characterization | Passed; `f3ff8725d36d78ff…`, 1,072,430 rows | Backtest |
-| Short-history A1 comparator/eligibility policy (#82) | Open; strict decision #81 makes the current panel unacceptable | Backtest |
-| Acceptance-v2 run independently recomputes and passes A1–A5 | Open; prior run fails A1 | W1 |
-| Verifier-v3 run materialized/activated and `tools/dev.py verify` passes | Open | W1 |
-| Phase 3 manual Windows feature/training/publication evidence | Open | W1 |
-| Phase 3 manual Linux feature/training/publication evidence | Open | W1 |
-| Full pinned-data 16-GB vs high-performance benchmark comparison | Open | W1 |
-| Explicit user approval of the Demand Forecast UI | Open | W1 |
-| Forecast Health four-row HTML-parity disposition | Open; correction planned in W16 | UI approval must explicitly accept deferral or authorize an earlier correction |
-| Post–Phase 3 retrospective go/no-go and scope | Open | W1 |
-| Track A contract/design review | Open | W2 |
-| Track A client-shaped round-trip acceptance | Open | W9 / Track B |
-| Track B diagnostic and candidate protocol review | Open | W10 |
-| Track B UI target/parity review | Open | W16 |
+| Short-history A1 comparator/eligibility policy (#82) | Decided; acceptance-v3/verifier-v4/migration-0006 implementation open | Backtest |
+| Decision-#82 acceptance/verifier run independently recomputes and passes its A1–A5 battery | Open; prior acceptance-v2 run fails A1 | PP3-A1 |
+| Decision-#82 verifier result and `tools/dev.py verify` pass | Open; activation is required only on the accepted branch | PP3-A1 |
+| Phase 3 manual Windows feature/training/publication-or-rejection evidence | Open | PP3-A1 |
+| Phase 3 manual Linux feature/training/publication-or-rejection evidence | Open | PP3-A1 |
+| Full pinned-data 16-GB vs high-performance benchmark comparison | Open | PP3-A1 |
+| Explicit user approval of the Demand Forecast live or governed-unavailable UI state | Open | PP3-A1 |
+| Forecast Health four-row HTML-parity disposition | Open; correction planned in PP3-B7 | UI approval must explicitly accept deferral or authorize an earlier correction |
+| Post–Phase 3 retrospective go/no-go and scope | Open | PP3-A1 |
+| Track A contract/design review | Open | PP3-A2 |
+| Track A client-shaped round-trip acceptance | Open | PP3-A9 / Track B |
+| Track B diagnostic and candidate protocol review | Open | PP3-B1 |
+| Track B UI target/parity review | Open | PP3-B7 |
+
+### 0.3.1 PP3-P0 accepted and NO-GO closure branches
+
+Decision #82, a new complete-population decision-#82 verifier-v4 run, the
+stateful local gate, manual Windows/Linux evidence, the full v6 profile/memory comparison and the
+retrospective survive on both branches.
+
+| Exit item | Accepted branch | Explicit NO-GO branch |
+|---|---|---|
+| Acceptance evidence | independently verified A1–A5 pass | independently verified rejection with complete reason-coded diagnostics; eligible for D0 only if it meets §2.9 |
+| PostgreSQL | decision-#82 verifier materialization plus separate activation | zero materialization/activation for the rejected run; prove `active_forecast_versions` is empty |
+| API | live accepted lineage and governed 409/503 behavior | governed 503 unavailable behavior and no fallback to verifier-v2 |
+| UI review | live accepted values plus known parity disposition | governed-unavailable state, with no stale forecast values presented as live |
+| Forecast Health | approve the corrected four-row state, or use the accepted-live deferral record below | use the governed-unavailable deferral record below; four-row live-value parity remains a PP3-B7 obligation |
+| Portability/performance | full required evidence | full required evidence for feature build, rejected backtest/publication path and fail-closed serving |
+
+Required accepted-live deferral text when an accepted forecast is served before the four-row
+correction:
+
+> Phase 3 UI approval covers the live accepted Demand Forecast values and current layout. The
+> reviewer was informed that Forecast Health currently shows only h1/h4 under the default
+> four-week operational cap and uses cumulative, coverage-only semantics instead of the reference
+> exact h1/h4/h8/h13 rows and decision-#80 statuses. Forecast serving is authorized, but this
+> deviation is not accepted as HTML parity and remains PP3-B7 work.
+
+Required governed-unavailable deferral text on the explicit NO-GO branch:
+
+> Phase 3 UI approval covers the governed-unavailable Demand Forecast state only. The reviewer was
+> informed that the current live-data implementation would show only h1/h4 under the default
+> four-week operational cap and uses cumulative, coverage-only health semantics instead of the
+> reference h1/h4/h8/h13 rows with governed Strong/Healthy/Watch/Action statuses. No live forecast
+> is authorized. Decision #80 is final, but its PP3-B7 implementation remains open; this state was
+> not accepted as HTML parity.
 
 ### 0.4 Workstream states
 
 | Workstream | Contents | State |
 |---|---|---|
-| W0 | Phase 3 repair, evidence rebaseline, closure and retrospective | **IN PROGRESS** |
-| Track A / W1–W9 | neutral roles, mapped files, custom adapters, readiness, tenant pins | **AWAITING W0** |
-| Track B / W10–W17 | diagnostics, candidate models, policy v2, presentation, publication | **AWAITING Track A** |
+| PP3-P0 | Phase 3 repair, evidence rebaseline, closure and retrospective | **IN PROGRESS** |
+| Track A / PP3-A1–PP3-A9 | neutral roles, mapped files, custom adapters, readiness, tenant pins | **AWAITING PP3-P0** |
+| Track B / PP3-B1–PP3-B8 | diagnostics, candidate models, policy v2, presentation, publication | **AWAITING Track A** |
 | Later productionization | connectors, CDC, secrets, IAM, managed orchestration | **OUT OF SCOPE** |
 
 ### 0.5 Non-negotiable invariants
 
-1. The accepted v12 source publication remains the immutable input authority. The former v12
-   forecast and `fr_92135aa7b5215b69` are rejected and must not be served. No C0 comparison
-   authority exists until a forecast-run-v2/verifier-v3 candidate passes acceptance-v2.
+1. The accepted v12 source publication remains the immutable input authority. Forecast v1 runs
+   `fr_b2f18d0e2999a36d`, `fr_ab5be7296a2c416e` and `fr_92135aa7b5215b69` are rejected and must
+   not be served. No accepted C0 serving
+   or publication authority exists until a versioned decision-#82
+   acceptance-v3/verifier-v4 candidate passes. A separately governed complete-population diagnostic
+   baseline may be used only for model comparison under §2.9 and PP3-B1; it never authorizes
+   publication or serving.
 2. Do not modify acceptance thresholds to make a candidate pass.
 3. Do not change datagen to manufacture greener forecast metrics.
 4. A datagen change is allowed only for a reviewed source-contract correction or to model
@@ -122,6 +173,10 @@ then Track B consumes only the capabilities that are actually available.
 13. The original HTML remains the visual authority until explicitly amended. A known deviation
     may be deferred only when the visual-approval record names it; browser smoke or live-data
     correctness alone is not HTML parity.
+14. Generated artifacts are not source code. Parquet datasets, model binaries and complete
+    forecast bundles stay outside Git. Generated report JSON is untracked by default; only an
+    explicitly reviewed compact evidence index may be committed under the retention policy in
+    §1.7.
 
 ---
 
@@ -138,7 +193,8 @@ migration 0005 excludes it from the active view.
 | Source snapshot | `681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b` |
 | Curated publication fingerprint | `db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff` |
 | Curated publication root / objects | `run-c5eb1506ecd4c550` / 1,509; exact `expected-pin.json` match |
-| Rejected diagnostic run | `fr_92135aa7b5215b69` |
+| Rejected diagnostic bundle generation | v15: `forecast_run_accepted_db3784fdcc4cb833_pitfix_v15` / `fr_92135aa7b5215b69` |
+| Other rejected v1 bundles | v12: `fr_b2f18d0e2999a36d`; v14: `fr_ab5be7296a2c416e` |
 | Historical version | `fv_7d29221dc70dea90` |
 | Forecast semantic fingerprint | `8932650d0b1b956eb821e5933ca8462dba6f87fc1a58b50348fe54273026d04f` |
 | Activation scope | `b38c230b63728dc9c4d16648415b70547c04553cfd7fb53161e56683f73da2e7` |
@@ -150,7 +206,8 @@ migration 0005 excludes it from the active view.
 | Correct-pin feed sweep | unavailable: promotions 811, calendar events 182, local events 2,266, disruptions 24; origin-visible: macro 7,306, competitor 300,611, weather actual 7,306, weather forecast 51,142, calendar 7,306 |
 | Evaluation schedule | 26-week window, step 2, 13 scoring origins, 104 training origins |
 | Evaluation rows | 708,708 |
-| Current SeriesKeys / rows | 2,034 / 52,884 |
+| Current-cycle SeriesKeys / rows | 2,034 / 52,884 |
+| Historical v15-bundle evaluation SeriesKeys | 2,228 distinct across all origins; 2,118–2,166 per origin |
 | Paired-only seasonal-naive WAPE improvement | 53.47% global; 54.54% India; 52.00% US |
 | A1 pairing | 605,904 / 708,708 rows; 77.51% of actual units; incomplete → fail |
 | P90 coverage | 88.85% global; 89.22% India; 88.51% US |
@@ -164,6 +221,24 @@ evidence is +30.61% FVA versus MA13 and 88.85% P90 coverage; the 53.47% seasonal
 paired-subset evidence and not a passing overall A1 claim. Neither rejected run may be presented
 as active or used as the Track B comparator.
 
+The v15 bundle's evaluation Parquet is byte-identical to the v14 invalid bundle payload
+(`96d8db758983cdb9…`), but the bundle generation and run id are v15. The 194-SeriesKey difference
+between the historical evaluation union and the 2,034 current cycle
+is lifecycle/origin dependent but must not be hidden behind aggregate arithmetic. The 102,804
+missing seasonal-naive comparisons affect 402 distinct SeriesKeys and vary by origin/horizon cell
+(276–324 rows), so decision #82's eligibility unit is the complete
+`forecast_origin × horizon × SeriesKey` evaluation row, not a one-time series exclusion. These are
+historical v15-bundle diagnostics and must be remeasured on the v6 PP3-P0 run.
+
+All three historical bundles are `retail-forecast-run/v1` and self-declare `accepted` under the
+superseded v1 acceptance policy. Their bytes and manifests must not be edited or re-signed.
+PP3-P0 publishes one external rejection/supersession ledger that binds each run id, original
+directory, manifest/artifact hashes, superseded policy, rejection reason and the decision-#81/#82
+authority. The misleading directory labels may be moved only as a byte-preserving artifact-store
+operation with an old→new logical-path alias; the rejection ledger—not a rewritten manifest—is
+the lifecycle authority. Migration 0005 already blocks verifier-v2 serving, and migration 0006
+must admit only verifier-v4.
+
 ### 1.2 Known Forecast Health visual-parity deviation
 
 The original HTML always renders four rows — `1 week`, `4 weeks`, `8 weeks`, `13 weeks` — even
@@ -174,14 +249,36 @@ limitation.
 
 The current implementation also cumulatively aggregates horizons `1..N` and derives status from
 coverage alone, whereas the reference labels discrete checkpoints and shows the four-state
-vocabulary `Strong / Healthy / Watch / Action`. Decision #64/Q6 and the current parity YAML
-encoded the hiding behavior, so W16 must amend that authority before React changes.
+vocabulary `Strong / Healthy / Watch / Action`. Decision #64/Q6 and the parity YAML previously
+encoded the hiding behavior. This correction pass amends that authority to decision #80's final
+four-row policy; PP3-B7 must implement it in React and prove live-data parity.
 
-The required W16 outcome is four rows in reference order through week 13, independent of the
-selected operational horizon. Decision #80 must freeze exact-horizon versus cumulative
-calculation and the governed status matrix; exact h1/h4/h8/h13 is recommended because it
-preserves horizon deterioration instead of blending it away. h26 remains in diagnostic evidence
-and may appear only in a separately approved drilldown, not as a fifth default reference row.
+**PP3-B7's React correction is implemented (2026-07-31).** `ui/src/Forecast.tsx` renders exactly
+four exact-horizon rows labelled `1 week`, `4 weeks`, `8 weeks`, `13 weeks`, in reference order,
+independent of the operational horizon cap, with decision #80's ordered status matrix and decision
+#77's resolved target grain. Governed thresholds are not hand-copied: they are generated into
+`ui/src/generated/forecastHealthPolicy.ts` by `tools/generate_contract_types.py`, so
+`tools/dev.py contracts` fails when the policy contract and the screen diverge — verified by
+editing a target and watching the check go stale. Three UI tests cover row count, reference labels
+and order, `data-horizon` attributes, absence of a fifth h26 row, absence of cumulative
+`Weeks 1–N` labelling, cap-change independence, and four-state status derivation. `knownDeviation`
+is now `status: resolved`. Live-value and screenshot parity remain unexercised because serving is
+fail-closed under the NO-GO closure; that is recorded as the remaining obligation.
+
+The required PP3-B7 outcome is frozen by decision #80: four exact-horizon rows in reference order
+through h13, independent of the selected operational horizon, using its governed status matrix.
+This preserves horizon deterioration instead of blending it away. h26 remains in diagnostic
+evidence and may appear only in a separately approved drilldown, not as a fifth default reference
+row. `contracts/ml/forecast-health-policy.json` is the cross-language authority for target-grain
+resolution, units, ordered all-condition status evaluation, h26 diagnostic targets and executable
+vectors. The parity contract carries `PP3_B7_REACT_IMPLEMENTATION_PENDING` until React consumes
+that policy.
+
+The original HTML remains layout authority, but its four sample coverage/badge values are
+non-authoritative placeholders superseded by decision #80: its 99.6% and 98.7% coverages exceed
+the accepted interval and would correctly classify as `Action` under the finalized policy.
+The PP3-B7 visual-approval record must state this explicitly so screenshot comparison preserves
+the layout and labels without treating sample badge colors as governed truth.
 
 ### 1.3 What is already source-neutral
 
@@ -239,6 +336,105 @@ hard-coded source-table selection:
 Source-specific names inside an adapter are correct. Source-specific names in shared staging
 assembly, quarantine, crosswalk or consumers are the coupling Track A must remove.
 
+**PP3-A1 correction (2026-07-31).** Two further facts were measured and are now frozen in
+`contracts/staging/role-map.yaml`:
+
+1. The canonical transform is **not** source-neutral today. `transforms/core.py:851` and
+   `:1073` join `location_crosswalk` on the literal predicate `x.source_system = 'companion'`.
+   The list above claimed the transform layer consumed only standardized relation names; that is
+   true of relation names but not of this predicate. Neither join fails closed: the
+   competitor-price join is a LEFT JOIN, so a retailer whose competitor evidence arrives under a
+   different `source_system` silently resolves every location to NULL, and the allocation join is
+   an inner JOIN, so the same mismatch silently drops every allocation row. PP3-A3 must resolve the
+   crosswalk by role and declared provider identity, with a negative fixture whose context evidence
+   arrives under a non-companion `source_system`.
+2. The `dimension_signal` envelope has **no runtime consumer**. No canonical transform, Gate-B
+   check, crosswalk or mapping reads `stage_data.dimension_signal`; all 16 payload kinds already
+   reach transforms through the 15 typed derived relations. §2.3's earlier assessment of it as the
+   largest typing change in PP3-A2 and the hardest PP3-A3 parity case was wrong in the opposite
+   direction: it is dead weight to retire, not an opaque payload to reconcile. Its only references
+   are `ingestion/tests/test_adapters.py` and the six-envelope assertion in
+   `contracts/python/src/retail_contracts/entities.py:337`.
+
+### 1.4.1 PP3-A3 findings — the platform literals were a symptom
+
+Removing the coupling surfaced its root cause, which §1.4 had not identified.
+
+**Nine prohibited joins, not two.** The PP3-A1 scan reported two occurrences of
+`x.source_system = 'companion'`. The real count of hardcoded dialect literals in the prohibited
+trees was **nine**: eight in `transforms/core.py` and one in `quality/gate_b.py`, all joining
+`location_crosswalk` on the literal `'businessCentral'`. My own boundary regex missed them —
+`businessCentral` is camelCase with no underscore, so neither `companion|shopify` nor
+`\bbc_[a-z_]+` matched it. The detector now lists dialect names explicitly, and a scan of every
+prohibited tree returns clean.
+
+**Why the literals existed.** `retail-staging/v1` declares `source_system` a required common field,
+but **8 of 13 Business Central staged relations never emitted it**: `bc_sales_control`,
+`bc_inventory_batches`, `bc_inbound_shipments`, `bc_transfer_orders`, `bc_waste_events`,
+`bc_warehouse_capacity`, `bc_wms_comparisons` and `bc_supplier_performance`. With no column to join
+on, a consumer had no option but to hardcode the dialect name. The coupling was a *symptom of an
+unenforced contract*, so PP3-A3 fixes the cause at the adapter boundary — where dialect knowledge
+is legitimate — rather than papering over it downstream.
+
+**The neutral resolution.** Every crosswalk join now resolves column-to-column on the minting
+authority — `x.source_system = <relation>.source_system` — so no consumer names a dialect and
+onboarding one needs no downstream change. The crosswalk is built from the standardized `location`
+role instead of `stage_data.shopify_locations`, and it carries a descriptive `key_space`
+(`source_native` or `canonical_identity`) recording what each row's key *is*.
+
+**`key_space` is a label, not a predicate — and getting that wrong cost two failed runs.** Two
+earlier attempts filtered joins on it and both broke, because a single relation legitimately carries
+keys from *both* spaces: Business Central rows reference warehouses by their own location code **and**
+by the canonical id. Filtering on key space silently drops resolvable rows. A boundary test now
+asserts `x.key_space =` appears in no join, in either the transforms or the crosswalk builder.
+
+The first attempt also set `canonical_identity` rows to `source_system = '*'`, which broke Gate B's
+own column-to-column joins and took B03 from `positiveSalesOutsideAssortment: 0` to **3,196,131
+positive rows outside assortment** — caught only by diffing the run's `gate-b.json` against the
+accepted baseline's. Crosswalk row identity is therefore left exactly as it was; only the additional
+descriptive column and the consumer predicates changed.
+
+**What fixture tests could not prove.** The ingestion suite passed on fixtures while the real
+pipeline failed immediately at the crosswalk with a binder error, because the fixtures never
+exercised the BC relations missing `source_system`. Contract-level parity for PP3-A3 has to run the
+real snapshot; a green unit suite is not evidence.
+
+#### 1.4.2 PP3-A3 parity evidence — 2026-07-31, exact
+
+The full pipeline ran against the accepted v12 snapshot into a disposable work and publication root.
+Every governed identity is **byte-identical** to the accepted publication, which is stronger than
+§2.2's requirement of equivalence:
+
+| Identity | Accepted | PP3-A3 rerun | |
+|---|---|---|---|
+| Publication semantic fingerprint | `db3784fdcc4cb833…` | `db3784fdcc4cb833…` | identical, and matches `expected-pin.json` |
+| Gate-B semantic fingerprint | `e4bd23a1b4b4e28a…` | `e4bd23a1b4b4e28a…` | identical |
+| Candidate semantic fingerprint | — | — | identical |
+| Staging semantic fingerprint | `b4bcc0e0685b6fb4…` | `b4bcc0e0685b6fb4…` | identical |
+| Gate-B rules | 21 | 21 | 0 outcome or evidence diffs |
+| Capability mask | — | — | identical |
+| Reconciliation | zero difference | zero difference | identical |
+| Entity counts | 36,224,122 rows | 36,224,122 rows | identical |
+| Business and entity controls | — | — | identical |
+
+The accepted publication was never touched: its mtime predates this work and `expected-pin.json`
+still resolves.
+
+**Physical layout legitimately differs.** The rerun published 1,499 objects against the accepted
+1,509 — different year/month partitions and different `data_N` splits — while every semantic
+identity above matches. `contracts/retail_v2/determinism.yaml` sets
+`byteEquality.acceptanceRole: secondary_unless_writer_fully_pinned`, so writer-level file splitting
+is explicitly not part of acceptance unless the writer is fully pinned. This is the contract working
+as designed, and it is worth stating because an object-count comparison alone would read as a
+regression when the canonical content is identical row for row.
+
+**One coverage gap noticed.** Adding `source_system` to ten platform-specific staged relations did
+not change the staging semantic fingerprint. Staging identity therefore covers the standardized
+surface, not the columns of the intermediate `shopify_*`/`bc_*`/`companion_*` relations. That made
+this parity result cleaner, but it also means a future change to a platform relation's columns would
+be invisible to the staging fingerprint. Recorded for PP3-A9 rather than changed here, because
+widening staging identity now would invalidate the accepted pin.
+
 ### 1.5 Authority hierarchy after this plan
 
 This plan is a workbench, not a runtime authority. If documents conflict, use:
@@ -256,7 +452,7 @@ An approved implementation must reconcile higher authorities before code consume
 
 - building production Shopify, Business Central or arbitrary ERP API connectors;
 - choosing a customer’s final cloud file-transfer mechanism;
-- production CDC/upsert/watermark semantics under open decision #26;
+- implementing production CDC/upsert/watermark semantics decided in #26;
 - a general transformation programming language;
 - executing untrusted customer Python as an adapter;
 - moving the immutable lake into PostgreSQL;
@@ -265,6 +461,43 @@ An approved implementation must reconcile higher authorities before code consume
 - promising a universal 90% SeriesKey accuracy;
 - adding CI workflows;
 - auto-activating a candidate or sending operational actions.
+
+### 1.7 Repository and artifact-retention policy
+
+Git contains definitions and compact review authority, not generated data warehouses:
+
+- commit schemas, contracts, policies, migrations, source code, tests and small deterministic
+  golden vectors;
+- keep Parquet datasets, DuckDB files, model binaries, MLflow artifacts and complete immutable
+  source/forecast bundles in the configured local artifact root or object store, outside Git;
+- keep generated report JSON untracked by default;
+- commit a report only when it is a reviewed compact evidence index required for a decision,
+  acceptance/no-go record or reproducibility handoff; place it under `contracts/evidence/` and
+  have it reference external artifacts by immutable URI/logical path, byte count, SHA-256 and
+  semantic fingerprint;
+- never commit raw or transformed retailer data, client extracts, credentials, secrets or
+  unminimized quarantine payloads;
+- superseded evidence is retained in artifact storage and referenced from its replacement. It is
+  not copied forward as another collection of tracked generated files.
+
+Immutability describes the artifact store and lineage contract; it does not require large or
+generated artifacts to be committed to Git.
+
+Current tracked-report disposition for PP3-P0:
+
+| File | Disposition | Reason / prerequisite |
+|---|---|---|
+| `phase3-accepted-publication-db3784fdcc4cb833.json` | Remove from Git | historical verifier-v2 acceptance is false authority and is superseded by the reassessment |
+| `phase3-serving-stack-db3784fdcc4cb833.json` | Remove from Git | describes a disabled verifier-v2 materialization and is superseded |
+| `review2-acceptance-reassessment-db3784fdcc4cb833.json` | Removed 2026-07-31 | superseded by `contracts/evidence/forecast-closure-record.json`, which carries the three-run rejection ledger with its manifest/acceptance hashes and the superseded v15 diagnostic reference forward |
+| `w0-memory-spike-safe-16gb.json` | Remove from Git | self-declared non-authoritative v3 evidence; first redirect the `tools/dev.py` default output to the external artifact root |
+| `w7-profile-invariance-local.json` | Remove from Git | self-declared non-authoritative v3 evidence; v6 rerun belongs in external artifact storage |
+
+Removal from Git does not destroy the immutable artifact-store copy. The replacement compact index
+must link to retained external history by hash.
+
+`ml/reports/` is now empty and ignored. The single reviewed index for the PP3-P0 closure record is
+`contracts/evidence/forecast-closure-record.json`.
 
 ---
 
@@ -306,6 +539,14 @@ retailer extract / immutable snapshot
 
 ### 2.2 Staging v2, not an in-place v1 mutation
 
+**PP3-A2 is implemented.** `contracts/staging/staging-v2.yaml` freezes 35 typed roles at
+`retail-staging/v2` with `status: frozen_not_cut_over`, validated by 19 executable tests in
+`contracts/python/tests/test_staging_v2_contract.py` and by `validate_contract_tree`, which now
+reports `stagingV2Roles` and fails when the catalog and the reviewed role map disagree. Authoring it
+surfaced two defects in my own draft that the tests caught: `merchandise`, `fulfillment` and
+`adjustment` used key columns that were never declared as fields, and `inventory` carried an
+undeclared quantity column.
+
 Introduce a new `retail-staging/v2` contract and preserve v1 until parity is proven. The v2
 contract contains:
 
@@ -332,18 +573,42 @@ v12 publication; publish only disposable candidate evidence during parity.
 
 ### 2.3 Role catalog
 
-The exact schemas are frozen in W2. The initial catalog must cover every standardized relation the
+The exact schemas are frozen in PP3-A2. The initial catalog must cover every standardized relation the
 current canonical transform consumes.
 
 | Group | Initial roles |
 |---|---|
 | Demand transactions | `merchandise`, `adjustment`, `fulfillment` |
-| Core dimensions | `product`, `product_reference`, `location`, `channel`, `assortment`, `sell_price` |
+| Core dimensions | `product`, `product_reference`, `location`, `assortment`, `sell_price` |
 | Inventory/procurement | `inventory`, `receipt`, `supplier_term`, `inventory_cost`, `inventory_batch`, `inbound_shipment`, `transfer_order`, `waste_event`, `warehouse_capacity`, `wms_comparison`, `supplier_performance` |
 | Reconciliation controls | `invoice_sales_control`, `customer_segment_count` |
 | Context | `holiday`, `fx_rate`, `market_disruption`, `customer_segment`, `weather_actual`, `weather_forecast`, `local_event`, `macro_index` |
 | Competition/promotion | `competitor_price`, `competitor_match`, `promotion`, `promotion_target` |
 | Allocation | `allocation_demand`, `allocation_supply` |
+
+The catalog is not permission to move canonical derivation upstream. `channel` is
+`derived_in_transform` from `merchandise.channel_source_key`, exactly as v1 builds
+`canonical_data.channels`; it is not a staging role. `allocation_supply` does have a demo-pin
+provider inside `dimension_signal` (`allocationSupplyPools`) even though no
+typed `stage_data.allocation_supply` relation exists today, so PP3-A2 must type it rather than mark
+it absent. Every proposed role must name at least one v1 provider relation/entity kind or carry an
+explicit `derived_in_transform`, `absent_in_demo_source` or rejected disposition. PP3-A1 records
+both relation→role and role→provider/disposition mappings before PP3-A2 freezes the catalog.
+
+The v1 `dimension_signal` envelope is **retired, not decomposed**. PP3-A1 measured that no
+canonical transform, Gate-B check, crosswalk or mapping reads `stage_data.dimension_signal`; the
+adapter's 16 declared kinds — `allocationDemandRequests`, `allocationSupplyPools`,
+`competitorMatches`, `competitorPrices`, `customerSegments`, `fxRates`, `holidays`,
+`localEvents`, `macroIndex`, `pandemicSignals`, `pandemicTimeline`, `promotionSkus`,
+`promotions`, `storeAssortment`, `weatherActuals` and `weatherForecasts` — already reach
+transforms through the 15 typed derived relations. `contracts/staging/role-map.yaml` binds each
+kind to its role and typed relation. PP3-A2 therefore drops the envelope and updates its only two
+references (`ingestion/tests/test_adapters.py` and the six-envelope assertion in
+`contracts/python/src/retail_contracts/entities.py:337`), and PP3-A3 parity has no opaque payload
+to reconcile. Two kinds have no typed relation yet and must gain one: `allocationSupplyPools`
+(role `allocation_supply`) and `pandemicSignals` (a second `market_disruption` provider that
+decision #67 must resolve explicitly — `exclusive` on `pandemicTimeline` preserves current
+behaviour).
 
 Every role descriptor must state:
 
@@ -407,7 +672,8 @@ source dialect/version—not a retailer brand—unless the source is genuinely r
 It may use shared mapping/normalization helpers. It must emit standardized roles and pass the
 same conformance suite. It may not import canonical transforms, ML, API or UI code.
 
-For the PoC, recommend **static in-repository registration with an explicit adapter manifest**.
+For the PoC, use the decision-#69 **static in-repository registry with an explicit adapter
+manifest**.
 Design the protocol and conformance kit so an externally packaged adapter can be added later, but
 do not enable arbitrary plugin discovery or untrusted code loading without a separate security
 decision.
@@ -479,8 +745,11 @@ selection path/id and fail closed when it is absent, mismatched or under-capable
 Track B uses an evidence ladder:
 
 ```text
-new W0 independently verified accepted version (C0)
-  ← former v12 retained only as rejected historical diagnostic
+new PP3-P0 complete-population decision-#82 verifier result
+  ├─ accepted → accepted comparison authority C0
+  └─ rejected → diagnostic comparison authority D0 only
+       (retained as diagnostic evidence; never accepted/canonical publication, activation or serving authority)
+  ← former v12 and fr_92135aa7b5215b69 remain rejected historical diagnostics, never C0/D0
   → frozen diagnostic baseline
   → registered root-cause hypotheses
   → bounded candidate families
@@ -494,57 +763,385 @@ new W0 independently verified accepted version (C0)
 
 Accuracy remains `100·(1−WAPE)`. WAPE/additive components are the comparison authority.
 Confidence remains a governed transform of actual P50–P90 spread; it is not optimized directly.
+If PP3-P0 closes NO-GO, D0 must still use feature-schema-v6, the decision-#82 comparator/eligibility
+rule, the full fixed schedule, complete governed evaluation rows and independent decision-#82 verifier
+recomputation. Track B candidates compare with D0 for diagnostic improvement, but they must pass
+unchanged A1–A5 before they can become the first accepted C0.
 
 ---
 
-## 3 · Decisions to freeze before implementation
+## 3 · Finalized decisions and implementation bindings
 
-Numbers below are proposed placeholders. Record approved decisions in `docs/OPEN_DECISIONS.md`
-before their consumers start.
+Decisions #65–#80 and #82 are finalized in `docs/OPEN_DECISIONS.md`. Their implementation and
+evidence gates remain open; closing a decision does not waive a consumer gate.
 
-| Proposed # | Decision | Recommended default | Consumer gate |
+| # | Decision | Final policy summary | Consumer gate |
 |---|---|---|---|
-| 65 | Post–Phase 3 scope/order | Track A fully accepted before Track B implementation | W1 |
-| 66 | Staging migration | versioned v2 dual-run; no in-place v1 rewrite | W2 |
-| 67 | Role provider resolution | explicit exclusive/union/cross-validate/fallback | W2 |
-| 68 | Mapped-files language | allowlisted non-Turing-complete operations only | W4 |
-| 69 | Custom-adapter loading | static in-repo registry for PoC; external plugin deferred | W5 |
-| 70 | Temporal evidence/readiness | five evidence grades; business date never proves availability | W6 |
-| 71 | Zero-demand eligibility | completeness + dated assortment + cutoff availability | W6 |
-| 72 | Capability vocabulary | separate readiness and statistical-sufficiency verdicts | W6 |
-| 73 | Retailer pin lifecycle | explicit tenant/capability/environment selection; never latest | W7 |
-| 74 | Candidate-selection protocol | pre-registered families; development vs confirmation origins | W10 |
-| 75 | Improvement materiality | paired WAPE/bootstrap rule plus per-market non-regression | W10 |
-| 76 | Quality policy v2 | separate publication/global limitations from row-local quality | W15 |
-| 77 | Business target matrix | metric/grain/horizon-specific; no universal 90% assumption | W16 |
-| 78 | Presentation policy | lead with contextual evidence; preserve weak slices and exact grain | W16 |
-| 79 | Provenance vocabulary | source-neutral evidence/derivation classes; source identity stays separate | W2 |
-| 80 | Forecast Health horizon semantics | four fixed h1/h4/h8/h13 rows; freeze exact/cumulative formula and status matrix; amend #64/Q6 | W16 |
+| 65 | Post–Phase 3 scope/order | Track A fully accepted before Track B implementation | PP3-A1 |
+| 66 | Staging migration | versioned v2 dual-run; no in-place v1 rewrite | PP3-A2 |
+| 67 | Role provider resolution | explicit exclusive/union/cross-validate/fallback | PP3-A2 |
+| 68 | Mapped-files language | allowlisted non-Turing-complete operations only | PP3-A4 |
+| 69 | Custom-adapter loading | static in-repo registry for PoC; external plugin deferred | PP3-A5 |
+| 70 | Temporal evidence/readiness | five evidence grades; business date never proves availability | PP3-A6 |
+| 71 | Zero-demand eligibility | completeness + dated assortment + cutoff availability | PP3-A6 |
+| 72 | Capability vocabulary | separate readiness and statistical-sufficiency verdicts | PP3-A6 |
+| 73 | Retailer pin lifecycle | explicit tenant/capability/environment selection; never latest | PP3-A7 |
+| 74 | Candidate-selection protocol | first 8 origins development; ≤20 configurations; freeze one candidate before reading final 5 confirmation origins | PP3-B1 |
+| 75 | Improvement materiality | all-13 and final-5 must each pass ≥5% relative WAPE, clustered 95% upper bound <0, market regression ≤1% and identical keys | PP3-B1 |
+| 76 | Quality policy v2 | separate publication/global limitations from row-local quality | PP3-B6 |
+| 77 | Business target matrix | `retail-forecast-health/v1` market/store/SeriesKey targets for h1/h4/h8/h13/h26; bias ≤5%; coverage 0.85–0.95 | PP3-B7 |
+| 78 | Presentation policy | lead with contextual evidence; preserve weak slices and exact grain | PP3-B7 |
+| 79 | Provenance vocabulary | source-neutral evidence/derivation classes; source identity stays separate | PP3-A2 |
+| 80 | Forecast Health horizon semantics | `retail-forecast-health/v1`: four exact h1/h4/h8/h13 rows with resolved target grain and ordered target-relative Strong/Healthy/Watch/Action evaluation | PP3-B7 |
+| 82 | Short-history A1 eligibility | Established lag-52 cohort plus complete available-history-mean cold-start cohort; zero-history is insufficient | PP3-P0 |
 
-### 3.1 Decisions that must remain unchanged
+### 3.1 Final decision #82
+
+Use the spec-amendment branch, not a synthetic “seasonal” value where lag-52 evidence does not
+exist:
+
+1. Define established-history A1 eligibility per
+   `forecast_origin × horizon × SeriesKey` using only origin-visible history availability. A row
+   enters established A1 only when its lag-52 seasonal-naive input is available; every such
+   champion/actual/baseline key must pair 100%, and the unchanged ≥25% gate applies globally and
+   per supported market.
+2. Keep every remaining champion row in a separately published cold-start cohort. Its comparator
+   is the arithmetic mean of the last `min(13, history_weeks)` complete origin-visible weekly
+   actuals. Require at least one prior week; a zero-history row is `insufficient_evidence` and
+   leaves the version unaccepted. Cold-start champion WAPE must be no worse than this comparator
+   globally and in every supported market with 100% champion/actual/comparator key completeness.
+3. Publish cohort membership reason codes, row/actual shares, SeriesKey counts, canonical key
+   hashes and full/paired/dropped metrics. A row may not disappear from both cohorts. A3 remains
+   a seasonal-naive gate over established-history slow movers under decision #52; cold-start slow
+   movers remain in the cold-start A1 cohort and never receive a synthetic seasonal value.
+4. Amend spec §4.3 and publish immutable acceptance-v3/verifier-v4 plus migration 0006. Migration
+   0006 is v4-only: verifier-v3 and all older materializations remain ineligible for new
+   activation. Do not mutate acceptance-v2/verifier-v3 or migration 0005. Decision #81 remains the
+   completeness rule inside each declared cohort.
+
+On the rejected v15 bundle, this policy would move 102,804 of 708,708 rows (14.51% of rows,
+22.49% of actual units, 402 distinct SeriesKeys) from established seasonal comparison into the
+cold-start cohort. The established paired subset's 53.47% point estimate suggests A1 could pass
+there, but that is not acceptance evidence and cannot set the policy. The cold-start cohort has
+40.03% champion WAPE and must pass its own predeclared gate; it cannot borrow the established
+cohort's result. Remeasure every figure on v6.
+
+A direct v15 preflight shows that NO-GO is a credible outcome, not an exceptional fallback.
+Using the bundle's MA13 baseline only as a proxy for decision #82's exact short-history mean, the
+cold-start champion passes globally (40.03% versus 40.88% WAPE) and in India (43.94% versus
+46.67%) but fails in US New York (37.13% versus 36.60%, a −1.44% relative result). It also loses
+to MA8 there (36.63%) and only narrowly beats naive (37.39%). This is not acceptance evidence:
+the bundle predates feature-v6, and MA13 can differ from
+`mean(last min(13, history_weeks) complete origin-visible weeks)` for very short histories.
+PP3-P0 task 8 must cheaply recompute the exact comparator before the full backtest, preserve #82
+unchanged, and treat a confirmed supported-market failure as NO-GO. Register the deficit as a
+PP3-B3 lifecycle/cold-start hypothesis feeding PP3-B5; never tune the comparator or threshold
+from this result.
+
+On v15 the cold-start membership happens to be horizon-invariant: 3,954
+`forecast_origin × SeriesKey` pairs produce 3,954 rows at each of 26 horizons. A compact pair-key
+hash may supplement the evidence for this historical diagnostic only after that invariance is
+proved. Acceptance-v3 still publishes the canonical
+`forecast_origin × horizon × SeriesKey` row-key hash because a future cohort must not assume
+horizon invariance.
+
+#### 3.1.1 Exact-comparator preflight result — 2026-07-31
+
+The PP3-P0 preflight is complete. The comparator was recomputed exactly from
+feature-schema-v6 (`f3ff8725d36d78ff…`) as the mean of the last `min(13, N)` complete
+(`exposure_days = 7`) origin-visible weeks strictly before each origin, then joined to the v15
+champion predictions. This is diagnostic evidence: the champion columns still predate v6, so the
+figures below must be replaced by the v6 rerun.
+
+| Cohort | Scope | Rows | Champion WAPE | Comparator WAPE | Margin | Verdict |
+|---|---|---|---|---|---|---|
+| established | global | 605,904 | 0.2475 | 0.5318 | +53.47% | pass |
+| established | india-west | 294,368 | 0.2348 | 0.5166 | +54.54% | pass |
+| established | us-new-york | 311,536 | 0.2658 | 0.5538 | +52.00% | pass |
+| cold-start | global | 100,984 | 0.3984 | 0.4030 | +1.13% | pass |
+| cold-start | india-west | 46,592 | 0.4380 | 0.4629 | +5.38% | pass |
+| **cold-start** | **us-new-york** | **54,392** | **0.3692** | **0.3586** | **−2.93%** | **fail** |
+
+The exact comparator makes the US New York deficit worse than the MA13 proxy (−1.44% → −2.93%),
+so the supported-market cold-start leg fails and **PP3-P0 is expected to close explicit NO-GO**.
+Decision #82 is not retuned. The deficit is registered as the first PP3-B3 lifecycle/cold-start
+hypothesis.
+
+Two independent blockers exist, and only the first is a model-quality problem:
+
+1. the US New York cold-start non-inferiority failure above;
+2. 54 `forecast_origin × SeriesKey` pairs (1,404 rows) have **no complete** prior week, so they
+   receive no comparator and force `insufficient_evidence`.
+
+Measured composition of the second blocker: every one of those 54 pairs has exactly **one partial
+prior week**, and **no pair has zero prior weeks at all**. They are mid-week launches, not
+genuinely unobserved series. As written, decision #82's "complete origin-visible weeks" therefore
+makes acceptance structurally unreachable for any rolling-origin panel that contains a series'
+launch week — which this ten-year panel always will.
+
+That is a specification defect, not a threshold to tune, and it is **not** resolved here. The
+implementation follows #82 exactly and reports `insufficient_evidence`. A follow-up pre-result
+decision (proposed **#83**) must choose between:
+
+- admitting the exposure-normalised `weekly_units_equivalent` of a partial week when no complete
+  week exists — the feature contract already computes it for exactly this purpose; or
+- declaring launch-week rows evaluation-ineligible with a published reason code, count and share
+  cap, so they neither score nor block acceptance.
+
+Either option must be frozen before the numbers are read again. Fixing it after seeing a result
+would be threshold tuning under invariant 2.
+
+**The two blockers are sequenced, not parallel.** Acceptance-v3 was dry-run over the full 708,708-row
+v15 population with the exact comparator. The cohort partition is total (0 unassigned), the
+established leg passes everywhere with complete pairing (53.47% global, 54.54% India, 52.00% US),
+and A2/A3/A4 all pass — but every scope returns `A1_cold_start: insufficient_evidence`, because
+completeness is evaluated before the comparison. The 1,820 launch-week rows therefore **mask** the
+US New York non-inferiority failure: the gate never reaches the `fail` verdict that the −2.93%
+deficit would produce. Decision #83 must be resolved before the model-quality deficit is even
+observable through the gate, and resolving #83 will not by itself produce an acceptance.
+
+| Scope | Established | Cold-start | A2 | A3 | A4 | Scope |
+|---|---|---|---|---|---|---|
+| global | pass, +53.47% | insufficient_evidence (1,820 rows) | pass | pass | pass | fail |
+| india-west | pass, +54.54% | insufficient_evidence (884 rows) | pass | pass | pass | fail |
+| us-new-york | pass, +52.00% | insufficient_evidence (936 rows) | pass | pass | pass | fail |
+
+A5 fails with both supported markets listed.
+
+#### 3.1.2 Implemented artifact versions
+
+| Contract | Before | After | Reason |
+|---|---|---|---|
+| acceptance | `retail-forecast-acceptance/v2` | `retail-forecast-acceptance/v3` | cohorted gates |
+| evaluation recomputation | `paired-seasonal-complete-recomputation/v3` | `cohorted-seasonal-cold-start-recomputation/v4` | cohort partition |
+| verifier | `retail-forecast-verifier/v3` | `retail-forecast-verifier/v4` | recomputes both cohorts |
+| run bundle | `retail-forecast-run/v2` | `retail-forecast-run/v3` | envelope now carries a fifth baseline and cohorted acceptance |
+| serving migration | `0005` | `0006_cohorted_verifier_v4` | v4-only active view; applied and asserted as head |
+
+The run-bundle bump is required by invariant 11: the envelope's meaning changed materially. No
+bundle was ever published under `retail-forecast-run/v2` — all three superseded bundles are
+schema v1 — so nothing accepted is invalidated and v2 is not mutated. `A1` is replaced in the
+acceptance document by `A1_established` and `A1_cold_start`; A2–A5 are unchanged.
+
+#### 3.1.3 Completed v6 cohorted backtest — 2026-07-31, NO-GO
+
+The full pinned-data rerun is complete and **rejected**: `accepted: false`. Feature-schema-v6
+`f3ff8725d36d78ff…`, 13 scoring origins, 26 horizons, 708,708 evaluation rows, 65,021,190 training
+rows, full schedule, `performance` profile, 2,074 s wall clock. Artifacts live outside Git at
+`ml/data/artifacts/forecast_h1_h26_origins13_v6_cohort82/`.
+
+| Scope | Established A1 | Cold-start A1 | A2 coverage | A3 | A4 | Scope |
+|---|---|---|---|---|---|---|
+| global | pass, +53.4808% | `insufficient_evidence`; 0.398545 vs 0.402994 (+1.10%), 1,820 rows without comparator | pass, 0.8887 | pass | pass | **fail** |
+| india-west | pass, +54.5534% | `insufficient_evidence`; 0.437596 vs 0.462916 (+5.47%), 884 rows | pass, 0.8925 | pass | pass | **fail** |
+| us-new-york | pass, +52.0268% | `insufficient_evidence`; 0.369632 vs 0.358627 (**−3.07%**), 936 rows | pass, 0.8851 | pass | pass | **fail** |
+
+A5 fails with both supported markets listed. Cohort reason codes:
+`LAG52_UNAVAILABLE_SHORT_HISTORY` 100,984 and `COLD_START_NO_PRIOR_COMPLETE_WEEK` 1,820; zero rows
+unassigned in every scope. Global champion accuracy is 71.8202% with −6.717% bias, essentially
+unchanged from the superseded runs — v6 repaired feature *availability semantics*, not accuracy.
+
+The preflight was accurate: predicted −2.93% for the US cold-start leg, measured −3.07%. Both
+blockers reproduced on real v6 evidence, so **Phase 3 closes explicit NO-GO** and this run is
+eligible only as diagnostic authority D0 under §2.9. Neither #82 nor any threshold was changed
+after seeing this result.
+
+#### 3.1.4 Published rejected candidate and governed NO-GO gate
+
+| Item | Value |
+|---|---|
+| Forecast run id | `fr_2f4c50d1d7717b23` |
+| Lifecycle status | `rejected` |
+| Run semantic fingerprint | `22e9e91d0018c1b7d1854a5935d573229338d5bdbcefab8bce6ce34aebfa6c4a` |
+| Bundle schema | `retail-forecast-run/v3` |
+| Acceptance evaluation | `cohorted-seasonal-cold-start-recomputation/v4` |
+| Artifacts | 10; 3,543,540 baseline rows across five baselines |
+| Independently verified | yes — verifier-v4 recomputed A1–A5 from bundle contents and matched |
+| Reviewed compact index | `contracts/evidence/forecast-closure-record.json` |
+
+Baseline null counts prove the cohort boundary from the bundle alone: `seasonal_naive` is non-null
+on 605,904 of 708,708 rows and `cold_start_mean` on 706,888, leaving exactly the 102,804 cold-start
+rows and the 1,820 launch-week rows.
+
+`tools/dev.py verify` gained a governed NO-GO mode. Discovery now keys on the manifest rather than
+the `forecast_run_accepted_*` directory glob — three superseded bundles still carry that prefix
+with a rejected verdict, so a name-based glob would resurrect them. When no accepted candidate
+carries the v4 evaluation version, the gate runs against the rejected candidate and asserts that
+materialization refuses it, `active_forecast_versions` is empty and no materialization row exists.
+Without this the plan's NO-GO branch was unreachable: the gate previously raised outright when no
+accepted run existed, so the branch §0.3.1 requires could never produce its evidence.
+
+The Go read model needed the same treatment. `TestForecastPostgresProjectionIntegration` discovered
+an active version and failed hard when the view was empty, which is precisely the NO-GO state. It
+now skips on that branch, and a new `TestForecastServesGovernedUnavailableOnNoGo` asserts the
+positive evidence instead: the active view is empty, the store reports unavailable, the reason maps
+to 503 rather than 409 — a 409 would wrongly imply an activated version exists — and the payload
+exposes no run id or fingerprint.
+
+The gate then passed end to end in that mode on 2026-07-31 (macOS 26.5, Darwin arm64, 16 logical
+CPUs): contracts valid with generated types current, migration `0006_cohorted_verifier_v4` applied,
+import boundaries clean across 86 files, execution 12, contract tests 90, datagen 52, ingestion 77,
+database 1, ML 79 with 1 skipped, uncached Go race tests green across all packages, and UI tests,
+typecheck and production build green. Both fail-closed tests executed rather than skipped. Windows
+and Linux evidence remains open under decision #61.
+
+#### 3.1.5 PP3-B2 D0 baseline findings — 2026-07-31
+
+D0 is frozen from the rejected v6 run `fr_2f4c50d1d7717b23`, fingerprint
+`15db972bfb076b79…`, at `ml/data/artifacts/diagnostics/d0-baseline.json`. It authorizes nothing.
+Three facts in it shape Track B:
+
+**Horizon deterioration is a bias gradient, not noise.** Accuracy falls 78.27% → 75.54% → 72.83% →
+70.77% → 69.52% across h1/h4/h8/h13/h26 while bias worsens monotonically from −0.24% to −9.11%. The
+champion is close to unbiased at h1 and badly under-forecasting by h26, which makes market × horizon
+bias correction (candidate C1) the best-supported first remedy.
+
+**Cold-start is 61.9% worse than established history** — 0.4004 WAPE against 0.2474. Combined with
+§3.1.1's finding that the champion has no skill over a trailing mean there, this is a distinct
+failure mode from the horizon gradient and needs its own candidate (C6), not a shared fix.
+
+**The confirmation origins are systematically easier, by 3.03 accuracy points** — 73.68% against
+70.66% on development. That direction matters: a candidate tuned on the first 8 origins and read on
+the final 5 will look *better* than it is, so a confirmation-only improvement is not evidence.
+Decision #75 already requires both all-13 and final-5 to pass independently, which is what makes
+this survivable, but the asymmetry must be stated wherever a confirmation number is quoted.
+Recorded here rather than changing #74, because re-splitting the origins after measuring this would
+be selection on the outcome.
+
+#### 3.1.6 PP3-B3 root-cause ranking — 2026-07-31, and a correction
+
+`ml/data/artifacts/diagnostics/root-cause-report.json`, fingerprint `84de4ad12e064d5b…`, ranks the
+ten registered hypotheses against D0. The ranking rule is deliberate: **share of total absolute
+error, not WAPE.**
+
+That rule overturned my own first reading of the same data. By WAPE the intermittent routes look
+like the dominant problem — `lightgbm_intermittent_fallback` at 0.8622 and
+`croston_sba_replay_selected` at 1.3462, against 0.2801 for the main route, with −34.5% bias on the
+fallback. Ranking by error mass says the opposite:
+
+| Route | Rows | Row share | Absolute error | Error share |
+|---|---|---|---|---|
+| `lightgbm_horizon_quantile` | 642,664 | 90.68% | 5,477,027 | **99.09%** |
+| `lightgbm_intermittent_fallback` | 61,857 | 8.73% | 48,036 | 0.87% |
+| `croston_sba_replay_selected` | 4,187 | 0.59% | 2,169 | 0.04% |
+
+The intermittent routes carry 9.32% of rows and **0.91% of the recoverable error**, because their
+volumes are tiny. Fixing them perfectly could improve global WAPE by at most ~0.9% relative — far
+under decision #75's 5% floor. H3 and H8 are therefore **rejected as immaterial**, not left as
+plausible stories. They remain a presentation concern for weak-slice display, not a route to
+acceptance.
+
+Supported causes, by addressable error share: **H7** feature fallback at longer horizons (95.7%),
+**H2** category composition (88.6%), **H1** market × horizon under-bias (46.9%), **H4**
+lifecycle/cold-start (32.0%). H5, H6, H9 and H10 are labelled `not_testable_from_this_artifact` —
+they need controlled ablations, and calling them supported from a slice would be exactly the
+correlation-as-causation error the plan forbids.
+
+**A global bias correction would be actively harmful.** Of 41 categories, 26 are under-biased, 10
+are over-biased and 5 near-neutral, with extremes from `apparel-outerwear` at −22.5% to
+`toys-building` at +7.7%. Candidate C1 must therefore be segmented and shrunk to a sufficient
+parent, never applied as one global shift. The bias-sign split is published so this cannot be
+overlooked.
+
+#### 3.1.7 PP3-B4 candidate results — 2026-07-31, all three rejected
+
+C1, C2 and C1+C2 were fitted on the 8 development origins and scored against D0 under decision #75.
+Evidence at `ml/data/artifacts/diagnostics/b4-candidates.json`.
+
+| Candidate | all-13 rel WAPE | final-5 | P90 coverage | Verdict |
+|---|---|---|---|---|
+| C1 P50 bias correction | **−0.964%** | −0.821% | 0.8898 | **reject** |
+| C2 P90 calibration | +0.000% | +0.000% | 0.8563 | **reject** |
+| C1+C2 | −0.964% | −0.821% | 0.8588 | **reject** |
+
+C1 also breaches the per-market tolerance: india-west −1.136% against a −1.0% floor.
+
+**Bias and WAPE are in tension, and this is the important finding.** C1 works exactly as intended —
+global bias moves from **−6.72% to +0.62%**, essentially eliminated — yet WAPE *worsens* by 0.96%.
+That is not a bug. P50 is a median forecast and WAPE is a median-optimal loss, so on a right-skewed
+demand distribution scaling a near-median predictor upward to zero the *mean* bias necessarily adds
+absolute error. The −6.72% under-bias in §3.1.3 is therefore **not recoverable accuracy**; treating
+it as a free win would have been the mistake. §3.1.6's H1 remains a real cause of the bias, but the
+remedy costs accuracy under the current loss, so any future C1 variant has to target conditional
+quantiles rather than rescale the mean.
+
+**Decision #75 structurally cannot accept a calibration-only candidate.** C2 sharpens intervals by
+14% — median P90−P50 gap 4.420 → 3.790 — while coverage stays at 0.8563, inside the governed
+0.85–0.95 band. That is a genuine improvement in uncertainty quality. But #75's materiality gate is
+expressed purely as relative WAPE, and C2 does not touch P50, so it scores exactly +0.000% and
+fails. The gate is blind to sharpness by construction.
+
+That is a gap in #75, not a defect in C2, and it is **not** fixed here: adding a sharpness criterion
+after seeing C2's result would be tuning a threshold to admit a candidate, which invariant 2 and
+#75's own text forbid. It is recorded as a pre-result amendment for review — a companion criterion
+such as "coverage stays in band and median relative interval width falls by at least X%" must be
+frozen *before* C2 is re-scored. Note also that C2 leaves coverage at 0.8563, only 0.0063 above the
+floor, so the available sharpening headroom is nearly exhausted.
+
+The gate is satisfiable: a synthetic 60%-error-reduction candidate passes both populations, the
+clustered interval and the market tolerance, so these rejections reflect the candidates rather than
+an unpassable gate.
+
+#### 3.1.8 Decision #83 decided and measured — 2026-07-31
+
+Frozen as option (a) plus an explicit residue class, then measured. **It did not change the failing
+verdict, which is the point.**
+
+| Measure | Before #83 | After #83 |
+|---|---|---|
+| US New York cold-start margin | −3.07% **fail** | −2.40% **fail** |
+| Rows with no comparator | 1,820 (70 SeriesKeys) | 416 (16 SeriesKeys) |
+| Residue share of panel | 0.257% | **0.0587%** |
+
+Partial launch weeks are admitted at exposure-normalised `weekly_units_equivalent`, which recovered
+1,404 of the 1,820 rows. The remaining 416 have no prior observation of any kind at their first
+origin: there is no defensible comparator and no skill claim is possible either, so they are
+`evaluation_ineligible` with reason code `NO_PRIOR_OBSERVATION_AT_FIRST_ORIGIN`, counted, and capped
+at 1% of rows. The cap is set from principle rather than from the measurement — above 1% the residue
+would indicate a systemic evidence problem and must fail closed — and the measured 0.0587% sits two
+orders of magnitude below it.
+
+I initially rejected the ineligible class as violating "a row may not disappear from both cohorts".
+On re-reading, that invariant forbids a *silent* disappearance; an explicitly reason-coded, counted,
+capped class is not one. The correction is recorded rather than hidden.
+
+**This is not tuning to pass.** The US New York deficit was measured before the decision and still
+fails after it. #83 removes an unsatisfiability defect; it does not make the run acceptable, and the
+direction scorecard still reports Phase 3 blocked.
+
+### 3.2 Decisions that must remain unchanged
 
 Do not reopen #10–#13, #16, #20, #29, #35, #38, #41, #46 or #49–#63 merely because this
-workstream exists. Decision #64/Q6 is changed only through the explicitly proposed #80 amendment;
+workstream exists. Decision #64/Q6 is changed only through decided #80;
 all other #64 parity decisions remain frozen. If evidence proves another decision is unsound,
 stop and propose a separately versioned decision amendment with affected artifacts and replay
 scope.
 
-### 3.2 Required formulas for decision #75
-
-Freeze the exact comparison before candidates are scored:
+### 3.3 Final formulas for decision #75
 
 - `candidate_wape = SUM(candidate_abs_error_sum) / SUM(actual_sum)`;
-- `active_wape = SUM(active_abs_error_sum) / SUM(actual_sum)`;
+- `authority_wape = SUM(authority_abs_error_sum) / SUM(actual_sum)`, where authority is the
+  frozen repaired C0 or diagnostic-only D0;
 - paired keys include input publication, origin, horizon and SeriesKey;
-- `delta_wape = candidate_wape − active_wape`; lower is better;
-- use a seeded SeriesKey-clustered bootstrap interval over paired contributions;
-- require a pre-declared material global improvement and no material supported-market regression;
+- `delta_wape = candidate_wape − authority_wape`; lower is better;
+- `relative_improvement = (authority_wape − candidate_wape) / authority_wape` must be at least
+  `0.05`;
+- use 10,000 SeriesKey-clustered bootstrap replicates with seed `20260731`; the 95% interval's
+  upper bound for `delta_wape` must be `< 0`;
+- for every supported market, `candidate_wape / authority_wape − 1 <= 0.01`;
 - report market, store, category, channel, lifecycle/intermittency and h1/4/8/13/26 slices;
 - do not accept Simpson’s-paradox improvement hidden by a changed row population;
 - treat a zero `actual_sum` slice as `insufficient_evidence`.
 
-The numeric materiality and non-regression tolerances must be chosen from operational relevance
-before candidate results are visible. They cannot be tuned after scoring.
+Compute and publish the complete materiality battery twice: once over all 13 scoring origins and
+once over the final 5 untouched confirmation origins. Candidate-family/configuration selection
+uses only the first 8 origins, and exactly one frozen candidate advances before the final 5 are
+read. The ≥5% relative improvement, clustered upper-bound `<0`, identical-key and ≤1%
+supported-market-regression requirements must pass in both windows. A1–A5 continues to run over
+the fixed all-13 acceptance schedule; the confirmation result is an additional improvement gate,
+not a replacement acceptance population.
+
+These values are frozen before PP3-B candidate scoring and cannot be tuned afterward.
 
 ---
 
@@ -589,33 +1186,61 @@ before candidate results are visible. They cannot be tuned after scoring.
 
 | Deferred task | Plan coverage |
 |---|---|
-| Retailer retrospective go/no-go | W0 |
-| Inventory/remove platform coupling | W1, W3 |
-| Freeze standardized staging roles | W2 |
-| Neutral quarantine/quality validation | W3 |
-| Mapped-files default adapter | W4 |
-| Versioned custom-retailer adapter path | W5 |
-| Registration/packaging/conformance | W5 |
-| Temporal-evidence policy/readiness report | W6 |
-| Zero-demand eligibility | W6 |
-| Capability-specific onboarding outcomes | W6 |
-| Per-retailer/per-tenant publication pinning | W7 |
-| Mapped and custom adapter fixtures | W4, W5, W8 |
-| Separate statistical sufficiency | W6, W8 |
-| Client-shaped unchanged-downstream round trip | W8 |
-| Architecture/spec/guide reconciliation | W9 |
-| Frozen forecast diagnostic baseline | W10, W11 |
-| Under-forecast root-cause diagnosis | W12 |
-| Market × horizon bias/calibration | W13 |
-| Segmented champion candidates | W14 |
-| Hierarchical reconciliation | W14 |
-| Coverage-constrained interval sharpness | W13 |
-| Optional origin-safe retailer signals | W15 |
-| Quality policy v2 | W15 |
-| Business metric/grain/horizon target matrix | W16 |
-| Forecast Health fixed four-row parity and metric/status semantics | W16 |
-| Demand Forecast presentation update | W16 |
-| Full A1–A5 and immutable publication acceptance | W17 |
+| Retailer retrospective go/no-go | PP3-P0 |
+| Inventory/remove platform coupling | PP3-A1, PP3-A3 |
+| Freeze standardized staging roles | PP3-A2 |
+| Neutral quarantine/quality validation | PP3-A3 |
+| Mapped-files default adapter | PP3-A4 |
+| Versioned custom-retailer adapter path | PP3-A5 |
+| Registration/packaging/conformance | PP3-A5 |
+| Temporal-evidence policy/readiness report | PP3-A6 |
+| Zero-demand eligibility | PP3-A6 |
+| Capability-specific onboarding outcomes | PP3-A6 |
+| Per-retailer/per-tenant publication pinning | PP3-A7 |
+| Mapped and custom adapter fixtures | PP3-A4, PP3-A5, PP3-A8 |
+| Separate statistical sufficiency | PP3-A6, PP3-A8 |
+| Client-shaped unchanged-downstream round trip | PP3-A8 |
+| Architecture/spec/guide reconciliation | PP3-A9 |
+| Frozen forecast diagnostic baseline | PP3-B1, PP3-B2 |
+| Under-forecast root-cause diagnosis | PP3-B3 |
+| Market × horizon bias/calibration | PP3-B4 |
+| Segmented champion candidates | PP3-B5 |
+| Hierarchical reconciliation | PP3-B5 |
+| Coverage-constrained interval sharpness | PP3-B4 |
+| Optional origin-safe retailer signals | PP3-B6 |
+| Quality policy v2 | PP3-B6 |
+| Business metric/grain/horizon target matrix | PP3-B7 |
+| Forecast Health fixed four-row parity and metric/status semantics | PP3-B7 |
+| Demand Forecast presentation update | PP3-B7 |
+| Full A1–A5 and immutable publication acceptance | PP3-B8 |
+
+### 4.4 Relative size bands for staged approval
+
+These are scope bands, not calendar commitments: **S** is a narrow decision/contract package;
+**M** crosses several files in one subsystem; **L** crosses contracts, implementation and
+full-data evidence; **XL** changes multiple subsystems and requires staged parity/round-trip
+review.
+
+| Package | Band | Principal cost driver |
+|---|---|---|
+| PP3-P0 | XL | acceptance-v3/verifier-v4, migration 0006, first v6/run-v2 end-to-end rerun, portability/performance, serving/UI evidence and phase exit |
+| PP3-A1 | M | roughly 70 staging/consumer relations, reverse mapping and `dimension_signal` inventory |
+| PP3-A2 | L | 35 typed roles plus provider/provenance contracts and vectors (**done**: `contracts/staging/staging-v2.yaml`, 19 tests) |
+| PP3-A3 | XL | neutral assembly, quality relocation and full v1/v2 parity |
+| PP3-A4 | L | declarative mapping language, four readers and conformance fixtures |
+| PP3-A5 | M | bounded adapter protocol, registry and negative conformance |
+| PP3-A6 | L | temporal/zero-demand policies and capability evaluator |
+| PP3-A7 | M | tenant selection lifecycle and lineage binding |
+| PP3-A8 | XL | two client-shaped full round trips plus negative fixtures and portability |
+| PP3-A9 | S | review, cutover decision and documentation reconciliation |
+| PP3-B1 | S | protocol/decision freeze |
+| PP3-B2 | M | reproducible multi-slice baseline |
+| PP3-B3 | M | registered diagnostics and ablations |
+| PP3-B4 | L | bias/quantile candidates with held-out evidence |
+| PP3-B5 | XL | segmented champions plus hierarchical reconciliation |
+| PP3-B6 | L | optional signals and quality-policy v2 |
+| PP3-B7 | M | target/status matrix, parity amendment and responsive UI |
+| PP3-B8 | L | full acceptance, materialization, activation/no-go and final review |
 
 ---
 
@@ -625,6 +1250,9 @@ Names are targets, not authorization to create them.
 
 ```text
 contracts/
+  evidence/
+    phase3-exit.schema.json
+    post-phase3-comparison.schema.json
   staging/
     staging-v2.yaml
     role-contract.schema.json
@@ -636,6 +1264,7 @@ contracts/
     publication-selection.schema.json
     temporal-evidence-policy.json
   ml/
+    forecast-health-policy.json         # existing decision-#77/#80 authority
     forecast-improvement-policy.json
     forecast-classification-policy-v2.json
   screens/
@@ -651,6 +1280,7 @@ ingestion/
     staging/
       roles.py
       binding.py
+    quality/
       validation.py
       quarantine.py
     readiness/
@@ -658,10 +1288,10 @@ ingestion/
       temporal.py
       capabilities.py
       selection.py
-  profiles/
-    fixtures/
-      mapped-retailer.yaml
-      custom-retailer.yaml
+    profiles/
+      fixtures/
+        mapped-retailer.yaml
+        custom-retailer.yaml
   tests/
     fixtures/retailers/
     test_role_contract.py
@@ -682,8 +1312,6 @@ ml/
       candidate_registry.py
     policies/
       quality_v2.py
-  reports/
-    post-phase3/
   tests/
     test_diagnostic_baseline.py
     test_candidate_comparison.py
@@ -691,14 +1319,17 @@ ml/
     test_quality_policy_v2.py
 ```
 
-Do not create retailer-specific modules outside `ingestion/adapters/` or test fixtures. Tenant
-instance selections and credentials are runtime configuration, not committed contracts.
+Do not create retailer-specific modules outside
+`ingestion/src/retail_ingestion/adapters/` or test fixtures. Tenant
+instance selections and credentials are runtime configuration, not committed contracts. Generated
+reports and immutable bundles follow §1.7 and are not placed under a tracked `ml/reports/`
+directory by default.
 
 ---
 
 ## 6 · Track A work packages — retailer-source onboarding hardening
 
-### W0 · Close Phase 3 and authorize the workstream
+### PP3-P0 · Close Phase 3 and authorize the workstream
 
 **Purpose:** repair the confirmed Phase 3 semantic defects, replace invalid evidence and prevent
 deferred hardening from silently becoming a Phase 3 amendment.
@@ -719,24 +1350,36 @@ Tasks:
    verifier-v2 or legacy-unverified materialization from the active view.
 7. Fix clean-database idempotency tests and make `tools/dev.py verify` exercise datagen,
    PostgreSQL, Go and UI rather than accepting skips.
-8. Regenerate characterization, 13-origin H1–H26 backtest, current-cycle classifications and a
-   new immutable forecast-run bundle. Never edit/re-sign the former v12 bundle.
+8. Implement decided #82 as acceptance-v3/verifier-v4 and v4-only migration 0006, then regenerate
+   the exact cold-start comparator as a cheap preflight. Record the v15 MA13-proxy US-market
+   deficit without changing #82; if the exact v6 preflight fails, plan the honest NO-GO path and
+   still produce complete evidence. Then regenerate characterization, the 13-origin H1–H26
+   backtest, current-cycle
+   classifications and a new immutable forecast-run bundle. Never edit/re-sign the former v12
+   bundle or the acceptance-v2/verifier-v3 authority.
 9. Publish/activate only if the repaired verifier concludes accepted; otherwise retain an honest
    rejected candidate and keep the API fail-closed.
-10. Replace superseded v11/v12 tracked reports with same-pin evidence, then pass the full stateful
-   local gate.
+10. Apply §1.7: verify and carry the reassessment's interim external rejection/supersession ledger
+    for all three v1 bundles into the schema-governed PP3-P0 acceptance/no-go index, preserve their
+    original bytes, keep full/superseded artifacts outside Git, remove obsolete tracked generated
+    evidence and commit at most one reviewed compact index for the new run. Write that index to
+    `contracts/evidence/` — `ml/reports/` is now ignored — and retire the interim
+    `ml/reports/review2-acceptance-reassessment-db3784fdcc4cb833.json` in the same change by
+    relocating its still-current ledger content into the new index. Then pass the full
+    stateful local gate.
 11. Record manual Windows and Linux portability evidence.
 12. Record the full pinned-data 16-GB/high-performance benchmark comparison.
-13. Obtain explicit Demand Forecast visual approval.
+13. Obtain explicit Demand Forecast visual approval using the accepted-live or
+    governed-unavailable wording in §0.3.1.
 14. Hold the Phase 3 retrospective.
 15. Record go/no-go, scope, supported initial formats and whether custom adapter code is in scope.
-16. Approve only W1–W3 first; later work remains gated.
+16. Approve only PP3-A1–PP3-A3 first; later work remains gated.
 
 **Exit:** a newly derived forecast bundle passes independent verification and the local phase-exit
 gate (or Phase 3 is explicitly closed NO-GO with serving disabled), `tasks.md` Phase 3 exit is
-complete, and decision #65 is recorded.
+complete, and the retrospective records whether decided #65's PP3-A1–A3 authorization begins.
 
-### W1 · Coupling inventory and boundary test
+### PP3-A1 · Coupling inventory and boundary test
 
 **Purpose:** establish the exact source-specific code that may remain.
 
@@ -750,14 +1393,20 @@ Tasks:
 3. Inventory every `stage_data.*` relation consumed by canonical transforms and Gate B.
 4. Inventory all quarantine predicates, key crosswalks and reconciliation controls.
 5. Map each current relation to one proposed role.
-6. Fail on an unmapped consumer; do not create an “other” escape hatch.
-7. Extend import/boundary checks with a reviewed allowlist.
+6. Produce the reverse map: every proposed role names at least one v1 provider or an explicit
+   `derived_in_transform`, `absent_in_demo_source` or rejected disposition. Confirm `channel` is
+   derived from merchandise and `allocation_supply` is supplied by the
+   `allocationSupplyPools` dimension-signal kind.
+7. Enumerate every accepted-pin `dimension_signal.entity_kind`, payload schema, provider, row
+   count and consumer; map each to a typed role or explicit disposition.
+8. Fail on an unmapped consumer or role; do not create an “other” escape hatch.
+9. Extend import/boundary checks with a reviewed allowlist.
 
 **Evidence:** machine-readable occurrence report plus reviewed role map.
 
 **Exit:** A-D1 approved; no v2 code starts with an unknown consumer.
 
-### W2 · Freeze staging v2 and role bindings
+### PP3-A2 · Freeze staging v2 and role bindings
 
 **Purpose:** make the adapter output contract complete and executable.
 
@@ -792,7 +1441,7 @@ Tasks:
 
 **Exit:** decisions #66–#68 and #79 are frozen and A-D2/A-D3 are approved.
 
-### W3 · Build source-neutral assembly, validation and quarantine
+### PP3-A3 · Build source-neutral assembly, validation and quarantine
 
 **Purpose:** remove source names from shared staging behavior.
 
@@ -803,7 +1452,8 @@ Tasks:
 3. Move row validation to role-schema-driven common checks.
 4. Move semantic checks into role-specific neutral validators.
 5. Replace source-named quarantine datasets with role id + provider/source provenance.
-6. Build location/product/channel crosswalks from neutral roles.
+6. Build location/product crosswalks from neutral roles and preserve canonical channel derivation
+   from the neutral merchandise channel key.
 7. Preserve raw-object lineage on every row and finding.
 8. Produce a v2 staging manifest with role providers, counts, quarantine and fingerprints.
 9. Keep transforms reading stable neutral names.
@@ -811,7 +1461,8 @@ Tasks:
 
 **Parity rules:**
 
-- same canonical rows by complete business key and value;
+- same canonical rows by complete business key and value, including per-entity-kind reconciliation
+  from the v1 opaque `dimension_signal.payload` to typed v2 roles;
 - same source reconciliation totals;
 - same Gate-B pass/fail and reason counts;
 - same capability mask;
@@ -820,7 +1471,7 @@ Tasks:
 
 **Exit:** A-D4/A-D11 pass; source-name scan is clean outside the allowlist.
 
-### W4 · Implement mapped-files default adapter
+### PP3-A4 · Implement mapped-files default adapter
 
 **Purpose:** onboard ordinary client extracts through configuration instead of copied code.
 
@@ -850,13 +1501,13 @@ Tasks:
 
 **Exit:** A-D5 and the mapped-retailer positive/negative conformance evidence pass.
 
-### W5 · Implement bounded custom-adapter extension
+### PP3-A5 · Implement bounded custom-adapter extension
 
 **Purpose:** provision for real retailer semantics that mappings cannot express.
 
 Tasks:
 
-1. Freeze the custom-adapter protocol and manifest.
+1. Implement decided #69's static custom-adapter protocol and manifest.
 2. Require adapters to use shared readers and normalization helpers where possible.
 3. Require role output only; adapters cannot publish canonical entities.
 4. Keep registration explicit and deterministic.
@@ -870,13 +1521,13 @@ Tasks:
 
 **Exit:** A-D6 and the custom-retailer conformance fixture pass.
 
-### W6 · Temporal evidence, zero demand and readiness
+### PP3-A6 · Temporal evidence, zero demand and readiness
 
 **Purpose:** make “safe for ML” a measured capability verdict.
 
 Tasks:
 
-1. Freeze decisions #70–#72.
+1. Implement decisions #70–#72.
 2. Evaluate evidence per temporal role/field.
 3. Publish coverage by evidence grade and business interval.
 4. Implement extract-completeness controls.
@@ -891,13 +1542,13 @@ Tasks:
 **Exit:** A-D7/A-D8 pass and the accepted demo pin reproduces its declared
 `demand_forecast_non_pit` status without being relabelled PIT.
 
-### W7 · Retailer/tenant publication selection
+### PP3-A7 · Retailer/tenant publication selection
 
 **Purpose:** stop assuming one repository-committed demo pin.
 
 Tasks:
 
-1. Freeze decision #73 and selection schema.
+1. Implement decision #73 and its selection schema.
 2. Keep demo `expected-pin.json` as a fixture/compatibility selection.
 3. Add explicit selection input to verification, feature, scoring, materialization and activation
    commands.
@@ -912,7 +1563,7 @@ Tasks:
 
 **Exit:** A-D9 passes; commands can run demo and retailer fixtures without ML source changes.
 
-### W8 · Client-shaped round trips and conformance gate
+### PP3-A8 · Client-shaped round trips and conformance gate
 
 **Purpose:** prove the architectural promise end to end.
 
@@ -961,7 +1612,7 @@ Required proof:
 
 **Exit:** A-D10/A-D12 pass.
 
-### W9 · Track A finalization
+### PP3-A9 · Track A finalization
 
 Tasks:
 
@@ -970,7 +1621,18 @@ Tasks:
 3. If accepted, update architecture/spec/tasks/README/operations documentation.
 4. Publish the onboarding guide and mapping/custom-adapter decision tree.
 5. Record remaining source-specific connector/CDC/production-security work as later scope.
-6. Freeze the exact readiness report consumed by Track B.
+6. Approve and fingerprint the exact readiness report consumed by Track B.
+
+**PP3-A9 status (2026-07-31).** `ingestion/ONBOARDING.md` is published and the full stateful gate
+passes in governed NO-GO mode with zero failures: contracts 122, execution 12, datagen 52,
+ingestion 153, database 1, ML 93, uncached Go race tests green, UI 11 plus typecheck and build,
+import boundaries clean across 92 files. Track A code is complete and verified.
+
+Two things are deliberately **not** decided here. `retail-staging/v2` stays
+`frozen_not_cut_over`: v1 remains the runtime contract, so PP3-A3's exact parity proves v2 *could*
+cut over without proving it *should*, and that call is a review decision rather than an
+implementation one. And the staging-fingerprint coverage gap in §1.4.2 is recorded rather than
+fixed, because widening staging identity would invalidate the accepted pin.
 
 **Track A acceptance statement:**
 
@@ -984,27 +1646,36 @@ Do not claim “any retailer data works automatically.”
 
 ## 7 · Track B work packages — forecast quality and presentation
 
-### W10 · Freeze diagnostic and candidate protocol
+### PP3-B1 · Implement the finalized diagnostic and candidate protocol
 
 **Purpose:** prevent post-result threshold or candidate selection.
 
 Tasks:
 
-1. Freeze decisions #74/#75.
-2. Freeze the next acceptance-v2/verifier-v3 accepted run as C0.
-   `fr_92135aa7b5215b69` and the former v12 run are rejected historical evidence and are never
-   comparators.
-3. Freeze paired comparison keys and additive metrics.
-4. Freeze development vs confirmation origin roles without changing the 13-origin acceptance
-   schedule.
-5. Register allowed candidate families and search budgets.
-6. Freeze bootstrap seed, clustering unit and materiality/non-regression rules.
-7. Freeze slices and exact display grain.
-8. Define stop rules for leakage, changed population, coverage failure and market failure.
+1. Confirm decided #82 is implemented in the PP3-P0 C0/D0 authority; Track B cannot start before
+   that implementation passes.
+2. Implement decisions #74/#75 without changing their frozen origin split, budget or thresholds.
+3. Bind the new PP3-P0 complete-population decision-#82 acceptance/verifier result:
+   - if accepted, it becomes accepted comparison authority C0;
+   - if rejected, it becomes diagnostic comparison authority D0 only; retain its immutable
+     diagnostic evidence, but never accepted/canonical-publish, materialize, activate or serve it;
+   - `fr_92135aa7b5215b69` and the former v12 run remain rejected historical evidence and are
+     neither C0 nor D0 because they do not satisfy the repaired comparison authority.
+4. Materialize the finalized comparison keys, cohort membership keys and additive metrics.
+5. Require every candidate to publish both decision-#82 cohorts and pass the cold-start gate; no
+   paired-WAPE improvement can compensate for missing cohort completeness.
+6. Use the finalized first-8 development and final-5 untouched confirmation origin roles without
+   changing the 13-origin acceptance schedule.
+7. Register allowed candidate families and search budgets.
+8. Use 10,000 SeriesKey-clustered replicates, seed `20260731`, the 95% upper-bound `<0`
+   materiality rule and the ≤1% supported-market regression bound.
+9. Publish the finalized market, store, category, channel, lifecycle/intermittency and
+   h1/h4/h8/h13/h26 slices at their exact grains.
+10. Define stop rules for leakage, changed population, coverage failure and market failure.
 
 **Exit:** B-D3 is approved before any candidate result exists.
 
-### W11 · Publish the immutable diagnostic baseline
+### PP3-B2 · Publish the immutable diagnostic baseline
 
 Publish global and sliced evidence for:
 
@@ -1032,11 +1703,13 @@ Metrics:
 - paired SeriesKey/origin counts;
 - bootstrap intervals where declared.
 
-The artifact includes input, feature, policy, schedule and active-version fingerprints.
-It also binds `paired-seasonal-complete-recomputation/v3`,
-`retail-forecast-verifier/v3`, feature schema v4 and canonical serialized row ordering. Candidate
-and C0 metrics must be independently recomputed from identically paired finite rows; a changed
-eligible population or reliance on a caller-supplied acceptance boolean is a hard failure.
+The artifact includes input, feature, policy, schedule and comparison-authority fingerprints.
+It also binds the new decision-#82 evaluation/verifier policy ids
+(`cohorted-seasonal-cold-start-recomputation/v4` and `retail-forecast-verifier/v4`),
+`retail-weekly-features/v6` and canonical serialized row ordering.
+Candidate and C0/D0 metrics must be independently recomputed from identically governed complete
+rows under decision #82; a changed eligible population or reliance on a caller-supplied
+acceptance boolean is a hard failure.
 
 Record the current A3 evidence margin: US New York has exactly 100 eligible slow-mover series,
 the frozen minimum, with a minimum of 73 paired series per origin. A candidate may not improve
@@ -1045,7 +1718,7 @@ its display by dropping that population; falling below the frozen sufficiency ru
 
 **Exit:** B-D1 is immutable and reproducible.
 
-### W12 · Diagnose root causes before selecting remedies
+### PP3-B3 · Diagnose root causes before selecting remedies
 
 Test registered hypotheses:
 
@@ -1062,11 +1735,14 @@ Test registered hypotheses:
 
 Use attribution, residual slices, calibration curves and ablations. Correlation is not causation;
 do not claim a source limitation caused forecast error without controlled evidence.
+The first registered cold-start hypothesis is the v15 US-market proxy deficit in §3.1; test
+whether lifecycle treatment, pooling or intermittent routing explains it without changing
+decision #82.
 
 **Exit:** B-D2 ranks supported causes, rejects unsupported stories and maps each proposed candidate
 to one cause.
 
-### W13 · Bias correction and quantile calibration candidates
+### PP3-B4 · Bias correction and quantile calibration candidates
 
 Candidate C1 — P50 bias correction:
 
@@ -1088,7 +1764,7 @@ Evaluate C1, C2 and C1+C2 separately. Do not hide a P50 degradation behind impro
 
 **Exit:** B-D4 records accepted/rejected candidates and paired evidence.
 
-### W14 · Segmentation and hierarchical reconciliation
+### PP3-B5 · Segmentation and hierarchical reconciliation
 
 Candidate C3 — segmented champions:
 
@@ -1098,6 +1774,10 @@ Candidate C3 — segmented champions:
 - governed demand behavior/intermittency;
 - current LightGBM and Croston routes;
 - transparent shrinkage/fallback to parent/global.
+
+The US cold-start slice is an explicit candidate diagnostic. A lifecycle/cold-start candidate
+must improve it on untouched confirmation origins without degrading established-history rows or
+weakening the complete per-market cold-start gate.
 
 Freeze minimum rows, SeriesKeys and origins before scoring. No one-off segment model is allowed
 because its displayed accuracy is weak.
@@ -1112,7 +1792,7 @@ Candidate C4 — hierarchy reconciliation:
 
 **Exit:** B-D5/B-D6 identify a bounded champion composition or record no-go.
 
-### W15 · Optional origin-safe signals and quality policy v2
+### PP3-B6 · Optional origin-safe signals and quality policy v2
 
 Signal work is capability-gated by Track A:
 
@@ -1142,15 +1822,18 @@ Quality policy v2 proposal:
 
 **Exit:** B-D7/B-D8 are reviewed. Policy v1 remains active unless the candidate passes.
 
-### W16 · Business target matrix and presentation contract
+### PP3-B7 · Business target matrix and presentation contract
 
-Freeze targets by:
+Implement decision #77's exact-horizon accuracy targets:
 
-- metric;
-- grain;
-- horizon;
-- market;
-- operational use.
+| Display grain | h1 | h4 | h8 | h13 | h26 |
+|---|---:|---:|---:|---:|---:|
+| Market / portfolio | 90% | 88% | 85% | 82% | 78% |
+| Store / category | 85% | 82% | 78% | 75% | 70% |
+| SeriesKey | 80% | 78% | 75% | 72% | 68% |
+
+Every cell also requires absolute bias ≤5% and P90 coverage in `[0.85, 0.95]`. An insufficient
+denominator is unavailable, never a passing status.
 
 Do not assume one 90% threshold. A portfolio/category target may differ from a
 SKU × store × channel target, but every UI value must label its exact grain.
@@ -1168,19 +1851,23 @@ Presentation update principles:
 
 Forecast Health correction:
 
-1. Amend decision #64/Q6 and the parity/data matrix before React code.
+1. Consume the amended decision #64/Q6 parity/data matrix; do not reinterpret it in React.
 2. Always render exactly four default rows in reference order: `1 week`, `4 weeks`, `8 weeks`,
    `13 weeks`; the selected forecast cap must not hide diagnostic rows.
-3. Freeze decision #80's row formula. Recommend the exact horizon's additive metrics at h1/h4/
-   h8/h13 rather than cumulative `1..N`; labels must make the selected meaning unambiguous.
+3. Implement decision #80's exact-horizon additive metrics at h1/h4/h8/h13 rather than cumulative
+   `1..N`; labels must make the meaning unambiguous.
 4. Keep h26 in the immutable diagnostic baseline, not the four-row reference table. A fifth row
    or drilldown requires separate visual approval.
-5. Replace coverage-only status derivation with a governed matrix using the approved accuracy,
-   bias and coverage targets at the displayed grain/horizon. Preserve the reference status
-   vocabulary `Strong / Healthy / Watch / Action`; unavailable evidence remains unavailable.
+5. Replace coverage-only status derivation with decision #80's target-relative matrix at the
+   displayed grain/horizon: `Strong` requires accuracy ≥ target+5, absolute bias ≤3% and coverage
+   0.87–0.93; `Healthy` requires accuracy ≥ target, absolute bias ≤5% and coverage 0.85–0.95;
+   `Watch` requires accuracy ≥ target−10, absolute bias ≤10% and coverage 0.80–0.98; otherwise
+   use `Action`. Any unavailable metric yields unavailable, not a badge.
 6. Prove desktop and responsive row count/order, labels, live values, filter independence and
    status mapping. Changing market/store/category/channel may recompute the rows; changing the
    operational horizon cap may not remove them.
+7. Execute the same fingerprinted grain-resolution and status vectors in Python, Go and React;
+   percentage points and coverage ratios must not be converted implicitly by any layer.
 
 Update the parity/data matrix before React code. Review screenshots and wording before
 implementation. Until this correction is implemented, Phase 3 visual approval must explicitly
@@ -1188,11 +1875,12 @@ record the known deviation if it is accepted for deferral.
 
 **Exit:** decisions #77/#78/#80 and B-D9/B-D10 are approved.
 
-### W17 · Full acceptance, publication, serving and UI activation
+### PP3-B8 · Full acceptance, publication, serving and UI activation
 
-Run the unchanged fixed schedule and A1–A5:
+Run the unchanged fixed schedule and the decision-#82 versioned A1–A5 battery:
 
-1. ≥25% WAPE improvement over seasonal naive;
+1. established-history A1: ≥25% WAPE improvement over seasonal naive with complete cohort pairing;
+   cold-start A1: complete cohort comparison and the separately frozen non-inferiority gate;
 2. P90 coverage 0.85–0.95;
 3. slow-mover WAPE no worse than seasonal naive under decision #52 sufficiency;
 4. P90 ≥ P50 row-wise;
@@ -1200,7 +1888,7 @@ Run the unchanged fixed schedule and A1–A5:
 
 Also require:
 
-- active-vs-candidate paired improvement gate from decision #75;
+- C0-or-D0/candidate paired improvement gate from decision #75;
 - additive-metric consistency;
 - leakage checks;
 - calibration sufficiency;
@@ -1209,7 +1897,7 @@ Also require:
 - classification policy fingerprint;
 - API projection mapping;
 - UI data-value and parity tests;
-- `retail-forecast-verifier/v3` materialization eligibility and request-time active-lineage
+- decision-#82 verifier materialization eligibility and request-time active-lineage
   revalidation;
 - developer-run supported-OS evidence.
 
@@ -1228,7 +1916,7 @@ If all gates pass:
 5. verify all API routes and fail-closed states;
 6. deploy the reviewed presentation update;
 7. obtain final human visual approval;
-8. retain rollback through a new activation record only when a prior verifier-v3 accepted version
+8. retain rollback through a new activation record only when a prior decision-#82-verifier accepted version
    exists.
 
 **Exit:** B-D11/B-D12 and the Post–Phase 3 retrospective are complete.
@@ -1259,9 +1947,9 @@ If all gates pass:
 | Gate | Pass condition |
 |---|---|
 | OQ1 Baseline | immutable, reproducible, independently recomputed and filter/additive-consistent |
-| OQ2 Pairing | candidate and active use identical eligible row keys |
+| OQ2 Pairing | candidate and C0/D0 use identical decision-#82 cohort membership and complete eligible row keys |
 | OQ3 Materiality | decision #75 paired improvement passes |
-| OQ4 A1–A5 | all existing gates pass globally and per supported market |
+| OQ4 A1–A5 | decision-#82 established and cold-start gates plus A2–A5 pass globally and per supported market |
 | OQ5 Bias | signed/absolute bias is reported; no hidden material slice regression |
 | OQ6 Coverage | 0.85–0.95 with monotonic quantiles |
 | OQ7 Sharpness | any confidence improvement comes from valid sharper intervals |
@@ -1275,7 +1963,7 @@ If all gates pass:
 
 Stop the affected work package when:
 
-- the W0 repaired acceptance/evidence gate or any Phase 3 exit item is incomplete;
+- the PP3-P0 repaired acceptance/evidence gate or any Phase 3 exit item is incomplete;
 - a role consumer has no defensible source-neutral schema;
 - the mapping language would need arbitrary executable code;
 - historical availability is inferred only from business dates;
@@ -1382,46 +2070,45 @@ for macOS, Windows and Linux. Do not represent a skipped platform as passed and 
 ## 11 · Sequencing and review gates
 
 ```text
-W0 Phase 3 close
+PP3-P0 Phase 3 close
   ↓
-W1 coupling inventory
+PP3-A1 coupling inventory
   ↓
-W2 role/adapter contracts
+PP3-A2 role/adapter contracts
   ↓
-W3 neutral staging + v1/v2 parity
-  ├─→ W4 mapped-files adapter
-  └─→ W5 custom-adapter protocol
+PP3-A3 neutral staging + v1/v2 parity
+  ├─→ PP3-A4 mapped-files adapter
+  └─→ PP3-A5 custom-adapter protocol
           ↓
-W6 temporal/readiness
+PP3-A6 temporal/readiness
   ↓
-W7 tenant publication selection
+PP3-A7 tenant publication selection
   ↓
-W8 client-shaped round trips
+PP3-A8 client-shaped round trips
   ↓
-W9 Track A review/acceptance
+PP3-A9 Track A review/acceptance
   ↓
-W10 diagnostic/candidate protocol
+PP3-B1 diagnostic/candidate protocol
   ↓
-W11 baseline → W12 diagnosis
+PP3-B2 baseline → PP3-B3 diagnosis
   ↓
-W13 bias/calibration
+PP3-B4 bias/calibration
   ↓
-W14 segmentation/reconciliation
+PP3-B5 segmentation/reconciliation
   ↓
-W15 optional signals + quality policy v2
+PP3-B6 optional signals + quality policy v2
   ↓
-W16 target matrix + UI contract
+PP3-B7 target matrix + UI contract
   ↓
-W17 acceptance/publication/activation
+PP3-B8 acceptance/publication/activation
 ```
 
-W4 and W5 may be implemented in parallel only after W2/W3 contracts are frozen. Track B does not
-start from a partially accepted Track A. Presentation design does not start before model evidence
-and target semantics are frozen.
+PP3-A4 and PP3-A5 may be implemented in parallel only after PP3-A2/PP3-A3 contracts are frozen.
+Track B does not start from a partially accepted Track A. Presentation design does not start
+before model evidence and target semantics are frozen.
 
-After this plan is approved, reconcile the order of the two deferred sections in `tasks.md` so
-the executable ledger matches this sequence. Do not perform that reconciliation while the
-current Phase 3 commit is under review.
+The two deferred sections in `tasks.md` must remain in this same execution order: retailer-source
+onboarding hardening first, forecast-quality and presentation hardening second.
 
 ---
 
@@ -1439,7 +2126,8 @@ current Phase 3 commit is under review.
 | “Pipeline passed” is sold as “ML ready” | separate capability readiness and statistical sufficiency |
 | One demo pin is accidentally global | explicit retailer/tenant/capability selection lifecycle |
 | Model work overfits known accepted origins | pre-registered candidates and development/confirmation separation |
-| Candidate improves by changing repaired paired rows | bind evaluation/verifier contracts, canonical row ordering and identical finite C0/candidate keys |
+| Candidate improves by changing repaired paired rows | bind evaluation/verifier contracts, canonical row ordering and identical governed C0-or-D0/candidate keys |
+| Phase 3 closes NO-GO and Track B has no accepted C0 | freeze a repaired complete-population D0 for diagnostic comparison only; require every candidate to pass unchanged A1–A5 before creating the first accepted C0 |
 | US slow-mover evidence silently becomes insufficient | retain the frozen ≥100-series/all-origin rule; publish insufficient evidence if the current exact-minimum slice shrinks |
 | Better aggregate hides worse leaf forecasts | leaf and aggregate metrics reported separately |
 | Confidence is cosmetically increased | coverage-constrained sharpness; confidence not an objective |
@@ -1450,38 +2138,38 @@ current Phase 3 commit is under review.
 | Client data exposes PII/secrets | minimization, quarantine policy, configuration/secret separation |
 | External plugin introduces code-execution risk | static in-repo registration initially; external loading deferred |
 | Accepted demo becomes unreproducible | v1 retained through parity; immutable artifacts never overwritten |
+| Generated data bloats or leaks through Git | §1.7 allowlists definitions and compact evidence indexes; full artifacts and all retailer data remain outside Git |
 
 ---
 
-## 13 · Questions requiring review before W1
+## 13 · Finalized implementation inputs
 
-Recommended answers are included for discussion; none is frozen by this document.
-
-1. **Is Track A approved in full or only W1–W3?** Recommend approving W1–W3 first.
-2. **Which client-shaped formats are required initially?** Recommend CSV and Parquet mandatory;
-   JSONL/JSON supported by the same reader contract.
-3. **Is the first retailer adapter expected in this repository?** Recommend yes for the PoC.
-4. **Do we need external adapter packages now?** Recommend no; freeze protocol/conformance only.
-5. **How many retailer/tenant environments must selection support initially?** Recommend schema
-   supports many, implementation proves demo plus one retailer fixture.
-6. **May a role have multiple providers?** Recommend yes only through explicit resolution modes.
-7. **What extract-completeness evidence will a real retailer supply?** Must be answered per source.
-8. **What assortment/listing history exists?** If absent, historical zeros and replay downgrade.
-9. **Which capability is the minimum onboarding goal?** Recommend
-   `current_descriptive_analytics` plus honest evaluation of `demand_forecast_non_pit`.
-10. **Is broader PIT forecasting required?** Recommend no claim until every required temporal role
-    passes.
-11. **What PII may be landed?** Recommend only fields required by the approved canonical scope.
-12. **What numeric improvement is materially useful versus the new W0 accepted forecast?** Freeze
-    before W13; the former v12 forecast is not the comparator.
-13. **How should the 13 origins be divided for development/confirmation?** Freeze before W11.
-14. **Which grain/horizon targets matter to the demo stakeholders?** Freeze in decision #77.
-15. **May the Demand Forecast wording change while layout remains fixed?** Only after a reviewed
-    parity-contract amendment.
-16. **Should quality policy v2 ship without a better model?** Recommend no; evaluate separately
-    but activate only through a new accepted version/UI contract.
-17. **Are Forecast Health rows exact h1/h4/h8/h13 or cumulative 1..N?** Recommend exact
-    checkpoints, with the operational horizon selector unable to hide any of the four rows.
+1. Track A is staged: authorize PP3-A1–PP3-A3 first; later packages require their listed gates.
+2. CSV and Parquet are mandatory initial client formats; JSONL/JSON use the same reader contract.
+3. The PoC includes the first bounded retailer adapter in this repository.
+4. External adapter packages are deferred; use decided #69's static registry.
+5. The selection schema supports many tenants/environments; implementation proves the demo plus
+   one mapped retailer and one custom-adapter retailer.
+6. Multiple providers are allowed only through decision #67's explicit modes.
+7. Extract completeness is mandatory per source and must bind native control totals, partition
+   coverage and cutoff evidence; absence downgrades the dependent capability.
+8. Dated assortment/listing history is mandatory for historical zeros; absence prevents zero
+   materialization and downgrades replay/PIT capability.
+9. Minimum onboarding is `current_descriptive_analytics` plus an honest evaluation of
+   `demand_forecast_non_pit`.
+10. Broader PIT forecasting is unavailable until every required temporal role passes.
+11. Land only fields required by approved canonical scope; customer/basket PII is excluded by
+    decision #19.
+12. Decision #75 fixes useful candidate improvement at ≥5% relative WAPE with its bootstrap and
+    market non-regression gates. None of the three v1 runs is a comparator.
+13. Decision #74 uses the first 8 origins for development, freezes one candidate, then reads the
+    final 5 for untouched confirmation; decision #75 must pass on both all 13 and final 5.
+14. Decision #77 fixes the market/portfolio, store/category and SeriesKey horizon targets.
+15. Demand Forecast wording may change only through a reviewed parity-contract amendment.
+16. Quality policy v2 may be evaluated independently but activates only with a newly accepted
+    version and reviewed UI contract.
+17. Forecast Health uses exact h1/h4/h8/h13 checkpoints; the operational horizon selector never
+    hides them.
 
 ---
 
@@ -1489,23 +2177,28 @@ Recommended answers are included for discussion; none is frozen by this document
 
 ### Approval requested now
 
-- complete W0 Phase 3 semantic repairs and the clean evidence rebaseline;
+- retain the decision-finalization correction set already present in the working tree: decision
+  registry/spec/tasks updates, the Forecast Health policy/parity contract and tests, the external
+  rejection ledger, report retention cleanup and documentation corrections;
+- implement decided #82, then complete the remaining PP3-P0 evidence rebaseline and Phase 3 exit;
 - review the ordering and architecture;
-- review proposed decisions #65–#80;
+- implement finalized decisions #65–#80 at their consumer gates;
 - review work-package scope and acceptance gates;
-- correct this plan.
+- review the §1.7 repository/artifact-retention policy.
 
 ### Not approved by plan creation
 
-- implementation of W1–W17;
-- changes to tracked contracts/tasks/specs;
+- implementation of PP3-A1–PP3-B8;
+- additional tracked contract/task/spec changes beyond the decision-finalization correction set
+  above and changes explicitly required by an approved consumer gate;
 - new retailer adapters;
 - new source/publication pins;
 - datagen changes;
 - model experiments;
-- policy/UI changes;
+- runtime policy or UI implementation changes; the finalized machine-readable contracts above do
+  not authorize React/model/serving behavior until their consumer gates;
 - materialization or activation of any run that does not pass the repaired verifier;
-- commits or pushes.
+- implementation commits or pushes for PP3-A1–PP3-B8.
 
 ### Final definition of done
 
@@ -1517,8 +2210,9 @@ Post–Phase 3 hardening is complete only when:
 3. temporal/readiness/statistical outcomes are explicit and fail-closed;
 4. retailer/tenant publication selection replaces the one-demo-pin deployment assumption;
 5. Track A round-trip and portability gates pass;
-6. forecast candidates are compared against the immutable accepted C0 version using frozen
-   evidence once C0 exists;
+6. forecast candidates are compared against the immutable repaired C0 or diagnostic-only D0 using
+   frozen complete-population evidence; D0 never authorizes accepted/canonical publication or
+   serving;
 7. all unchanged A1–A5 and new improvement gates pass, or an honest no-go is published;
 8. any policy/presentation change is versioned, reviewed and backed by live data;
 9. activation is separate, auditable and reversible;

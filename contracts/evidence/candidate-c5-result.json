@@ -1,0 +1,90 @@
+{
+  "adoption": {
+    "notUnder": "decision #75, whose 5% global floor it does not meet (+1.754%)",
+    "on": "2026-07-31",
+    "publishedRunId": "fr_422e1113355eb05b",
+    "publishedVersionId": "fv_86cd60c37be7e203",
+    "status": "adopted",
+    "structuralChecksEnforcedAtPublication": {
+      "leakageCorrelationUplift": 0.014016192862268961,
+      "leakageSuspected": false,
+      "note": "Both were previously asserted in the decision document and never executed. They now run inside publish_forecast_run, so a remediation bundle that fails either cannot be published at all.",
+      "untargetedRowsByteIdentical": true
+    },
+    "supersedesEarlierRecordOfThisFile": "An earlier revision of this file read \"Not adopted\", which was true of the #75 evaluation and became misleading once #86 was decided. Kept as a corrected record rather than deleted.",
+    "under": "decision #86 gate-remediation candidate class"
+  },
+  "candidateId": "C5",
+  "decision77Matrix": {
+    "cellsPassing": 11,
+    "cellsTotal": 15,
+    "championCellsPassing": 11,
+    "improved": [
+      "series_key h26 69.54 -> 70.99 (crosses target)",
+      "store_category h13 79.94 -> 80.34",
+      "store_category h26 79.20 -> 80.78",
+      "market_portfolio h13 91.63 -> 92.31",
+      "market_portfolio h26 90.69 -> 93.69"
+    ],
+    "stillFailing": [
+      "series_key h1 78.27 vs 80",
+      "series_key h4 75.57 vs 78",
+      "series_key h8 72.91 vs 75",
+      "series_key h13 71.03 vs 72"
+    ]
+  },
+  "decisionIds": [
+    84,
+    85
+  ],
+  "failed": {
+    "decision_75_global_materiality": {
+      "actualPct": 1.754,
+      "detail": "The 17.053% ceiling was for a perfect cohort fix. C5 captures 1.754% of global relative WAPE, so room existed but C5 does not capture enough of it.",
+      "floorPct": 5.0,
+      "verdict": "FAIL"
+    },
+    "decision_85_per_cohort_coverage": {
+      "detail": "cold-start coverage moved the WRONG WAY: 0.7937 -> 0.7847 global, 0.7785 -> 0.7673 us-new-york. My \u00a74 prediction that a raised centre would lift coverage was wrong. Reason: the comparator is above the champion on only 51.2% of rows but carries more volume (median 8.15 vs 10.09, sum 3,596,857 vs 3,342,805). WAPE is volume-weighted, coverage is row-counted, so blending toward a higher-variance estimator lowers the prediction on the many small rows and lowers P90 with it.",
+      "verdict": "FAIL"
+    }
+  },
+  "fittedOn": "8 development origins only; final 5 untouched until w frozen",
+  "fittedWeights": {
+    "india-west": "1.0 at h1-h9 falling to 0.25 at h26",
+    "note": "w declines monotonically with horizon in both markets. The fit was never told horizons are ordered - it found this per cell independently, which corroborates the long-horizon mechanism rather than assuming it.",
+    "segments": 52,
+    "shrunkToParent": 0,
+    "us-new-york": "0.95 at h1 falling to 0.0 at h13-h20, 0.25 at h26"
+  },
+  "intervalCalibrationVariant": {
+    "assessment": "A band-aid, and decision #84 \u00a75 already forbids adjusting intervals to rescue coverage. A P90 that covers 78% is a miscalibrated quantile model, not a too-narrow one; widening by 2.39x hides that rather than fixing it. Recorded as measured, NOT recommended for adoption.",
+    "cost": "median width multiplier 2.3927; median cold-start displayed confidence falls 0.6030 -> 0.4065",
+    "coverageResult": "all six decision-#85 cells PASS: cold-start 0.9156 global, 0.9135 india-west, 0.9174 us-new-york",
+    "description": "C5 plus a cold-start interval width multiplier fitted per market x horizon on the 8 development origins to reach 0.90 coverage."
+  },
+  "measuredOn": "fr_a5b88c2ef23091ee",
+  "passed": {
+    "a1_cold_start_non_inferiority": {
+      "global": "+1.481% -> +6.891%",
+      "india-west": "+5.586% -> +9.478%",
+      "us-new-york": "-2.399% -> +4.446%",
+      "verdict": "PASS in every scope"
+    },
+    "established_cohort_untouched": {
+      "detail": "605,904 rows, P50 and P90 byte-identical, WAPE 0.247378 unchanged",
+      "verdict": "PASS"
+    },
+    "leakage": {
+      "detail": "both blend inputs origin-safe",
+      "verdict": "PASS"
+    },
+    "quantile_order": {
+      "verdict": "PASS"
+    }
+  },
+  "schemaVersion": "retail-candidate-result-record/v1",
+  "verdict": "C5 repairs the A1 blocker in every scope and does not satisfy decision #75. It is adopted under decision #86 as a gate-remediation candidate, not as an accuracy improvement, and #86 forbids presenting it as one. The #75 shortfall below is published rather than suppressed.",
+  "rebuiltOn": "2026-07-31",
+  "rebuildNote": "Re-published by the authorized clean-slate rebuild. The prior identities (fr_8e73fb0f8d3c502c, fr_f48fd0ab1380bc49 / fv_fe38d1f029dbcc30, fv_8e7be33eaa236160) are superseded, not corrected: the earlier run was real, its bundle is simply no longer the served one. See decision #89 for why the input fingerprints moved while the data did not."
+}

@@ -29,7 +29,7 @@ COMPOSE_FILE = REPO_ROOT / "deploy" / "compose.yaml"
 COMPOSE_ENV = REPO_ROOT / "deploy" / ".env"
 COMPOSE_ENV_EXAMPLE = REPO_ROOT / "deploy" / ".env.example"
 ACCEPTANCE_EVALUATION_VERSION = (
-    "paired-seasonal-complete-recomputation/v3"
+    "cohorted-seasonal-cold-start-recomputation/v4"
 )
 
 
@@ -284,7 +284,20 @@ def command_test(args: argparse.Namespace) -> int:
     return 0
 
 
-def _discover_accepted_forecast_run() -> Path:
+def _discover_forecast_run() -> tuple[Path, str]:
+    """Return the newest decision-#82 governed run and its lifecycle status.
+
+    Discovery keys on the manifest, never on the directory name: three
+    superseded bundles are still named `forecast_run_accepted_*` while carrying a
+    rejected verdict under the current authority, so a name-based glob would
+    resurrect them.
+
+    An accepted candidate is preferred. When none exists the gate runs in
+    governed NO-GO mode against a rejected candidate, because the plan requires
+    the same stateful gate on both closure branches: the rejected publication
+    path and fail-closed serving are themselves the evidence.
+    """
+
     override = os.environ.get("RETAIL_TEST_FORECAST_RUN")
     if override:
         candidate = Path(override).expanduser().resolve()
@@ -292,31 +305,53 @@ def _discover_accepted_forecast_run() -> Path:
             raise RuntimeError(
                 f"RETAIL_TEST_FORECAST_RUN is not a directory: {candidate}"
             )
-        return candidate
+        return candidate, os.environ.get(
+            "RETAIL_TEST_FORECAST_LIFECYCLE",
+            "accepted",
+        )
 
-    candidates: list[tuple[str, Path]] = []
+    accepted: list[tuple[str, Path]] = []
+    rejected: list[tuple[str, Path]] = []
     artifact_root = REPO_ROOT / "ml" / "data" / "artifacts"
-    for manifest_path in artifact_root.glob(
-        "forecast_run_accepted_*/forecast-run-manifest.json"
-    ):
+    for manifest_path in artifact_root.glob("*/forecast-run-manifest.json"):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if (
-            manifest.get("lifecycleStatus") == "accepted"
-            and manifest.get("modelPolicy", {}).get("acceptanceEvaluation")
-            == ACCEPTANCE_EVALUATION_VERSION
-        ):
-            candidates.append(
-                (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
-            )
-    if not candidates:
-        raise RuntimeError(
-            "No independently recomputed accepted forecast run is available. "
-            "Set RETAIL_TEST_FORECAST_RUN or complete the Phase 3 publication first."
-        )
-    return max(candidates, key=lambda value: (value[0], str(value[1])))[1]
+        model_policy = manifest.get("modelPolicy") or {}
+        if model_policy.get("acceptanceEvaluation") != ACCEPTANCE_EVALUATION_VERSION:
+            continue
+        # Decision #86 requires every bundle to declare its candidate class. A
+        # manifest published before that field existed cannot verify, so selecting
+        # it would fail the gate on a superseded bundle rather than on the current
+        # one. Same intent as the acceptance-generation filter above: discovery
+        # only offers candidates the current verifier can accept.
+        if "candidateClass" not in model_policy:
+            continue
+        # Decision #86 §3 puts the candidate class in the acceptance document too.
+        # A bundle whose acceptance disagrees with its manifest predates that fix and
+        # cannot verify, so offering it would fail the gate on a superseded bundle
+        # instead of on the current one.
+        acceptance_path = manifest_path.parent / "forecast_acceptance.json"
+        try:
+            acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if acceptance.get("candidateClass") != model_policy["candidateClass"]:
+            continue
+        entry = (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
+        if manifest.get("lifecycleStatus") == "accepted":
+            accepted.append(entry)
+        else:
+            rejected.append(entry)
+    for bucket, status in ((accepted, "accepted"), (rejected, "rejected")):
+        if bucket:
+            newest = max(bucket, key=lambda value: (value[0], str(value[1])))
+            return newest[1], status
+    raise RuntimeError(
+        "No decision-#82 governed forecast run is available. Set "
+        "RETAIL_TEST_FORECAST_RUN or complete the Phase 3 publication first."
+    )
 
 
 def command_verify(_: argparse.Namespace) -> int:
@@ -350,9 +385,15 @@ def command_verify(_: argparse.Namespace) -> int:
     integration_environment["RETAIL_TEST_POSTGRES_DSN"] = _local_postgres_dsn(
         sqlalchemy=False
     )
-    integration_environment["RETAIL_TEST_FORECAST_RUN"] = str(
-        _discover_accepted_forecast_run()
-    )
+    forecast_run, forecast_lifecycle = _discover_forecast_run()
+    integration_environment["RETAIL_TEST_FORECAST_RUN"] = str(forecast_run)
+    integration_environment["RETAIL_TEST_FORECAST_LIFECYCLE"] = forecast_lifecycle
+    if forecast_lifecycle != "accepted":
+        print(
+            f"gate mode: governed NO-GO against rejected candidate {forecast_run.name}; "
+            "serving must stay fail-closed",
+            flush=True,
+        )
     integration_environment.setdefault(
         "GOCACHE",
         str(Path(tempfile.gettempdir()) / "retail-intelligence-go-cache"),
@@ -882,7 +923,7 @@ def build_parser() -> argparse.ArgumentParser:
     ml_bench.add_argument(
         "--report",
         type=Path,
-        default=REPO_ROOT / "ml/reports/w0-memory-spike-safe-16gb.json",
+        default=REPO_ROOT / "ml/data/artifacts/evidence/w0-memory-spike-safe-16gb.json",
     )
     forecast_materialize = subparsers.add_parser(
         "forecast-materialize",

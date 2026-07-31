@@ -65,6 +65,14 @@ const responses: Record<string, unknown> = {
     ...envelope,
     schemaVersion: "retail-forecast-summary/v1",
     items: [{
+      accuracyGrain: "series_key" as const,
+      portfolioAccuracy: 92.8,
+      portfolioBias: -.054,
+      portfolioBaselineAccuracy: 90.4,
+      portfolioFvaVsMa13Pct: 25.3,
+      portfolioAccuracyGrain: "market_portfolio" as const,
+      baselineAccuracyGrain: "series_key" as const,
+      fvaGrain: "series_key" as const,
       accuracy: 91.2,
       bias: .01,
       p90Coverage: .89,
@@ -97,8 +105,15 @@ const responses: Record<string, unknown> = {
   horizons: {
     ...envelope,
     schemaVersion: "retail-forecast-horizons/v1",
+    metricGrain: "market_portfolio",
+    metricSemantics: "exact_horizon_additive",
+    coverageGrain: "series_key",
+    coverageNote: "P90 coverage is measured at SeriesKey grain because quantiles do not aggregate; a sum of P90 bounds is not the P90 of the sum.",
     items: Array.from({length: 26}, (_, index) => ({
       horizon: index + 1,
+      metricGrain: "market_portfolio",
+      coverageGrain: "series_key",
+      grainCells: 26,
       absErrorSum: 5,
       signedErrorSum: 1,
       actualSum: 100,
@@ -143,6 +158,10 @@ const responses: Record<string, unknown> = {
       plannerForecast: null,
       lastActual: 10,
       lastActualWeek: "2026-07-20",
+      wape: .2,
+      accuracyState: "measured" as const,
+      accuracyGrain: "series_key" as const,
+      demandSharePct: 1.5,
       accuracy: 94,
       bias: .02,
       confidence: .88,
@@ -256,7 +275,8 @@ describe("Demand Forecast parity contract", () => {
       "Export"
     ]);
     expect(screen.getByRole("button", {name: "Accept Forecast"})).toBeDisabled();
-    expect(screen.getAllByText("+31.4%")).toHaveLength(2);
+    // Both FVA figures read portfolio grain, so both show the same value.
+    expect(screen.getAllByText("+25.3%")).toHaveLength(2);
     expect(screen.getAllByText("Not available").length).toBeGreaterThan(4);
 
     const tabLabels = screen.getAllByRole("tab").map((tab) => tab.textContent);
@@ -291,6 +311,98 @@ describe("Demand Forecast parity contract", () => {
 
     fireEvent.click(screen.getByRole("button", {name: "Compare Versions"}));
     expect(screen.getByRole("dialog", {name: "Compare Versions"})).toBeInTheDocument();
+  });
+
+  it("always renders four exact-horizon health rows in reference order", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const key = Object.keys(responses).find((candidate) =>
+        url.includes(`/forecast/${candidate}`)
+      );
+      return {ok: true, json: async () => responses[key ?? "summary"]};
+    }));
+    renderForecast();
+
+    await screen.findByText("Forecast Health by Horizon");
+    const table = screen.getByText("Forecast Health by Horizon")
+      .closest(".card")!
+      .querySelector("table")!;
+    const rows = [...table.querySelectorAll("tbody tr")];
+
+    // Decision #80: exactly four rows, reference labels, reference order — and
+    // the toolbar still defaults to Next 4 Weeks, which must not hide h8/h13.
+    expect(rows).toHaveLength(4);
+    expect(rows.map((row) => row.querySelector("td")!.textContent)).toEqual([
+      "1 week",
+      "4 weeks",
+      "8 weeks",
+      "13 weeks"
+    ]);
+    expect(rows.map((row) => row.getAttribute("data-horizon"))).toEqual([
+      "1",
+      "4",
+      "8",
+      "13"
+    ]);
+    // h26 stays diagnostic and is never a fifth default row.
+    expect(table.textContent).not.toContain("26 weeks");
+    // Cumulative labelling is gone.
+    expect(table.textContent).not.toContain("Weeks 1–");
+  });
+
+  it("keeps the four health rows when the operational horizon cap changes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const key = Object.keys(responses).find((candidate) =>
+        url.includes(`/forecast/${candidate}`)
+      );
+      return {ok: true, json: async () => responses[key ?? "summary"]};
+    }));
+    renderForecast();
+
+    await screen.findByText("Forecast Health by Horizon");
+    const horizonSelect = document.querySelector("#forecastHorizonFilter")!;
+    fireEvent.change(horizonSelect, {target: {value: "Next 26 Weeks"}});
+    // Changing the cap refetches, so wait for the panel to come back.
+    await screen.findByText("Forecast Health by Horizon");
+
+    const table = screen.getByText("Forecast Health by Horizon")
+      .closest(".card")!
+      .querySelector("table")!;
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(4);
+    expect(table.textContent).not.toContain("26 weeks");
+  });
+
+  it("derives health status from the governed matrix, not coverage alone", async () => {
+    // Every horizon here is 95% accurate with 1% bias and 0.90 coverage. Under
+    // market/portfolio targets (90/88/85/82) that is Strong at h1 only when the
+    // margin reaches +5; h4/h8/h13 have larger margins and stay Strong too.
+    // Coverage 0.90 sits inside the Strong band, so a coverage-only rule could
+    // not distinguish these rows at all.
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const key = Object.keys(responses).find((candidate) =>
+        url.includes(`/forecast/${candidate}`)
+      );
+      return {ok: true, json: async () => responses[key ?? "summary"]};
+    }));
+    renderForecast();
+
+    await screen.findByText("Forecast Health by Horizon");
+    const table = screen.getByText("Forecast Health by Horizon")
+      .closest(".card")!
+      .querySelector("table")!;
+    const statuses = [...table.querySelectorAll("tbody tr")].map((row) =>
+      row.querySelectorAll("td")[4].textContent
+    );
+
+    // 95% accuracy against a 90 target is +5 => Strong; the vocabulary must be
+    // the reference four-state set, never the old two-state coverage badge.
+    expect(statuses).toEqual(["Strong", "Strong", "Strong", "Strong"]);
+    for (const status of statuses) {
+      expect(["Strong", "Healthy", "Watch", "Action", "Not available"])
+        .toContain(status);
+    }
   });
 
   it("never renders the HTML sample values when a forecast route fails", async () => {

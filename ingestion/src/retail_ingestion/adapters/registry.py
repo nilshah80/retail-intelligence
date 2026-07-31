@@ -33,6 +33,7 @@ def registered_adapters() -> tuple[str, ...]:
 # Import registration modules only. They cannot import canonical transforms.
 from . import business_central as _business_central  # noqa: E402,F401
 from . import companion as _companion  # noqa: E402,F401
+from . import mapped_files as _mapped_files  # noqa: E402,F401
 from . import shopify as _shopify  # noqa: E402,F401
 
 

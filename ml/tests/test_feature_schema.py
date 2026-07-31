@@ -228,6 +228,8 @@ def test_backtest_consumer_rejects_mutated_publisher_input(
         "forecast_eval_predictions.parquet": b"evaluation",
         "forecast_calibration.parquet": b"calibration",
         "acceptance.json": b"{}\n",
+        # Decision #84 added the fitted blend weights to the frozen contract.
+        "cold_start_blend_model.json": b"{}\n",
     }.items():
         path = tmp_path / name
         path.write_bytes(contents)

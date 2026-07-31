@@ -21,7 +21,11 @@ from retail_contracts.money_sql import (
 
 from retail_ingestion.adapters import AdapterContext, adapter_for, registered_adapters
 from retail_ingestion.mappings import build_location_crosswalk
-from retail_ingestion.profiles import load_source_profile
+from retail_ingestion.profiles import (
+    load_source_profile,
+    neutral_relation_roles,
+    staging_v2_roles,
+)
 from retail_ingestion.readers import PublicSourceCatalog
 
 STAGING_MANIFEST_VERSION = "retail-ingestion-staging/v1"
@@ -180,6 +184,14 @@ def _build_quarantine(connection: duckdb.DuckDBPyConnection) -> int:
         ),
     )
     for table, dataset, predicate, reason in checks:
+        # These checks are written against dialect relations. A retailer that
+        # supplies none of them has nothing for this pass to inspect, and demanding
+        # the relation exist failed the build after standardized views had already
+        # been created. An adapter that stages a role directly is responsible for
+        # its own row-level rejection, which the mapped_files adapter does through
+        # its candidate table and reason codes.
+        if not _relation_exists(connection, table.split(".", 1)[1]):
+            continue
         connection.execute(
             f"""
             INSERT INTO stage_data.adapter_quarantine
@@ -202,10 +214,44 @@ def _build_quarantine(connection: duckdb.DuckDBPyConnection) -> int:
     return _table_count(connection, "stage_data.adapter_quarantine")
 
 
+def _relation_exists(
+    connection: duckdb.DuckDBPyConnection,
+    name: str,
+) -> bool:
+    """Is `stage_data.<name>` present as a table or a view?"""
+
+    return bool(
+        connection.execute(
+            """
+            SELECT count(*) FROM information_schema.tables
+            WHERE table_schema = 'stage_data' AND table_name = ?
+            """,
+            [name],
+        ).fetchone()[0]
+    )
+
+
 def _create_standardized_views(
     connection: duckdb.DuckDBPyConnection,
+    *,
+    already_materialized: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
-    """Expose the only relations source-neutral transformations may import."""
+    """Expose the only relations source-neutral transformations may import.
+
+    Two things this must not do, both of which it used to.
+
+    It must not overwrite a role an adapter already materialised. The mapped_files
+    adapter creates `stage_data.merchandise` as a table; replacing it with a view
+    over the platform-dialect relation discarded the retailer's data outright.
+
+    It must not require a dialect relation the retailer never supplied. A
+    mapped-files-only source has none of the platform-named tables in the mapping
+    below, so creating views over them failed the build rather than producing a
+    smaller, honest staging set.
+
+    A role that nobody supplies is simply absent, and the capability that needs it
+    reports unavailable downstream -- which is what the readiness policy is for.
+    """
 
     direct = {
         "merchandise": "shopify_merchandise",
@@ -230,11 +276,33 @@ def _create_standardized_views(
         "wms_comparisons": "bc_wms_comparisons",
         "supplier_performance": "bc_supplier_performance",
     }
+    # An adapter names its relation after the staging-v2 role, and several neutral
+    # relations are not spelled like their role (`locations` <- `location`). The
+    # correspondence is declared in role-map.yaml, so it is read rather than guessed.
+    relation_roles = neutral_relation_roles()
+    created_direct: list[str] = []
     for target, source in direct.items():
+        if f"stage_data.{target}" in already_materialized:
+            # An adapter supplied this role directly; leave its table alone.
+            created_direct.append(target)
+            continue
+        role = relation_roles.get(target)
+        if role is not None and f"stage_data.{role}" in already_materialized:
+            # Same role, different spelling. Expose it under the neutral name a
+            # source-neutral consumer imports, without copying the retailer's rows.
+            connection.execute(
+                f"CREATE OR REPLACE VIEW stage_data.{target} AS "
+                f"SELECT * FROM stage_data.{role}"
+            )
+            created_direct.append(target)
+            continue
+        if not _relation_exists(connection, source):
+            continue
         connection.execute(
             f"CREATE OR REPLACE VIEW stage_data.{target} AS "
             f"SELECT * FROM stage_data.{source}"
         )
+        created_direct.append(target)
 
     fulfilled_units = "least(m.units, f.fulfilled_units)"
     gross_minor = exact_minor_sql("m.gross_amount_major", "m.currency_code")
@@ -410,6 +478,7 @@ def _create_standardized_views(
         """,
         "competitor_prices": """
             SELECT
+                source_system,
                 market_id, known_as_of, evidence_grade, row_provenance,
                 competitorId::VARCHAR AS competitor_id,
                 competitorSku::VARCHAR AS competitor_product_id,
@@ -468,6 +537,7 @@ def _create_standardized_views(
         """,
         "allocations": """
             SELECT
+                source_system,
                 source_instance, market_id,
                 requestKey::VARCHAR AS allocation_id,
                 sku::VARCHAR AS sku_source_key,
@@ -481,12 +551,24 @@ def _create_standardized_views(
             FROM stage_data.companion_allocation_demand_requests
         """,
     }
+    created_derived: list[str] = []
     for name, select_sql in statements.items():
-        connection.execute(
-            f"CREATE OR REPLACE VIEW stage_data.{name} AS {select_sql}"
-        )
+        if f"stage_data.{name}" in already_materialized:
+            created_derived.append(name)
+            continue
+        try:
+            connection.execute(
+                f"CREATE OR REPLACE VIEW stage_data.{name} AS {select_sql}"
+            )
+        except duckdb.CatalogException:
+            # A derived view whose platform inputs are absent is skipped rather
+            # than failing the build. Nothing silently degrades: the relation is
+            # simply not in the returned set, so it never appears in the staging
+            # manifest and no consumer can mistake it for present.
+            continue
+        created_derived.append(name)
     return tuple(
-        f"stage_data.{name}" for name in (*direct, *statements)
+        f"stage_data.{name}" for name in (*created_direct, *created_derived)
     )
 
 
@@ -517,7 +599,15 @@ def build_staging(
         connection.execute(f"SET memory_limit = '{memory}GB'")
         connection.execute("SET TimeZone = 'UTC'")
         catalog.register_metadata(connection)
-        context = AdapterContext(connection=connection, catalog=catalog, profile=profile)
+        # The frozen role catalog is injected rather than read from the profile, so a
+        # retailer cannot redefine a platform role in a file they own. Without this the
+        # mapped_files adapter could not run through build_staging() at all: it requires
+        # a role catalog, and the profile schema rightly refuses to carry one.
+        context = AdapterContext(
+            connection=connection,
+            catalog=catalog,
+            profile={**profile, "roleCatalog": staging_v2_roles()},
+        )
         source_systems = {
             row.source_system
             for row in catalog.objects
@@ -539,7 +629,10 @@ def build_staging(
             raw_views.extend(adapter.register_raw_views(context))
             staged_tables.extend(adapter.materialize_staging(context))
             adapter_versions[source_system] = adapter.adapter_version
-        standardized_views = _create_standardized_views(connection)
+        standardized_views = _create_standardized_views(
+            connection,
+            already_materialized=frozenset(staged_tables),
+        )
         crosswalk_rows = build_location_crosswalk(connection, catalog)
         quarantine_rows = _build_quarantine(connection)
         table_counts = {
@@ -564,9 +657,14 @@ def build_staging(
             "schemaVersion": STAGING_MANIFEST_VERSION,
             "sourceSnapshotId": catalog.landing_manifest["sourceSnapshotId"],
             "nativeSnapshotId": catalog.landing_manifest.get("nativeSnapshotId"),
-            "upstreamManifestSha256": catalog.landing_manifest[
-                "upstreamManifest"
-            ]["sha256"],
+            # Evidence about the upstream generator run, which only exists when the
+            # snapshot came from one. A retailer landing its own files has no upstream
+            # manifest, and requiring one failed the build on a key that describes a
+            # producer the retailer does not have. The landing semantic fingerprint
+            # below is a property of the landing itself and stays required.
+            "upstreamManifestSha256": (
+                catalog.landing_manifest.get("upstreamManifest") or {}
+            ).get("sha256"),
             "landingSemanticFingerprint": catalog.landing_manifest[
                 "semanticFingerprint"
             ],

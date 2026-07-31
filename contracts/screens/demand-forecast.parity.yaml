@@ -40,8 +40,9 @@ reviewGate:
       KPI deltas stay Not available until a second comparable accepted version
       exists; prior-period values never substitute for version comparison.
     Q6: >-
-      Horizon health uses checkpoints 1, 4, 8, 13 and 26, hiding checkpoints
-      beyond the selected horizon cap.
+      Forecast Health always renders exact h1, h4, h8 and h13 rows, independent
+      of the selected operational horizon cap. H26 remains diagnostic and is
+      not a fifth default row. Status follows decision #80.
     Q7: >-
       Workbench AI Forecast and MA13 baseline are sums across h1 through the
       selected horizon; Last Actual is the latest completed weekly actual.
@@ -252,7 +253,37 @@ panels:
         source: forecast_metrics
         columns: [Horizon, Accuracy, Bias, Coverage, Status]
         coverageDefinition: empirical P90 coverage
-        checkpoints: [1, 4, 8, 13, 26]
+        metricSemantics: exact_horizon_additive
+        checkpoints: [1, 4, 8, 13]
+        independentOfOperationalHorizonCap: true
+        diagnosticOnlyCheckpoints: [26]
+        healthPolicy:
+          ref: contracts/ml/forecast-health-policy.json
+          policyId: retail-forecast-health/v1
+          semanticFingerprint: 569dd287b494fd1b9f5968032e3a2f8073feafea1fb00bf497d1c040d0488a80
+        knownDeviation:
+          code: PP3_B7_REACT_IMPLEMENTATION_PENDING
+          status: resolved
+          resolvedOn: 2026-07-31
+          previousBehavior: >-
+            React filtered [1,4,8,13,26] by the selected operational horizon,
+            aggregated 1..N cumulatively and derived status from coverage only.
+          implementedBehavior: >-
+            ui/src/Forecast.tsx renders exactly four exact-horizon rows labelled
+            `1 week`, `4 weeks`, `8 weeks`, `13 weeks`, independent of the
+            operational horizon cap, and evaluates retail-forecast-health/v1
+            through generated constants in ui/src/generated/forecastHealthPolicy.ts
+            so governed thresholds are never hand-copied.
+          remainingObligation: >-
+            Live-value and screenshot parity cannot be exercised while forecast
+            serving is fail-closed under the NO-GO closure. DOM, ordering,
+            filter-independence and status-matrix behaviour are covered by tests.
+        referenceSamplePolicy:
+          layoutAuthoritative: true
+          coverageAndBadgeValuesAuthoritative: false
+          reason: >-
+            The HTML sample coverages exceed the accepted interval and its
+            sample badges do not implement decision #80.
         status: live_when_forecast_accepted
       - selector: "#forecastOverviewPanel .grid-3 .card:nth-child(1)"
         label: Forecast Exceptions

@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "optional-signal-admissibility/v1",
+  "screenOrder": [
+    "temporal",
+    "grain",
+    "leakage",
+    "materiality"
+  ],
+  "acceptanceFloorPct": 5.0,
+  "signals": [
+    {
+      "signalId": "future_promotion_plan",
+      "verdict": "rejected",
+      "reasonCode": "GRADE_DOES_NOT_SUPPORT_HISTORICAL_REPLAY",
+      "ablationRequired": false,
+      "screens": [
+        {
+          "screen": "temporal",
+          "observedGrades": [
+            "landing_backfill"
+          ],
+          "replayIneligibleGrades": [
+            "landing_backfill"
+          ],
+          "passed": false,
+          "reasonCode": "GRADE_DOES_NOT_SUPPORT_HISTORICAL_REPLAY"
+        }
+      ],
+      "firstFailedScreen": "temporal",
+      "notes": "1 distinct known_as_of across the promotion family (range 2026-07-30 14:49:32.091100+05:30 .. 2026-07-30 14:49:32.091100+05:30); a single landing stamp later than every acceptance origin leaves nothing origin-visible to fit. Serving remains permitted; historical replay does not."
+    },
+    {
+      "signalId": "weather_forecast_extended_lead",
+      "verdict": "rejected",
+      "reasonCode": "ADDRESSABLE_ERROR_MASS_BELOW_ACCEPTANCE_FLOOR",
+      "ablationRequired": false,
+      "screens": [
+        {
+          "screen": "temporal",
+          "observedGrades": [
+            "native_extracted"
+          ],
+          "replayIneligibleGrades": [],
+          "passed": true,
+          "reasonCode": null
+        },
+        {
+          "screen": "materiality",
+          "activeRows": 27878,
+          "totalRows": 708708,
+          "addressableErrorSharePct": 3.0412911142195833,
+          "acceptanceFloorPct": 5.0,
+          "passed": false,
+          "reasonCode": "ADDRESSABLE_ERROR_MASS_BELOW_ACCEPTANCE_FLOOR"
+        }
+      ],
+      "firstFailedScreen": "materiality",
+      "notes": "The source issues leads of 1-7 days only, against a 182-day h26 target window, so h1 is the sole coverable horizon and the shipped h1 features already consume the entire available lead. Rows carrying a real issued forecast rather than the climatology fallback bound any gain.",
+      "sourceLeadDays": {
+        "min": 1,
+        "max": 7
+      },
+      "targetWindowDays": 182
+    },
+    {
+      "signalId": "competitor_availability",
+      "verdict": "already_in_feature_set",
+      "reasonCode": null,
+      "ablationRequired": false,
+      "screens": [
+        {
+          "screen": "temporal",
+          "observedGrades": [
+            "native_observed"
+          ],
+          "replayIneligibleGrades": [],
+          "passed": true,
+          "reasonCode": null
+        },
+        {
+          "screen": "materiality",
+          "activeRows": 708708,
+          "totalRows": 708708,
+          "addressableErrorSharePct": 100.00000000000001,
+          "acceptanceFloorPct": 5.0,
+          "passed": true,
+          "reasonCode": null
+        }
+      ],
+      "firstFailedScreen": null,
+      "notes": "competitor_price_ratio, competitor_available, competitor_in_stock and competitor_age_days are already in the feature set with SHAP attribution. The source carries observed prices only -- there is no forward competitor plan to admit."
+    },
+    {
+      "signalId": "stockout_censored_demand",
+      "verdict": "rejected",
+      "reasonCode": "SOURCE_GRAIN_DOES_NOT_REACH_SERIESKEY",
+      "ablationRequired": false,
+      "screens": [
+        {
+          "screen": "temporal",
+          "observedGrades": [
+            "native_observed"
+          ],
+          "replayIneligibleGrades": [],
+          "passed": true,
+          "reasonCode": null
+        },
+        {
+          "screen": "grain",
+          "joinColumn": "store_id",
+          "signalKeyCount": 4,
+          "seriesKeyCount": 4,
+          "overlappingKeys": 0,
+          "passed": false,
+          "reasonCode": "SOURCE_GRAIN_DOES_NOT_REACH_SERIESKEY"
+        }
+      ],
+      "firstFailedScreen": "grain",
+      "notes": "stock_snapshots is keyed on distribution and fulfilment centres, not on the demand stores the SeriesKey forecasts. No store-grain on-hand exists in the publication, so censoring cannot be attached to a forecast row at all -- consistent with the Gate-B capability mask withholding replenishment."
+    },
+    {
+      "signalId": "assortment_lifecycle",
+      "verdict": "rejected",
+      "reasonCode": "FIELD_REPRODUCES_THE_TARGET",
+      "ablationRequired": false,
+      "screens": [
+        {
+          "screen": "temporal",
+          "observedGrades": [
+            "native_observed"
+          ],
+          "replayIneligibleGrades": [],
+          "passed": true,
+          "reasonCode": null
+        },
+        {
+          "screen": "grain",
+          "joinColumn": "store_id",
+          "signalKeyCount": 4,
+          "seriesKeyCount": 4,
+          "overlappingKeys": 4,
+          "passed": true,
+          "reasonCode": null
+        },
+        {
+          "screen": "leakage",
+          "comparedRows": 5026,
+          "exactAgreementShare": 0.3452049343414246,
+          "withinToleranceShare": 0.6923995224830879,
+          "toleranceDays": 7,
+          "medianDeltaDays": 2.0,
+          "passed": false,
+          "reasonCode": "FIELD_REPRODUCES_THE_TARGET"
+        }
+      ],
+      "firstFailedScreen": "leakage",
+      "notes": "This is the only signal that cleared materiality: rows within 90 days of an assortment exit carry a large share of error mass. It fails leakage instead. active_to agrees with the last observed positive sale, and known_as_of precedes active_to on every row, so the field is the target's own boundary back-stamped as foreknowledge."
+    }
+  ],
+  "admissible": [],
+  "alreadyShipped": [
+    "competitor_availability"
+  ],
+  "rejected": {
+    "future_promotion_plan": "GRADE_DOES_NOT_SUPPORT_HISTORICAL_REPLAY",
+    "weather_forecast_extended_lead": "ADDRESSABLE_ERROR_MASS_BELOW_ACCEPTANCE_FLOOR",
+    "stockout_censored_demand": "SOURCE_GRAIN_DOES_NOT_REACH_SERIESKEY",
+    "assortment_lifecycle": "FIELD_REPRODUCES_THE_TARGET"
+  },
+  "rule": "Screens run in cost order and the first failure is terminal. An ablation is only run for a signal that survives all four, so a rejected signal always carries the screen that rejected it."
+}

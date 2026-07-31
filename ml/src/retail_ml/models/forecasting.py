@@ -23,8 +23,16 @@ from retail_ml.features.build import (
     weekly_features_sql,
 )
 from retail_ml.features.availability import HORIZONS
-from retail_ml.models.backtest import evaluate_acceptance
+from retail_ml.models.backtest import (
+    CANDIDATE_CLASS_REMEDIATION,
+    evaluate_acceptance,
+)
 from retail_ml.models.baselines import attach_baselines, metric_for_column
+from retail_ml.models.cohorts import attach_cold_start_baseline
+from retail_ml.models.cold_start_blend import (
+    BLEND_MODEL_FILENAME,
+    remediate_cold_start,
+)
 from retail_ml.models.dataset import (
     eligible_scoring_origins,
     load_evaluation_horizon,
@@ -125,6 +133,10 @@ def verified_backtest_artifacts(
         "forecast_eval_predictions.parquet",
         "forecast_calibration.parquet",
         "acceptance.json",
+        # Decision #84's fitted blend weights. Part of the frozen contract because
+        # the serving cycle must apply the same estimator the gate scored, and a
+        # bundle that omitted them could only be served by refitting.
+        BLEND_MODEL_FILENAME,
     }
     objects = manifest.get("objects")
     if not isinstance(objects, dict) or set(objects) != expected_names:
@@ -143,6 +155,34 @@ def verified_backtest_artifacts(
             raise ValueError(f"backtest object does not match its manifest: {name}")
         paths[name] = path
     return manifest, paths
+
+
+def _partial_history(feature_path: Path, origin: date) -> pd.DataFrame:
+    """Decision #83: origin-visible *partial* weeks, exposure-normalised.
+
+    Used only where a SeriesKey has no complete prior week, so a launch week no
+    longer forces the cold-start gate to `insufficient_evidence` forever.
+    """
+
+    escaped = str(feature_path).replace("'", "''")
+    connection = duckdb.connect()
+    frame = connection.execute(
+        f"""
+        SELECT
+            sku_id,
+            store_id,
+            channel_id,
+            forecast_origin,
+            weekly_units_equivalent AS origin_units
+        FROM read_parquet('{escaped}')
+        WHERE forecast_origin < DATE '{origin.isoformat()}'
+          AND NOT training_eligible
+          AND exposure_days BETWEEN 1 AND 6
+        ORDER BY sku_id, store_id, channel_id, forecast_origin
+        """
+    ).fetchdf()
+    connection.close()
+    return frame
 
 
 def _history(feature_path: Path, origin: date) -> pd.DataFrame:
@@ -270,10 +310,16 @@ def run_backtest(
                     record for result in results for record in result[1]
                 )
                 total_training_rows += sum(result[2] for result in results)
-                with telemetry.measure("baselines"):
-                    scored_origin = attach_baselines(scored_origin)
                 with telemetry.measure("intermittent_history"):
                     intermittent_history = _history(feature_path, origin)
+                    partial_history = _partial_history(feature_path, origin)
+                with telemetry.measure("baselines"):
+                    scored_origin = attach_baselines(scored_origin)
+                    scored_origin = attach_cold_start_baseline(
+                        scored_origin,
+                        intermittent_history,
+                        partial_history,
+                    )
                 with telemetry.measure("intermittent_routing"):
                     replay_preferred = replay_preferred_tail_keys(
                         replay_history,
@@ -325,12 +371,45 @@ def run_backtest(
                     "horizon",
                 ]
             ).reset_index(drop=True)
+            # Decision #84 candidate C5, adopted as a decision #86 remediation
+            # candidate. Applied before acceptance so the gate scores what will
+            # actually be served, and before serialization so the published
+            # artifacts carry the blend rather than a post-hoc adjustment.
+            with telemetry.measure("cold_start_remediation"):
+                evaluation, blend_model = remediate_cold_start(evaluation)
             with telemetry.measure("acceptance"):
-                acceptance = evaluate_acceptance(evaluation)
+                acceptance = evaluate_acceptance(
+                    evaluation,
+                    candidate_class=CANDIDATE_CLASS_REMEDIATION,
+                )
+                acceptance["remediation"] = {
+                    "candidateId": blend_model["candidateId"],
+                    "decisionIds": blend_model["decisionIds"],
+                    "blendTarget": blend_model["blendTarget"],
+                    "segmentColumns": blend_model["segmentColumns"],
+                    "globalWeight": blend_model["globalWeight"],
+                    "marketWeights": blend_model["marketWeights"],
+                    "segmentsShrunkToParent": blend_model["segmentsShrunkToParent"],
+                    "fitOrigins": blend_model["fitOrigins"],
+                    "confirmationOriginsHeldOut": blend_model[
+                        "confirmationOriginsHeldOut"
+                    ],
+                    "appliesToCohort": blend_model["appliesToCohort"],
+                    "notAnAccuracyImprovement": (
+                        "Decision #86 §3 forbids presenting this as an accuracy "
+                        "improvement. It repairs the us-new-york cold-start "
+                        "non-inferiority gate."
+                    ),
+                }
             if not full_schedule:
                 acceptance["passed"] = False
                 acceptance["diagnosticOnly"] = True
                 acceptance["reasonCode"] = "INCOMPLETE_BACKTEST_SCHEDULE"
+            blend_path = staging / BLEND_MODEL_FILENAME
+            blend_path.write_text(
+                json.dumps(blend_model, indent=2, sort_keys=True, default=str),
+                encoding="utf-8",
+            )
             eval_path = staging / "forecast_eval_predictions.parquet"
             calibration_path = staging / "forecast_calibration.parquet"
             with telemetry.measure("serialize_diagnostics"):
@@ -372,7 +451,12 @@ def run_backtest(
                         "bytes": path.stat().st_size,
                         "sha256": _sha256_file(path),
                     }
-                    for path in (eval_path, calibration_path, acceptance_path)
+                    for path in (
+                        eval_path,
+                        calibration_path,
+                        acceptance_path,
+                        blend_path,
+                    )
                 },
             }
             (staging / "backtest-manifest.json").write_text(

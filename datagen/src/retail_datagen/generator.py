@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import resource
-import sys
 import time as runtime_time
 import unicodedata
 from collections import defaultdict
@@ -28,6 +26,7 @@ from . import GENERATOR_VERSION
 from .catalog_packs import build_catalog, catalog_controls
 from .calendar import holidays_for_range
 from .config import validate_config
+from .process_usage import cpu_seconds_between, process_usage
 from .customers import CustomerPopulation
 from .extensions import (
     build_commerce_extensions,
@@ -116,7 +115,7 @@ def _simulate_market(
     """Run one causally independent market in an isolated process."""
 
     started = runtime_time.perf_counter()
-    cpu_started = resource.getrusage(resource.RUSAGE_SELF)
+    cpu_started = process_usage()
     created_spools: list[RowSpool] = []
 
     def new_spool(name: str) -> RowSpool:
@@ -141,25 +140,15 @@ def _simulate_market(
     )
     for spool in created_spools:
         spool.flush()
-    usage = resource.getrusage(resource.RUSAGE_SELF)
+    usage = process_usage()
     return (
         market_id,
         result,
         created_spools,
         {
             "wallSeconds": round(runtime_time.perf_counter() - started, 6),
-            "cpuSeconds": round(
-                usage.ru_utime
-                + usage.ru_stime
-                - cpu_started.ru_utime
-                - cpu_started.ru_stime,
-                6,
-            ),
-            "peakRssBytes": (
-                int(usage.ru_maxrss)
-                if sys.platform == "darwin"
-                else int(usage.ru_maxrss) * 1024
-            ),
+            "cpuSeconds": cpu_seconds_between(cpu_started, usage),
+            "peakRssBytes": usage.peak_rss_bytes,
         },
     )
 
@@ -699,7 +688,7 @@ def generate(
     """Generate and atomically publish one deterministic source run."""
 
     generation_started = runtime_time.perf_counter()
-    cpu_started = resource.getrusage(resource.RUSAGE_SELF)
+    cpu_started = process_usage()
     stage_seconds: dict[str, float] = {}
     config = validate_config(config)
     if execution_profile is None:
@@ -2489,12 +2478,8 @@ def generate(
         latent_units = sum(row["latentDemandUnits"] for row in demand_truth)
         realized_units = sum(row["realizedSalesUnits"] for row in demand_truth)
         lost_units = sum(row["lostSalesUnits"] for row in demand_truth)
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        peak_parent_rss_bytes = (
-            int(usage.ru_maxrss)
-            if sys.platform == "darwin"
-            else int(usage.ru_maxrss) * 1024
-        )
+        usage = process_usage()
+        peak_parent_rss_bytes = usage.peak_rss_bytes
         peak_child_rss_bytes = max(
             (
                 int(telemetry["peakRssBytes"])
@@ -2506,10 +2491,8 @@ def generate(
             runtime_time.perf_counter() - generation_started
         )
         cpu_seconds = (
-            usage.ru_utime
-            + usage.ru_stime
-            - cpu_started.ru_utime
-            - cpu_started.ru_stime
+            usage.cpu_seconds
+            - cpu_started.cpu_seconds
             + sum(
                 float(telemetry["cpuSeconds"])
                 for _, _, _, telemetry in market_results

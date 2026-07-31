@@ -13,6 +13,52 @@ from retail_ml.serving.postgres import (
 )
 
 
+def test_rejected_candidate_keeps_serving_fail_closed() -> None:
+    """Governed NO-GO evidence: a rejected candidate cannot reach serving.
+
+    The plan requires the same stateful gate on both closure branches. On the
+    NO-GO branch this replaces the accepted-lineage assertions below: the
+    rejected bundle must still verify, materialization must refuse it, and the
+    active view must stay empty.
+    """
+
+    dsn = os.environ.get("RETAIL_TEST_POSTGRES_DSN")
+    configured_run = os.environ.get("RETAIL_TEST_FORECAST_RUN")
+    lifecycle = os.environ.get("RETAIL_TEST_FORECAST_LIFECYCLE", "accepted")
+    if not dsn or not configured_run:
+        pytest.skip("PostgreSQL forecast integration environment is not configured")
+    if lifecycle == "accepted":
+        pytest.skip("gate is running the accepted branch")
+    run_path = Path(configured_run)
+    if not run_path.is_dir():
+        pytest.skip("rejected local forecast run is not present")
+
+    import psycopg
+
+    root = Path(__file__).parents[2]
+    input_bundle = discover_input_bundle(root).verify()
+    run = verify_forecast_run(run_path)
+    assert run.lifecycle_status != "accepted"
+
+    with pytest.raises(Exception, match="only an accepted forecast run"):
+        materialize_forecast_run(run, input_bundle, postgres_dsn=dsn)
+
+    with psycopg.connect(dsn) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM retail_serving.active_forecast_versions"
+            )
+            assert cursor.fetchone()[0] == 0
+            cursor.execute(
+                """
+                SELECT count(*) FROM retail_serving.forecast_materializations
+                WHERE forecast_run_id = %s
+                """,
+                (run.forecast_run_id,),
+            )
+            assert cursor.fetchone()[0] == 0
+
+
 def test_accepted_forecast_postgres_materialization_integration() -> None:
     dsn = os.environ.get("RETAIL_TEST_POSTGRES_DSN")
     if not dsn:
@@ -20,6 +66,8 @@ def test_accepted_forecast_postgres_materialization_integration() -> None:
     configured_run = os.environ.get("RETAIL_TEST_FORECAST_RUN")
     if not configured_run:
         pytest.skip("accepted forecast-run integration artifact is not configured")
+    if os.environ.get("RETAIL_TEST_FORECAST_LIFECYCLE", "accepted") != "accepted":
+        pytest.skip("gate is running the governed NO-GO branch")
     root = Path(__file__).parents[2]
     run_path = Path(configured_run)
     if not run_path.is_dir():

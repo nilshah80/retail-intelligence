@@ -114,6 +114,7 @@ def _command_score_current(args: argparse.Namespace) -> int:
             args.decision_as_of.replace("Z", "+00:00")
         ),
         runtime_profile=resolve_ml_runtime_profile(args.execution_profile),
+        blend_model_path=args.blend_model,
     )
     print(json.dumps(asdict(stats), indent=2, sort_keys=True))
     return 0
@@ -211,6 +212,15 @@ def _command_publish(args: argparse.Namespace) -> int:
     decision_as_of = datetime.fromisoformat(
         args.decision_as_of.replace("Z", "+00:00")
     )
+    # Decision #84/#86 provenance. Read from the accepted backtest so the published
+    # manifest carries the exact estimator that was scored, and so a bundle cannot
+    # claim a remediation class without the weights that justify it.
+    blend_path = Path(args.backtest_dir) / "cold_start_blend_model.json"
+    remediation = (
+        json.loads(blend_path.read_text(encoding="utf-8"))
+        if blend_path.is_file()
+        else None
+    )
     publication = publish_forecast_run(
         pd.read_parquet(backtest_paths["forecast_eval_predictions.parquet"]),
         pd.read_parquet(backtest_paths["forecast_calibration.parquet"]),
@@ -229,6 +239,7 @@ def _command_publish(args: argparse.Namespace) -> int:
             backtest_manifest["stats"],
         ),
         mlflow_run_id=backtest_manifest.get("mlflowRunId"),
+        remediation=remediation,
     )
     print(json.dumps(asdict(publication), indent=2, sort_keys=True))
     return 0
@@ -343,6 +354,15 @@ def build_parser() -> argparse.ArgumentParser:
     score_current.add_argument("--feature-dir", type=Path, required=True)
     score_current.add_argument("--output-dir", type=Path, required=True)
     score_current.add_argument("--decision-as-of", required=True)
+    score_current.add_argument(
+        "--blend-model",
+        type=Path,
+        default=None,
+        help=(
+            "decision #84 cold_start_blend_model.json from the accepted backtest. "
+            "Required to serve the estimator the acceptance gate scored."
+        ),
+    )
     score_current.add_argument(
         "--execution-profile",
         choices=("safe", "balanced", "performance", "ultra-performance"),

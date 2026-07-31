@@ -830,7 +830,10 @@ export default function App() {
     fxPending: fx.isPending,
     fxError: fx.error,
     forecastCoveragePct: forecastSummary.data?.items[0]?.forecastCoveragePct,
-    modelAccuracyPct: forecastSummary.data?.items[0]?.accuracy
+    // "Model Accuracy" in the footer describes the whole portfolio, so it must be
+    // the portfolio-grain figure (92.8) and not the SeriesKey one (72.3).
+    modelAccuracyPct: forecastSummary.data?.items[0]?.portfolioAccuracy
+      ?? forecastSummary.data?.items[0]?.accuracy
   };
 
   if (dashboard.isPending) {

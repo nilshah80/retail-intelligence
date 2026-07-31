@@ -154,6 +154,16 @@ export const forecastSummarySchema = z.object({
   schemaVersion: z.literal("retail-forecast-summary/v1"),
   items: z.array(z.object({
     accuracy: nullableNumber,
+    accuracyGrain: z.literal("series_key"),
+    // Decision #77 portfolio-grain figures. The stored SeriesKey accuracy stays
+    // published beside them; neither may be read as the other.
+    portfolioAccuracy: nullableNumber,
+    portfolioBias: nullableNumber,
+    portfolioBaselineAccuracy: nullableNumber,
+    portfolioFvaVsMa13Pct: nullableNumber,
+    portfolioAccuracyGrain: z.literal("market_portfolio"),
+    baselineAccuracyGrain: z.literal("series_key"),
+    fvaGrain: z.literal("series_key"),
     bias: nullableNumber,
     p90Coverage: nullableNumber,
     baselineAccuracy: nullableNumber,
@@ -182,8 +192,17 @@ export const forecastActualsSchema = z.object({
 export const forecastHorizonsSchema = z.object({
   ...forecastEnvelope,
   schemaVersion: z.literal("retail-forecast-horizons/v1"),
+  // Decision #77 grain, resolved server-side so the metric and the target it is
+  // compared against always come from the same rule evaluation.
+  metricGrain: z.enum(["series_key", "store_category", "market_portfolio"]),
+  metricSemantics: z.literal("exact_horizon_additive"),
+  coverageGrain: z.literal("series_key"),
+  coverageNote: z.string(),
   items: z.array(z.object({
     horizon: z.number().int(),
+    metricGrain: z.enum(["series_key", "store_category", "market_portfolio"]),
+    coverageGrain: z.literal("series_key"),
+    grainCells: z.number().int(),
     absErrorSum: z.number(),
     signedErrorSum: z.number(),
     actualSum: z.number(),
@@ -237,6 +256,12 @@ export const forecastWorkbenchSchema = z.object({
     lastActual: nullableNumber,
     lastActualWeek: z.string().nullable(),
     accuracy: nullableNumber,
+    // Withheld when absolute error exceeds demand, which is routine on sparse
+    // SKUs. `accuracyState` says which case a null is.
+    wape: nullableNumber,
+    accuracyState: z.enum(["measured", "error_exceeds_demand", "insufficient_evidence"]),
+    accuracyGrain: z.literal("series_key"),
+    demandSharePct: nullableNumber,
     bias: nullableNumber,
     confidence: z.number(),
     primaryDriver: z.string().nullable(),

@@ -22,40 +22,89 @@
     "publicationRequirements"
   ],
   "properties": {
-    "schemaVersion": {"const": "retail-source-profile/v1"},
-    "profileId": {"type": "string", "minLength": 1},
-    "profileVersion": {"type": "string", "minLength": 1},
-    "sourceSystem": {"type": "string", "minLength": 1},
-    "sourceSchemaVersion": {"type": "string", "minLength": 1},
-    "businessTimezone": {"type": "string", "minLength": 1},
+    "schemaVersion": {
+      "const": "retail-source-profile/v1"
+    },
+    "profileId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profileVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceSystem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceSchemaVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "businessTimezone": {
+      "type": "string",
+      "minLength": 1
+    },
     "extractWindow": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "start": {"type": "string", "format": "date"},
-        "end": {"type": "string", "format": "date"}
+        "start": {
+          "type": "string",
+          "format": "date"
+        },
+        "end": {
+          "type": "string",
+          "format": "date"
+        }
       }
     },
     "channelPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
-        "mode": {"enum": ["native", "declared_default"]},
-        "defaultChannelId": {"type": "string", "minLength": 1},
-        "derivationRule": {"type": "string", "minLength": 1}
+        "mode": {
+          "enum": [
+            "native",
+            "declared_default"
+          ]
+        },
+        "defaultChannelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "derivationRule": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"mode": {"const": "declared_default"}}},
-          "then": {"required": ["defaultChannelId", "derivationRule"]}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "declared_default"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "defaultChannelId",
+              "derivationRule"
+            ]
+          }
         }
       ]
     },
     "assortmentPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "enum": [
@@ -64,50 +113,110 @@
             "unavailable"
           ]
         },
-        "provenanceRule": {"type": "string", "minLength": 1}
+        "provenanceRule": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"mode": {"const": "full_assortment_profile_v1"}}},
-          "then": {"required": ["provenanceRule"]}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "full_assortment_profile_v1"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "provenanceRule"
+            ]
+          }
         }
       ]
     },
     "money": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceUnit", "taxBasis"],
+      "required": [
+        "sourceUnit",
+        "taxBasis"
+      ],
       "properties": {
-        "sourceUnit": {"enum": ["major_decimal", "minor_integer"]},
-        "taxBasis": {"enum": ["inclusive", "exclusive", "source_field"]},
-        "currencyField": {"type": "string"},
-        "taxBasisField": {"type": "string"}
+        "sourceUnit": {
+          "enum": [
+            "major_decimal",
+            "minor_integer"
+          ]
+        },
+        "taxBasis": {
+          "enum": [
+            "inclusive",
+            "exclusive",
+            "source_field"
+          ]
+        },
+        "currencyField": {
+          "type": "string"
+        },
+        "taxBasisField": {
+          "type": "string"
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"taxBasis": {"const": "source_field"}}},
-          "then": {"required": ["taxBasisField"]}
+          "if": {
+            "properties": {
+              "taxBasis": {
+                "const": "source_field"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "taxBasisField"
+            ]
+          }
         }
       ]
     },
     "quantityPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "derivationRule"],
+      "required": [
+        "mode",
+        "derivationRule"
+      ],
       "properties": {
         "mode": {
-          "enum": ["source_field", "declared_default", "entity_semantics"]
+          "enum": [
+            "source_field",
+            "declared_default",
+            "entity_semantics"
+          ]
         },
-        "sourceColumn": {"type": "string", "minLength": 1},
-        "defaultUnit": {"type": "string", "minLength": 1},
-        "derivationRule": {"type": "string", "minLength": 1}
+        "sourceColumn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "defaultUnit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "derivationRule": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "mappingReferences": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "locationOverrides": {
       "type": "array",
@@ -115,12 +224,28 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sourceInstance", "sourceLocationKey", "city"],
+        "required": [
+          "sourceInstance",
+          "sourceLocationKey",
+          "city"
+        ],
         "properties": {
-          "sourceInstance": {"type": "string", "minLength": 1},
-          "sourceLocationKey": {"type": "string", "minLength": 1},
-          "city": {"type": "string", "minLength": 1},
-          "canonicalName": {"type": "string", "minLength": 1}
+          "sourceInstance": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceLocationKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "city": {
+            "type": "string",
+            "minLength": 1
+          },
+          "canonicalName": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -140,13 +265,34 @@
           "capabilities"
         ],
         "properties": {
-          "sourceSystem": {"type": "string", "minLength": 1},
-          "sourceInstance": {"type": "string", "minLength": 1},
-          "logicalPathPrefix": {"type": "string", "minLength": 1},
-          "sourceMarketId": {"type": "string", "minLength": 1},
-          "marketId": {"type": "string", "minLength": 1},
-          "currencyCode": {"type": "string", "pattern": "^[A-Z]{3}$"},
-          "timezone": {"type": "string", "minLength": 1},
+          "sourceSystem": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceInstance": {
+            "type": "string",
+            "minLength": 1
+          },
+          "logicalPathPrefix": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceMarketId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "marketId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "currencyCode": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1
+          },
           "capabilities": {
             "type": "array",
             "minItems": 1,
@@ -162,7 +308,9 @@
     "publicationRequirements": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requiredCapabilities"],
+      "required": [
+        "requiredCapabilities"
+      ],
       "properties": {
         "requiredCapabilities": {
           "type": "array",
@@ -178,34 +326,82 @@
     "authenticity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
-          "enum": ["not_required_for_snapshot", "native_evidence"]
+          "enum": [
+            "not_required_for_snapshot",
+            "native_evidence"
+          ]
         },
-        "evidenceDataset": {"type": "string", "minLength": 1}
+        "evidenceDataset": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"mode": {"const": "native_evidence"}}},
-          "then": {"required": ["evidenceDataset"]}
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "native_evidence"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "evidenceDataset"
+            ]
+          }
         }
       ]
     },
     "datasets": {
       "type": "array",
       "minItems": 1,
-      "items": {"$ref": "#/$defs/dataset"}
+      "items": {
+        "$ref": "#/$defs/dataset"
+      }
+    },
+    "mappedFiles": {
+      "type": "object",
+      "description": "Optional retailer-declared file mapping for the mapped_files adapter. Its internal shape is owned by contracts/adapters/mapped-files.schema.json and is enforced by validate_mapping() before any SQL is compiled; it is admitted here so a mapped-files retailer can reach build_staging() through an ordinary source profile. The frozen staging-v2 role catalog is NOT a profile key: the builder supplies it, so a retailer cannot redefine a platform role by editing their own profile."
+    },
+    "locationResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "upstream_topology",
+            "location_role_identity"
+          ],
+          "description": "upstream_topology: canonical store/warehouse identity comes from the retained source-run topology manifest, matched to the location role by name. location_role_identity: the retailer's own location role is the authority and its source keys ARE the canonical keys. Absent means upstream_topology, so a retailer cannot reach identity resolution by omitting evidence -- the mode must be declared."
+        }
+      }
     }
   },
   "$defs": {
     "columnPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceColumn", "outcome"],
+      "required": [
+        "sourceColumn",
+        "outcome"
+      ],
       "properties": {
-        "sourceColumn": {"type": "string"},
-        "canonicalField": {"type": "string"},
+        "sourceColumn": {
+          "type": "string"
+        },
+        "canonicalField": {
+          "type": "string"
+        },
         "outcome": {
           "enum": [
             "gate_a_failure",
@@ -215,17 +411,28 @@
             "declared_unsupported"
           ]
         },
-        "derivationRule": {"type": "string"},
-        "affectedCapability": {"type": "string"},
-        "reasonCode": {"type": "string"}
+        "derivationRule": {
+          "type": "string"
+        },
+        "affectedCapability": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "type": "string"
+        }
       }
     },
     "availabilityRule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceColumn", "evidenceGrade"],
+      "required": [
+        "sourceColumn",
+        "evidenceGrade"
+      ],
       "properties": {
-        "sourceColumn": {"type": "string"},
+        "sourceColumn": {
+          "type": "string"
+        },
         "evidenceGrade": {
           "enum": [
             "native_observed",
@@ -235,16 +442,24 @@
             "landing_backfill"
           ]
         },
-        "postingAvailabilityProof": {"type": "string"}
+        "postingAvailabilityProof": {
+          "type": "string"
+        }
       },
       "allOf": [
         {
           "if": {
             "properties": {
-              "evidenceGrade": {"const": "native_posted_available"}
+              "evidenceGrade": {
+                "const": "native_posted_available"
+              }
             }
           },
-          "then": {"required": ["postingAvailabilityProof"]}
+          "then": {
+            "required": [
+              "postingAvailabilityProof"
+            ]
+          }
         }
       ]
     },
@@ -261,14 +476,22 @@
         "columnPolicies"
       ],
       "properties": {
-        "datasetId": {"type": "string", "minLength": 1},
-        "sourceSystem": {"type": "string", "minLength": 1},
+        "datasetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceSystem": {
+          "type": "string",
+          "minLength": 1
+        },
         "pathGlob": {
           "type": "string",
           "minLength": 1,
           "description": "Portable POSIX-style source-root glob used only when ingestion must derive a missing source manifest."
         },
-        "expected": {"type": "boolean"},
+        "expected": {
+          "type": "boolean"
+        },
         "classification": {
           "enum": [
             "staged",
@@ -280,32 +503,57 @@
           ]
         },
         "permissionLane": {
-          "enum": ["public", "restricted_truth", "all_source_mirror"]
+          "enum": [
+            "public",
+            "restricted_truth",
+            "all_source_mirror"
+          ]
         },
-        "format": {"enum": ["csv", "parquet", "jsonl", "json", "yaml", "duckdb"]},
-        "compression": {"type": "string"},
+        "format": {
+          "enum": [
+            "csv",
+            "parquet",
+            "jsonl",
+            "json",
+            "yaml",
+            "duckdb"
+          ]
+        },
+        "compression": {
+          "type": "string"
+        },
         "sourceKeys": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true
         },
         "nullableSourceKeys": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true
         },
         "grainFields": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true
         },
         "columnPolicies": {
           "type": "array",
-          "items": {"$ref": "#/$defs/columnPolicy"}
+          "items": {
+            "$ref": "#/$defs/columnPolicy"
+          }
         },
         "availabilityRules": {
           "type": "array",
-          "items": {"$ref": "#/$defs/availabilityRule"}
+          "items": {
+            "$ref": "#/$defs/availabilityRule"
+          }
         }
       }
     }

@@ -61,6 +61,7 @@ def _full_schedule() -> pd.DataFrame:
                     "seasonal_naive_baseline": actual - 3,
                     "ma8_baseline": actual - 2,
                     "ma13_baseline": actual - 2,
+                    "cold_start_baseline": actual - 2,
                 }
             )
     return pd.DataFrame(rows)
@@ -97,6 +98,7 @@ def _accepted_schedule() -> pd.DataFrame:
                         "seasonal_naive_baseline": actual - 3,
                         "ma8_baseline": actual - 2,
                         "ma13_baseline": actual - 2,
+                        "cold_start_baseline": actual - 2,
                     }
                 )
     return pd.DataFrame(rows)
@@ -509,7 +511,7 @@ def test_verifier_recomputes_acceptance_after_hashes_are_resigned(
     )
     acceptance_path = output / "forecast_acceptance.json"
     acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
-    acceptance["global"]["gates"]["A1"]["relativeWapeImprovementPct"] = 999.0
+    acceptance["global"]["gates"]["A1_established"]["relativeWapeImprovementPct"] = 999.0
     acceptance_path.write_text(
         json.dumps(acceptance, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -630,3 +632,261 @@ def test_execution_profile_does_not_change_run_identity(tmp_path: Path) -> None:
 
     assert safe.forecast_run_id == ultra.forecast_run_id
     assert safe.semantic_fingerprint == ultra.semantic_fingerprint
+
+
+def _remediation_record() -> dict:
+    """A minimal decision #84 record shaped as the schema requires."""
+
+    return {
+        "candidateId": "C5",
+        "decisionIds": [84],
+        "blendTarget": "cold_start_baseline",
+        "segmentColumns": ["market_id", "horizon"],
+        "segments": {"m1|1": {"weight": 0.5}},
+        "fitOrigins": ["2025-08-04"],
+        "confirmationOriginsHeldOut": ["2026-01-19"],
+        "appliesToCohort": "cold_start",
+    }
+
+
+def test_a_remediation_bundle_does_not_share_an_identity_with_a_champion(
+    tmp_path: Path,
+) -> None:
+    """Decision #86 governance has to be visible to the identity.
+
+    Both run and version identity originally excluded modelPolicy, so a remediation
+    bundle and a champion bundle over byte-identical forecasts hashed to the same
+    forecast_run_id AND the same version_id. The governance that distinguishes them
+    was invisible, and a corrected bundle could not be materialised beside the
+    mislabelled one it replaced -- the unique constraint refused it.
+    """
+
+    evaluation = _full_schedule()
+    evaluation["champion_p50"] = evaluation["yhat_p50"]
+    evaluation["champion_p90"] = evaluation["yhat_p90"]
+    evaluation["cohort"] = "established_history"
+
+    common = {
+        "classification_policies": _policies(),
+        "input_bundle": _identity(),
+        "feature_semantic_fingerprint": "e" * 64,
+        "decision_as_of": datetime(2026, 1, 25, tzinfo=UTC),
+        "mlflow_run_id": None,
+        "runtime_profile": resolve_ml_runtime_profile("safe"),
+        "stage_telemetry": {"elapsed": "x"},
+        "current_forecasts": _current_forecasts(),
+    }
+    champion = publish_forecast_run(
+        _full_schedule(),
+        _calibration(),
+        _acceptance(),
+        _exceptions(),
+        _quality(),
+        tmp_path / "champion",
+        **common,
+    )
+    remediation = publish_forecast_run(
+        evaluation,
+        _calibration(),
+        _acceptance(),
+        _exceptions(),
+        _quality(),
+        tmp_path / "remediation",
+        remediation=_remediation_record(),
+        **common,
+    )
+
+    assert champion.forecast_run_id != remediation.forecast_run_id
+    champion_versions = pd.read_parquet(
+        tmp_path / "champion" / "forecast_versions.parquet"
+    )
+    remediation_versions = pd.read_parquet(
+        tmp_path / "remediation" / "forecast_versions.parquet"
+    )
+    assert (
+        champion_versions.iloc[0]["version_id"]
+        != remediation_versions.iloc[0]["version_id"]
+    ), "a remediation version must be distinguishable in the serving tables"
+
+
+def test_both_documents_declare_the_same_candidate_class(tmp_path: Path) -> None:
+    """Decision #86 §3 names the acceptance document, not only the manifest.
+
+    Publication recomputes acceptance independently and replaces what was supplied.
+    Recomputing with the default silently relabelled every remediation bundle as
+    `champion` while its manifest said `gate_remediation`.
+    """
+
+    evaluation = _full_schedule()
+    evaluation["champion_p50"] = evaluation["yhat_p50"]
+    evaluation["champion_p90"] = evaluation["yhat_p90"]
+    evaluation["cohort"] = "established_history"
+
+    publish_forecast_run(
+        evaluation,
+        _calibration(),
+        _acceptance(),
+        _exceptions(),
+        _quality(),
+        tmp_path / "bundle",
+        current_forecasts=_current_forecasts(),
+        classification_policies=_policies(),
+        input_bundle=_identity(),
+        feature_semantic_fingerprint="e" * 64,
+        decision_as_of=datetime(2026, 1, 25, tzinfo=UTC),
+        runtime_profile=resolve_ml_runtime_profile("safe"),
+        stage_telemetry={"elapsed": "x"},
+        mlflow_run_id=None,
+        remediation=_remediation_record(),
+    )
+
+    manifest = json.loads(
+        (tmp_path / "bundle" / "forecast-run-manifest.json").read_text()
+    )
+    acceptance = json.loads(
+        (tmp_path / "bundle" / "forecast_acceptance.json").read_text()
+    )
+
+    assert manifest["modelPolicy"]["candidateClass"] == "gate_remediation"
+    assert acceptance["candidateClass"] == "gate_remediation"
+
+
+def test_a_remediation_bundle_must_publish_its_replay_columns(tmp_path: Path) -> None:
+    """Without them `independentlyVerified` would only mean the publisher said so."""
+
+    with pytest.raises(ForecastPublicationError, match="replayed"):
+        publish_forecast_run(
+            _full_schedule(),
+            _calibration(),
+            _acceptance(),
+            _exceptions(),
+            _quality(),
+            tmp_path / "bundle",
+            current_forecasts=_current_forecasts(),
+            classification_policies=_policies(),
+            input_bundle=_identity(),
+            feature_semantic_fingerprint="e" * 64,
+            decision_as_of=datetime(2026, 1, 25, tzinfo=UTC),
+            runtime_profile=resolve_ml_runtime_profile("safe"),
+            stage_telemetry={"elapsed": "x"},
+            mlflow_run_id=None,
+            remediation=_remediation_record(),
+        )
+
+
+def test_display_cell_integrity_is_computed_not_asserted() -> None:
+    """Decision #86 §2.4 must produce numbers, not a claim in a document.
+
+    §2.3 and §2.5 were made to refuse a bundle earlier; §2.4 and §2.7 were still
+    satisfied by hand in the decision text. A criterion nobody computes cannot notice a
+    regression, so the comparison is now published for every display horizon.
+    """
+
+    from retail_ml.publish.run_artifacts import _decision_86_display_evidence
+
+    evaluation = _full_schedule()
+    evaluation["champion_p50"] = evaluation["yhat_p50"]
+    evaluation["champion_p90"] = evaluation["yhat_p90"]
+    evaluation["cohort"] = "established_history"
+
+    evidence = _decision_86_display_evidence(evaluation)
+
+    assert evidence["metricSemantics"] == "exact_horizon_additive"
+    assert evidence["tolerancePct"] == 0.1
+    assert evidence["cells"], "no display cell was measured"
+    # Candidate equals champion here, so every cell must be a measured zero delta rather
+    # than an absent comparison.
+    assert all(abs(cell["deltaPct"]) < 1e-9 for cell in evidence["cells"])
+    # Portfolio grain, not row level: the additive components are summed to the
+    # portfolio before the metric is read, so offsetting SeriesKey errors cancel and
+    # the number is materially higher than a row-level WAPE accuracy would be.
+    assert all(cell["grain"] == "market_portfolio" for cell in evidence["cells"])
+    assert evidence["passed"] is True
+    assert evidence["violations"] == []
+    for cell in evidence["cells"]:
+        assert cell["championPasses"] == cell["candidatePasses"]
+        assert cell["horizon"] in {1, 4, 8, 13, 26}
+        assert cell["targetPct"] > 0
+
+
+def test_a_display_cell_regression_is_detected() -> None:
+    """Degrading the candidate must surface as a violation, not vanish."""
+
+    from retail_ml.publish.run_artifacts import _decision_86_display_evidence
+
+    evaluation = _full_schedule()
+    evaluation["champion_p50"] = evaluation["yhat_p50"]
+    evaluation["champion_p90"] = evaluation["yhat_p90"]
+    evaluation["cohort"] = "established_history"
+    # Move the served p50 away from the actual so accuracy falls well past the 0.1pp
+    # display-rounding bound at every horizon.
+    evaluation["yhat_p50"] = evaluation["yhat_p50"] * 1.5
+
+    evidence = _decision_86_display_evidence(evaluation)
+
+    assert evidence["passed"] is False
+    assert evidence["violations"], "a 50% inflation produced no violation"
+    assert any(cell["regressionBeyondRounding"] for cell in evidence["cells"])
+    assert all(cell["deltaPct"] < 0 for cell in evidence["violations"])
+
+
+def test_display_targets_are_read_from_the_frozen_policy() -> None:
+    """The targets must come from the contract the UI also reads.
+
+    Restating decision #77's numbers in Python would create a second source of truth
+    that could drift from what users see on screen.
+    """
+
+    import json
+    from pathlib import Path as _Path
+
+    from retail_ml.publish.run_artifacts import _health_accuracy_targets
+
+    targets = _health_accuracy_targets()
+    contract = json.loads(
+        (
+            _Path(__file__).resolve().parents[2]
+            / "contracts"
+            / "ml"
+            / "forecast-health-policy.json"
+        ).read_text(encoding="utf-8")
+    )
+    for grain, horizons in contract["accuracyTargetsPct"].items():
+        for horizon, target in horizons.items():
+            assert targets[grain][int(horizon)] == float(target)
+
+
+def test_display_cell_metric_reproduces_the_served_grain() -> None:
+    """§2.4 must measure the cell the UI shows, not a nearby number.
+
+    This got wrong three times in a row, each plausible and each off by enough to
+    matter: per-row absolute error gives leaf accuracy, collapsing origin and week lets
+    errors cancel across time, and dropping market_id lets India and the US cancel
+    against each other. The served handler groups cells by the grain columns plus
+    horizon, forecast_origin and target_week_start, and market_portfolio's grain column
+    is market_id (`resolveHealthGrain` in api/internal/readmodel/forecast.go).
+
+    So the property under test is the grouping, asserted against a frame built so that
+    the wrong groupings give visibly different answers: the two markets carry
+    offsetting errors, which cancel unless market_id is part of the cell key.
+    """
+
+    from retail_ml.publish.run_artifacts import _portfolio_horizon_accuracy
+
+    frame = pd.DataFrame(
+        {
+            "market_id": ["in", "us", "in", "us"],
+            "forecast_origin": ["2026-01-05"] * 4,
+            "target_week_start": ["2026-01-12", "2026-01-12", "2026-01-19", "2026-01-19"],
+            "actual_units": [100.0, 100.0, 100.0, 100.0],
+            # +20 in one market, -20 in the other, in both weeks.
+            "yhat_p50": [120.0, 80.0, 120.0, 80.0],
+        }
+    )
+
+    accuracy = _portfolio_horizon_accuracy(frame, "yhat_p50")
+    # Per market-week cell: |20| each, four cells -> 80 absolute error on 400 actual.
+    assert accuracy == pytest.approx(80.0)
+    # Had market_id been dropped from the cell key the errors would cancel exactly and
+    # this would read 100.0 -- a perfect score built out of two wrong forecasts.
+    assert accuracy != pytest.approx(100.0)

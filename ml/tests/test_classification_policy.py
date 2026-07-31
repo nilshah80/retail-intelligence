@@ -42,6 +42,8 @@ def _series_row() -> dict[str, object]:
 
 
 def test_decision_60_policy_fingerprints_and_bindings_are_live() -> None:
+    """The exceptions policy is unchanged; data quality now binds to promoted v2."""
+
     policy = load_classification_policy()
 
     assert policy.bindings() == {
@@ -53,16 +55,37 @@ def test_decision_60_policy_fingerprints_and_bindings_are_live() -> None:
             ),
         },
         "dataQuality": {
-            "policyId": "retail-forecast-data-quality/v1",
+            "policyId": "retail-forecast-data-quality/v2",
             "semanticFingerprint": (
-                "3c80b69f40b268be64b2f9068d5c366"
-                "bd192cebd878c8fbd179b8ea95b4df81c"
+                "e0baf3ef64568e0c7ad55bb6ca5d9157"
+                "ba1a5238f64405d7a432b08bc2b1d0e5"
             ),
         },
     }
 
 
-def test_data_quality_vectors_are_executable() -> None:
+#: Which v1 vectors were triggered by a publication-scoped input rather than by
+#: anything about the SeriesKey. Decision #76 promoted v2 on 2026-07-31, so these
+#: no longer degrade a row: the finding stays visible in `global_limitations`.
+#: Only this one. The v1 `watch` vector also sets three row-local triggers
+#: (missing share 0.10, age 15 days, coverage 0.85), so v2 keeps it `Watch` on its
+#: own evidence -- which is the point: the promotion narrowed the grain without
+#: blunting the row-local battery.
+V1_VECTORS_TRIGGERED_BY_PUBLICATION_SCOPE = {
+    "critical-source-finding-dominates": "source_quality_critical_count",
+}
+
+
+def test_data_quality_vectors_run_under_the_promoted_grain() -> None:
+    """v1's vectors still execute; two of them intentionally changed outcome.
+
+    v1 is immutable and its vectors are kept, but the active path is now v2. A
+    vector whose only non-Good input was publication-scoped must now leave the row
+    `Good`, and one driven by row-local evidence must still degrade it. Asserting
+    both directions is what stops the promotion from being read as a blanket
+    downgrade of the quality battery.
+    """
+
     policy = load_classification_policy()
     for vector in policy.data_quality["testVectors"]:
         row = _series_row()
@@ -72,11 +95,16 @@ def test_data_quality_vectors_are_executable() -> None:
             decision_as_of=DECISION_AS_OF,
             policy=policy,
         )
-        assert quality.iloc[0]["data_quality_class"] == vector["expectedClass"]
+        observed = quality.iloc[0]["data_quality_class"]
+        if vector["id"] in V1_VECTORS_TRIGGERED_BY_PUBLICATION_SCOPE:
+            assert observed == "Good", vector["id"]
+            evidence = json.loads(quality.iloc[0]["evidence"])
+            assert evidence["global_limitations"], vector["id"]
+            assert evidence["publication_quality_class"] != "Good", vector["id"]
+        else:
+            assert observed == vector["expectedClass"], vector["id"]
         expected_exception = (
-            {"data_quality_exception"}
-            if vector["expectedClass"] == "Issue"
-            else set()
+            {"data_quality_exception"} if observed == "Issue" else set()
         )
         assert set(exceptions["exception_class"]) == expected_exception
 
@@ -87,7 +115,11 @@ def test_exception_vectors_are_executable() -> None:
         row = _series_row()
         row.update(vector["input"])
         if vector["input"]["data_quality_class"] == "Issue":
-            row["source_quality_critical_count"] = 1
+            # Under the promoted v2 grain a publication-scoped critical finding no
+            # longer degrades a row, so force the Issue through row-local evidence
+            # instead. The vector is exercising the exception battery, not the
+            # quality grain.
+            row["canonical_key_complete"] = False
         exceptions, _, _ = classify_current_cycle(
             pd.DataFrame([row]),
             decision_as_of=DECISION_AS_OF,

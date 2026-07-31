@@ -1,0 +1,226 @@
+{
+  "accuracyTargetsPct": {
+    "market_portfolio": {
+      "1": "90",
+      "13": "82",
+      "26": "78",
+      "4": "88",
+      "8": "85"
+    },
+    "series_key": {
+      "1": "80",
+      "13": "72",
+      "26": "68",
+      "4": "78",
+      "8": "75"
+    },
+    "store_category": {
+      "1": "85",
+      "13": "75",
+      "26": "70",
+      "4": "82",
+      "8": "78"
+    }
+  },
+  "decisionIds": [
+    77,
+    80
+  ],
+  "defaultDisplayHorizons": [
+    1,
+    4,
+    8,
+    13
+  ],
+  "diagnosticOnlyHorizons": [
+    26
+  ],
+  "fingerprintExcludes": [
+    "semanticFingerprint",
+    "status",
+    "fingerprintExcludes",
+    "note",
+    "subject"
+  ],
+  "grainResolution": {
+    "channelFilterDoesNotChangeTargetGrain": true,
+    "evaluationOrder": [
+      "series_key",
+      "store_category",
+      "market_portfolio"
+    ],
+    "mode": "first_matching_rule",
+    "rules": {
+      "market_portfolio": "otherwise",
+      "series_key": "exactly one complete sku_id x store_id x channel_id SeriesKey is explicitly selected",
+      "store_category": "no SeriesKey is selected and exactly one store_id or exactly one category is selected"
+    }
+  },
+  "grainResolutionTestVectors": [
+    {
+      "expectedGrain": "market_portfolio",
+      "id": "portfolio-default",
+      "input": {
+        "completeSeriesKeyCount": 0,
+        "selectedCategoryCount": 0,
+        "selectedChannelCount": 0,
+        "selectedStoreCount": 0
+      }
+    },
+    {
+      "expectedGrain": "store_category",
+      "id": "single-store",
+      "input": {
+        "completeSeriesKeyCount": 0,
+        "selectedCategoryCount": 0,
+        "selectedChannelCount": 0,
+        "selectedStoreCount": 1
+      }
+    },
+    {
+      "expectedGrain": "store_category",
+      "id": "single-category-with-channel-filter",
+      "input": {
+        "completeSeriesKeyCount": 0,
+        "selectedCategoryCount": 1,
+        "selectedChannelCount": 1,
+        "selectedStoreCount": 0
+      }
+    },
+    {
+      "expectedGrain": "series_key",
+      "id": "explicit-series-key",
+      "input": {
+        "completeSeriesKeyCount": 1,
+        "selectedCategoryCount": 1,
+        "selectedChannelCount": 1,
+        "selectedStoreCount": 1
+      }
+    }
+  ],
+  "horizons": [
+    1,
+    4,
+    8,
+    13,
+    26
+  ],
+  "metricSemantics": "exact_horizon_additive",
+  "policyId": "retail-forecast-health/v1",
+  "referenceHtmlPolicy": {
+    "layoutAuthority": true,
+    "reason": "The HTML sample coverage values exceed the accepted 0.85-0.95 interval and its sample badges do not implement decision #80.",
+    "sampleCoverageAndStatusValuesAuthoritative": false
+  },
+  "schemaVersion": "retail-forecast-health-policy/v1",
+  "semanticFingerprint": "569dd287b494fd1b9f5968032e3a2f8073feafea1fb00bf497d1c040d0488a80",
+  "status": "implemented",
+  "statusEvaluation": {
+    "conditionsWithinTier": "all",
+    "evaluationOrder": [
+      "Strong",
+      "Healthy",
+      "Watch",
+      "Action"
+    ],
+    "missingOrInsufficientMetric": "unavailable",
+    "mode": "first_matching_tier",
+    "tiers": {
+      "Action": {
+        "otherwise": true
+      },
+      "Healthy": {
+        "absoluteBiasMaxPct": "5",
+        "accuracyVsTargetMinPoints": "0",
+        "coverageMaxRatio": "0.95",
+        "coverageMinRatio": "0.85"
+      },
+      "Strong": {
+        "absoluteBiasMaxPct": "3",
+        "accuracyVsTargetMinPoints": "5",
+        "coverageMaxRatio": "0.93",
+        "coverageMinRatio": "0.87"
+      },
+      "Watch": {
+        "absoluteBiasMaxPct": "10",
+        "accuracyVsTargetMinPoints": "-10",
+        "coverageMaxRatio": "0.98",
+        "coverageMinRatio": "0.80"
+      }
+    }
+  },
+  "statusTestVectors": [
+    {
+      "expectedStatus": "Strong",
+      "id": "strong-market-h1",
+      "input": {
+        "accuracyPct": "95",
+        "biasPct": "-3",
+        "grain": "market_portfolio",
+        "horizon": 1,
+        "p90CoverageRatio": "0.87"
+      }
+    },
+    {
+      "expectedStatus": "Healthy",
+      "id": "healthy-market-h4-boundary",
+      "input": {
+        "accuracyPct": "88",
+        "biasPct": "5",
+        "grain": "market_portfolio",
+        "horizon": 4,
+        "p90CoverageRatio": "0.95"
+      }
+    },
+    {
+      "expectedStatus": "Watch",
+      "id": "watch-store-h8-boundary",
+      "input": {
+        "accuracyPct": "68",
+        "biasPct": "-10",
+        "grain": "store_category",
+        "horizon": 8,
+        "p90CoverageRatio": "0.80"
+      }
+    },
+    {
+      "expectedStatus": "Action",
+      "id": "action-series-h13-below-watch",
+      "input": {
+        "accuracyPct": "61.9",
+        "biasPct": "0",
+        "grain": "series_key",
+        "horizon": 13,
+        "p90CoverageRatio": "0.90"
+      }
+    },
+    {
+      "expectedStatus": "Action",
+      "id": "action-overwide-reference-like-coverage",
+      "input": {
+        "accuracyPct": "95",
+        "biasPct": "-1",
+        "grain": "market_portfolio",
+        "horizon": 1,
+        "p90CoverageRatio": "0.996"
+      }
+    },
+    {
+      "expectedStatus": "unavailable",
+      "id": "unavailable-metric",
+      "input": {
+        "accuracyPct": null,
+        "biasPct": "-1",
+        "grain": "market_portfolio",
+        "horizon": 1,
+        "p90CoverageRatio": "0.90"
+      }
+    }
+  ],
+  "units": {
+    "absoluteBias": "percentage_points",
+    "accuracy": "percentage_points_0_to_100",
+    "accuracyVsTarget": "percentage_points",
+    "p90Coverage": "ratio_0_to_1"
+  }
+}

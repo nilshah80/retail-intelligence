@@ -179,6 +179,7 @@ class BusinessCentralAdapter(SourceAdapter):
             f"""
             CREATE OR REPLACE TABLE stage_data.bc_sales_control AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 i._source_instance AS source_instance,
                 i._market_id AS market_id,
                 i.id::VARCHAR AS source_sale_id,
@@ -234,6 +235,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_inventory_batches AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 _source_instance AS source_instance, _market_id AS market_id,
                 batchId::VARCHAR AS batch_id, sku::VARCHAR AS sku_source_key,
                 coalesce(warehouseId, locationCode)::VARCHAR
@@ -253,6 +255,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_inbound_shipments AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 s._source_instance AS source_instance,
                 s._market_id AS market_id,
                 s.shipmentId::VARCHAR AS shipment_id,
@@ -285,6 +288,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_transfer_orders AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 h._source_instance AS source_instance,
                 h._market_id AS market_id,
                 concat(h.id, ':', l.id)::VARCHAR AS transfer_id,
@@ -304,6 +308,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_waste_events AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 _source_instance AS source_instance, _market_id AS market_id,
                 wasteEventId::VARCHAR AS event_id, sku::VARCHAR AS sku_source_key,
                 warehouseId::VARCHAR AS location_source_key,
@@ -319,6 +324,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_warehouse_capacity AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 _source_instance AS source_instance, _market_id AS market_id,
                 warehouseId::VARCHAR AS location_source_key,
                 cast(
@@ -339,6 +345,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_wms_comparisons AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 _source_instance AS source_instance, _market_id AS market_id,
                 sku::VARCHAR AS sku_source_key,
                 warehouseId::VARCHAR AS location_source_key,
@@ -360,6 +367,7 @@ class BusinessCentralAdapter(SourceAdapter):
             """
             CREATE OR REPLACE TABLE stage_data.bc_supplier_performance AS
             SELECT
+                'businessCentral'::VARCHAR AS source_system,
                 _source_instance AS source_instance, _market_id AS market_id,
                 vendorId::VARCHAR AS supplier_source_key,
                 date_trunc('month', try_cast(actualDate AS DATE))::DATE AS period,

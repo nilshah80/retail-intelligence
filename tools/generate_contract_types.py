@@ -13,6 +13,10 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "contracts" / "retail_v2" / "schema.yaml"
+HEALTH_POLICY_PATH = (
+    REPO_ROOT / "contracts" / "ml" / "forecast-health-policy.json"
+)
+UI_GENERATED_ROOT = REPO_ROOT / "ui" / "src" / "generated"
 OUTPUT_ROOT = REPO_ROOT / "contracts" / "generated"
 HEADER = "Generated from contracts/retail_v2/schema.yaml; DO NOT EDIT."
 ACRONYMS = {
@@ -169,12 +173,99 @@ def render_typescript(schema: Mapping[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+
+def render_forecast_health_policy() -> str:
+    """Emit decision #77/#80 targets and status tiers for the UI.
+
+    The React table must not hand-copy governed thresholds. Generating them keeps
+    `tools/dev.py contracts` able to detect drift between the policy contract and
+    the screen that renders it.
+    """
+
+    policy = json.loads(HEALTH_POLICY_PATH.read_text(encoding="utf-8"))
+    tiers = policy["statusEvaluation"]["tiers"]
+    order = policy["statusEvaluation"]["evaluationOrder"]
+    lines = [
+        "// Generated from contracts/ml/forecast-health-policy.json; DO NOT EDIT.",
+        "",
+        "export type ForecastHealthGrain =",
+        "  | \"market_portfolio\"",
+        "  | \"store_category\"",
+        "  | \"series_key\";",
+        "",
+        "export type ForecastHealthStatus =",
+        "  | \"Strong\"",
+        "  | \"Healthy\"",
+        "  | \"Watch\"",
+        "  | \"Action\"",
+        "  | \"unavailable\";",
+        "",
+        f'export const FORECAST_HEALTH_POLICY_ID = "{policy["policyId"]}";',
+        "export const FORECAST_HEALTH_POLICY_FINGERPRINT =",
+        f'  "{policy["semanticFingerprint"]}";',
+        "",
+        "export const FORECAST_HEALTH_DISPLAY_HORIZONS = ["
+        + ", ".join(str(h) for h in policy["defaultDisplayHorizons"])
+        + "] as const;",
+        "",
+        "export const FORECAST_HEALTH_DIAGNOSTIC_HORIZONS = ["
+        + ", ".join(str(h) for h in policy["diagnosticOnlyHorizons"])
+        + "] as const;",
+        "",
+        "export const FORECAST_HEALTH_ACCURACY_TARGETS: Record<",
+        "  ForecastHealthGrain,",
+        "  Record<number, number>",
+        "> = {",
+    ]
+    for grain in ("market_portfolio", "store_category", "series_key"):
+        entries = policy["accuracyTargetsPct"][grain]
+        rendered = ", ".join(
+            f"{horizon}: {entries[horizon]}"
+            for horizon in sorted(entries, key=int)
+        )
+        lines.append(f"  {grain}: {{{rendered}}},")
+    lines.extend(("};", ""))
+    lines.append("export const FORECAST_HEALTH_TIERS: readonly {")
+    lines.append("  status: ForecastHealthStatus;")
+    lines.append("  accuracyVsTargetMinPoints: number;")
+    lines.append("  absoluteBiasMaxPct: number;")
+    lines.append("  coverageMinRatio: number;")
+    lines.append("  coverageMaxRatio: number;")
+    lines.append("}[] = [")
+    for status in order:
+        tier = tiers[status]
+        if tier.get("otherwise"):
+            continue
+        lines.append(
+            "  {"
+            f'status: "{status}", '
+            f"accuracyVsTargetMinPoints: {tier['accuracyVsTargetMinPoints']}, "
+            f"absoluteBiasMaxPct: {tier['absoluteBiasMaxPct']}, "
+            f"coverageMinRatio: {tier['coverageMinRatio']}, "
+            f"coverageMaxRatio: {tier['coverageMaxRatio']}"
+            "},"
+        )
+    lines.extend(("];", ""))
+    lines.append(
+        'export const FORECAST_HEALTH_FALLBACK_STATUS: ForecastHealthStatus = '
+        '"Action";'
+    )
+    lines.append(
+        "export const FORECAST_HEALTH_UNAVAILABLE_STATUS: "
+        'ForecastHealthStatus = "unavailable";'
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def expected_outputs() -> dict[Path, str]:
     schema = yaml.safe_load(SCHEMA_PATH.read_text(encoding="utf-8"))
     return {
         OUTPUT_ROOT / "python" / "retail_v2_types.py": render_python(schema),
         OUTPUT_ROOT / "go" / "retail_v2_types.go": render_go(schema),
         OUTPUT_ROOT / "typescript" / "retail_v2.ts": render_typescript(schema),
+        UI_GENERATED_ROOT / "forecastHealthPolicy.ts": (
+            render_forecast_health_policy()
+        ),
     }
 
 

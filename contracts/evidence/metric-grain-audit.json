@@ -1,0 +1,116 @@
+{
+  "decisionIds": [
+    12,
+    77,
+    78,
+    80
+  ],
+  "grainGuardrail": "Every payload now carries metricGrain, coverageGrain and accuracyGrain. Decision #78 stays enforceable because no figure can be read at the wrong grain, in either direction.",
+  "measuredOn": "fr_463f53be6353e481",
+  "metrics": [
+    {
+      "after": "93.8",
+      "before": "76.9",
+      "grain": "market_portfolio",
+      "label": "Forecast Accuracy KPI",
+      "verdict": "FIXED"
+    },
+    {
+      "grain": "market_portfolio",
+      "label": "Forecast Bias KPI",
+      "value": "-2.1",
+      "verdict": "correct"
+    },
+    {
+      "after": "95.2 Strong",
+      "before": "78.3 Action",
+      "grain": "market_portfolio",
+      "label": "Forecast Health h1",
+      "verdict": "FIXED"
+    },
+    {
+      "after": "92.7 Healthy",
+      "before": "75.6 Action",
+      "grain": "market_portfolio",
+      "label": "Forecast Health h4",
+      "verdict": "FIXED"
+    },
+    {
+      "after": "92.7 Healthy",
+      "before": "72.9 Action",
+      "grain": "market_portfolio",
+      "label": "Forecast Health h8",
+      "verdict": "FIXED"
+    },
+    {
+      "after": "92.3 Watch",
+      "before": "71.0 Action",
+      "grain": "market_portfolio",
+      "label": "Forecast Health h13",
+      "note": "Watch not Healthy because bias -6.3 exceeds the 5 point tier limit. Honest.",
+      "verdict": "FIXED"
+    },
+    {
+      "after": "92.8",
+      "before": "72.3",
+      "grain": "market_portfolio",
+      "label": "Model Accuracy footer",
+      "verdict": "FIXED"
+    },
+    {
+      "after": "92.3-94.4",
+      "before": "70.5-73.4",
+      "grain": "store",
+      "label": "Store View per store",
+      "verdict": "FIXED"
+    },
+    {
+      "grain": "series_key",
+      "label": "SKU View accuracy",
+      "note": "Grain was already correct. Negative values were the defect.",
+      "value": "6.2-83.1 plus withheld rows",
+      "verdict": "FIXED_DOMAIN"
+    },
+    {
+      "grain": "series_key",
+      "label": "Statistical baseline accuracy",
+      "value": "59.4",
+      "verdict": "left_at_series_key"
+    },
+    {
+      "grain": "series_key",
+      "label": "AI forecast accuracy (FVA card)",
+      "value": "72.3",
+      "verdict": "left_at_series_key"
+    },
+    {
+      "grain": "series_key",
+      "label": "Net FVA",
+      "note": "At market_portfolio grain FVA FALLS to +25.26 because the MA13 baseline also benefits from offsetting. Left at SeriesKey grain and labelled, and the fall is recorded so the grain work cannot be read as uniformly flattering.",
+      "value": "+31.8",
+      "verdict": "left_at_series_key"
+    },
+    {
+      "grain": "series_key",
+      "label": "Confidence",
+      "note": "Decision #12 is 1/(1+relative spread), structurally bounded in [0,1]. Measured min 0.0084, median 0.5601, max 1.0000, zero negatives, 6.6 percent below 0.30. Low values are honest wide intervals on sparse series, not a bug.",
+      "verdict": "no_defect"
+    },
+    {
+      "label": "Demand at Risk / Planner Overrides / Business Impact",
+      "note": "Reason-coded as Phase 4 and Phase 6 rather than fabricated.",
+      "verdict": "correctly_unavailable"
+    }
+  ],
+  "negativeAccuracyDefect": {
+    "concentration": "Entirely sparse demand: negative rows have median 111 units across 13 origins and median zero-share 0.654, against 2,612 units and 0.038 for the rest.",
+    "finding": "Row accuracy is 100*(1-WAPE) and leaves the 0-100 domain whenever absolute error exceeds total demand. 321 of 2,212 SeriesKeys were below zero, 21 below -100, worst -1049.2.",
+    "resolution": "The percentage is withheld when WAPE > 1 and the row publishes accuracyState = error_exceeds_demand with its WAPE. Clamping to zero was rejected: it would hide which rows are catastrophically wrong versus merely useless. Follows decision #80 -- an out-of-domain metric is a state, not a badge.",
+    "verified": "0 negative cells in SKU View; 9 of 100 visible rows withheld with a reason tooltip."
+  },
+  "purpose": "Every displayed metric checked for grain correctness and domain validity.",
+  "quantileNote": "P90 coverage is never aggregated. A sum of P90 bounds is not the P90 of a sum, so coverage is measured at SeriesKey grain everywhere and labelled. Summing produced a meaningless 1.00 which would have forced Action on every row, since all four decision #80 tiers require coverage inside a band.",
+  "schemaVersion": "retail-metric-audit-record/v1",
+  "testsGreen": "Go all packages, ml 157 passed 2 skipped, contracts 122 passed, UI 11 passed plus typecheck",
+  "verifiedInBrowser": true
+}

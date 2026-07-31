@@ -31,7 +31,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0005_complete_pairing_verifier",)
+            assert cursor.fetchone() == ("0006_cohorted_verifier_v4",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -73,4 +73,7 @@ def test_forecast_serving_schema_integration() -> None:
             )
             view_definition = cursor.fetchone()[0]
             assert "verification_contract" in view_definition
-            assert "retail-forecast-verifier/v3" in view_definition
+            # Migration 0006 admits decision-#82 verifier-v4 evidence only;
+            # verifier-v2/v3 materializations stop being eligible to serve.
+            assert "retail-forecast-verifier/v4" in view_definition
+            assert "retail-forecast-verifier/v3" not in view_definition

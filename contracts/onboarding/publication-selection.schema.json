@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/publication-selection.schema.json",
+  "title": "retail-publication-selection/v1",
+  "description": "An immutable selection binding one retailer/tenant/capability/environment to one curated publication. Decision #73 replaces 'discover the committed demo pin' as a deployment assumption. There is no 'latest' resolution: a runtime command names a selection explicitly and fails closed when it is absent, mismatched or under-capable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "selectionId",
+    "scope",
+    "lifecycle",
+    "publication",
+    "readiness",
+    "approval"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-publication-selection/v1"
+    },
+    "selectionId": {
+      "type": "string",
+      "pattern": "^sel_[0-9a-f]{16}$",
+      "description": "Content-addressed id of WHAT is selected. Stable across lifecycle states; the lifecycle recordId identifies each approval event."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retailerId",
+        "tenantId",
+        "capability",
+        "environment"
+      ],
+      "description": "Exactly one active selection may exist per scope tuple.",
+      "properties": {
+        "retailerId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "tenantId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "capability": {
+          "enum": [
+            "current_descriptive_analytics",
+            "demand_forecast_non_pit",
+            "historical_replay",
+            "point_in_time_forecasting",
+            "inventory_replenishment",
+            "price_revenue",
+            "price_margin",
+            "promotion_aware_forecasting",
+            "competitor_aware_forecasting"
+          ]
+        },
+        "environment": {
+          "enum": [
+            "local",
+            "dev",
+            "staging",
+            "prod"
+          ]
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "candidate",
+            "approved",
+            "active",
+            "superseded",
+            "rejected"
+          ]
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Prior lifecycle recordId. Rollback creates new records that supersede forward; it never mutates one."
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "recordId": {
+          "type": "string",
+          "pattern": "^rec_[0-9a-f]{16}$",
+          "description": "Identifies one lifecycle record. `supersedes` refers to a recordId, so the supersedes chain exists without the selected publication appearing to change."
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSnapshotId",
+        "gateASemanticFingerprint",
+        "gateBSemanticFingerprint",
+        "publicationSemanticFingerprint",
+        "logicalPath",
+        "objectCount"
+      ],
+      "properties": {
+        "sourceSnapshotId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "gateASemanticFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "gateBSemanticFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "publicationSemanticFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "logicalPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "duckdbSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportFingerprint",
+        "capabilityReadiness",
+        "capabilitySufficiency"
+      ],
+      "description": "Binds the selection to the readiness evidence that justified it. A capability downgrade after the fact invalidates the selection rather than silently degrading serving.",
+      "properties": {
+        "reportFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "capabilityReadiness": {
+          "enum": [
+            "ready",
+            "validated_partial",
+            "unavailable",
+            "blocked"
+          ]
+        },
+        "capabilitySufficiency": {
+          "enum": [
+            "sufficient",
+            "insufficient_evidence",
+            "not_evaluated"
+          ]
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "approvedAt",
+        "reason"
+      ],
+      "description": "Audit evidence only. These fields are excluded from semantic identity so re-approving the same publication does not mint a different selection.",
+      "properties": {
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "semanticIdentityExcludes": {
+      "type": "array",
+      "default": [
+        "approval",
+        "selectionId",
+        "semanticIdentityExcludes"
+      ],
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

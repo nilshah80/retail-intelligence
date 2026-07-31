@@ -13,6 +13,7 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
+from decimal import Decimal
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -20,7 +21,7 @@ from typing import Any, Final
 import numpy as np
 import pandas as pd
 
-from retail_contracts.fingerprint import semantic_fingerprint
+from retail_contracts.fingerprint import canonical_decimal_string, semantic_fingerprint
 
 from retail_ml.features.availability import HORIZONS, LABEL_EMBARGO_WEEKS
 from retail_ml.keys import SeriesKey
@@ -31,16 +32,22 @@ from retail_ml.models.backtest import (
     SCORING_ORIGINS,
     SLOW_MOVER_THRESHOLD,
     TRAINING_ORIGINS,
+    CANDIDATE_CLASS_CHAMPION,
+    CANDIDATE_CLASS_REMEDIATION,
     evaluate_acceptance,
+)
+from retail_ml.models.cohorts import (
+    COLD_START_BASELINE_COLUMN,
+    acceptance_frame as _acceptance_frame,
 )
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.confidence import forecast_confidence
 from retail_ml.policies.classification import load_classification_policy
 from retail_ml.runtime.profile import MLRuntimeProfile
 
-RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v2"
+RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v3"
 ACCEPTANCE_EVALUATION_VERSION: Final[str] = (
-    "paired-seasonal-complete-recomputation/v3"
+    "cohorted-seasonal-cold-start-recomputation/v4"
 )
 ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "forecast_versions": "retail-v2-forecast-versions/v1",
@@ -84,6 +91,7 @@ BASELINE_COLUMNS: Final[dict[str, str]] = {
     "seasonal_naive": "seasonal_naive_baseline",
     "ma8": "ma8_baseline",
     "ma13": "ma13_baseline",
+    "cold_start_mean": COLD_START_BASELINE_COLUMN,
 }
 
 
@@ -91,10 +99,40 @@ class ForecastPublicationError(RuntimeError):
     """A candidate cannot satisfy the immutable run-bundle contract."""
 
 
-def model_policy() -> dict[str, Any]:
-    """Return the exact semantic model and acceptance policy for this publisher."""
+def _canonical_numbers(value: Any) -> Any:
+    """Render non-integral numbers as canonical decimal text, recursively.
 
-    return {
+    The manifest is fingerprinted, and the fingerprint contract refuses binary
+    floats so the same payload cannot hash two ways across platforms. The blend
+    weights and grid scores arrive as floats, so they are converted here rather
+    than at every producer.
+    """
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return canonical_decimal_string(Decimal(repr(value)))
+    if isinstance(value, dict):
+        return {key: _canonical_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_canonical_numbers(item) for item in value]
+    return value
+
+
+def model_policy(
+    remediation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the exact semantic model and acceptance policy for this publisher.
+
+    `remediation` carries decision #84/#86 candidate provenance. It belongs here
+    rather than in the acceptance document: publication independently recomputes
+    acceptance and replaces whatever was supplied, so anything not derivable from
+    the acceptance frame cannot survive there. Both C5 bundles published before
+    this change therefore read `candidateClass: champion` and lost the blend
+    record entirely, which is precisely what decision #86 §3 forbids.
+    """
+
+    policy: dict[str, Any] = {
         "horizonWeeks": list(HORIZONS),
         "evaluationWindowWeeks": EVALUATION_WINDOW_WEEKS,
         "scoringOriginStepWeeks": ORIGIN_STEP_WEEKS,
@@ -107,7 +145,12 @@ def model_policy() -> dict[str, Any]:
         "metricAggregation": "additive_components",
         "promotionFeature": "unavailable",
         "acceptanceEvaluation": ACCEPTANCE_EVALUATION_VERSION,
+        "candidateClass": CANDIDATE_CLASS_CHAMPION,
     }
+    if remediation is not None:
+        policy["candidateClass"] = CANDIDATE_CLASS_REMEDIATION
+        policy["remediation"] = _canonical_numbers(remediation)
+    return policy
 
 
 @dataclass(frozen=True)
@@ -243,7 +286,22 @@ def _validate_complete_schedule(frame: pd.DataFrame) -> None:
         )
 
 
-def derive_evaluation_predictions(evaluation: pd.DataFrame) -> pd.DataFrame:
+#: Columns a decision #86 remediation bundle must publish so its structural checks
+#: can be REPLAYED rather than read back as stored booleans. Without the champion
+#: values and the cohort label there is nothing to recompute against, and
+#: `independentlyVerified` would only mean "the publisher said so".
+REMEDIATION_REPLAY_COLUMNS: Final[tuple[str, ...]] = (
+    "champion_p50",
+    "champion_p90",
+    "cohort",
+)
+
+
+def derive_evaluation_predictions(
+    evaluation: pd.DataFrame,
+    *,
+    remediation: bool = False,
+) -> pd.DataFrame:
     required = {
         *EVALUATION_KEY_COLUMNS,
         "dept_id",
@@ -268,6 +326,18 @@ def derive_evaluation_predictions(evaluation: pd.DataFrame) -> pd.DataFrame:
         "selected_model",
         "zero_share_52w",
     ]
+    if remediation:
+        missing = [
+            name
+            for name in REMEDIATION_REPLAY_COLUMNS
+            if name not in evaluation.columns
+        ]
+        if missing:
+            raise ForecastPublicationError(
+                "a remediation bundle must publish "
+                f"{missing} so its decision #86 checks can be replayed"
+            )
+        columns.extend(REMEDIATION_REPLAY_COLUMNS)
     result = evaluation[columns].copy()
     if result.duplicated(list(EVALUATION_KEY_COLUMNS), keep=False).any():
         raise ForecastPublicationError(
@@ -347,12 +417,16 @@ def _metric_rows_for_scope(
     scope_type: str,
     scope_columns: tuple[str, ...],
     default_scope_key: str = "portfolio",
+    coverage_available: bool = True,
 ) -> list[dict[str, Any]]:
     working = frame.copy()
     actual = pd.to_numeric(working["actual_units"], errors="coerce")
     prediction = pd.to_numeric(working[prediction_column], errors="coerce")
     valid = actual.notna() & prediction.notna()
-    if model_id == "champion":
+    if model_id == "champion" and coverage_available:
+        # Only require an upper bound when coverage will actually be measured.
+        # Additive slices carry no upper bound because quantiles do not sum, and
+        # demanding one there would silently drop every aggregated row.
         upper = pd.to_numeric(working["yhat_p90"], errors="coerce")
         valid &= upper.notna()
     working = working.loc[valid].copy()
@@ -362,8 +436,10 @@ def _metric_rows_for_scope(
     working["_signed"] = prediction - actual
     working["_actual"] = actual
     working["_hits"] = (
-        actual <= pd.to_numeric(working["yhat_p90"], errors="coerce")
-    ).astype("int64") if model_id == "champion" else 0
+        (actual <= pd.to_numeric(working["yhat_p90"], errors="coerce")).astype("int64")
+        if model_id == "champion" and coverage_available
+        else 0
+    )
     working["_n"] = 1
     rows: list[dict[str, Any]] = []
     for include_horizon in (False, True):
@@ -415,11 +491,75 @@ def _metric_rows_for_scope(
                     "bias": signed_error_sum / actual_sum if actual_sum > 0 else None,
                     "accuracy": 100.0 * (1.0 - wape) if wape is not None else None,
                     "p90_coverage": (
-                        coverage_hits / n if model_id == "champion" and n else None
+                        coverage_hits / n
+                        if coverage_available and model_id == "champion" and n
+                        else None
                     ),
                 }
             )
     return rows
+
+
+#: Decision #77 declares `metricSemantics: exact_horizon_additive`, which means a
+#: grain's accuracy is measured by summing actual and predicted **to that grain
+#: first** and differencing afterwards. Every original slice instead pooled
+#: SeriesKey-level errors inside a dimension, which is a different quantity: at h1
+#: the leaf figure is 78.27% while the additive market figure is 95.18%. The
+#: contract was right and nothing enforced it, so the Forecast Health table read
+#: leaf numbers against portfolio targets and painted four Action badges on rows
+#: that all pass.
+ADDITIVE_SLICE_TYPES: Final[tuple[str, ...]] = (
+    "market_portfolio",
+    "store_category",
+)
+
+#: Aggregation grain per additive slice type. `market_portfolio` deliberately
+#: aggregates to market and pools across markets rather than summing both markets
+#: into one cell: pooling is the **more conservative** of the two readings, and a
+#: grain metric introduced to raise a displayed number should take the harder
+#: option, not the flattering one.
+ADDITIVE_AGGREGATION_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
+    "market_portfolio": ("market_id",),
+    "store_category": ("store_id", "category"),
+}
+
+
+def _aggregate_to_grain(
+    frame: pd.DataFrame,
+    *,
+    aggregation_columns: tuple[str, ...],
+    prediction_column: str,
+) -> pd.DataFrame:
+    """Sum actual and predicted to a grain cell before any error is taken."""
+
+    columns = [
+        *aggregation_columns,
+        "forecast_origin",
+        "target_week_start",
+        "horizon",
+    ]
+    aggregations: dict[str, Any] = {
+        "actual_units": ("actual_units", "sum"),
+        prediction_column: (prediction_column, "sum"),
+    }
+    working = frame.copy()
+    working["actual_units"] = pd.to_numeric(working["actual_units"], errors="coerce")
+    working[prediction_column] = pd.to_numeric(
+        working[prediction_column], errors="coerce"
+    )
+    rolled = (
+        working.groupby(columns, sort=True, observed=True, dropna=False)
+        .agg(**aggregations)
+        .reset_index()
+    )
+    # A sum of P90s is not the P90 of a sum. Quantiles do not aggregate, so no
+    # upper bound is carried into an additive slice and coverage is published as
+    # unavailable rather than as the ~1.0 that summing would produce. Reporting
+    # that number would be worse than reporting nothing: every decision #80 tier
+    # requires coverage inside a band, so a fabricated 1.0 forces Action.
+    rolled["yhat_p90"] = np.nan
+    rolled["zero_share_52w"] = 0.0
+    return rolled
 
 
 def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
@@ -467,6 +607,27 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
     )
     models = (("champion", "yhat_p50"), *BASELINE_COLUMNS.items())
     rows: list[dict[str, Any]] = []
+    # Additive slices first so a reader of the emitted frame sees the grain-correct
+    # figures alongside the leaf ones rather than having to know which is which.
+    for slice_type in ADDITIVE_SLICE_TYPES:
+        aggregation_columns = ADDITIVE_AGGREGATION_COLUMNS[slice_type]
+        for model_id, prediction_column in models:
+            rolled = _aggregate_to_grain(
+                evaluation,
+                aggregation_columns=aggregation_columns,
+                prediction_column=prediction_column,
+            )
+            for scope_columns in ((), aggregation_columns):
+                rows.extend(
+                    _metric_rows_for_scope(
+                        rolled,
+                        prediction_column=prediction_column,
+                        model_id=model_id,
+                        scope_type=slice_type,
+                        scope_columns=scope_columns,
+                        coverage_available=False,
+                    )
+                )
     for model_id, prediction_column in models:
         for scope_type, scope_columns, scoped in scopes:
             if scoped.empty:
@@ -645,6 +806,7 @@ def _canonical_current_artifacts(
     input_bundle: dict[str, str],
     feature_semantic_fingerprint: str,
     classification_policies: dict[str, dict[str, str]],
+    model_policy_identity: dict[str, Any],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     current_fingerprint = _frame_semantic_fingerprint(
         current,
@@ -659,6 +821,27 @@ def _canonical_current_artifacts(
         "featureSemanticFingerprint": feature_semantic_fingerprint,
         "currentForecastSemanticFingerprint": current_fingerprint,
         "classificationPolicies": classification_policies,
+        # A version is authorised by an acceptance document, so its identity has to
+        # cover that document. Without this, two runs whose served forecasts and
+        # policy match but whose acceptance differs -- one declaring champion, one
+        # gate_remediation -- collapse to a single version, and the serving tables
+        # cannot say which document authorised what they return.
+        # The whole acceptance document, fingerprinted. A five-field summary was not
+        # enough: two runs with the same class and pass status but different gate
+        # measurements shared a version_id, and version_id is globally unique in
+        # PostgreSQL, so the second could not be materialised and the serving tables
+        # could not say which evidence authorised what they returned. The numbers are
+        # canonicalised first because the fingerprint contract refuses binary floats.
+        "acceptanceSemanticFingerprint": semantic_fingerprint(
+            _canonical_numbers(acceptance),
+            volatile_pointers=(),
+        ),
+        # The served version identity must cover the policy that produced it.
+        # Without this a decision #86 remediation version and a champion version
+        # over byte-identical current forecasts collapse to one version_id, so the
+        # serving tables cannot tell them apart and a corrected bundle cannot be
+        # materialised beside the mislabelled one.
+        "modelPolicy": model_policy_identity,
     }
     version_fingerprint = semantic_fingerprint(
         version_seed,
@@ -910,6 +1093,226 @@ def _write_acceptance(
     }
 
 
+#: Decision #86 §2.4 and §2.7 mode. Both criteria are computed and published from this
+#: version; neither refuses a bundle yet. They were hand-asserted for C5 and no version
+#: has ever been measured against them, so the same phased introduction decision #85
+#: used applies -- publish every cell first, then make it fail closed once real numbers
+#: have been reviewed. Nothing that passed before is excused: the numbers are in the
+#: manifest either way, and a violation is visible rather than absent.
+DECISION_86_DISPLAY_GATE_MODE: Final[str] = "report_only"
+DECISION_86_DISPLAY_GATE_HARD_AT: Final[str] = "phase_4_entry"
+
+#: §2.4's own bound: a display cell may not move by more than display rounding.
+DISPLAY_REGRESSION_TOLERANCE_PCT: Final[float] = 0.1
+#: §2.7's bound on a report-only metric that was already outside its band.
+REPORT_ONLY_REGRESSION_TOLERANCE_PCT: Final[float] = 2.0
+
+
+def _health_accuracy_targets() -> dict[str, dict[int, float]]:
+    """Read decision #77's exact-horizon targets from the frozen policy.
+
+    Read rather than restated. The UI is the only other consumer and it uses generated
+    types from the same file, so a target cannot drift between what is enforced here and
+    what is displayed there.
+    """
+
+    from importlib.resources import files
+
+    resource = files("retail_contracts").joinpath("data", "ml", "forecast-health-policy.json")
+    if resource.is_file():
+        document = json.loads(resource.read_text(encoding="utf-8"))
+    else:
+        document = json.loads(
+            (
+                Path(__file__).resolve().parents[4]
+                / "contracts"
+                / "ml"
+                / "forecast-health-policy.json"
+            ).read_text(encoding="utf-8")
+        )
+    return {
+        str(grain): {int(horizon): float(target) for horizon, target in targets.items()}
+        for grain, targets in document["accuracyTargetsPct"].items()
+    }
+
+
+def _portfolio_horizon_accuracy(
+    frame: pd.DataFrame,
+    prediction_column: str,
+) -> float | None:
+    """Reproduce the served market_portfolio display cell exactly.
+
+    Decision #77's ``exact_horizon_additive`` semantics, as implemented by the serving
+    handler in ``api/internal/readmodel/forecast.go``: actual and predicted are summed
+    into the grain cell -- grain columns plus ``horizon``, ``forecast_origin`` and
+    ``target_week_start`` -- BEFORE any error is taken, then absolute cell errors and
+    cell actuals are summed per horizon and ``accuracy = 100 * (1 - wape)``.
+
+    market_portfolio carries ``market_id`` as its grain column (`resolveHealthGrain`),
+    so a cell is one (market, horizon, origin, target week) total and errors do not
+    cancel between markets.
+
+    Three earlier versions of this were wrong, and naming them matters because a guard
+    that does not reproduce the served cell is worse than no guard -- it reports a
+    number nobody sees. Summing per-row absolute error gives leaf accuracy (78.27% at
+    h1). Collapsing every origin and week into one total lets errors cancel across time
+    (99.71%). Keeping origin and week but dropping market lets India and the US cancel
+    against each other (97.32%). The served cell is 95.180%, and this function is
+    checked against the API's own absErrorSum/actualSum, not against a remembered
+    percentage.
+    """
+
+    cell_keys = ["market_id", "forecast_origin", "target_week_start"]
+    working = frame[cell_keys + [prediction_column, "actual_units"]].copy()
+    working["_actual"] = pd.to_numeric(working["actual_units"], errors="coerce")
+    working["_pred"] = pd.to_numeric(working[prediction_column], errors="coerce")
+    cells = working.groupby(cell_keys, dropna=False).agg(
+        _actual=("_actual", "sum"), _pred=("_pred", "sum")
+    )
+    actual_sum = float(cells["_actual"].sum())
+    if not actual_sum > 0:
+        return None
+    abs_error_sum = float((cells["_pred"] - cells["_actual"]).abs().sum())
+    return float(100.0 * (1.0 - abs_error_sum / actual_sum))
+
+
+def _decision_86_display_evidence(evaluation: pd.DataFrame) -> dict[str, Any]:
+    """Compute §2.4 display-cell and §2.7 report-only comparisons.
+
+    §2.4 forbids a remediation candidate from breaking a decision #77 display cell:
+    no pass-to-fail transition, and no regression larger than display rounding. §2.7
+    allows a report-only metric to regress only when it was already outside its band,
+    by at most 2pp, published, with a deadline recorded. Both were previously satisfied
+    by hand in the decision document, which is not a gate.
+
+    The comparison is candidate versus champion on the *same* rows, so it isolates the
+    estimator change from any data difference. Tier logic is deliberately not reproduced
+    here -- the API and UI own that -- because pass-against-target plus the regression
+    bound is exactly what §2.4 states, and reimplementing tiers would create a second
+    source of truth that could disagree with the one users see.
+    """
+
+    targets = _health_accuracy_targets()
+    display_horizons = sorted(
+        horizon
+        for horizon in targets.get("market_portfolio", {})
+        if horizon in {1, 4, 8, 13, 26}
+    )
+    cells: list[dict[str, Any]] = []
+    # market_portfolio is the grain every published cell resolves to when no store,
+    # category or SeriesKey is selected, and it is the grain the KPI tiles show.
+    for horizon in display_horizons:
+        at_horizon = evaluation[evaluation["horizon"].astype(int).eq(horizon)]
+        if at_horizon.empty:
+            continue
+        served = _portfolio_horizon_accuracy(at_horizon, "yhat_p50")
+        champion = _portfolio_horizon_accuracy(at_horizon, "champion_p50")
+        if served is None or champion is None:
+            continue
+        target = targets["market_portfolio"][horizon]
+        delta = served - champion
+        cells.append(
+            {
+                "grain": "market_portfolio",
+                "horizon": horizon,
+                "targetPct": target,
+                "championAccuracyPct": champion,
+                "candidateAccuracyPct": served,
+                "deltaPct": delta,
+                "championPasses": champion >= target,
+                "candidatePasses": served >= target,
+                "passToFail": bool(champion >= target and served < target),
+                "regressionBeyondRounding": bool(
+                    delta < -DISPLAY_REGRESSION_TOLERANCE_PCT
+                ),
+            }
+        )
+    violations = [
+        cell
+        for cell in cells
+        if cell["passToFail"] or cell["regressionBeyondRounding"]
+    ]
+    return {
+        "criterion": "decision #86 §2.4 display-cell integrity",
+        "metricSemantics": "exact_horizon_additive",
+        "tolerancePct": DISPLAY_REGRESSION_TOLERANCE_PCT,
+        "reportOnlyTolerancePct": REPORT_ONLY_REGRESSION_TOLERANCE_PCT,
+        "mode": DECISION_86_DISPLAY_GATE_MODE,
+        "hardGateAt": DECISION_86_DISPLAY_GATE_HARD_AT,
+        "cells": cells,
+        "violations": violations,
+        "passed": not violations,
+    }
+
+
+def _validate_remediation_candidate(
+    evaluation: pd.DataFrame,
+    remediation: dict[str, Any],
+) -> None:
+    """Enforce decision #86's structural criteria at publication.
+
+    These were previously asserted by hand in the decision document. §2.3 requires
+    the untargeted population to be byte-identical "verified as a structural check
+    on the published artifacts, not asserted", and §2.5 requires a clean leakage
+    battery. Neither ran against C5: the checker existed and was never called, and
+    detect_leakage only executes inside the decision #75 path that a remediation
+    candidate bypasses. A criterion that is only ever asserted is not a gate.
+    """
+
+    from retail_ml.diagnostics.comparison import detect_leakage
+    from retail_ml.models.cold_start_blend import (
+        COHORT_COLUMN,
+        COLD_START_COHORT,
+        established_rows_unchanged,
+    )
+
+    for column in ("champion_p50", "champion_p90", COHORT_COLUMN):
+        if column not in evaluation.columns:
+            raise ForecastPublicationError(
+                f"a remediation candidate must publish {column!r} so its "
+                "untargeted population can be checked structurally"
+            )
+    frame = evaluation.rename(
+        columns={"yhat_p50": "_served_p50", "yhat_p90": "_served_p90"}
+    ).rename(columns={"champion_p50": "yhat_p50", "champion_p90": "yhat_p90"})
+    unchanged = established_rows_unchanged(
+        frame.assign(_c50=frame["_served_p50"], _c90=frame["_served_p90"]),
+        candidate_column="_c50",
+        candidate_upper_column="_c90",
+    )
+    if not unchanged["passed"]:
+        raise ForecastPublicationError(
+            "decision #86 requires untargeted rows to be byte-identical; "
+            f"p50Identical={unchanged['p50Identical']} "
+            f"p90Identical={unchanged['p90Identical']}"
+        )
+    cold_start = evaluation[
+        evaluation[COHORT_COLUMN].astype(str).eq(COLD_START_COHORT)
+    ]
+    leakage = detect_leakage(
+        cold_start.assign(_candidate=cold_start["yhat_p50"]),
+        "_candidate",
+        "champion_p50",
+    )
+    if leakage["suspected"]:
+        raise ForecastPublicationError(
+            "decision #86 requires a clean leakage battery; "
+            f"signals={leakage['signals']}"
+        )
+    display_evidence = _decision_86_display_evidence(evaluation)
+    remediation["structuralChecks"] = {
+        "untargetedRowsByteIdentical": unchanged,
+        "leakage": leakage,
+        "displayCellIntegrity": display_evidence,
+        "enforcedAt": "publication",
+        # §2.3 and §2.5 refuse the bundle. §2.4/§2.7 are computed and published under
+        # DECISION_86_DISPLAY_GATE_MODE and do not refuse yet; the distinction is
+        # recorded here so a reader cannot mistake published evidence for a passed gate.
+        "refusingCriteria": ["§2.3", "§2.5"],
+        "reportOnlyCriteria": ["§2.4", "§2.7"],
+    }
+
+
 def publish_forecast_run(
     evaluation: pd.DataFrame,
     calibration: pd.DataFrame,
@@ -927,6 +1330,7 @@ def publish_forecast_run(
     stage_telemetry: dict[str, Any],
     mlflow_run_id: str | None,
     random_seeds: dict[str, int] | None = None,
+    remediation: dict[str, Any] | None = None,
 ) -> ForecastRunPublication:
     """Atomically publish a full-schedule accepted or rejected candidate bundle."""
 
@@ -947,20 +1351,30 @@ def publish_forecast_run(
         current_forecasts,
         decision_as_of=decision_as_of,
     )
-    evaluation_artifact = derive_evaluation_predictions(evaluation)
+    evaluation_artifact = derive_evaluation_predictions(
+        evaluation,
+        remediation=remediation is not None,
+    )
     baseline_artifact = derive_baseline_predictions(evaluation)
-    seasonal = baseline_artifact[
-        baseline_artifact["baseline_id"].astype(str).eq("seasonal_naive")
-    ][[*EVALUATION_KEY_COLUMNS, "prediction"]].rename(
-        columns={"prediction": "seasonal_naive_baseline"}
+    acceptance_frame = _acceptance_frame(
+        evaluation_artifact,
+        baseline_artifact,
+        EVALUATION_KEY_COLUMNS,
     )
-    acceptance_frame = evaluation_artifact.merge(
-        seasonal,
-        on=list(EVALUATION_KEY_COLUMNS),
-        how="left",
-        validate="one_to_one",
+    # Decision #86 §3 names the acceptance document specifically: it must carry the
+    # candidate class so a downstream consumer cannot read a remediation bundle as an
+    # improvement. Recomputing with the default silently overwrote that, which is why
+    # the manifest said gate_remediation while the acceptance document said champion.
+    # Publication still recomputes independently -- it just recomputes as the class
+    # the bundle actually is.
+    derived_acceptance = evaluate_acceptance(
+        acceptance_frame,
+        candidate_class=(
+            CANDIDATE_CLASS_REMEDIATION
+            if remediation is not None
+            else CANDIDATE_CLASS_CHAMPION
+        ),
     )
-    derived_acceptance = evaluate_acceptance(acceptance_frame)
     if (
         acceptance.get("schemaVersion")
         != ARTIFACT_SCHEMAS["forecast_acceptance"]
@@ -972,6 +1386,8 @@ def publish_forecast_run(
             "recomputed A1-A5 gates"
         )
     acceptance = derived_acceptance
+    if remediation is not None:
+        _validate_remediation_candidate(evaluation, remediation)
     metrics_artifact = derive_forecast_metrics(evaluation)
     exception_artifact = _validated_governed_frame(
         exceptions,
@@ -1017,6 +1433,7 @@ def publish_forecast_run(
         input_bundle=input_bundle,
         feature_semantic_fingerprint=feature_semantic_fingerprint,
         classification_policies=governed_policies,
+        model_policy_identity=model_policy(remediation),
     )
     calibration_artifact = _validated_governed_frame(
         calibration,
@@ -1105,6 +1522,11 @@ def publish_forecast_run(
             "coverage_hits",
             "n",
         ]
+        # modelPolicy is part of the run's identity. Without it a champion bundle
+        # and a decision #86 remediation bundle over byte-identical forecasts hash
+        # to the same forecast_run_id, so the governance that distinguishes them is
+        # invisible to the identity and a corrected bundle cannot be materialised
+        # beside the mislabelled one it replaces.
         run_seed = {
             "inputBundle": input_bundle,
             "featureSemanticFingerprint": feature_semantic_fingerprint,
@@ -1114,6 +1536,7 @@ def publish_forecast_run(
                 for name, descriptor in artifacts.items()
             },
             "classificationPolicies": governed_policies,
+            "modelPolicy": model_policy(remediation),
         }
         forecast_run_id = "fr_" + hashlib.sha256(
             json.dumps(
@@ -1132,7 +1555,7 @@ def publish_forecast_run(
             ),
             "inputBundle": input_bundle,
             "featureSemanticFingerprint": feature_semantic_fingerprint,
-            "modelPolicy": model_policy(),
+            "modelPolicy": model_policy(remediation),
             "randomSeeds": random_seeds or {"model": 20260730, "bootstrap": 20260730},
             "pitEligibility": {
                 "eligible": False,

@@ -1,0 +1,707 @@
+schemaVersion: retail-staging/v2
+decisionIds: [66, 67, 70, 79]
+consumerGate: PP3-A3
+status: frozen_not_cut_over
+description: >-
+  Standardized staging roles emitted by profiles and adapters. Replaces the six
+  v1 envelopes plus one supporting dataset with a typed role catalog covering
+  every relation the canonical transform consumes. `retail-staging/v1` remains
+  valid until PP3-A3 proves canonical parity; neither contract mutates the other.
+
+migration:
+  from: retail-staging/v1
+  mode: versioned_dual_run
+  cutoverGate: PP3-A3 canonical/Gate-B/capability parity on the accepted v12 snapshot
+  retiredEnvelopes:
+    dimension_signal: >-
+      Retired, not decomposed. PP3-A1 measured that no canonical transform,
+      Gate-B check, crosswalk or mapping reads `stage_data.dimension_signal`; all
+      16 payload kinds already reach transforms through typed relations. See
+      `contracts/staging/role-map.yaml`.
+  roleMap: contracts/staging/role-map.yaml
+
+# ---------------------------------------------------------------------------
+# Common lineage and evidence fields, present on every role row.
+# ---------------------------------------------------------------------------
+commonFields:
+  source_system: {type: string, required: true, note: exact source dialect id}
+  source_instance: {type: string, required: true}
+  source_schema_version: {type: string, required: true}
+  source_snapshot_id: {type: string, required: true}
+  native_snapshot_id: {type: string, required: false}
+  native_record_id: {type: string, required: true}
+  market_id: {type: string, required: true}
+  known_as_of: {type: timestamp, required: true}
+  evidence_grade:
+    type: string
+    required: true
+    enum:
+      - native_observed
+      - native_processed
+      - native_posted_available
+      - native_extracted
+      - landing_backfill
+  raw_object_hash: {type: string, required: true}
+  profile_version: {type: string, required: true}
+  adapter_version: {type: string, required: true}
+  role_id: {type: string, required: true}
+  role_version: {type: string, required: true}
+  provider_id:
+    type: string
+    required: true
+    note: >-
+      Which declared provider supplied the row. Required so a role with more
+      than one provider stays attributable without a source-name predicate
+      downstream.
+
+# ---------------------------------------------------------------------------
+# Decision #79: source identity stays separate from provenance class.
+# The v1 `row_provenance` enum mixed them (SHOPIFY_ACTUAL / SHOPIFY_DERIVED),
+# which forced a new enum value per retailer. These two closed dimensions
+# replace it; `source_system`/`source_instance` keep the exact dialect.
+# ---------------------------------------------------------------------------
+provenance:
+  evidence_class:
+    type: string
+    required: true
+    enum: [client, third_party, synthetic]
+  derivation_class:
+    type: string
+    required: true
+    enum: [native, derived]
+  supersedes:
+    contract: retail-staging/v1
+    field: row_provenance
+    mapping:
+      SYNTHETIC: {evidence_class: synthetic, derivation_class: native}
+      SHOPIFY_ACTUAL: {evidence_class: client, derivation_class: native}
+      SHOPIFY_DERIVED: {evidence_class: client, derivation_class: derived}
+      ERP_ACTUAL: {evidence_class: client, derivation_class: native}
+      EXTERNAL_ACTUAL: {evidence_class: third_party, derivation_class: native}
+  rule: >-
+    Adding a retailer must not add an enum value. A new dialect sets
+    `source_system`; the two provenance dimensions stay closed.
+
+# ---------------------------------------------------------------------------
+# Decision #67: how a role with more than one provider resolves.
+# ---------------------------------------------------------------------------
+providerResolution:
+  modes:
+    exclusive: exactly one provider owns the role; two or more fail closed
+    union: providers own disjoint declared partitions; collisions fail closed
+    cross_validate: one authoritative provider plus a reconciliation provider
+    fallback: declared precedence order with a reason code on lower-priority use
+  forbidden:
+    - implicit first-source-wins
+    - row-level coalescing across providers
+    - precedence derived from a source name
+  fingerprinted: true
+
+# ---------------------------------------------------------------------------
+# Decision #70: which temporal evidence may prove historical availability.
+# ---------------------------------------------------------------------------
+temporalEvidence:
+  knownAsOfEligible:
+    - native_observed
+    - native_processed
+    - native_posted_available
+    - native_extracted
+  downgradesReplayCapability: [landing_backfill]
+  neverProvesAvailability:
+    - business_date
+    - effective_date
+    - transaction_date
+    - start_date
+    - end_date
+  rule: >-
+    A business-effective date may never be promoted into `known_as_of`. A role
+    whose only temporal evidence is landing time is admitted with
+    `landing_backfill` and downgrades `historical_replay` and
+    `point_in_time_forecasting`.
+
+commonQuarantineRules:
+  - id: MISSING_REQUIRED_FIELD
+  - id: NULL_IN_KEY
+  - id: DUPLICATE_ROLE_KEY
+  - id: UNPARSEABLE_TYPE
+  - id: MONEY_PRECISION_INVALID
+  - id: CURRENCY_UNKNOWN
+  - id: TIMESTAMP_NOT_NORMALIZED
+  - id: EVIDENCE_GRADE_UNSUPPORTED
+  - id: PROVIDER_COLLISION
+  - id: UNKNOWN_ENUM_VALUE
+rule: >-
+  Every invalid row is quarantined with its role id, provider id, raw object
+  hash and native record id. No adapter may drop a row silently, and no adapter
+  may bypass these checks.
+
+moneyContract:
+  representation: exact_minor_units
+  majorInputField: "*_major"
+  minorOutputField: "*_minor"
+  rounding: banker_half_even_at_declared_currency_exponent
+  rule: money is never stored as a float; conversion uses the shared exact helper
+
+# ---------------------------------------------------------------------------
+# Role catalog. 35 roles. `channel` is deliberately absent because
+# `canonical_data.channels` is derived in the transform (see role-map.yaml), so
+# the catalog is one smaller than section 2.3's original list.
+# ---------------------------------------------------------------------------
+roles:
+
+  # --- demand transactions -------------------------------------------------
+  merchandise:
+    version: v2
+    group: demand_transaction
+    purpose: sold merchandise lines at demand grain
+    grain: source sale line
+    key: [source_instance, source_sale_id, source_line_id]
+    requiredFields:
+      - event_kind
+      - source_sale_id
+      - source_line_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - business_date
+      - units
+      - net_amount_major
+      - currency_code
+    optionalFields:
+      - gross_amount_major
+      - discount_amount_major
+      - tax_amount_major
+      - promo_source_key
+    money: [gross_amount_major, discount_amount_major, net_amount_major, tax_amount_major]
+    quantity: [units]
+    timeSemantics: {business_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    reconciliation: [invoice_sales_control]
+    capabilityDependencies: [current_descriptive_analytics, demand_forecast_non_pit]
+
+  adjustment:
+    version: v2
+    group: demand_transaction
+    purpose: returns, cancellations and post-sale corrections
+    grain: source adjustment event
+    key: [source_instance, source_event_id]
+    requiredFields:
+      - source_event_id
+      - source_parent_event_id
+      - source_sale_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - sale_date
+      - event_date
+      - event_type
+    optionalFields: [units, amount_major, currency_code, reason_code]
+    money: [amount_major]
+    quantity: [units]
+    timeSemantics: {sale_date: business, event_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    controlledEnums: [event_type, reason_code]
+
+  fulfillment:
+    version: v2
+    group: demand_transaction
+    purpose: fulfilled units that convert an order line into realized demand
+    grain: source fulfillment line
+    key: [source_instance, source_fulfillment_line_id]
+    requiredFields:
+      - source_fulfillment_line_id
+      - source_sale_id
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - supply_location_source_key
+      - sale_date
+      - fulfilled_at
+      - units
+    optionalFields: [shipment_id, carrier_status]
+    quantity: [units]
+    timeSemantics: {sale_date: business, fulfilled_at: observation, known_as_of: availability}
+    providerResolution: exclusive
+    reconciliation: [invoice_sales_control]
+
+  # --- core dimensions -----------------------------------------------------
+  product:
+    version: v2
+    group: dimension
+    purpose: sellable item master
+    grain: sku
+    key: [source_instance, sku_source_key]
+    requiredFields: [sku_source_key, title, category_source_key]
+    optionalFields: [department_source_key, brand, status, launch_date, unit_of_measure]
+    timeSemantics: {launch_date: business, known_as_of: availability}
+    providerResolution: exclusive
+
+  product_reference:
+    version: v2
+    group: dimension
+    purpose: secondary item master used for cost and supply attributes
+    grain: sku
+    key: [source_instance, sku_source_key]
+    requiredFields: [sku_source_key]
+    optionalFields: [standard_cost_major, currency_code, uom, supplier_source_key]
+    money: [standard_cost_major]
+    providerResolution: cross_validate
+    crossValidates: product
+
+  location:
+    version: v2
+    group: dimension
+    purpose: demand and supply locations
+    grain: location
+    key: [source_instance, location_source_key]
+    requiredFields: [location_source_key, name, location_kind]
+    optionalFields: [city, region, country, timezone, geo_scope_id, upstream_topology_code]
+    controlledEnums: [location_kind]
+    providerResolution: union
+    unionPartitionField: location_kind
+    note: >-
+      Demand and supply locations may arrive from different providers. The union
+      partition is declared on `location_kind`, and the neutral crosswalk is
+      built from this role rather than from a platform relation.
+
+  assortment:
+    version: v2
+    group: dimension
+    purpose: dated SKU x location x channel listing evidence
+    grain: sku x demand location x channel x validity interval
+    key: [source_instance, sku_source_key, demand_location_source_key, channel_source_key, active_from]
+    requiredFields:
+      - sku_source_key
+      - demand_location_source_key
+      - channel_source_key
+      - active_from
+    optionalFields: [active_to, active_flag, derivation_method]
+    timeSemantics: {active_from: business, active_to: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [historical_replay, point_in_time_forecasting]
+    note: >-
+      Decision #71 makes this role mandatory before a missing sale may become a
+      zero-demand label. `derivation_method` must state whether the interval is
+      native or reconstructed.
+
+  sell_price:
+    version: v2
+    group: dimension
+    purpose: observed selling price
+    grain: sku x location x channel x effective interval
+    key: [source_instance, sku_source_key, location_source_key, channel_source_key, effective_from]
+    requiredFields: [sku_source_key, effective_from, price_major, currency_code]
+    optionalFields: [location_source_key, channel_source_key, effective_to, compare_at_major]
+    money: [price_major, compare_at_major]
+    timeSemantics: {effective_from: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [price_revenue]
+
+  # --- inventory and procurement ------------------------------------------
+  inventory:
+    version: v2
+    group: inventory
+    purpose: on-hand and committed position snapshots
+    grain: sku x location x snapshot date
+    key: [source_instance, sku_source_key, location_source_key, snapshot_date]
+    requiredFields: [sku_source_key, location_source_key, snapshot_date, on_hand_units]
+    optionalFields:
+      - on_order_units
+      - committed_units
+      - reserved_units
+      - damaged_units
+      - in_transit_units
+      - source_observed_atp_units
+    quantity:
+      - on_hand_units
+      - on_order_units
+      - committed_units
+      - reserved_units
+      - damaged_units
+      - in_transit_units
+      - source_observed_atp_units
+    timeSemantics: {snapshot_date: observation, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [inventory_replenishment]
+
+  receipt:
+    version: v2
+    group: inventory
+    purpose: goods receipts that establish cost and inbound history
+    grain: source receipt line
+    key: [source_instance, source_receipt_id, sku_source_key]
+    requiredFields:
+      - source_receipt_id
+      - sku_source_key
+      - location_source_key
+      - supplier_source_key
+      - receipt_date
+      - qty
+      - unit_cost_major
+      - currency_code
+    optionalFields: [batch_id, expiry_date]
+    money: [unit_cost_major]
+    quantity: [qty]
+    timeSemantics: {receipt_date: posting, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [inventory_replenishment, price_margin]
+
+  supplier_term:
+    version: v2
+    group: inventory
+    purpose: lead time, MOQ and pack terms by supply lane
+    grain: supplier x sku x destination
+    key: [source_instance, supplier_source_key, sku_source_key, location_source_key]
+    requiredFields: [supplier_source_key, sku_source_key]
+    optionalFields: [location_source_key, lead_time_days, moq_units, pack_size_units, review_period_days]
+    quantity: [moq_units, pack_size_units]
+    providerResolution: exclusive
+    capabilityDependencies: [inventory_replenishment]
+
+  inventory_cost:
+    version: v2
+    group: inventory
+    purpose: temporal cost ledger backing margin
+    grain: sku x location x effective date
+    key: [source_instance, sku_source_key, location_source_key, effective_date]
+    requiredFields: [sku_source_key, location_source_key, effective_date, unit_cost_major, currency_code]
+    optionalFields: [cost_method]
+    money: [unit_cost_major]
+    controlledEnums: [cost_method]
+    timeSemantics: {effective_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [price_margin]
+    note: decision #6 defaults to moving average cost; FIFO needs batch lineage
+
+  inventory_batch:
+    version: v2
+    group: inventory
+    purpose: batch and expiry tracking
+    grain: sku x location x batch
+    key: [source_instance, sku_source_key, location_source_key, batch_id]
+    requiredFields: [sku_source_key, location_source_key, batch_id, qty]
+    optionalFields: [expiry_date, received_date, unit_cost_major, currency_code]
+    money: [unit_cost_major]
+    quantity: [qty]
+    providerResolution: exclusive
+
+  inbound_shipment:
+    version: v2
+    group: inventory
+    purpose: in-transit inbound supply
+    grain: shipment line
+    key: [source_instance, source_shipment_id, sku_source_key]
+    requiredFields: [source_shipment_id, sku_source_key, location_source_key, qty]
+    optionalFields: [expected_date, dispatched_date, status, supplier_source_key]
+    quantity: [qty]
+    controlledEnums: [status]
+    timeSemantics: {expected_date: business, dispatched_date: observation}
+    providerResolution: exclusive
+
+  transfer_order:
+    version: v2
+    group: inventory
+    purpose: inter-location transfers
+    grain: transfer line
+    key: [source_instance, source_transfer_id, sku_source_key]
+    requiredFields: [source_transfer_id, sku_source_key, from_location_source_key, to_location_source_key, qty]
+    optionalFields: [status, requested_date, shipped_date, received_date]
+    quantity: [qty]
+    controlledEnums: [status]
+    providerResolution: exclusive
+
+  waste_event:
+    version: v2
+    group: inventory
+    purpose: shrink, damage and expiry write-offs
+    grain: waste event
+    key: [source_instance, source_event_id]
+    requiredFields: [source_event_id, sku_source_key, location_source_key, event_date, qty]
+    optionalFields: [reason_code, unit_cost_major, currency_code]
+    money: [unit_cost_major]
+    quantity: [qty]
+    controlledEnums: [reason_code]
+    providerResolution: exclusive
+
+  warehouse_capacity:
+    version: v2
+    group: inventory
+    purpose: capacity constraints for allocation
+    grain: location x effective date
+    key: [source_instance, location_source_key, effective_date]
+    requiredFields: [location_source_key, effective_date]
+    optionalFields: [capacity_units, used_units, throughput_units_per_day]
+    quantity: [capacity_units, used_units, throughput_units_per_day]
+    providerResolution: exclusive
+
+  wms_comparison:
+    version: v2
+    group: inventory
+    purpose: warehouse-system reconciliation evidence
+    grain: sku x location x snapshot date
+    key: [source_instance, sku_source_key, location_source_key, snapshot_date]
+    requiredFields: [sku_source_key, location_source_key, snapshot_date]
+    optionalFields: [wms_on_hand_units, erp_on_hand_units, variance_units]
+    quantity: [wms_on_hand_units, erp_on_hand_units, variance_units]
+    providerResolution: cross_validate
+    crossValidates: inventory
+
+  supplier_performance:
+    version: v2
+    group: inventory
+    purpose: supplier reliability evidence
+    grain: supplier x period
+    key: [source_instance, supplier_source_key, period_start]
+    requiredFields: [supplier_source_key, period_start]
+    optionalFields: [fill_rate, on_time_rate, lead_time_variance_days]
+    timeSemantics: {period_start: business}
+    providerResolution: exclusive
+
+  # --- reconciliation controls --------------------------------------------
+  invoice_sales_control:
+    version: v2
+    group: control
+    purpose: money and unit control totals that must reconcile to demand
+    grain: source sale line
+    key: [source_instance, source_sale_id, source_line_id]
+    requiredFields: [source_sale_id, source_line_id, currency_code, units]
+    optionalFields: [gross_amount_major, discount_amount_major, net_amount_major, tax_amount_major]
+    money: [gross_amount_major, discount_amount_major, net_amount_major, tax_amount_major]
+    quantity: [units]
+    providerResolution: cross_validate
+    crossValidates: merchandise
+    reconciliationRequired: true
+
+  customer_segment_count:
+    version: v2
+    group: control
+    purpose: segment population control totals
+    grain: market x segment x period
+    key: [source_instance, market_id, segment_id, period_start]
+    requiredFields: [segment_id, period_start, customer_count]
+    optionalFields: []
+    quantity: [customer_count]
+    providerResolution: exclusive
+    note: decision #19 keeps this aggregate only; no basket or customer-level PII
+
+  # --- context -------------------------------------------------------------
+  holiday:
+    version: v2
+    group: context
+    purpose: calendar events with retail behaviour
+    grain: geo scope x date x event
+    key: [source_instance, geo_scope_type, geo_scope_id, event_date, event_name]
+    requiredFields: [geo_scope_type, geo_scope_id, event_date, event_name]
+    optionalFields: [event_type, retail_behavior]
+    controlledEnums: [geo_scope_type, event_type, retail_behavior]
+    timeSemantics: {event_date: business, known_as_of: availability}
+    providerResolution: exclusive
+
+  fx_rate:
+    version: v2
+    group: context
+    purpose: reporting-currency conversion rates
+    grain: base x quote x rate date x rate type
+    key: [source_instance, base_ccy, quote_ccy, rate_date, rate_type]
+    requiredFields: [base_ccy, quote_ccy, rate_date, rate_type, rate]
+    optionalFields: []
+    controlledEnums: [rate_type]
+    timeSemantics: {rate_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    note: decision #27 fixes the accounting daily closing rate and prior-day fallback
+
+  market_disruption:
+    version: v2
+    group: context
+    purpose: demand, traffic and supply disruption phases
+    grain: disruption x phase
+    key: [source_instance, disruption_id, phase_id]
+    requiredFields: [disruption_id, phase_id, start_date]
+    optionalFields: [end_date, demand_factor, traffic_factor, supply_factor]
+    timeSemantics: {start_date: business, end_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    providers:
+      declared: [pandemic_timeline, pandemic_signals]
+      owner: pandemic_timeline
+    note: >-
+      PP3-A1 found two providers in the demo source. `exclusive` on the timeline
+      preserves current behaviour; promoting the signals feed is a reviewed
+      change, not an implicit union.
+
+  customer_segment:
+    version: v2
+    group: context
+    purpose: segment mix and demand multipliers
+    grain: segment
+    key: [source_instance, segment_id]
+    requiredFields: [segment_id, name]
+    optionalFields: [share, demand_multiplier]
+    providerResolution: exclusive
+
+  weather_actual:
+    version: v2
+    group: context
+    purpose: observed weather
+    grain: geo scope x date
+    key: [source_instance, geo_scope_type, geo_scope_id, valid_date]
+    requiredFields: [geo_scope_type, geo_scope_id, valid_date]
+    optionalFields: [temperature, precipitation, weather_code]
+    timeSemantics: {valid_date: observation, known_as_of: availability}
+    providerResolution: exclusive
+
+  weather_forecast:
+    version: v2
+    group: context
+    purpose: issued weather forecasts, origin-safe by issue date
+    grain: geo scope x issue date x target date
+    key: [source_instance, geo_scope_type, geo_scope_id, issued_date, target_date]
+    requiredFields: [geo_scope_type, geo_scope_id, issued_date, target_date]
+    optionalFields: [temperature, precipitation, provider]
+    timeSemantics: {issued_date: observation, target_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [point_in_time_forecasting]
+    note: >-
+      `issued_date` is the availability anchor. A forecast row whose issue date
+      is after the model origin is post-origin evidence and must not be used.
+
+  local_event:
+    version: v2
+    group: context
+    purpose: local events with expected demand impact
+    grain: event
+    key: [source_instance, event_id]
+    requiredFields: [event_id, geo_scope_type, geo_scope_id, start_date]
+    optionalFields: [end_date, event_name, event_type, expected_impact]
+    timeSemantics: {start_date: business, end_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    note: >-
+      Feature-schema-v6 removed the false h1 availability indicator derived from
+      this role. Future-dated local events are only usable when the source
+      supplies origin-visible announcement evidence.
+
+  macro_index:
+    version: v2
+    group: context
+    purpose: macroeconomic indices
+    grain: geo scope x index x valid date
+    key: [source_instance, geo_scope_type, geo_scope_id, index_name, valid_date]
+    requiredFields: [geo_scope_type, geo_scope_id, index_name, valid_date, value]
+    optionalFields: []
+    timeSemantics: {valid_date: business, known_as_of: availability}
+    providerResolution: exclusive
+
+  # --- competition and promotion ------------------------------------------
+  competitor_price:
+    version: v2
+    group: competition
+    purpose: observed competitor prices and availability
+    grain: competitor product x geo scope x observation
+    key: [source_instance, competitor_id, competitor_product_id, geo_scope_type, geo_scope_id, observed_at]
+    requiredFields: [competitor_id, competitor_product_id, observed_at, price, currency_code]
+    optionalFields: [competitor_product_title, geo_scope_type, geo_scope_id, available_flag, promotion_text]
+    money: [price]
+    timeSemantics: {observed_at: observation, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [competitor_aware_forecasting]
+    note: decision #14 forbids scraped acquisition; licensed or client-supplied only
+
+  competitor_match:
+    version: v2
+    group: competition
+    purpose: effective-dated SKU to competitor product match
+    grain: match
+    key: [source_instance, match_id]
+    requiredFields: [match_id, sku_source_key, competitor_id, competitor_product_id]
+    optionalFields: [confidence, match_method, effective_from, effective_to]
+    controlledEnums: [match_method]
+    timeSemantics: {effective_from: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [competitor_aware_forecasting]
+
+  promotion:
+    version: v2
+    group: promotion
+    purpose: promotion header and plan
+    grain: promotion
+    key: [source_instance, promotion_id]
+    requiredFields: [promotion_id, start_date, end_date]
+    optionalFields: [name, promotion_type, discount_pct, discount_basis, segment_ids, store_ids, channel_ids]
+    controlledEnums: [promotion_type, discount_basis]
+    timeSemantics: {start_date: business, end_date: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies: [promotion_aware_forecasting]
+    note: >-
+      A future-dated promotion is usable as a forecast driver only when
+      `known_as_of` proves the plan existed at the model origin. Decision #60
+      emits `NO_ORIGIN_VISIBLE_PROMOTION_PLAN` otherwise.
+
+  promotion_target:
+    version: v2
+    group: promotion
+    purpose: promotion merchandise scope
+    grain: promotion x merchandise scope
+    key: [source_instance, promotion_id, merch_scope_type, merch_scope_id]
+    requiredFields: [promotion_id, merch_scope_type, merch_scope_id]
+    optionalFields: [discount_pct]
+    controlledEnums: [merch_scope_type]
+    providerResolution: exclusive
+    note: overlapping scopes resolve sku > dept > category
+
+  # --- allocation ----------------------------------------------------------
+  allocation_demand:
+    version: v2
+    group: allocation
+    purpose: constrained allocation demand requests
+    grain: allocation request
+    key: [source_instance, allocation_id]
+    requiredFields: [allocation_id, sku_source_key, location_source_key, requested_qty]
+    optionalFields: [allocated_qty, shortfall, priority, status]
+    quantity: [requested_qty, allocated_qty, shortfall]
+    controlledEnums: [status, priority]
+    providerResolution: exclusive
+
+  allocation_supply:
+    version: v2
+    group: allocation
+    purpose: supply pools available to allocation
+    grain: pool x snapshot date
+    key: [source_instance, pool_key, snapshot_date]
+    requiredFields: [pool_key, snapshot_date]
+    optionalFields: [location_source_key, sku_source_key, available_qty, reserved_qty]
+    quantity: [available_qty, reserved_qty]
+    timeSemantics: {snapshot_date: observation, known_as_of: availability}
+    providerResolution: exclusive
+    note: >-
+      PP3-A1 confirmed a demo-pin provider (`allocationSupplyPools`) reached only
+      through the retired envelope. PP3-A3 must expose it as a typed relation.
+
+# ---------------------------------------------------------------------------
+# Adapter manifest, declared per source dialect.
+# ---------------------------------------------------------------------------
+adapterManifest:
+  requiredFields:
+    - source_system_id
+    - adapter_version
+    - supported_source_schema_versions
+    - supported_profile_versions
+    - supplied_roles
+    - required_source_capabilities
+    - provider_resolution_compatibility
+  rules:
+    - duplicate source_system_id fails closed
+    - a role claimed by two adapters without a declared resolution mode fails closed
+    - an adapter may emit roles only; it may not publish canonical entities
+    - an adapter may not import canonical transforms, ML, API or UI code
+  loading: static_in_repository_registry
+  note: decision #69 defers external or installable adapter packages
+
+fingerprintRules:
+  roleContract:
+    inputs: [role id, role version, grain, key, required and optional fields, types, enums, money, time semantics, evidence eligibility, provider resolution]
+    excludes: [description, note]
+  adapterManifest:
+    inputs: [source_system_id, adapter_version, supported versions, supplied_roles, required_source_capabilities, provider_resolution_compatibility]
+    excludes: [description, note]
+  rule: >-
+    Descriptions and notes are excluded so editorial changes never alter
+    identity, and any material semantic change produces a new fingerprint.

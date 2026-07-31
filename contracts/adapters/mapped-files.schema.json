@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/adapters/mapped-files.schema.json",
+  "title": "retail-mapped-files/v1",
+  "description": "Declarative mapping from a client file drop into standardized retail-staging/v2 roles. Decision #68 restricts this to an allowlisted, non-Turing-complete operation set: no loops, no branching beyond a closed value map, no arbitrary SQL or Python, no network or filesystem access outside the declared landing root, and no silent row drops.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceSystem",
+    "mappingVersion",
+    "datasets"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "retail-mapped-files/v1"},
+    "sourceSystem": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$",
+      "description": "Reusable source dialect id, not a retailer brand unless the dialect is genuinely retailer-specific."
+    },
+    "mappingVersion": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "datasets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/dataset"}
+    }
+  },
+  "$defs": {
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "datasetId",
+        "role",
+        "format",
+        "logicalPath",
+        "sourceKeys",
+        "grain",
+        "timezone",
+        "nullPolicy",
+        "temporalEvidence",
+        "fields"
+      ],
+      "properties": {
+        "datasetId": {"type": "string", "minLength": 1},
+        "role": {
+          "type": "string",
+          "description": "Target retail-staging/v2 role id. Validated against the frozen role catalog."
+        },
+        "format": {"enum": ["csv", "parquet", "jsonl", "json"]},
+        "logicalPath": {
+          "type": "string",
+          "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]*$",
+          "description": "Path relative to the declared landing root. The pattern rejects absolute paths and any '..' segment; the reader additionally rejects symlink escapes at read time."
+        },
+        "sourceKeys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"},
+          "description": "Source field names forming the row's natural key. Duplicate keys quarantine as DUPLICATE_ROLE_KEY."
+        },
+        "grain": {"type": "string", "minLength": 1},
+        "timezone": {
+          "type": "string",
+          "description": "IANA zone used to normalize naive timestamps. Required even when every source timestamp is offset-aware, so the intent is explicit."
+        },
+        "currency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {"enum": ["column", "constant"]},
+            "column": {"type": "string"},
+            "code": {"type": "string", "pattern": "^[A-Z]{3}$"}
+          },
+          "required": ["mode"]
+        },
+        "nullPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["onMissingRequired"],
+          "properties": {
+            "onMissingRequired": {
+              "const": "quarantine",
+              "description": "A missing required field always quarantines. Dropping the row silently is not an option."
+            },
+            "treatEmptyStringAsNull": {"type": "boolean", "default": true}
+          }
+        },
+        "temporalEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["knownAsOf", "grade"],
+          "properties": {
+            "knownAsOf": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode"],
+              "properties": {
+                "mode": {"enum": ["column", "landing_time"]},
+                "column": {"type": "string"}
+              }
+            },
+            "grade": {
+              "enum": [
+                "native_observed",
+                "native_processed",
+                "native_posted_available",
+                "native_extracted",
+                "landing_backfill"
+              ]
+            }
+          }
+        },
+        "rowFilter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["column", "operator", "values", "reasonCode"],
+          "description": "A single closed allowlist or denylist filter. Filtered rows are counted and reason-coded, never silently dropped.",
+          "properties": {
+            "column": {"type": "string"},
+            "operator": {"enum": ["in", "not_in"]},
+            "values": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            "reasonCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"}
+          }
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/field"}
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "operation"],
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Role field name being populated."
+        },
+        "operation": {
+          "enum": [
+            "select",
+            "constant",
+            "value_map",
+            "parse_decimal",
+            "parse_integer",
+            "parse_date",
+            "parse_timestamp",
+            "money_major_to_minor",
+                  "money_major_normalize",
+            "quantity",
+            "compose_key"
+          ],
+          "description": "Decision #68 allowlist. Anything not in this closed set requires a bounded custom adapter instead."
+        },
+        "source": {"type": "string"},
+        "sources": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"type": "string"},
+          "description": "compose_key only."
+        },
+        "separator": {"type": "string", "maxLength": 4},
+        "value": {"type": ["string", "number", "boolean", "null"]},
+        "map": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean", "null"]},
+          "description": "value_map only. A source value absent from the map quarantines as UNKNOWN_ENUM_VALUE; there is no default branch."
+        },
+        "format": {
+          "type": "string",
+          "description": "parse_date and parse_timestamp only; an explicit strptime-style pattern."
+        },
+        "currencyColumn": {"type": "string"},
+        "currencyCode": {"type": "string", "pattern": "^[A-Z]{3}$"},
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "quantity only; declared decimal places."
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"operation": {"const": "constant"}}, "required": ["operation"]},
+          "then": {"required": ["value"]}
+        },
+        {
+          "if": {"properties": {"operation": {"const": "value_map"}}, "required": ["operation"]},
+          "then": {"required": ["source", "map"]}
+        },
+        {
+          "if": {"properties": {"operation": {"const": "compose_key"}}, "required": ["operation"]},
+          "then": {"required": ["sources", "separator"]}
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "select",
+                  "parse_decimal",
+                  "parse_integer",
+                  "parse_date",
+                  "parse_timestamp",
+                  "money_major_to_minor",
+                  "money_major_normalize",
+                  "quantity"
+                ]
+              }
+            },
+            "required": ["operation"]
+          },
+          "then": {"required": ["source"]}
+        },
+        {
+          "if": {
+            "properties": {"operation": {"enum": ["parse_date", "parse_timestamp"]}},
+            "required": ["operation"]
+          },
+          "then": {"required": ["format"]}
+        }
+      ]
+    }
+  }
+}

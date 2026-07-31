@@ -524,7 +524,7 @@ def run_gate_b(
                     sum(shipment.qty)::BIGINT AS units
                 FROM stage.stage_data.inbound_shipments AS shipment
                 JOIN stage.stage_data.location_crosswalk AS crosswalk
-                  ON crosswalk.source_system = 'businessCentral'
+                  ON crosswalk.source_system = shipment.source_system
                  AND crosswalk.market_id = shipment.market_id
                  AND crosswalk.source_location_key =
                      shipment.to_location_source_key

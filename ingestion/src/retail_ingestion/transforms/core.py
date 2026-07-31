@@ -516,7 +516,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
                 sum(s.qty)::BIGINT AS units
             FROM stage.stage_data.inbound_shipments AS s
             JOIN stage.stage_data.location_crosswalk AS x
-              ON x.source_system = 'businessCentral'
+              ON x.source_system = s.source_system
              AND x.market_id = s.market_id
              AND x.source_location_key = s.to_location_source_key
             WHERE replace(lower(s.status), ' ', '_') IN (
@@ -848,7 +848,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             p.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.competitor_prices AS p
         LEFT JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'companion'
+          ON x.source_system = p.source_system
          AND x.market_id = p.market_id
          AND x.source_location_key = p.geo_scope_id
         """
@@ -996,7 +996,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             b.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.inventory_batches AS b
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'businessCentral'
+          ON x.source_system = b.source_system
          AND x.market_id = b.market_id
          AND x.source_location_key = b.location_source_key
         JOIN canonical_data.locations AS l
@@ -1020,7 +1020,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             s.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.inbound_shipments AS s
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'businessCentral'
+          ON x.source_system = s.source_system
          AND x.market_id = s.market_id
          AND x.source_location_key = s.to_location_source_key
         """
@@ -1042,11 +1042,11 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             lower(t.status)::VARCHAR AS status
         FROM stage.stage_data.transfer_orders AS t
         JOIN stage.stage_data.location_crosswalk AS origin
-          ON origin.source_system = 'businessCentral'
+          ON origin.source_system = t.source_system
          AND origin.market_id = t.market_id
          AND origin.source_location_key = t.from_location_source_key
         JOIN stage.stage_data.location_crosswalk AS destination
-          ON destination.source_system = 'businessCentral'
+          ON destination.source_system = t.source_system
          AND destination.market_id = t.market_id
          AND destination.source_location_key = t.to_location_source_key
         JOIN canonical_data.locations AS l
@@ -1070,7 +1070,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             lower(a.status)::VARCHAR AS status
         FROM stage.stage_data.allocations AS a
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'companion'
+          ON x.source_system = a.source_system
          AND x.market_id = a.market_id
          AND x.source_location_key = a.location_source_key
         """
@@ -1090,7 +1090,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             w.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.waste_events AS w
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'businessCentral'
+          ON x.source_system = w.source_system
          AND x.market_id = w.market_id
          AND x.source_location_key = w.location_source_key
         JOIN canonical_data.locations AS l
@@ -1108,7 +1108,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             w.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.warehouse_capacity AS w
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'businessCentral'
+          ON x.source_system = w.source_system
          AND x.market_id = w.market_id
          AND x.source_location_key = w.location_source_key
         """
@@ -1125,7 +1125,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             w.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.wms_comparisons AS w
         JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = 'businessCentral'
+          ON x.source_system = w.source_system
          AND x.market_id = w.market_id
          AND x.source_location_key = w.location_source_key
         """

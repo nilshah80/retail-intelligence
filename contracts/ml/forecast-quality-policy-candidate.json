@@ -1,0 +1,170 @@
+{
+  "activePolicyId": "retail-forecast-data-quality/v2",
+  "changeScope": "Grain only. Every threshold is carried over from v1 unchanged so a v1/v2 comparison measures one change.",
+  "decisionIds": [
+    76
+  ],
+  "fingerprintExcludes": [
+    "promotedOn",
+    "promotionEvidence",
+    "promotionRule",
+    "status",
+    "v1Disposition"
+  ],
+  "grains": {
+    "presentation": {
+      "field": "effective_display_class",
+      "rule": "Worst of the two, published alongside both inputs and a degradedBy list naming which grain set it. Never published as a row-local measurement."
+    },
+    "publication": {
+      "field": "publication_quality_class",
+      "reducedFrom": [
+        "global_limitations[].severity"
+      ],
+      "rule": "Publication-scoped findings only, reduced independently of any row."
+    },
+    "row": {
+      "field": "row_quality_class",
+      "reducedFrom": [
+        "key",
+        "reconciliation",
+        "missingness",
+        "freshness",
+        "coverage"
+      ],
+      "rule": "Row-local evidence only. No publication-scoped finding may reach this field."
+    }
+  },
+  "policyId": "retail-forecast-data-quality/v2",
+  "problemStatement": "The current-cycle assembler broadcasts three publication-level scalars (source_quality_critical_count, source_quality_warning_count, reconciliation_passed) onto every row, so one finding anywhere in a publication classifies every SeriesKey in it as Watch. v1's own inputSemantics.sourceFindings requires findings to be bound to the same SeriesKey, so the broadcast contradicts the active contract rather than merely being coarse.",
+  "promotedOn": "2026-07-31",
+  "promotionEvidence": "Reviewed and promoted on instruction. The measured trigger was one Gate-B B15 finding, \"active price paths contain gaps over 180 days\", whose own entity field reads publication. It made all 2,034 series Watch while six of seven checks per row read Good. #76 required policy review, executable vectors, new fingerprints and a newly accepted run; the accepted run is fr_463f53be6353e481 and the vectors are 23 tests in ml/tests/test_quality_policy_v2.py.",
+  "promotionRule": "Promoted 2026-07-31. Decision #76 required policy review, executable vectors, new fingerprints and a newly accepted run before labels could change; all four were met. v1 is superseded for new classification and stays immutable for prior bundles.",
+  "publicationScopedChecks": [
+    "source_quality_critical_count",
+    "source_quality_warning_count",
+    "reconciliation_passed"
+  ],
+  "reduction": {
+    "Good": "no Issue and no Watch outcomes",
+    "Issue": "one or more Issue outcomes",
+    "Watch": "no Issue outcomes and one or more Watch",
+    "precedence": [
+      "Issue",
+      "Watch",
+      "Good"
+    ]
+  },
+  "refusedBehaviours": [
+    "Classifying every row Watch because one global warning exists.",
+    "Hiding a global warning by dropping it from the published record.",
+    "Publishing effective_display_class without both grain inputs."
+  ],
+  "requiredFields": {
+    "degradedDimensions": "Required per row; names which row-local dimensions are not Good.",
+    "global_limitations": "Required on every publication. An empty list is valid only when there are genuinely no findings; omitting the field to avoid degrading rows is refused.",
+    "publication_quality_class": "Required per publication.",
+    "row_quality_class": "Required per row."
+  },
+  "rowDimensions": {
+    "coverage": {
+      "issue": "<0.75",
+      "watch": "<0.90"
+    },
+    "freshness": {
+      "issue": ">21",
+      "watch": ">14"
+    },
+    "key": {
+      "issue": "canonical_key_complete is false"
+    },
+    "missingness": {
+      "issue": ">0.20",
+      "watch": ">0.05"
+    },
+    "reconciliation": {
+      "issue": "row-scoped reconciliation failed",
+      "notEvaluated": "recorded as state=not_evaluated with outcome Good; a check that never ran is a third state and is not collapsed into pass or fail"
+    }
+  },
+  "schemaVersion": "retail-forecast-quality-policy/v2",
+  "semanticFingerprint": "e0baf3ef64568e0c7ad55bb6ca5d9157ba1a5238f64405d7a432b08bc2b1d0e5",
+  "status": "active",
+  "supersedes": "retail-forecast-data-quality/v1",
+  "testVectors": [
+    {
+      "expected": {
+        "degradedBy": [
+          "publication"
+        ],
+        "effective_display_class": "Watch",
+        "globalLimitationCount": 1,
+        "publication_quality_class": "Watch",
+        "row_quality_class": "Good"
+      },
+      "id": "global_warning_does_not_degrade_a_clean_row",
+      "publication": {
+        "critical_count": 0,
+        "reconciliation_passed": true,
+        "warning_count": 1
+      },
+      "row": {
+        "canonical_key_complete": true,
+        "core_feature_missing_share": "0.00",
+        "latest_actual_age_days": 7,
+        "observation_coverage_13w": "1.00",
+        "row_reconciliation_passed": null
+      }
+    },
+    {
+      "expected": {
+        "degradedBy": [
+          "row"
+        ],
+        "effective_display_class": "Issue",
+        "globalLimitationCount": 0,
+        "publication_quality_class": "Good",
+        "row_quality_class": "Issue"
+      },
+      "id": "row_local_staleness_is_attributed_to_the_row",
+      "publication": {
+        "critical_count": 0,
+        "reconciliation_passed": true,
+        "warning_count": 0
+      },
+      "row": {
+        "canonical_key_complete": true,
+        "core_feature_missing_share": "0.00",
+        "latest_actual_age_days": 30,
+        "observation_coverage_13w": "1.00",
+        "row_reconciliation_passed": true
+      }
+    },
+    {
+      "expected": {
+        "degradedBy": [
+          "row",
+          "publication"
+        ],
+        "effective_display_class": "Issue",
+        "globalLimitationCount": 1,
+        "publication_quality_class": "Issue",
+        "row_quality_class": "Watch"
+      },
+      "id": "both_grains_degraded_are_both_named",
+      "publication": {
+        "critical_count": 1,
+        "reconciliation_passed": true,
+        "warning_count": 0
+      },
+      "row": {
+        "canonical_key_complete": true,
+        "core_feature_missing_share": "0.10",
+        "latest_actual_age_days": 7,
+        "observation_coverage_13w": "1.00",
+        "row_reconciliation_passed": true
+      }
+    }
+  ],
+  "v1Disposition": "v1 remains immutable and readable for prior bundles. It is no longer the active policy for new classification, and its fingerprint is unchanged."
+}

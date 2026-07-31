@@ -247,8 +247,9 @@ recommendation amounts, use the greatest `rate_date ≤ decision_as_of`. In eith
 latest observation for that rate date whose `known_as_of` is at or before the decision cutoff;
 absence fails the reporting conversion rather than using a future rate. Identity rates use
 `base_ccy=quote_ccy, rate=1`. Python and Go must pass the same conversion vectors. Decision #27
-remains open only for the production FX provider, rate type and approved accounting-date
-overrides—not direction, numeric representation or default rounding.
+uses the tenant's accounting daily closing rate at posting date, falls back only to the latest
+prior published business-day close, and never uses a future rate. A production provider
+substitution is configuration within that policy, not an open arithmetic or timing decision.
 
 Demand forecasting remains unit-based. Pricing and margin math run within a single local
 currency for a market/store; FX is not a causal model input. Cross-market monetary aggregation
@@ -476,9 +477,26 @@ accuracy/bias KPIs defensible.
 ### 4.3 Forecast acceptance gates **[REUSE — `models/backtest.py`]**
 
 A forecast is publishable only if **all** hold:
-- Champion WAPE beats seasonal-naive by **≥ 25%** overall.
+- Established-history rows are classified at
+  `forecast_origin × horizon × SeriesKey` grain using origin-visible history only. A row belongs
+  to this cohort when its lag-52 seasonal-naive input exists. Champion, actual and
+  seasonal-naive keys must pair 100%; champion WAPE must beat seasonal-naive by **≥ 25%**
+  globally and in every supported market.
+- Every forecast row not eligible for the established-history cohort belongs to the cold-start
+  cohort. Its comparator is the arithmetic mean of the last
+  `min(13, history_weeks)` complete origin-visible weekly actuals available at the forecast
+  origin. At least one prior week is required; zero-history rows are
+  `insufficient_evidence` and leave the version unaccepted. Champion WAPE must be no worse than
+  this comparator globally and in every supported market, with 100% champion/actual/comparator
+  key completeness.
+- Cohort reason codes, row and actual shares, SeriesKey counts, canonical key hashes and
+  full/paired/dropped metrics are mandatory. No row may disappear from both cohorts. This policy
+  is versioned as acceptance-v3/verifier-v4; migration 0006 admits verifier-v4 only and does not
+  reinterpret older evidence.
 - Empirical **P90 coverage ∈ [0.85, 0.95]**.
-- Slow-mover slice (`zero_share_52w > 0.60`) champion WAPE **≤** seasonal-naive.
+- Established-history slow-mover slice (`zero_share_52w > 0.60`) champion WAPE **≤**
+  seasonal-naive under decision #52's sufficiency rule. Cold-start slow movers remain governed by
+  the complete cold-start A1 comparison above and never receive a fabricated seasonal comparator.
 - **P90 ≥ P50** on every row.
 - The same WAPE/bias/P50/P90 diagnostics are published for each supported market, and no
   supported market may fail its declared minimum gate while a larger market masks it in the
@@ -490,6 +508,14 @@ A forecast is publishable only if **all** hold:
 Map directly to the Governance/KPIs: **Forecast Bias target ±5%** (KPI); **model-drift within
 tolerance** and **data-freshness compliance** metrics (Governance tab). Freshness is measured
 against the accepted forecast's `decision_as_of`, **never wall-clock** — carry that over.
+
+`contracts/ml/forecast-health-policy.json` is the cross-language presentation authority for
+decisions #77/#80. It freezes exact-horizon h1/h4/h8/h13 default rows, diagnostic-only h26
+targets, target-grain resolution, explicit percentage-point versus ratio units, ordered
+Strong→Healthy→Watch→Action evaluation with all tier conditions required, unavailable handling
+and executable vectors. These display targets do not replace the acceptance gates in §4.3.
+The original HTML remains layout authority; its sample coverage values and badge assignments are
+non-authoritative placeholders because they do not satisfy the finalized interval/status policy.
 
 ### 4.5 Inventory service-level policy **[REUSE — `config/policy.yaml`, `engines/policy_*`]**
 

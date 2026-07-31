@@ -1,0 +1,272 @@
+schemaVersion: retail-staging-role-map/v1
+decisionIds: [65, 66, 67, 79]
+consumerGate: PP3-A2
+status: reviewed_not_implemented
+description: >-
+  PP3-A1 deliverable A-D1. Records, in both directions, how today's staging
+  relations map onto the proposed `retail-staging/v2` role catalog: every current
+  relation names one role or an explicit disposition, and every proposed role
+  names at least one v1 provider or an explicit disposition. PP3-A2 may not
+  freeze the role catalog while either direction has an unmapped entry.
+  This file is a review contract; it does not create or rename any relation.
+
+boundaryAllowlist:
+  rule: >-
+    Platform or retailer identifiers (`shopify`, `bc_`, `companion`, or a
+    retailer brand) may appear only in these paths. Any other occurrence in
+    shared staging assembly, validation, quarantine, crosswalks, canonical
+    transforms, ML, API or UI is prohibited.
+  allowed:
+    - path: ingestion/src/retail_ingestion/adapters/shopify.py
+      reason: source dialect adapter
+    - path: ingestion/src/retail_ingestion/adapters/business_central.py
+      reason: source dialect adapter
+    - path: ingestion/src/retail_ingestion/adapters/companion.py
+      reason: source dialect adapter
+    - path: ingestion/src/retail_ingestion/adapters/registry.py
+      reason: static in-repository registration under decision #69
+    - path: ingestion/src/retail_ingestion/profiles/retail_datagen.yaml
+      reason: source profile for the demo instance
+    - path: ingestion/tests
+      reason: conformance fixtures and adapter tests
+  migrationOnly:
+    - path: ingestion/src/retail_ingestion/staging/builder.py
+      reason: >-
+        `_create_standardized_views` still selects platform relations by name.
+        PP3-A3 replaces this with role bindings; the occurrences are tracked
+        here so the boundary test fails if new ones appear.
+      occurrences: 61
+    - path: ingestion/src/retail_ingestion/mappings/locations.py
+      reason: >-
+        location crosswalk construction reads `stage_data.shopify_locations` and
+        an `upstream_topology_bc_code` field. PP3-A3 rebuilds both from neutral
+        roles.
+      occurrences: 4
+  prohibited:
+    - ingestion/src/retail_ingestion/transforms
+    - ingestion/src/retail_ingestion/quality
+    - ml/src
+    - api
+    - ui/src
+  documentedFalsePositives:
+    - path: ml/src/retail_ml/__init__.py
+      occurrences: 1
+      reason: >-
+        The module docstring asserts neutrality ("No source, retailer, Shopify
+        or ..."). The identifier appears only in prose that forbids the coupling.
+  prohibitedKnownViolations:
+    rule: >-
+      Empty is the correct state. A path may appear here only while PP3-A3 is
+      mid-flight; the boundary test fails if the register grows or if a cleared
+      violation returns.
+    violations: []
+    cleared:
+      - path: ingestion/src/retail_ingestion/transforms/core.py
+        pattern: "x.source_system = 'companion'"
+        occurrences: 2
+        lines: [851, 1073]
+        discoveredBy: PP3-A1
+        clearedBy: PP3-A3
+        clearedOn: 2026-07-31
+        failureMode: >-
+          Both joins selected `location_crosswalk` rows by literal platform name.
+          The competitor-price join was a LEFT JOIN, so a retailer whose
+          competitor evidence arrived under a different `source_system` silently
+          resolved every location to NULL; the allocation join was an inner JOIN,
+          so the same mismatch silently dropped every allocation row.
+        remediation: >-
+          The crosswalk now carries a `key_space` of `source_native` or
+          `canonical_identity`. A native location key is only unique inside the
+          dialect that minted it, so the minting authority stays a join column
+          and never a literal; `canonical_identity` rows are
+          authority-independent, so roles already keyed by the canonical id join
+          on the key space alone. The crosswalk is also built from the
+          standardized `location` role rather than from
+          `stage_data.shopify_locations`.
+
+
+# ---------------------------------------------------------------------------
+# Direction 1 - every current relation names one role or a disposition.
+# ---------------------------------------------------------------------------
+relationRoleMap:
+  # 21 relations exposed by `_create_standardized_views` direct passthrough.
+  merchandise:      {provider: shopify_merchandise, role: merchandise}
+  adjustment:       {provider: shopify_adjustment, role: adjustment}
+  fulfillment:      {provider: shopify_fulfillment, role: fulfillment}
+  inventory:        {provider: bc_inventory, role: inventory}
+  receipt:          {provider: bc_receipts, role: receipt}
+  products:         {provider: shopify_products, role: product}
+  product_references: {provider: bc_products, role: product_reference}
+  locations:        {provider: shopify_locations, role: location}
+  prices:           {provider: shopify_prices, role: sell_price}
+  supplier_terms:   {provider: bc_supplier_terms, role: supplier_term}
+  invoice_sales_control: {provider: bc_sales_control, role: invoice_sales_control}
+  customer_segment_counts:
+    provider: shopify_customer_segment_counts
+    role: customer_segment_count
+  inventory_cost:   {provider: bc_inventory_cost, role: inventory_cost}
+  inventory_batches: {provider: bc_inventory_batches, role: inventory_batch}
+  inbound_shipments: {provider: bc_inbound_shipments, role: inbound_shipment}
+  transfer_orders:  {provider: bc_transfer_orders, role: transfer_order}
+  waste_events:     {provider: bc_waste_events, role: waste_event}
+  warehouse_capacity: {provider: bc_warehouse_capacity, role: warehouse_capacity}
+  wms_comparisons:  {provider: bc_wms_comparisons, role: wms_comparison}
+  supplier_performance: {provider: bc_supplier_performance, role: supplier_performance}
+  dimension_signal:
+    provider: companion_dimension_signal
+    disposition: retired_no_consumer
+    note: >-
+      PP3-A1 verified that the neutral `stage_data.dimension_signal` view has no
+      runtime consumer: no canonical transform, Gate B check, crosswalk or
+      mapping reads it. Its 16 payload kinds already reach transforms through the
+      typed derived relations below. PP3-A2 therefore retires the envelope
+      instead of decomposing an opaque JSON payload, and PP3-A3 parity has no
+      untyped payload to reconcile. Its only references are
+      `ingestion/tests/test_adapters.py` and the six-envelope assertion in
+      `contracts/python/src/retail_contracts/entities.py`, both of which PP3-A2
+      must update when staging v2 replaces the v1 envelope list.
+
+  # 15 relations derived by `_create_standardized_views` statements.
+  store_assortment:   {provider: companion_store_assortment, role: assortment}
+  holidays:           {provider: companion_holidays, role: holiday}
+  fx_rates:           {provider: companion_fx_rates, role: fx_rate}
+  market_disruptions:
+    provider: companion_pandemic_timeline
+    role: market_disruption
+    providerResolution: exclusive
+    note: >-
+      `companion_pandemic_signals` also carries disruption evidence but is not
+      read by this relation. PP3-A2 must declare one owner explicitly under
+      decision #67 rather than leaving the second provider implicit.
+  customer_segments:  {provider: companion_customer_segments, role: customer_segment}
+  weather_actual:     {provider: companion_weather_actuals, role: weather_actual}
+  weather_forecast:   {provider: companion_weather_forecasts, role: weather_forecast}
+  local_events:       {provider: companion_local_events, role: local_event}
+  macro_index:        {provider: companion_macro_index, role: macro_index}
+  competitor_prices:  {provider: companion_competitor_prices, role: competitor_price}
+  competitor_matches: {provider: companion_competitor_matches, role: competitor_match}
+  promotions:         {provider: companion_promotions, role: promotion}
+  promotion_targets:  {provider: companion_promotion_skus, role: promotion_target}
+  allocations:
+    provider: companion_allocation_demand_requests
+    role: allocation_demand
+    note: >-
+      This relation carries demand requests only. `allocation_supply` is
+      supplied by `companion_allocation_supply_pools` and is not currently
+      exposed as a neutral relation.
+  sales_control:
+    provider: derived from stage_data.merchandise and stage_data.fulfillment
+    disposition: derived_in_staging
+    note: >-
+      Fulfilment-allocated money reconciliation control consumed by Gate B. It
+      is not a source role; PP3-A2 keeps it a staging-derived control computed
+      from the merchandise and fulfillment roles.
+
+  # Staging infrastructure, already source-neutral in name.
+  adapter_quarantine:
+    disposition: staging_infrastructure
+    note: >-
+      Neutral name, but its predicates still reference platform relations.
+      PP3-A3 re-keys findings by role id plus provider provenance.
+  location_crosswalk:
+    provider: derived from stage_data.shopify_locations
+    disposition: derived_in_staging
+    note: >-
+      PP3-A3 must rebuild this from the neutral `location` role. This is the
+      single highest-risk platform coupling below the adapter boundary because
+      canonical transforms and Gate B both consume it.
+
+# ---------------------------------------------------------------------------
+# Direction 2 - every proposed role names a provider or a disposition.
+# ---------------------------------------------------------------------------
+roleProviderMap:
+  merchandise:            {providers: [shopify_merchandise]}
+  adjustment:             {providers: [shopify_adjustment]}
+  fulfillment:            {providers: [shopify_fulfillment]}
+  product:                {providers: [shopify_products]}
+  product_reference:      {providers: [bc_products]}
+  location:               {providers: [shopify_locations]}
+  assortment:             {providers: [companion_store_assortment]}
+  sell_price:             {providers: [shopify_prices]}
+  inventory:              {providers: [bc_inventory]}
+  receipt:                {providers: [bc_receipts]}
+  supplier_term:          {providers: [bc_supplier_terms]}
+  inventory_cost:         {providers: [bc_inventory_cost]}
+  inventory_batch:        {providers: [bc_inventory_batches]}
+  inbound_shipment:       {providers: [bc_inbound_shipments]}
+  transfer_order:         {providers: [bc_transfer_orders]}
+  waste_event:            {providers: [bc_waste_events]}
+  warehouse_capacity:     {providers: [bc_warehouse_capacity]}
+  wms_comparison:         {providers: [bc_wms_comparisons]}
+  supplier_performance:   {providers: [bc_supplier_performance]}
+  invoice_sales_control:  {providers: [bc_sales_control]}
+  customer_segment_count: {providers: [shopify_customer_segment_counts]}
+  holiday:                {providers: [companion_holidays]}
+  fx_rate:                {providers: [companion_fx_rates]}
+  customer_segment:       {providers: [companion_customer_segments]}
+  weather_actual:         {providers: [companion_weather_actuals]}
+  weather_forecast:       {providers: [companion_weather_forecasts]}
+  local_event:            {providers: [companion_local_events]}
+  macro_index:            {providers: [companion_macro_index]}
+  competitor_price:       {providers: [companion_competitor_prices]}
+  competitor_match:       {providers: [companion_competitor_matches]}
+  promotion:              {providers: [companion_promotions]}
+  promotion_target:       {providers: [companion_promotion_skus]}
+  allocation_demand:      {providers: [companion_allocation_demand_requests]}
+  market_disruption:
+    providers: [companion_pandemic_timeline, companion_pandemic_signals]
+    providerResolution: exclusive
+    resolutionOwner: companion_pandemic_timeline
+    note: >-
+      Two providers exist in the demo source. Decision #67 requires an explicit
+      mode; `exclusive` preserves current behaviour because only the timeline is
+      read today. Promoting the signals feed would be a reviewed change.
+  allocation_supply:
+    providers: [companion_allocation_supply_pools]
+    exposedAsNeutralRelation: false
+    note: >-
+      Staged by the companion adapter and carried through the retired
+      `dimension_signal` envelope as entity kind `allocationSupplyPools`, but
+      never exposed as a neutral relation and never consumed. PP3-A2 must type
+      it as a first-class role rather than record it absent.
+  channel:
+    providers: []
+    disposition: derived_in_transform
+    derivedAt: ingestion/src/retail_ingestion/transforms/core.py
+    note: >-
+      `canonical_data.channels` is derived from the native sales channel on the
+      merchandise role. Promoting it to a staging role would move canonical
+      derivation upstream, which section 12's first mitigation forbids. It is
+      deliberately absent from the staging role catalog.
+
+# ---------------------------------------------------------------------------
+# The retired envelope's payload kinds, for PP3-A2 completeness only.
+# ---------------------------------------------------------------------------
+dimensionSignalKinds:
+  note: >-
+    All 16 kinds declared by the companion adapter, each already reachable
+    through a typed relation. Listed so PP3-A2 can prove the retirement loses no
+    evidence. `entity_kind` is the source dataset id; the payload is opaque JSON.
+  kinds:
+    allocationDemandRequests: {role: allocation_demand, typedRelation: allocations}
+    allocationSupplyPools:
+      role: allocation_supply
+      typedRelation: null
+      note: needs typing in PP3-A2; no neutral relation exists today
+    competitorMatches: {role: competitor_match, typedRelation: competitor_matches}
+    competitorPrices:  {role: competitor_price, typedRelation: competitor_prices}
+    customerSegments:  {role: customer_segment, typedRelation: customer_segments}
+    fxRates:           {role: fx_rate, typedRelation: fx_rates}
+    holidays:          {role: holiday, typedRelation: holidays}
+    localEvents:       {role: local_event, typedRelation: local_events}
+    macroIndex:        {role: macro_index, typedRelation: macro_index}
+    pandemicSignals:
+      role: market_disruption
+      typedRelation: null
+      note: second provider for market_disruption; not read today
+    pandemicTimeline:  {role: market_disruption, typedRelation: market_disruptions}
+    promotionSkus:     {role: promotion_target, typedRelation: promotion_targets}
+    promotions:        {role: promotion, typedRelation: promotions}
+    storeAssortment:   {role: assortment, typedRelation: store_assortment}
+    weatherActuals:    {role: weather_actual, typedRelation: weather_actual}
+    weatherForecasts:  {role: weather_forecast, typedRelation: weather_forecast}

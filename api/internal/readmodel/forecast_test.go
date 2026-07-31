@@ -64,12 +64,72 @@ func TestForecastReadErrorsPreserveRuntimeLineageReason(t *testing.T) {
 	}
 }
 
+// TestForecastServesGovernedUnavailableOnNoGo is the Go half of the governed
+// NO-GO evidence. When Phase 3 closes NO-GO the active view is deliberately
+// empty, so requiring an active version would make the branch unreachable.
+// Asserting fail-closed serving instead turns the branch into positive evidence.
+func TestForecastServesGovernedUnavailableOnNoGo(t *testing.T) {
+	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("PostgreSQL forecast integration environment is not configured")
+	}
+	if os.Getenv("RETAIL_TEST_FORECAST_LIFECYCLE") == "accepted" {
+		t.Skip("gate is running the accepted branch")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	connection, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect to forecast integration database: %v", err)
+	}
+	defer connection.Close(ctx)
+	active := 0
+	if err := connection.QueryRow(
+		ctx,
+		"SELECT count(*) FROM retail_serving.active_forecast_versions",
+	).Scan(&active); err != nil {
+		t.Fatalf("count active forecast versions: %v", err)
+	}
+	if active != 0 {
+		t.Fatalf("NO-GO branch must have no active forecast version, found %d", active)
+	}
+
+	store := LoadForecast(ctx, ForecastConfig{
+		PostgresDSN:                    dsn,
+		ExpectedPublicationFingerprint: strings.Repeat("a", 64),
+		ActivationScopeFingerprint:     strings.Repeat("b", 64),
+		DBReadPool:                     2,
+	})
+	defer store.Close()
+	if store.Available() {
+		t.Fatal("no accepted active version exists, yet forecast serving reports available")
+	}
+	payload := store.Unavailable()
+	// Both governed 503 reasons are acceptable here; only a lineage mismatch
+	// maps to 409, and that would wrongly imply an activated version exists.
+	reason, _ := payload["reasonCode"].(string)
+	if reason != ForecastReasonUnmaterialized && reason != ForecastReasonInvalid {
+		t.Fatalf("governed unavailable reason must map to 503, got %v", reason)
+	}
+	if reason == ForecastReasonLineage {
+		t.Fatal("NO-GO branch must not report a lineage mismatch")
+	}
+	if payload["forecastRunId"] != nil || payload["semanticFingerprint"] != nil {
+		t.Fatalf("fail-closed payload must not expose an identity: %v", payload)
+	}
+}
+
 func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
 	scope := os.Getenv("RETAIL_TEST_FORECAST_SCOPE")
 	publication := os.Getenv("RETAIL_TEST_PUBLICATION_FINGERPRINT")
 	if dsn == "" {
 		t.Skip("PostgreSQL forecast integration environment is not configured")
+	}
+	if lifecycle := os.Getenv("RETAIL_TEST_FORECAST_LIFECYCLE"); lifecycle != "" &&
+		lifecycle != "accepted" {
+		t.Skip("gate is running the governed NO-GO branch")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

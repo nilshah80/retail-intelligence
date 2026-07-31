@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "retail-forecast-improvement-policy/v1",
+  "policyId": "retail-forecast-improvement/v1",
+  "decisionIds": [74, 75],
+  "consumerGate": "PP3-B1",
+  "status": "frozen_before_any_candidate_exists",
+  "description": "Frozen candidate-selection and improvement-materiality rules. Every threshold here is chosen from operational relevance before any candidate result is visible, and none may be tuned afterwards.",
+  "comparisonAuthority": {
+    "acceptedAuthority": "C0",
+    "diagnosticAuthority": "D0",
+    "rule": "A candidate is compared with the accepted C0 when one exists, otherwise with the diagnostic-only D0. D0 never authorizes publication, materialization, activation or serving.",
+    "rejectedForever": [
+      "the former v12 forecast run fr_b2f18d0e2999a36d",
+      "the v14 run fr_ab5be7296a2c416e",
+      "the v15 run fr_92135aa7b5215b69"
+    ],
+    "reason": "None satisfies the repaired comparison authority: all three predate acceptance-v3/verifier-v4 and feature-schema-v6 cohorting."
+  },
+  "originRoles": {
+    "developmentOrigins": {
+      "selection": "first_8_chronological_scoring_origins",
+      "count": 8,
+      "usableFor": ["hypothesis testing", "candidate fitting", "configuration search"]
+    },
+    "confirmationOrigins": {
+      "selection": "final_5_chronological_scoring_origins",
+      "count": 5,
+      "usableFor": ["one read, after the candidate is frozen"],
+      "rule": "Reading a confirmation origin before freezing exactly one candidate invalidates the run."
+    },
+    "acceptanceSchedule": {
+      "origins": 13,
+      "rule": "A1-A5 still runs over all 13 origins. The confirmation split is an additional gate, not a replacement, so acceptance stays partly in-sample with respect to candidate selection and the materiality gate must be reported on both populations."
+    }
+  },
+  "candidateRegistry": {
+    "searchBudgetConfigurations": 20,
+    "candidatesAdvanced": 1,
+    "preRegistrationRequired": true,
+    "families": [
+      {"id": "C1", "name": "P50 bias correction", "cause": "market_horizon_under_bias"},
+      {"id": "C2", "name": "P90 quantile calibration", "cause": "interval_calibration"},
+      {"id": "C3", "name": "segmented champions", "cause": "model_pooling_across_segments"},
+      {"id": "C4", "name": "hierarchical reconciliation", "cause": "aggregate_incoherence"},
+      {"id": "C5", "name": "optional origin-safe signals", "cause": "missing_signal"},
+      {"id": "C6", "name": "lifecycle and cold-start treatment", "cause": "cold_start_no_skill"}
+    ],
+    "rule": "A family absent from this list may not be scored. Adding one is a pre-result policy amendment."
+  },
+  "materiality": {
+    "metric": "relative_wape_improvement_pct",
+    "minimumGlobalImprovementPct": 5.0,
+    "bootstrap": {
+      "unit": "SeriesKey",
+      "clustered": true,
+      "samples": 500,
+      "seed": 20260730,
+      "interval": 0.95,
+      "requirement": "candidate_minus_authority_upper_bound_below_zero"
+    },
+    "perMarketNonRegression": {
+      "maximumRelativeWapeRegressionPct": 1.0,
+      "appliesTo": "every supported market"
+    },
+    "reportedPopulations": ["all_13_origins", "final_5_confirmation_origins"],
+    "rule": "Both populations must independently satisfy the improvement and non-regression gates. Reporting only the pooled all-13 result would hide an in-sample-only gain."
+  },
+  "pairing": {
+    "keys": [
+      "input_publication_fingerprint",
+      "forecast_origin",
+      "horizon",
+      "sku_id",
+      "store_id",
+      "channel_id"
+    ],
+    "cohortKeysMustBeIdentical": true,
+    "rule": "Candidate and authority must score identical eligible rows in identical decision-#82 cohorts. A changed population is a hard failure, not an improvement."
+  },
+  "formulas": {
+    "candidateWape": "SUM(candidate_abs_error_sum) / SUM(actual_sum)",
+    "authorityWape": "SUM(authority_abs_error_sum) / SUM(actual_sum)",
+    "deltaWape": "candidate_wape - authority_wape, lower is better",
+    "relativeImprovementPct": "100 * (authority_wape - candidate_wape) / authority_wape"
+  },
+  "requiredSlices": [
+    "market",
+    "store",
+    "category",
+    "channel",
+    "lifecycle",
+    "intermittency_band",
+    "model_route",
+    "history_length",
+    "horizon_h1",
+    "horizon_h4",
+    "horizon_h8",
+    "horizon_h13",
+    "horizon_h26",
+    "decision_82_cohort"
+  ],
+  "stopRules": [
+    {"id": "LEAKAGE", "trigger": "any feature, correction or calibration is not origin-safe"},
+    {"id": "POPULATION_CHANGED", "trigger": "candidate and authority cohort key hashes differ"},
+    {"id": "COVERAGE_FAILURE", "trigger": "P90 coverage leaves 0.85-0.95"},
+    {"id": "MARKET_FAILURE", "trigger": "a supported market fails its gate"},
+    {"id": "CONFIRMATION_PEEKED", "trigger": "a confirmation origin was read before the candidate froze"},
+    {"id": "SIMPSONS_PARADOX", "trigger": "a pooled gain is contradicted by a majority of slices"}
+  ],
+  "forbidden": [
+    "tuning any threshold in this document after a candidate result is visible",
+    "treating a zero actual_sum slice as a pass rather than insufficient_evidence",
+    "substituting an aggregate score for SeriesKey accuracy",
+    "improving a display value rather than the underlying forecast"
+  ],
+  "insufficientEvidenceRule": "A slice whose actual_sum is zero is insufficient_evidence, never a pass."
+}

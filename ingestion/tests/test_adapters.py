@@ -16,8 +16,21 @@ from .test_gate_a import _land_fixture, _write_profile
 
 
 def test_registry_has_source_semantic_not_format_adapters() -> None:
-    assert registered_adapters() == ("businessCentral", "companion", "shopify")
+    # `mapped_files` is the profile-driven default for ordinary client drops; the
+    # other three are source dialects. None of them is a physical-format adapter,
+    # which is the property this test guards.
+    assert registered_adapters() == (
+        "businessCentral",
+        "companion",
+        "mapped_files",
+        "shopify",
+    )
     assert adapter_for("shopify").adapter_version.startswith("shopify-adapter/")
+    assert adapter_for("mapped_files").adapter_version.startswith(
+        "mapped-files-adapter/"
+    )
+    for physical_format in ("csv", "parquet", "jsonl", "json"):
+        assert physical_format not in registered_adapters()
 
 
 def test_shopify_adapter_reads_declared_csv_through_shared_reader(
