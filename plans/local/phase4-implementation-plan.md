@@ -38,10 +38,15 @@ historical supersession/attestation ledger rather than silently dropping it. The
 still lacks the versioned `cold_start_interval_unavailable` series exception and a fully enforced
 availability/reason/nullability truth table: the Parquet row has no explicit availability/reason,
 materialization derives the reason from manifest metadata, Go derives availability from P90
-nullability, and migration 0008 does not forbid a reason on an available interval. `P4-0` closes the
-authority/selection/closure residue;
-`P4-1` completes the bounded contract on the final selected Phase 4 pin. No result-bearing package
-may consume an interval before those exits pass.
+nullability, and migration 0008 does not forbid a reason on an available interval. Withholding also
+left two served aggregates measuring a mixed population — §1.3.1 records the measurement: at a
+26-week selection the workbench confidence for the 398 affected series reads 0.0814 where the
+covered weeks give 0.5817, and 372 of them return an interval total below their own central total. It
+applies at 8, 13 and 26 weeks, every selection except the 4-week default.
+That one is already visible on screen rather than latent, and it is the only residue in this list
+that misstates a number a planner can read. `P4-0` closes the authority/selection/closure residue;
+`P4-1` completes the bounded contract, repairs the aggregates, and republishes on the final selected
+Phase 4 pin. No result-bearing package may consume an interval before those exits pass.
 
 The current immutable bundle is `ml/data/artifacts/forecast_run_final2`, run
 `fr_357575f586905b11`, version `fv_3d66e3bd9939430d`. PostgreSQL migration 0008 is applied and the
@@ -64,25 +69,30 @@ The recommended implementation order is:
 1. Reconcile the completed Phase 3 implementation with its records: preserve the one live bounded
    v5 authority and events 7→8→9; create the missing source selection; correct the closure
    migration/head and historical-ledger disposition; and implement global Go authority counting.
-2. Treat the former `P4-D0` ordering question as resolved by the implementation: the bounded
+2. Freeze both §1.3.1 presentation behaviors and clear the `P4-0P` gate: amend Decision #64 (likely
+   Q19) and `contracts/screens/demand-forecast.parity.yaml` together, and record approval. This gate
+   is small but it is on the critical path — no changed confidence response ships without it, in
+   either direction.
+3. Treat the former `P4-D0` ordering question as resolved by the implementation: the bounded
    current-pin publication already ran. Proceed with source-only contract/publication work after
    `P4-0`; no result-bearing Phase 4 work is authorized by that ordering.
-3. Version the source/canonical contracts for store inventory, typed service lanes, historical
+4. Version the source/canonical contracts for store inventory, typed service lanes, historical
    inbound state, origin-safe supplier terms, and corrected event visibility; generate, publish,
    select, and pin the resulting source run without producing Phase 4 engine values.
-4. Retain decision #87's C6/C7 and decision #91's C8 rejection evidence. On the final source pin,
+5. Retain decision #87's C6/C7 and decision #91's C8 rejection evidence. On the final source pin,
    repeat the implemented decision-#92 withholding and complete the strict availability/reason
    contract plus versioned series exception without reviving C8 as a remedy.
-5. Recompute decision #85 over published intervals only, independently verify every withheld and
-   published row/exception, and activate only a verifier-v5 bounded bundle whose P50 remains
-   complete at H1–H26.
-6. Freeze the Phase 4 policy, run/acceptance/verifier contracts, OpenAPI, channel policy, replay
+6. Recompute the cold-start `A2_per_cohort` cell over published intervals only — whole-population A2
+   keeps scoring all 708,708 rows under decision #92's scope limit — independently verify every
+   withheld and published row/exception, and activate only a verifier-v5 bounded bundle whose P50
+   remains complete at H1–H26.
+7. Freeze the Phase 4 policy, run/acceptance/verifier contracts, OpenAPI, channel policy, replay
    clock, and all 14 screen matrices.
-7. Port the reusable M5 engine modules and implement the net-new engines.
-8. Run weekly replay plus 5% policy calibration and untouched 95% validation.
-9. Publish, independently verify, materialize, and separately activate one inventory/replenishment
-   bundle.
-10. Deliver the PostgreSQL-only Go read models and 14 React pages, then complete per-page visual,
+8. Port the reusable M5 engine modules and implement the net-new engines.
+9. Run weekly replay plus 5% policy calibration and untouched 95% validation.
+10. Publish, independently verify, materialize, and separately activate one inventory/replenishment
+    bundle.
+11. Deliver the PostgreSQL-only Go read models and 14 React pages, then complete per-page visual,
     DOM, data-value, portability, and human-review gates.
 
 The current-pin bounded publication has already selected the strict branch that `P4-D0` formerly
@@ -143,7 +153,8 @@ must form one fingerprinted lineage before any recommendation is trusted.
 | Workstream | State at plan creation | Authorization rule |
 |---|---|---|
 | `P4-0` Phase 3 entry reconciliation | First authorized Phase 4 package | Finish decision #93 against the as-built events 7→8→9 without rewriting history or immutable bundles |
-| `P4-1` decision-#92 bounded interval completion/final-pin publication | Required before interval/result-bearing work | The current-pin field withholding is implemented; complete strict exception/truth-table coverage and repeat once after `P4-3` on the final source pin |
+| `P4-0P` Demand Forecast parity amendment | Gate between `P4-0` and `P4-1`, not a package | Freeze both §1.3.1 presentation behaviors, amend Decision #64 (likely Q19) alongside the versioned amendment to the already-frozen `demand-forecast.parity.yaml`, and record approval before `P4-1` implements the repair; `P4-4` inherits it, and no changed confidence response ships without it |
+| `P4-1` decision-#92 bounded interval completion/final-pin publication | Required before interval/result-bearing work | The current-pin field withholding is implemented; complete strict exception/truth-table coverage after the `P4-0P` approval, and repeat once after `P4-3` on the final source pin |
 | `P4-2` source and canonical contract vNext | Planned | After `P4-0`; source-only and non-result-bearing |
 | `P4-3` new source publication and selection | Planned | After reviewed `P4-2`; source-only before final-pin `P4-1` under the as-built ordering disposition |
 | `P4-4` Phase 4 contract freeze | Planned | After `P4-1`; may use reviewed `P4-2` shapes |
@@ -244,7 +255,7 @@ verification point:
 | Migration/client pins | Applied DB, ML, Go, and DB test name `0008_nullable_withheld_interval`; migration 0007 remains the inherited verifier-v5 boundary. The generated closure record is stale at 0007 |
 | Historical activation evidence | Events 1/2 are the two null-predecessor authority-generation-1 activations; events 5/6 retire them; event 7 is the immutable null-predecessor incident; event 8 supersedes 7; event 9 activates the bounded replacement with `prior_event_id = 8` |
 | Current local DB projection | Exactly one row: `fr_357575f586905b11` / `fv_3d66e3bd9939430d` |
-| Decision-#92 acceptance evidence | H1–H4 scoped coverage passes and declares 86,636 evaluation rows withheld |
+| Decision-#92 acceptance evidence | The 86,636 rows are excluded from **one cell only** — the cold-start `A2_per_cohort` cohort, which scores 15,752 rows at 0.8603. Whole-population `A2` still scores the full 708,708-row frame at 0.8905 (verified: the scoped 622,072-row set would read 0.9036), and `established_history` keeps all 605,904 rows. The rows are excluded from that cell, not nulled: `forecast_eval_predictions` retains non-null P90/confidence on all 708,708 rows in both the bundle and the projection |
 | Decision-#92 served-field evidence | 52,884 rows / 2,034 current served SeriesKeys; exactly 8,756 H5–H26 cold-start rows have null P90/confidence and a DB reason, covering 398 series. Parquet has no row-level availability/reason, Go infers availability from null, the DB allows a reason on a present interval, and the versioned series exception remains for `P4-1` |
 | Source authority | Snapshot/publication pin matches, but no decision-#73 selection record is discoverable |
 | Closure authority | Generated v2 record matches the active run and v5/hard evidence, but still hard-codes migration 0007 and omits the former historical supersession/attestation ledger without an explicit disposition |
@@ -294,12 +305,124 @@ interval is calibrated at H1–H4 (0.8603 global, 0.8641 India West, 0.8571 US N
 unavailable at H5–H26, where measured coverage declines from 0.8433 to 0.7798. C8 remains rejected
 evidence; it is not the H1–H4 serving producer.
 
-Acceptance recomputes the bounded claim and reports 86,636 withheld evaluation rows. The current
-artifact now applies the same boundary to 8,756 rows, PostgreSQL retains the null pair and reason,
-and Go exposes explicit availability. `P4-1` must still add/reconcile the one-per-series governed
-exception, enforce the exact availability/reason/nullability truth table, and repeat the verified
-contract on the final source pin. Phase 4 may start with `P4-0`, but no interval-consuming feature
-may treat this partial implementation as the final Phase 4 interval authority.
+Acceptance recomputes the bounded claim over 15,752 cold-start rows and excludes 86,636. Three
+distinct operations are easy to conflate under the single word "withheld", and only the first one
+changes what any consumer reads:
+
+- **Withheld from publication** — the 8,756 current-cycle H5–H26 cold-start rows whose P90 and
+  confidence are null in the artifact, the projection, and the API. This is what a planner and a
+  Phase 4 engine consume.
+- **Excluded from one gate cell** — the 86,636 evaluation rows removed from the cold-start
+  `A2_per_cohort` cohort, which therefore scores 15,752 rows at 0.8603. Whole-population `A2` is
+  unaffected today: it still scores the full 708,708-row frame at 0.8905, and `established_history`
+  keeps all 605,904 rows. Verified — the scoped 622,072-row population would read 0.9036, and the
+  removed 86,636 rows read 0.7965 on their own. Decision #92's scope limit is explicit that "the
+  0.85-0.95 band, P50, the established cohort and every published accuracy figure are unchanged", and
+  #85 keeps publishing the whole-population figure, so **whole-population A2 stays on all 708,708
+  rows**. The 0.9036 published-interval figure may be published only as a separately named diagnostic
+  — `published_interval_population_coverage` or equivalent — never as a replacement A2. Substituting
+  it would silently raise an authoritative accuracy figure by scoping away the population that
+  failed, which requires its own decision, not an implementation choice inside `P4-1`.
+- **Not nulled anywhere in evaluation** — `forecast_eval_predictions` retains non-null
+  P90/confidence on all 708,708 rows in both the bundle and the projection. The two consequences of
+  changing that are different and both unacceptable: *removing* the rows would move A1, A3, A5 and
+  the decision-#77 display cells, which score P50 error sums at every horizon, while *nulling* their
+  P90/confidence would move A2 and A4, the two gates that read an interval.
+
+PostgreSQL retains the null pair and reason for the published rows, and Go exposes explicit
+availability. `P4-1` must still add/reconcile the one-per-series governed exception, enforce the exact
+availability/reason/nullability truth table, repair the served interval aggregates in §1.3.1, and
+repeat the verified contract on the final source pin. Phase 4 may start with `P4-0`, but no
+interval-consuming feature may treat this partial implementation as the final Phase 4 interval
+authority.
+
+### 1.3.1 Withholding broke the served interval aggregates
+
+Withholding P90 and confidence while retaining P50 changed the meaning of two aggregates that were
+written when every row carried an interval. `api/internal/readmodel/forecast.go:787-794` computes the
+workbench row over the selected window `series.horizon_week <= $2`:
+
+```sql
+SUM(series.yhat_p90) AS ai_forecast_p90,
+SUM(series.confidence * GREATEST(series.yhat_p50, 1.0))
+  / NULLIF(SUM(GREATEST(series.yhat_p50, 1.0)), 0) AS confidence
+```
+
+`SUM` skips nulls, so the confidence numerator now omits the withheld weeks while its denominator
+still counts their retained P50 weight, and `SUM(yhat_p90)` covers only H1–H4 while `ai_forecast`
+covers the whole selection. Measured on the live active version over the 398 affected series at
+`horizon_week <= 26`:
+
+| Metric | As served | Restricted to the weeks that carry an interval |
+|---|---:|---:|
+| Series whose `SUM(p90)` is below `SUM(p50)` | **372 of 398** | 0 |
+| Mean weighted confidence | **0.0814** | **0.5817** |
+
+`HorizonWeeks` defaults to 4 and is clamped to 26 (`forecast.go:365-369`), and the screen offers
+`[4, 8, 13, 26]` (`ui/src/Forecast.tsx:963`). Withholding starts at H5, so only the default 4-week
+selection is clean: **8, 13 and 26 weeks are all affected**, and the 8-week selection is one click
+from the default. Confidence is rendered in the SKU view
+(`ui/src/Forecast.tsx:486` and the export columns), so the understated figure is user-visible today;
+the inverted quantile pair is currently API-only in that row.
+
+This is the same defect family as the committed fix that scoped SKU-view accuracy and bias to the
+displayed horizon window. Neither the aggregate paths nor their scan types were in `P4-1`'s scope
+before this revision; both are now required there.
+
+The two fields need different repairs, because only one of them is a mean. Both, however, need a
+frozen presentation choice: a numerically correct number is not automatically an honest one.
+
+- **Weighted confidence is numerically repairable in place, but not silently.** Decision #12 defines
+  slice confidence as the `max(P50,1)`-weighted mean of per-row confidence after filters, so
+  restricting both sides of the ratio to the weeks that carry an interval is that same formula applied
+  to the population where confidence exists. That fixes the arithmetic and leaves a presentation
+  problem: at 8, 13 or 26 weeks an affected row would show a column headed "Confidence" computed from
+  H1–H4 only, beside forecast values covering the whole selection, and the table renders the number
+  alone — publishing scope fields in the payload tells the API consumer nothing the planner can see.
+  One of two behaviors must be frozen and parity-amended in the `P4-0P` gate, before `P4-1`
+  implements anything:
+  1. **Qualified in place**: render the covered horizon and withheld count beside confidence; or
+  2. **Unavailable when mixed** (recommended): mark confidence unavailable through the approved
+     element-level behavior whenever the selected window mixes published and withheld intervals. An
+     unqualified H1–H4 number under a "Confidence" heading is the failure decision #78 exists to
+     prevent, and the unavailable state already has an approved rendering.
+
+  Both change what the screen shows, so both require the amendment in `P4-0P`.
+- **The interval total is not repairable by filtering at all.** The horizons read model already states
+  the governing principle: "a sum of P90 bounds is not the P90 of the sum." Confining
+  `SUM(yhat_p90)` to H1–H4 removes the population mismatch but still labels a sum of weekly upper
+  bounds as an interval for a multi-week total, which predates #92 and is not made true by scoping.
+  Two admissible outcomes, and one must be frozen in the `P4-0P` gate before `P4-1` implements
+  anything:
+  1. **Unavailable when mixed** (recommended, and freezable immediately): omit the interval total with
+     the governed reason whenever the selected window contains a withheld week. It matches the
+     element-level convention `P4-D17` and decision #78 already apply, and it needs no parity
+     amendment at all, because `aiForecastP90` is carried in the payload and rendered nowhere — it
+     appears only in `ui/src/api.ts` and one test fixture. Freezing this one now leaves the confidence
+     behavior as the single item needing screen review.
+  2. **Renamed and comparable**: return it under a name that states what it is — a sum of weekly upper
+     bounds over the covered window — alongside a same-window P50 comparator, and expose the covered
+     window visibly. Because this puts a new labelled quantity on the screen, it requires the Demand
+     Forecast parity review before any element renders it.
+
+Silently blending two horizon populations in one cell is not among the admissible outcomes for either
+field.
+
+Related and in the same edit: `forecast.go` scans this aggregated `confidence` into a non-pointer
+`float64`. It survives today only because the window is cumulative from H1 and therefore always
+contains a calibrated week; any horizon-range filter — which the `P4-1` truth table and Phase 4
+safety-stock work both invite — turns it into a request-time scan error. The row-level series path
+already scans nullable values and returns the reason, so only the aggregate paths need the change.
+
+No element may be added, relabelled, or turned into an unavailable state without the Demand Forecast
+parity review. Every frozen option above except the interval total's option 1 changes what the screen
+shows, so the parity review is on the critical path for this repair rather than optional to it.
+
+The added scope fields are a contract change in their own right. `forecastWorkbenchSchema`
+in `ui/src/api.ts` is a plain `z.object`, so Zod strips unknown item keys and any new field is
+discarded before a component can read it. Covered-window, withheld-count and reason fields therefore
+land in OpenAPI, the generated Python/Go/TypeScript types, and the Zod schema together — which is what
+`P4-1`'s existing OpenAPI/types task already requires; this is the concrete list it must cover.
 
 ### 1.4 Current inventory and supply evidence
 
@@ -1084,7 +1207,7 @@ docs/
   decision-91-modelled-cold-start-p90-head.md
   decision-92-cold-start-interval-horizon-limit.md
   decision-93-phase3-closure-and-serving-reconciliation.md
-  OPEN_DECISIONS.md
+  OPEN_DECISIONS.md                      # amended in P4-0P: Decision #64 gains Q19 or a superseding entry
 
 contracts/
   ml/
@@ -1101,6 +1224,7 @@ contracts/
     verifier-policy.json
     golden-vectors.json
   screens/
+    demand-forecast.parity.yaml          # amended in P4-0P, not created: frozen contract + versioned amendment
     inventory-overview.parity.yaml
     store-inventory.parity.yaml
     warehouse-inventory.parity.yaml
@@ -1250,9 +1374,13 @@ closure record whose migration pin and historical-ledger disposition remain inco
    retained versus missing bundle/hash status. Never reconstruct deleted bytes or hashes.
 12. Reconcile `candidate-c5-result.json`, the Post-Phase-3 plan, and Phase 4 entry evidence to the
     current served identity while retaining historical ids and the no-accuracy-improvement claim.
-13. Record the implemented #92 state explicitly: 86,636 withheld evaluation rows and 8,756 of
-    52,884 current rows across 398 cold-start series, with matching PostgreSQL null/reason counts.
-    Also record the missing series exception and strict truth-table work handed to `P4-1`.
+13. Record the implemented #92 state explicitly, keeping the two operations distinct: 8,756 of 52,884
+    current rows across 398 cold-start series are **withheld from publication** with matching
+    PostgreSQL null/reason counts, while 86,636 evaluation rows are **excluded from the cold-start
+    `A2_per_cohort` cell only** — that cohort scores 15,752 rows at 0.8603, whole-population A2 still
+    scores the full 708,708-row frame at 0.8905, and all 708,708 evaluation rows keep non-null
+    P90/confidence. Also record the missing series exception, the §1.3.1 served-aggregate defect, and
+    the strict truth-table work handed to `P4-1`.
 14. Run the complete stateful local gate against migration 0008 and the selected one-live authority;
     confirm API `dataMode: live` and nullable interval serialization while Phase 4 interval
     consumers remain disabled until final-pin `P4-1`.
@@ -1299,9 +1427,60 @@ or claimed completed evidence has no artifact, keep result-bearing Phase 4 gated
 history, choose a configured winner, reactivate the interval-incomplete version/v4, reconstruct
 deleted bytes, or clear evidence strings without linking the completion evidence.
 
+### P4-0P · Demand Forecast parity amendment (gate, not a package)
+
+**Entry:** `P4-0` complete; §1.3.1's measurement recorded.
+
+This gate exists because the presentation repair touches an **already frozen** screen contract.
+`P4-4` cannot ratify it: `P4-4` enters after `P4-1` and its scope is the 14 new Phase 4 matrices, not
+`contracts/screens/demand-forecast.parity.yaml`. Freezing a behavior in `P4-1` and ratifying it in
+`P4-4` would implement a screen change before its contract existed.
+
+**Tasks:**
+
+1. Freeze the interval-total behavior. The plan recommends §1.3.1 option 1 — absent with the governed
+   reason whenever the window is mixed — which changes no rendered element and can be frozen here
+   without a screen amendment.
+2. Freeze the confidence behavior. The plan recommends *unavailable when mixed*: an unqualified
+   H1–H4 number under a "Confidence" heading beside full-window forecast values is the failure decision
+   #78 exists to prevent, and the approved element-level unavailable state already has a defined
+   rendering.
+3. Amend `contracts/screens/demand-forecast.parity.yaml` for the frozen confidence behavior — the
+   affected cell, its unavailable rendering, the governed reason surface, and the 4/8/13/26 selection
+   matrix — as a versioned amendment to a frozen contract, not a silent edit. The file's
+   `reviewGate.resolvedDecision` block carries Q1–Q18 and `pendingDecisions: {}`, so the amendment
+   lands as a new resolved entry rather than an edit to an existing answer.
+4. **Amend the governing decision, not only the file.** Decision #64 freezes that YAML as the
+   machine-readable UI authority with Q1–Q18 enumerated — including "selected-horizon workbench sums",
+   which is precisely the semantics this repair changes. Record a dated Decision #64 amendment, most
+   naturally Q19, or a new superseding decision, naming both the chosen confidence behavior and the
+   chosen interval-total behavior. Amending the contract while its registry entry still freezes only
+   the old semantics would leave the authority split between two documents.
+5. Obtain and record explicit human approval of that amendment, naming the measured defect it repairs.
+6. Record the decision/amendment id, the approval id, both frozen choices, and the amended contract's
+   fingerprint in the Phase 4 entry record, and keep `docs/OPEN_DECISIONS.md` and the YAML
+   synchronized — neither may carry a semantics the other does not.
+
+**Required evidence:** the dated #64 amendment or superseding decision, the versioned parity
+amendment, its approval record, the amended contract fingerprint, and both frozen choices bound into
+the entry record before `P4-1` task 9 begins.
+
+**Exit:** `P4-1` may implement the repair, and `P4-4` inherits an already-approved amendment instead
+of ratifying a shipped change retrospectively.
+
+**Stop:** if the decision amendment and parity approval are not both recorded, non-serving
+implementation and isolated tests may proceed, but `P4-1` task 9 cannot reach its serving/activation
+exit and **no changed confidence response may ship** — in either direction. Returning the corrected
+value changes the number the screen shows; suppressing it changes that cell to an unavailable state.
+Both are presentation changes, so neither is available as a fallback. The only shippable state without
+the amendment is the one already live: the diluted number, which is why this gate is on the critical
+path rather than beside it.
+
 ### P4-1 · Complete decision #92 and publish it on the final Phase 4 source pin
 
-**Entry:** `P4-0` and the source-only `P4-2/3` track complete; decisions #85, #86, #90, and #92
+**Entry:** `P4-0` and the `P4-0P` parity-amendment gate complete, with both §1.3.1 presentation
+choices frozen and the Demand Forecast amendment approved; the source-only `P4-2/3` track complete;
+decisions #85, #86, #90, and #92
 decided; decision #87 closed with C6/C7 rejected; decision #91's C8 rejected as a full-range remedy.
 The current-pin bounded authority proves the publication/migration/API path and is the comparator;
 it is not the final Phase 4 authority because the source pin will change and its series-exception/
@@ -1328,8 +1507,12 @@ truth-table contract is incomplete.
    with false availability, P90 below P50 when available, and any null/non-finite P50. Add
    `0009_*_forecast_interval_contract_completion.py` to backfill/store the explicit availability
    field and enforce the two valid row states; do not edit already-applied migration 0008.
-6. Keep evaluation rows for A1, A3, A4, A5 and display-cell scoring at every horizon. Recompute A2
-   only over published intervals, and independently publish total, cohort, market, horizon-band,
+6. Keep evaluation rows for A1, A3, A4, A5 and display-cell scoring at every horizon. Scope **only**
+   the cold-start `A2_per_cohort` cell to published intervals; whole-population A2 keeps scoring all
+   708,708 rows, because decision #92's scope limit leaves every published accuracy figure unchanged
+   and #85 keeps publishing that figure. The published-interval population may appear only as a
+   separately named diagnostic, never as a replacement A2; substituting it needs its own decision.
+   Independently publish total, cohort, market, horizon-band,
    withheld-row, withheld-series, share, and demand-share counts/digests so gate scoping cannot hide
    the withdrawn population.
 7. Version the exception classification policy to add `cold_start_interval_unavailable`. Emit one
@@ -1345,6 +1528,34 @@ truth-table contract is incomplete.
    OpenAPI/types and exact availability/reason contract so it survives end to end. No layer may
    coalesce null P90/confidence to zero or compute spread/confidence/safety stock from a withheld
    interval.
+   Repair the §1.3.1 served aggregates in the same change, because they are the one place where the
+   withholding is already wrong on screen:
+   - **freeze both presentation behaviors first**, before writing either the implementation or its
+     tests. For the interval total: §1.3.1 option 1, absent with the governed reason whenever the
+     window mixes published and withheld weeks, or option 2, renamed to a sum of weekly upper bounds
+     with a same-window P50 comparator and a parity-reviewed visible window. For confidence: qualified
+     in place with a visible covered horizon and withheld count, or unavailable through the approved
+     element-level behavior whenever the window is mixed. Both freezes and the Demand Forecast parity
+     amendment belong to the `P4-0P` gate and must be approved before this task starts; `P4-4` inherits
+     that amendment rather than ratifying a shipped change. Filtering to H1–H4 without choosing
+     is not a repair: it corrects the arithmetic while a column headed "Confidence" or an interval
+     total still describes a window the screen never states;
+   - restrict the P50-weighted confidence mean to the weeks that carry an interval on **both** sides
+     of the ratio, so a retained P50 weight can no longer dilute a mean whose numerator skipped it.
+     This is decision #12's formula on the population where confidence exists; it settles the
+     arithmetic, not the presentation;
+   - publish the covered interval window and the withheld week count with the interval aggregates;
+   - scan every aggregated interval value as nullable, so a future horizon-range filter cannot turn a
+     fully withheld window into a request-time error rather than a governed unavailable state;
+   - carry the covered-window, withheld-count and reason fields through OpenAPI, the generated
+     Python/Go/TypeScript types **and** the Zod item schema together; `forecastWorkbenchSchema` strips
+     unknown keys, so a field added only server-side never reaches a component;
+   - obtain the Demand Forecast parity review before implementing any frozen option that changes what
+     the screen shows, which is every option except the interval total's option 1.
+   Also correct the published `A2_per_cohort` note text, which still credits decision #87 with
+   supplying the remedy that makes the band reachable. #87 is closed with both candidates rejected and
+   #92 supplies the boundary; the sentence lives inside fingerprinted evidence, so this publication is
+   the only place it can be fixed without editing an immutable artifact.
 10. Publish under acceptance-v5/verifier-v5 and migration 0009. Prior v4 and
     interval-incomplete bundles remain immutable and ineligible rather than being reinterpreted.
 11. Independently verify both sides of the contract: every published cold-start H1–H4 interval and
@@ -1358,12 +1569,26 @@ truth-table contract is incomplete.
 **Acceptance:**
 
 - every published cold-start and established-history cohort cell is in 0.85–0.95 globally and per
-  market; whole-population A2 is computed over published intervals with the denominator disclosed;
+  market; whole-population A2 still scores all 708,708 evaluation rows, and any published-interval
+  coverage figure appears under its own diagnostic name with its denominator disclosed;
 - H1–H4 cold-start intervals are present; H5–H26 cold-start P90/confidence are absent with the exact
   false availability flag and reason, while P50 remains present at all 26 horizons;
-- on the current measured pin, 8,756 of 52,884 current rows and 86,636 evaluation rows are withheld,
-  and one series-level exception exists for each of the 398 affected current series; a later final
+- on the current measured pin, 8,756 of 52,884 current rows are withheld from publication and 86,636
+  evaluation rows are excluded from the cold-start `A2_per_cohort` cell while keeping non-null
+  intervals, and one series-level
+  exception exists for each of the 398 affected current series; a later final
   pin must publish reviewed exact replacements rather than silently inherit these counts;
+- the covered-week confidence reference value is computed for the 398 affected series and is not the
+  diluted 0.0814 measured in §1.3.1; the covered/withheld window is published; and the served response
+  matches the frozen §1.3.1 confidence behavior at 8, 13 and 26 weeks — under *qualified in place* the
+  response value equals that reference and its visible scope is present, under *unavailable when
+  mixed* the response value is absent with the approved reason and no numeric confidence is required.
+  At 4 weeks confidence stays numeric and unaffected under either choice, and no row shows an
+  unqualified H1–H4 confidence beside full-window forecast values;
+- the served interval total follows the §1.3.1 frozen choice exactly: either absent with the governed
+  reason whenever the window mixes published and withheld weeks, or present under a name that states
+  what it is with its same-window P50 comparator. No response carries an unlabelled interval total
+  beside a differently scoped central total;
 - no insufficient-evidence cell is treated as pass, and no withheld row is removed from non-A2
   scoring;
 - P50≤P90 for every available interval; nullable-domain invariants pass for every unavailable one;
@@ -1568,7 +1793,9 @@ insufficient. Do not update `expected-pin.json` until the capability verdict its
 10. Freeze independently recomputable acceptance components; stored booleans alone are never
    verifier authority.
 11. Extend OpenAPI using the existing envelope and governed 409/503 behavior.
-12. Freeze 14 screen matrices before React implementation.
+12. Freeze 14 screen matrices before React implementation. Inherit the `P4-0P` Demand Forecast parity
+    amendment as already approved: this package owns the 14 new matrices, not the existing
+    `demand-forecast.parity.yaml`, and may not re-open or retrospectively ratify its amendment.
 13. For every HTML element, record authority, grain, formula, filters, actions, availability,
     staleness, and approved unavailable rendering.
 14. Freeze the artifact → screen → endpoint mapping below, including explicit homes for Stock
@@ -1986,6 +2213,14 @@ screen” is not a reason to remove an element or substitute a new panel.
 - Go reads PostgreSQL only and fails closed on duplicate authority regardless of configured legacy
   scope;
 - exact 409/503 behavior tested;
+- the weighted-confidence computation is confined to the weeks that carry an interval on both sides of
+  its ratio and publishes its covered/withheld window; confidence and the interval total each follow
+  their frozen §1.3.1 presentation choice at 8, 13 and 26 weeks — a served value equal to the
+  covered-week reference with visible scope, or an absent value with the approved reason — so no
+  response or screen carries an unqualified interval value beside a differently scoped central value;
+  4-week responses stay numeric; no aggregated interval value
+  is scanned into a non-nullable type; and the scope
+  fields survive OpenAPI, generated types, and the Zod schema;
 - API smoke matches active lineage and screen values.
 
 ### 9.7 UI/Demo gates
@@ -2008,6 +2243,11 @@ Stop and retain honest evidence when any occurs:
   selected/tuned after confirmation origins were read;
 - `interval_available` and its reason disagree with P90/confidence nullability, any layer coerces a
   withheld interval to zero, or the series-level exception projection does not reconcile;
+- a served aggregate mixes withheld and published weeks — a P50-weighted mean whose denominator
+  counts weeks its numerator skipped, an interval total covering fewer weeks than the central total
+  it is displayed beside, or an unlabelled covered window — a §1.3.1 presentation behavior is
+  implemented or tested before it is frozen, or whole-population A2 is rescoped to the
+  published-interval population without its own decision;
 - an all-or-nothing consumer requires H5+ but starts anyway; a partial consumer silently drops rows
   without exceptions/share evidence; a market remains cold-start-capable after 100% of its
   cold-start SeriesKeys or demand is skipped; or any stricter frozen threshold is breached;
@@ -2177,6 +2417,18 @@ Stop and retain honest evidence when any occurs:
 - screen KPI/table value recomputation;
 - nullable interval/reason/exception round-trip, no numeric zero coercion, successful partial-row
   response, and governed core-feature 503;
+- interval-aggregate regression at **4, 8, 13, and 26** selected weeks — every option the screen
+  offers — over a fixture containing withheld weeks. Unconditional: 4 weeks is unaffected and stays
+  numeric; the internal covered-week confidence reference is computed and asserted at 8/13/26 whatever
+  the response then does with it; the covered/withheld
+  window is published; the new fields survive OpenAPI/generated types/Zod rather than being stripped;
+  and a fully withheld window returns the governed unavailable state instead of a scan error.
+  Keyed to the frozen §1.3.1 choices: for the interval total, option 1 asserts it absent with its
+  reason whenever the window is mixed while option 2 asserts the renamed field with a same-window P50
+  comparator and never below it; for confidence, *qualified in place* asserts a served value equal to
+  the reference plus its visible covered horizon and withheld count, while *unavailable when mixed*
+  asserts an absent value with the approved reason and asserts **no** served numeric confidence. A test
+  asserting one behavior while the contract froze the other is a failed gate, not a passing one;
 - PostgreSQL-only import/I/O boundary;
 - Go race tests and fingerprint vectors.
 
@@ -2230,9 +2482,12 @@ Stop and retain honest evidence when any occurs:
 decision #90 + migration 0008 + decision #93 established
   -> current-pin decision-#92 bounded publication already completed (events 8/9)
   -> P4-0 residual #93 global-Go/selection/closure reconciliation
+  -> P4-0P freeze both §1.3.1 presentation behaviors + Decision #64 amendment (Q19) + approved
+          demand-forecast parity amendment
   -> P4-2 source/contracts only
   -> P4-3 source publication/selection only
-  -> P4-1 append migration 0009, complete exception/truth-table contract, and repeat bounded publication on final pin
+  -> P4-1 append migration 0009, complete exception/truth-table contract, repair the served aggregates
+          under the approved amendment, and repeat bounded publication on final pin
   -> P4-4
   -> P4-5
   -> P4-6
@@ -2247,7 +2502,8 @@ decision #90 + migration 0008 + decision #93 established
 resolved by as-built ordering:
   bounded current-pin publication happened first
   -> source-only P4-2/P4-3 may follow P4-0
-  -> one required final-pin P4-1 publication remains
+  -> P4-0P parity amendment may run in parallel with the source track
+  -> one required final-pin P4-1 publication remains, after P4-0P is approved
 ```
 
 Decision #90 and migration 0007 retired the duplicate authority-generation-1 scopes; migration
@@ -2279,6 +2535,7 @@ engines, or publish live Phase 4 values.
 |---|---|---|
 | Decision-#92 publication regresses or remains contract-incomplete | H5+ P90 reappears, or null rows lack an enforceable reason/series exception | Retain the live pre-export withholding regression; complete strict truth-table and exception controls; independently verify served and withheld rows |
 | Withheld P90/confidence is coerced to zero | New and least predictable products receive zero safety stock or risk while appearing confidently served | Require availability+reason branching in schema, DB, API, UI, and engines; add no-null-to-zero properties |
+| An aggregate written before withholding silently mixes populations | Already measured: at 26 weeks the served confidence for 398 cold-start series reads 0.0814 against a covered-week 0.5817, and 372 of them return an interval total below their central total. It applies at 8, 13 and 26 weeks — every selection except the 4-week default — and nothing coerces a null, so no null-handling check catches it | Confine interval aggregates to the weeks that carry an interval on both sides of a ratio, freeze one presentation behavior per field before implementing or testing, publish the covered/withheld window, scan aggregated interval values as nullable, and regression-test at 4/8/13/26 selected weeks |
 | Row exceptions mask a systemic consumer mismatch | Varied v13 terms can remove an entire market's cold-start demand from reorder | Declare cold-start H5+ as partial, expose all skipped shares, mark the market sub-capability unavailable at 100% skipped SeriesKeys or demand, and permit stricter pre-result thresholds |
 | Exception policy remains v1 while a new class is emitted | Artifact identity and downstream classification disagree | Version the policy/fingerprint/schema; emit one series-level H5–H26 record and reconcile its projection |
 | Rejected C6/C7 calibration is revived because its aggregate number looked attractive | A preregistered stop rule is silently nullified | Keep both rejection records executable; refuse grid extension, band relaxation, and confirmation refit |
@@ -2325,27 +2582,37 @@ not Phase 4 entry:
    append migration 0009 without rewriting applied 0008, then repeat the bounded publication on the
    final selected source pin. C8 remains rejected and H4 remains fixed unless a new preregistered
    mechanism supersedes #92.
-3. Retain Decision #88 option (a) without interim dual spelling and retain Decision #89's
+3. **`P4-0P` gate — freeze both §1.3.1 presentation behaviors and approve the Demand Forecast parity
+   amendment before `P4-1` implements the served-aggregate repair.** The plan recommends freezing the
+   interval total as option 1 immediately, since it changes no rendered element and needs no
+   amendment, which leaves confidence as the only item needing screen review; for confidence it
+   recommends *unavailable when mixed*. `P4-4` inherits the approved amendment and does not ratify it
+   retrospectively. The gate also carries the Decision #64 amendment — likely Q19 — because #64 freezes
+   the parity contract's Q1–Q18 including the workbench-sum semantics this repair changes. Without both
+   the amendment and the approval, non-serving implementation and isolated tests may proceed but `P4-1`
+   task 9 cannot reach its serving/activation exit, and no changed confidence response ships in either
+   direction: correcting the value and suppressing it are both presentation changes.
+4. Retain Decision #88 option (a) without interim dual spelling and retain Decision #89's
    implementation/adoption evidence, including logical-mirror exclusion, byte-stable restricted-
    object retention, all-excluded refusal, and the one-time next-landing re-pin.
-4. Capability split and temporal-evidence-policy v2.
-5. Active-or-residual store inventory scope and cost-carrying store transfer receipts.
-6. Source-declared typed replenishment/customer-fulfillment lanes and exact/default-channel
+5. Capability split and temporal-evidence-policy v2.
+6. Active-or-residual store inventory scope and cost-carrying store transfer receipts.
+7. Source-declared typed replenishment/customer-fulfillment lanes and exact/default-channel
    resolution.
-7. External/internal supply-term model and precedence; do not cap varied terms at H4.
-8. ISO-Monday replay clock, preceding-Thursday local bridge, timezones, and lead-time arrival
+8. External/internal supply-term model and precedence; do not cap varied terms at H4.
+9. ISO-Monday replay clock, preceding-Thursday local bridge, timezones, and lead-time arrival
    rounding.
-9. DC dependent-demand operating method and validation-only withdrawal forecast.
-10. Store WAC/ABC basis.
-11. Exact replay acceptance math, incumbent identity, and materiality/tolerances.
-12. Calibration/holdout key and seed.
-13. NRV/provision unavailable scope.
-14. Read-only exception/action/ERP behavior.
-15. `P4-D16` channel-to-node aggregation, constrained allocation, and direct-DC rule.
-16. `P4-D17` implementation: cold-start H5+ is partial; current H2 is pin-specific; 100%-skipped
+10. DC dependent-demand operating method and validation-only withdrawal forecast.
+11. Store WAC/ABC basis.
+12. Exact replay acceptance math, incumbent identity, and materiality/tolerances.
+13. Calibration/holdout key and seed.
+14. NRV/provision unavailable scope.
+15. Read-only exception/action/ERP behavior.
+16. `P4-D16` channel-to-node aggregation, constrained allocation, and direct-DC rule.
+17. `P4-D17` implementation: cold-start H5+ is partial; current H2 is pin-specific; 100%-skipped
     market cohort and no-remaining-row floors are fixed. P4-4 may approve stricter pre-result limits.
-17. One bundle/activation for all 14 screens and the artifact → screen → endpoint mapping.
-18. Work-package ordering and review gates.
+18. One bundle/activation for all 14 screens and the artifact → screen → endpoint mapping.
+19. Work-package ordering and review gates.
 
 ### 14.2 Not approved by plan creation
 
@@ -2384,7 +2651,12 @@ Phase 4 is complete only when all are true:
 3. Decision #87's C6/C7 and decision #91's C8 full-range rejections remain immutable; the accepted
    C5 identity and decision #92 availability/exception policies are bound into run/version lineage;
    every published cold-start/established P90 cell passes 0.85–0.95 globally and in both markets;
-   H5–H26 cold-start rows retain P50 and carry reconciled explicit interval unavailability.
+   H5–H26 cold-start rows retain P50 and carry reconciled explicit interval unavailability; and every
+   weighted-confidence computation covers only the weeks that carry an interval and publishes that
+   window; whole-population A2 still scores all 708,708 rows; the `P4-0P` parity amendment is approved
+   and inherited by `P4-4`; and confidence and the interval total each follow their frozen §1.3.1
+   presentation choice at 8, 13 and 26 weeks — served with visible scope, or absent with the approved
+   reason — with no unqualified interval value beside a differently scoped central value.
 4. A new immutable source publication supplies active-or-residual store inventory, typed lanes,
    correctly placed fulfillment/status events, origin-safe inbound history, and replay-eligible
    varied supplier terms.
