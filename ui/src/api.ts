@@ -422,3 +422,38 @@ export const loadForecastSignals = () =>
   get("/api/v1/forecast/signals", forecastSignalsSchema);
 export const loadForecastVersions = () =>
   get("/api/v1/forecast/versions", forecastVersionsSchema);
+
+/**
+ * The inventory/replenishment live envelope (P4-8/P4-9).
+ *
+ * `items` is deliberately a permissive record: fourteen destinations serve
+ * fourteen different row shapes, and enumerating each here would duplicate
+ * the parity contract that already freezes them per screen. What IS pinned is
+ * the envelope -- the identity, the consumed forecast authority and the policy
+ * version -- because those are what make a rendered number traceable. A
+ * response missing any of them is not servable data.
+ */
+export const inventorySliceSchema = z.object({
+  schemaVersion: z.string(),
+  dataMode: z.literal("live"),
+  inventoryRunId: z.string(),
+  inventoryVersionId: z.string(),
+  semanticFingerprint: z.string(),
+  forecastAuthority: z.object({
+    forecastRunId: z.string(),
+    forecastVersionId: z.string()
+  }),
+  policyVersion: z.string(),
+  markets: z.array(z.string()),
+  items: z.array(z.record(z.string(), z.unknown())),
+  pagination: z.object({
+    offset: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int()
+  }).optional()
+});
+
+export type InventorySlice = z.infer<typeof inventorySliceSchema>;
+
+export const loadInventorySlice = (endpoint: string) =>
+  get(endpoint, inventorySliceSchema);
