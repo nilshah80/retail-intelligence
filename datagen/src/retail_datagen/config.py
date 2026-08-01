@@ -42,6 +42,11 @@ SUPPORTED_FEATURES = {
     "supplierPlanning",
     "promotionPlanning",
     "allocationEvidence",
+    # Source contract v13. An explicit switch so the domain can be removed
+    # cleanly: a config with it off emits no store stock at all rather than
+    # emitting empty rows, which is the difference between "this retailer does
+    # not report store stock" and "every store is empty".
+    "storeInventory",
 }
 
 
@@ -123,6 +128,82 @@ def _references(
     for value in values:
         if value not in allowed:
             errors.append(f"{path} references unknown id {value!r}")
+
+
+#: Source contract v13 store-inventory policy. Defaults exist so a config authored
+#: before this control was exposed still resolves, but the FEATURE switch defaults
+#: off: silently generating store stock for an older config would change what that
+#: config means.
+_STORE_INVENTORY_DEFAULTS: dict[str, Any] = {
+    "snapshotCadenceDays": 7,
+    "reviewCycleDays": 7,
+    "targetDaysOfCover": 14,
+    "safetyStockUnits": 3,
+    "replenishmentPackSize": 6,
+    "openingDaysOfCover": 10,
+    # How long de-assorted stock stays visible before it is fully worked off.
+    # This is what makes dead stock possible: at the current pin 524 SKUs hold DC
+    # stock while outside active assortment, and a store model that cannot
+    # reproduce that shape would make dead stock structurally impossible.
+    "residualWorkoffWeeks": 26,
+    "primaryLaneTransitDays": 1,
+    "spillLaneTransitDays": 2,
+}
+
+
+def _validate_store_inventory(operations: dict[str, Any], errors: list[str]) -> None:
+    """Validate the v13 store-inventory policy block.
+
+    Store stock is what the current pin cannot express at all: `stock_snapshots`
+    has zero rows at all four stores, so store position, days-of-supply, ageing,
+    store waste and store-level transfer opportunity have no source. Multi-echelon
+    replenishment is not a partial capability without it -- it is absent.
+    """
+
+    store_inventory = operations.get("storeInventory")
+    if store_inventory is None:
+        operations["storeInventory"] = dict(_STORE_INVENTORY_DEFAULTS)
+        return
+    if not isinstance(store_inventory, dict):
+        errors.append("operations.storeInventory must be an object")
+        return
+    for field, default in _STORE_INVENTORY_DEFAULTS.items():
+        store_inventory.setdefault(field, default)
+    for field in (
+        "snapshotCadenceDays",
+        "reviewCycleDays",
+        "targetDaysOfCover",
+        "replenishmentPackSize",
+        "residualWorkoffWeeks",
+    ):
+        _positive_int(
+            store_inventory.get(field),
+            f"operations.storeInventory.{field}",
+            errors,
+        )
+    for field in (
+        "safetyStockUnits",
+        "openingDaysOfCover",
+        "primaryLaneTransitDays",
+        "spillLaneTransitDays",
+    ):
+        _positive_int(
+            store_inventory.get(field),
+            f"operations.storeInventory.{field}",
+            errors,
+            0,
+        )
+    # A spill lane that arrives sooner than the primary would invert the priority
+    # ranking the lane contract declares, so the ordering is enforced here rather
+    # than left to the generator to respect.
+    primary = store_inventory.get("primaryLaneTransitDays")
+    spill = store_inventory.get("spillLaneTransitDays")
+    if isinstance(primary, int) and isinstance(spill, int) and spill < primary:
+        errors.append(
+            "operations.storeInventory.spillLaneTransitDays must be >= "
+            "primaryLaneTransitDays; a faster spill lane inverts the declared "
+            "priority rank"
+        )
 
 
 def _positive_int(value: Any, path: str, errors: list[str], minimum: int = 1) -> None:
@@ -508,6 +589,13 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         for row in stores or []
         if isinstance(row, dict) and isinstance(row.get("storeId"), str)
     }
+    # Read before the store loop, because two store fields become required only
+    # when the domain is switched on.
+    store_inventory_enabled = bool(
+        ((config.get("operations") or {}).get("features") or {}).get(
+            "storeInventory"
+        )
+    )
 
     if isinstance(stores, list):
         for index, store in enumerate(stores):
@@ -528,6 +616,25 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             _required(store, "name", path, errors)
             _required(store, "addressLine1", path, errors)
             _required(store, "postcode", path, errors)
+            # Source contract v13. A store that holds stock must be addressable as
+            # a Business-Central location, because that is where the inventory
+            # snapshot is shaped. Required only when the feature is on, so an
+            # older config stays valid and simply reports no store stock.
+            if store_inventory_enabled:
+                _required(store, "businessCentralLocationCode", path, errors)
+            # `warehousePriority` is already the declared supply relationship and
+            # already matches the observed fulfillment shares. v13 does not invent
+            # a lane model -- it publishes this one as a typed, effective-dated
+            # fact instead of leaving it implicit in generator config. Rank 1 must
+            # therefore exist.
+            priority = store.get("warehousePriority")
+            if store_inventory_enabled and not (
+                isinstance(priority, list) and priority
+            ):
+                errors.append(
+                    f"{path}.warehousePriority must declare at least one "
+                    "supplying node; store inventory has no lane to replenish over"
+                )
             market = market_by_id.get(store.get("marketId"))
             postcode_pattern = (
                 market.get("localePack", {}).get("postcodePattern")
@@ -1561,6 +1668,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         0,
         1,
     )
+    _validate_store_inventory(operations, errors)
     fulfillment = operations.get("fulfillment")
     if not isinstance(fulfillment, dict):
         errors.append("operations.fulfillment must be an object")

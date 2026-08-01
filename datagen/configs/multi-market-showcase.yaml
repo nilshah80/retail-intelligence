@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v12
+specVersion: retail-source-config/v13
 identity:
   scenarioId: multi-market-showcase
   scenarioVersion: 1.0.0
@@ -731,6 +731,7 @@ channels:
   type: online
 stores:
 - storeId: mumbai-bandra
+  businessCentralLocationCode: MUM-BAN
   name: Mumbai Bandra
   marketId: india-mumbai
   legalEntityId: northstar-india
@@ -745,6 +746,7 @@ stores:
   assortmentCoverage: 0.92
   demandScale: 1
 - storeId: ny-manhattan
+  businessCentralLocationCode: NYC-MAN
   name: New York Manhattan
   marketId: us-new-york
   legalEntityId: northstar-us
@@ -1562,6 +1564,16 @@ operations:
   webhook:
     fixtureSecret: northstar-synthetic-fixture-secret
     invalidFixtureRate: 0.25
+  storeInventory:
+    snapshotCadenceDays: 7
+    reviewCycleDays: 7
+    targetDaysOfCover: 14
+    safetyStockUnits: 3
+    replenishmentPackSize: 6
+    openingDaysOfCover: 10
+    residualWorkoffWeeks: 26
+    primaryLaneTransitDays: 1
+    spillLaneTransitDays: 2
   features:
     detailedFulfillment: true
     returnsAndRefunds: true
@@ -1573,6 +1585,7 @@ operations:
     supplierPlanning: true
     promotionPlanning: true
     allocationEvidence: true
+    storeInventory: true
 output:
   rootDirectory: output
   publicFormats:

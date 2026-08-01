@@ -123,6 +123,29 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
     "fulfillmentStatusHistory": (
         "fulfillmentId", "sequence", "status", "occurredAt", "warehouseKey",
     ),
+    # Source contract v13 store echelon. Declared so a small window that produced
+    # no store waste (or a feature-off run) still emits a schema-complete empty
+    # file rather than failing the writer.
+    "storeInventorySnapshots": (
+        "locationCode", "observedAt", "sku", "inventory", "availableInventory",
+        "committedInventory", "reservedInventory", "damagedInventory",
+        "qualityControlInventory", "safetyStockInventory", "incomingInventory",
+        "assortmentActive", "residualOnly", "oldestReceiptDate",
+    ),
+    "storeTransferEvents": (
+        "transferId", "sku", "fromLocationCode", "toLocationCode", "quantity",
+        "status", "statusEffectiveAt", "observedAt", "unitCostAmountMinor",
+        "currencyCode",
+    ),
+    "storeWasteEvents": (
+        "eventId", "sku", "locationCode", "eventDate", "quantity",
+        "reasonCode", "observedAt",
+    ),
+    "serviceLanes": (
+        "laneKey", "marketKey", "laneType", "demandLocationKey", "channelKey",
+        "supplyLocationKey", "priorityRank", "transitDays", "effectiveFrom",
+        "effectiveTo", "observedAt",
+    ),
     "taxLines": (
         "orderLineId", "orderId", "title", "rate", "shareOfTax", "price",
         "currencyCode", "jurisdiction",
