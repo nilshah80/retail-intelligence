@@ -111,6 +111,11 @@ paths:
   /api/v1/forecast/series:
     get:
       operationId: forecastSeries
+      description: >-
+        Returns the per-horizon series rows by default, or the aggregated SKU
+        workbench row when `view=workbench`. Workbench items additionally satisfy
+        `#/components/schemas/ForecastWorkbenchIntervalScope`, which frozen
+        decision #64 Q19 requires every interval-bearing aggregate to carry.
       parameters:
         - {$ref: "#/components/parameters/ForecastMarket"}
         - {$ref: "#/components/parameters/ForecastRegion"}
@@ -394,6 +399,68 @@ components:
             offset: {type: integer, minimum: 0}
             limit: {type: integer, minimum: 1, maximum: 1000}
             total: {type: integer, minimum: 0}
+    ForecastWorkbenchIntervalScope:
+      description: >-
+        The interval-scope contract for the SKU workbench row, frozen by decision
+        #64 Q19 and parity amendment P4-0P-A1.
+
+        Decision #92 publishes the cold-start P90 and its derived confidence only
+        within the calibrated h1-h4 range and retains P50 at all 26 horizons, so a
+        selected window of 8, 13 or 26 weeks mixes horizons that carry an interval
+        with horizons that do not. `SUM` skips nulls, so before this contract the
+        weighted-confidence numerator omitted the withheld weeks while its
+        denominator still counted their retained P50 weight, and the interval total
+        covered fewer weeks than the central total displayed beside it.
+
+        These fields exist so a mixed window is an explicit, explicable
+        unavailable state rather than a silently blended number. A consumer must
+        never read an absent interval as zero spread.
+      type: object
+      required:
+        - confidenceState
+        - aiForecastP90State
+        - intervalWithheldWeeks
+      properties:
+        confidence:
+          description: >-
+            The max(P50,1)-weighted mean of per-row confidence per decision #12.
+            Null when `confidenceState` is `unavailable_mixed_window`.
+          type: [number, "null"]
+        confidenceState:
+          type: string
+          enum: [measured, unavailable_mixed_window]
+        confidenceCoveredWindowMean:
+          description: >-
+            Diagnostic, never the display value. The arithmetically corrected
+            weighted mean restricted to the weeks that carry an interval on both
+            sides of the ratio. Rendered nowhere; the workbench Confidence cell is
+            unavailable when the window is mixed.
+          type: [number, "null"]
+        aiForecastP90:
+          description: >-
+            Sum of weekly upper bounds over the selected window. Null when the
+            window contains a withheld week: a sum of P90 bounds is not the P90 of
+            the sum, so scoping it to the covered weeks would not make the label
+            true.
+          type: [number, "null"]
+        aiForecastP90State:
+          type: string
+          enum: [available, unavailable_mixed_window]
+        intervalCoveredFromHorizon:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 26
+        intervalCoveredThroughHorizon:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 26
+        intervalWithheldWeeks:
+          description: Count of selected horizons with no published interval.
+          type: integer
+          minimum: 0
+        intervalUnavailableReason:
+          type: [string, "null"]
+          enum: [COLD_START_INTERVAL_UNCALIBRATED, null]
     ForecastUnavailable:
       type: object
       additionalProperties: false

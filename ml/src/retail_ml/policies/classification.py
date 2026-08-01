@@ -19,6 +19,9 @@ from retail_contracts.fingerprint import (
 POLICY_SCHEMA_VERSION: Final[str] = (
     "retail-forecast-classification-policy/v1"
 )
+POLICY_SCHEMA_VERSION_V2: Final[str] = (
+    "retail-forecast-classification-policy/v2"
+)
 SERIES_COLUMNS: Final[tuple[str, ...]] = (
     "sku_id",
     "store_id",
@@ -49,6 +52,26 @@ EXCEPTION_CLASSES: Final[tuple[str, ...]] = (
     "new_product_sparse_history",
     "promotion_uplift_conflict",
     "data_quality_exception",
+)
+#: Decision #92's class, added by exception policy v2. Kept separate from the
+#: decision-#60 inventory above so the loader can require the v1 five under v1 and
+#: the v1 five plus this one under v2, rather than accepting either set under
+#: either version.
+INTERVAL_EXCEPTION_CLASS: Final[str] = "cold_start_interval_unavailable"
+EXCEPTION_CLASSES_V2: Final[tuple[str, ...]] = (
+    *EXCEPTION_CLASSES,
+    INTERVAL_EXCEPTION_CLASS,
+)
+#: Per-SeriesKey interval facts. Optional: a frame without them classifies exactly
+#: as before, which is what lets a pre-#92 bundle keep reproducing byte-identically
+#: while a #92 bundle carries the new class. Absent columns never mean "available";
+#: they mean the frame predates the contract and cannot assert either way.
+INTERVAL_INPUT_COLUMNS: Final[tuple[str, ...]] = (
+    "cohort",
+    "interval_withheld_horizon_count",
+    "interval_unavailable_from_horizon",
+    "interval_unavailable_through_horizon",
+    "interval_unavailable_reason",
 )
 
 
@@ -92,6 +115,24 @@ def _integer(value: Any, *, label: str) -> int:
     if decimal != integral:
         raise ClassificationPolicyError(f"{label} must be an integer")
     return int(integral)
+
+
+def _optional_integer(value: Any, *, label: str) -> int | None:
+    """Absent or NaN means "this frame does not assert", never "zero".
+
+    The distinction matters: a pre-#92 frame carries no interval columns at all,
+    and treating that as "nothing withheld" would let such a frame silently claim
+    a full-range interval it never measured.
+    """
+
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return _integer(value, label=label)
 
 
 def _boolean(value: Any, *, label: str) -> bool:
@@ -154,25 +195,39 @@ def load_classification_policy(
         raise ClassificationPolicyError(
             f"cannot load classification policy {policy_path}: {exc}"
         ) from exc
-    if (
-        not isinstance(document, dict)
-        or document.get("schemaVersion") != POLICY_SCHEMA_VERSION
-        or document.get("decisionId") != 60
-        or set(document) != {
+    schema_version = document.get("schemaVersion") if isinstance(document, dict) else None
+    if schema_version == POLICY_SCHEMA_VERSION:
+        allowed_keys = {"schemaVersion", "decisionId", "exceptions", "dataQuality"}
+        expected_classes = set(EXCEPTION_CLASSES)
+    elif schema_version == POLICY_SCHEMA_VERSION_V2:
+        # v2 adds decision #92's class and declares both decision ids. The envelope
+        # gains `decisionIds` and nothing else: a v2 document that quietly grew
+        # another key would be a different contract wearing this version string.
+        allowed_keys = {
             "schemaVersion",
             "decisionId",
+            "decisionIds",
             "exceptions",
             "dataQuality",
         }
+        expected_classes = set(EXCEPTION_CLASSES_V2)
+    else:
+        raise ClassificationPolicyError(
+            f"unsupported classification policy schema {schema_version!r}"
+        )
+    if (
+        not isinstance(document, dict)
+        or document.get("decisionId") != 60
+        or set(document) != allowed_keys
     ):
         raise ClassificationPolicyError(
             "classification policy envelope is invalid"
         )
     exceptions = _verify_section(document["exceptions"], label="exceptions")
     quality = _verify_section(document["dataQuality"], label="dataQuality")
-    if set(exceptions.get("classes", {})) != set(EXCEPTION_CLASSES):
+    if set(exceptions.get("classes", {})) != expected_classes:
         raise ClassificationPolicyError(
-            "exception class inventory differs from decision #60"
+            f"exception class inventory differs from {schema_version}"
         )
     if quality.get("reduction", {}).get("precedence") != [
         "Issue",
@@ -548,6 +603,60 @@ def _exception_results(
             "high",
             {"data_quality_class": quality_class},
         )
+
+    # Decision #92, under exception policy v2 only. Emitted from the per-SeriesKey
+    # frame, so exactly one record covers the whole withheld horizon range: the
+    # exceptions table is keyed without a horizon, and 22 per-horizon rows would
+    # collide on the primary key rather than describe 22 problems.
+    if INTERVAL_EXCEPTION_CLASS in policy.exceptions["classes"]:
+        withheld = _optional_integer(
+            row.get("interval_withheld_horizon_count"),
+            label="interval_withheld_horizon_count",
+        )
+        if withheld:
+            unavailable_from = _optional_integer(
+                row.get("interval_unavailable_from_horizon"),
+                label="interval_unavailable_from_horizon",
+            )
+            unavailable_through = _optional_integer(
+                row.get("interval_unavailable_through_horizon"),
+                label="interval_unavailable_through_horizon",
+            )
+            reason = row.get("interval_unavailable_reason")
+            reason = None if reason is None or pd.isna(reason) else str(reason)
+            rule = policy.exceptions["classes"][INTERVAL_EXCEPTION_CLASS]
+            calibrated = _integer(
+                rule["thresholds"]["calibratedMaxHorizon"],
+                label="calibratedMaxHorizon",
+            )
+            # A withheld range that starts inside the calibrated band is not a
+            # #92 withholding; it is a different defect wearing #92's reason code,
+            # and publishing it under this class would make the boundary
+            # unfalsifiable.
+            if (
+                unavailable_from is None
+                or unavailable_through is None
+                or reason != rule["thresholds"]["reasonCode"]
+                or unavailable_from <= calibrated
+                or unavailable_through < unavailable_from
+            ):
+                raise ClassificationPolicyError(
+                    "withheld interval evidence is inconsistent with decision "
+                    "#92: the unavailable range must start after the calibrated "
+                    "maximum horizon and carry the governed reason code"
+                )
+            emit(
+                INTERVAL_EXCEPTION_CLASS,
+                str(rule["severity"]),
+                {
+                    "calibratedMaxHorizon": calibrated,
+                    "cohort": str(row.get("cohort", "")),
+                    "unavailableFromHorizon": unavailable_from,
+                    "unavailableThroughHorizon": unavailable_through,
+                    "reasonCode": reason,
+                    "withheldHorizonCount": withheld,
+                },
+            )
     return rows
 
 

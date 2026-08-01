@@ -485,7 +485,36 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
     }),
     columnHelper.accessor("confidence", {
       header: "Confidence",
-      cell: (info) => ratioPercentage(info.getValue())
+      // Decision #64 Q19 / parity amendment P4-0P-A1.
+      //
+      // Confidence is derived from the P90 interval, and decision #92 publishes
+      // the cold-start interval only through h4 while P50 continues to h26. The
+      // selected window is cumulative from h1, so 8, 13 and 26 weeks mix
+      // horizons that carry an interval with horizons that do not, and only the
+      // 4-week default is clean.
+      //
+      // The server already restricts the weighted mean to the weeks that carry
+      // an interval, so the number reaching here is arithmetically correct. It is
+      // still not shown for a mixed window: an h1-h4 figure under a column headed
+      // "Confidence", beside forecast values covering the whole selection, states
+      // a scope this table never displays. That is the failure decision #78 exists
+      // to prevent, so the cell takes the approved unavailable state and names the
+      // window it would have covered.
+      cell: (info) => {
+        const row = info.row.original;
+        if (row.confidenceState === "unavailable_mixed_window") {
+          const covered = row.intervalCoveredThroughHorizon;
+          const scope = covered === null || covered === undefined
+            ? "the calibrated horizons only"
+            : `weeks 1-${covered} only`;
+          return unavailable(
+            `Confidence covers ${scope} of the selected ${row.horizonWeeks}-week ` +
+            `window; ${row.intervalWithheldWeeks} week(s) have no calibrated ` +
+            "interval, so a single figure would misstate its scope"
+          );
+        }
+        return ratioPercentage(info.getValue());
+      }
     }),
     columnHelper.accessor("primaryDriver", {
       header: "Primary Driver",
@@ -886,9 +915,16 @@ export function DemandForecast({
 
   function exportWorkbench() {
     if (!data.workbench?.items.length) return;
+    // The export carries confidence too, so it inherits decision #64 Q19: a
+    // mixed-window row exports an empty confidence and states its scope in its
+    // own columns. Writing the h1-h4 figure into a column headed `confidence`
+    // beside a whole-window `ai_forecast` would reintroduce the defect in a file
+    // that outlives the screen and carries no tooltip to qualify it.
     const headings = [
       "sku_id", "product_name", "store", "channel", "category", "horizon_weeks",
       "baseline", "ai_forecast", "last_actual", "accuracy", "bias", "confidence",
+      "confidence_state", "interval_covered_through_horizon",
+      "interval_withheld_weeks",
       "primary_driver", "data_quality", "status"
     ];
     const rows = data.workbench.items.map((row) => [
@@ -903,7 +939,10 @@ export function DemandForecast({
       row.lastActual,
       row.accuracy,
       row.bias,
-      row.confidence,
+      row.confidenceState === "unavailable_mixed_window" ? null : row.confidence,
+      row.confidenceState,
+      row.intervalCoveredThroughHorizon,
+      row.intervalWithheldWeeks,
       row.primaryDriver,
       row.dataQuality,
       row.status

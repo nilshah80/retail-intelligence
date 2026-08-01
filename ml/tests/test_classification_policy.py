@@ -207,3 +207,145 @@ def test_classification_cli_writes_publisher_inputs(tmp_path: Path) -> None:
     assert json.loads(
         (output / "classification-policies.json").read_text(encoding="utf-8")
     ) == load_classification_policy().bindings()
+
+
+# --------------------------------------------------------------------------
+# Exception policy v2 / decision #92. `P4-1` task 7.
+# --------------------------------------------------------------------------
+
+V2_POLICY_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "ml"
+    / "forecast-classification-policy-v2.json"
+)
+
+
+def _v2_policy():
+    return load_classification_policy(V2_POLICY_PATH)
+
+
+def _withheld_row() -> dict[str, object]:
+    """A cold-start series whose interval stops at the calibrated boundary."""
+
+    return {
+        **_series_row(),
+        "cohort": "cold_start",
+        "interval_withheld_horizon_count": 22,
+        "interval_unavailable_from_horizon": 5,
+        "interval_unavailable_through_horizon": 26,
+        "interval_unavailable_reason": "COLD_START_INTERVAL_UNCALIBRATED",
+    }
+
+
+def test_v2_loads_and_supersedes_v1_without_rewriting_it() -> None:
+    policy = _v2_policy()
+    assert policy.exceptions["policyId"] == "retail-forecast-exceptions/v2"
+    assert policy.exceptions["supersedes"]["policyId"] == (
+        "retail-forecast-exceptions/v1"
+    )
+    # v1 must remain loadable and unchanged: it is bound into every bundle
+    # published before v2, and rewriting it would retroactively alter what those
+    # bundles claim to have applied.
+    v1 = load_classification_policy()
+    assert v1.exceptions["policyId"] == "retail-forecast-exceptions/v1"
+    assert "cold_start_interval_unavailable" not in v1.exceptions["classes"]
+
+
+def test_the_interval_exception_emits_once_per_series_not_once_per_horizon() -> None:
+    """22 withheld horizons produce one record, because the table has no horizon.
+
+    forecast_exceptions is keyed on (version_id, sku_id, store_id, channel_id,
+    exception_class). Per-horizon records would collide on that key rather than
+    accumulate, so the range travels in the evidence instead.
+    """
+
+    exceptions, _, _ = classify_current_cycle(
+        pd.DataFrame([_withheld_row()]),
+        decision_as_of=DECISION_AS_OF,
+        policy=_v2_policy(),
+    )
+    interval = exceptions[
+        exceptions["exception_class"] == "cold_start_interval_unavailable"
+    ]
+    assert len(interval) == 1, "the withheld interval must emit exactly one record"
+    evidence = json.loads(interval.iloc[0]["evidence"])
+    observed = evidence["observed"]
+    assert observed["unavailableFromHorizon"] == 5
+    assert observed["unavailableThroughHorizon"] == 26
+    assert observed["withheldHorizonCount"] == 22
+    assert observed["calibratedMaxHorizon"] == 4
+    assert observed["reasonCode"] == "COLD_START_INTERVAL_UNCALIBRATED"
+    assert evidence["policy_id"] == "retail-forecast-exceptions/v2"
+
+
+def test_a_series_with_a_full_range_interval_emits_no_interval_exception() -> None:
+    row = {
+        **_series_row(),
+        "cohort": "established_history",
+        "interval_withheld_horizon_count": 0,
+        "interval_unavailable_from_horizon": None,
+        "interval_unavailable_through_horizon": None,
+        "interval_unavailable_reason": None,
+    }
+    exceptions, _, _ = classify_current_cycle(
+        pd.DataFrame([row]),
+        decision_as_of=DECISION_AS_OF,
+        policy=_v2_policy(),
+    )
+    assert "cold_start_interval_unavailable" not in set(
+        exceptions["exception_class"]
+    )
+
+
+def test_a_frame_without_interval_columns_classifies_exactly_as_before() -> None:
+    """A pre-#92 frame must not be read as asserting a full-range interval."""
+
+    exceptions, _, _ = classify_current_cycle(
+        pd.DataFrame([_series_row()]),
+        decision_as_of=DECISION_AS_OF,
+        policy=_v2_policy(),
+    )
+    assert "cold_start_interval_unavailable" not in set(
+        exceptions["exception_class"]
+    )
+
+
+def test_a_withheld_range_inside_the_calibrated_band_is_refused() -> None:
+    """h4 and below is calibrated, so a withholding there is a different defect.
+
+    Publishing it under #92's class would make the h4 boundary unfalsifiable: any
+    coverage failure could be relabelled as a governed capability limit.
+    """
+
+    row = {**_withheld_row(), "interval_unavailable_from_horizon": 3}
+    with pytest.raises(ClassificationPolicyError, match="calibrated"):
+        classify_current_cycle(
+            pd.DataFrame([row]),
+            decision_as_of=DECISION_AS_OF,
+            policy=_v2_policy(),
+        )
+
+
+def test_an_ungoverned_reason_code_is_refused() -> None:
+    row = {**_withheld_row(), "interval_unavailable_reason": "SOMETHING_ELSE"}
+    with pytest.raises(ClassificationPolicyError, match="reason code"):
+        classify_current_cycle(
+            pd.DataFrame([row]),
+            decision_as_of=DECISION_AS_OF,
+            policy=_v2_policy(),
+        )
+
+
+def test_an_inverted_withheld_range_is_refused() -> None:
+    row = {
+        **_withheld_row(),
+        "interval_unavailable_from_horizon": 26,
+        "interval_unavailable_through_horizon": 5,
+    }
+    with pytest.raises(ClassificationPolicyError):
+        classify_current_cycle(
+            pd.DataFrame([row]),
+            decision_as_of=DECISION_AS_OF,
+            policy=_v2_policy(),
+        )

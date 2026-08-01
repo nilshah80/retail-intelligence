@@ -165,6 +165,15 @@ const responses: Record<string, unknown> = {
       accuracy: 94,
       bias: .02,
       confidence: .88,
+      // A clean 4-week window: nothing withheld, so both interval cells stay
+      // numeric. The mixed-window branch has its own fixture below.
+      confidenceState: "measured" as const,
+      confidenceCoveredWindowMean: .88,
+      aiForecastP90State: "available" as const,
+      intervalCoveredFromHorizon: 1,
+      intervalCoveredThroughHorizon: 4,
+      intervalWithheldWeeks: 0,
+      intervalUnavailableReason: null,
       primaryDriver: "seasonality",
       dataQuality: "Good",
       priority: "Low",
@@ -411,5 +420,62 @@ describe("Demand Forecast parity contract", () => {
     expect(await screen.findByText("Live forecast data is unavailable.")).toBeInTheDocument();
     expect(screen.queryByText("87.6%")).not.toBeInTheDocument();
     expect(screen.queryByText("Phoenix Market City")).not.toBeInTheDocument();
+  });
+
+  // Decision #64 Q19 / parity amendment P4-0P-A1.
+  //
+  // The screen offers 4/8/13/26 weeks and decision #92 withholds the cold-start
+  // interval from h5, so every selection except the default mixes horizons that
+  // carry an interval with horizons that do not. The server sends the
+  // arithmetically corrected covered-window mean; the cell must still not show it,
+  // because an h1-h4 figure under a "Confidence" heading beside a whole-window
+  // forecast states a scope this table never displays.
+  it("marks workbench confidence unavailable when the selected window is mixed", async () => {
+    const workbench = responses.series as {items: Record<string, unknown>[]};
+    const mixed = {
+      ...workbench.items[0],
+      horizonWeeks: 26,
+      confidence: null,
+      confidenceState: "unavailable_mixed_window",
+      // Present and honest, and still not rendered: the corrected figure exists
+      // so the absence is explicable, not so the cell can quietly show it.
+      confidenceCoveredWindowMean: .5817,
+      aiForecastP90: null,
+      aiForecastP90State: "unavailable_mixed_window",
+      intervalCoveredFromHorizon: 1,
+      intervalCoveredThroughHorizon: 4,
+      intervalWithheldWeeks: 22,
+      intervalUnavailableReason: "COLD_START_INTERVAL_UNCALIBRATED"
+    };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const key = Object.keys(responses).find((candidate) =>
+        url.includes(`/forecast/${candidate}`)
+      );
+      if (key === "series" && url.includes("view=workbench")) {
+        return {ok: true, json: async () => ({...workbench, items: [mixed]})};
+      }
+      return {ok: true, json: async () => responses[key ?? "summary"]};
+    }));
+    renderForecast();
+
+    await screen.findByText("Forecast vs Actual");
+    fireEvent.click(screen.getByRole("tab", {name: "SKU View"}));
+    const table = await screen.findByRole("table");
+    const headers = within(table).getAllByRole("columnheader")
+      .map((cell) => cell.textContent);
+    const confidenceIndex = headers.indexOf("Confidence");
+    expect(confidenceIndex).toBeGreaterThan(-1);
+
+    const cells = within(table).getAllByRole("cell");
+    const confidenceCell = cells[confidenceIndex];
+    expect(confidenceCell).toHaveTextContent("Not available");
+    // The corrected value must not leak into the cell under an unqualified
+    // heading. 58.2% is the honest covered-window figure and still the wrong
+    // thing to show here.
+    expect(confidenceCell).not.toHaveTextContent("58.2%");
+    // The absence has to be explicable, so the covered window is named.
+    expect(confidenceCell.querySelector(".unavailable")?.getAttribute("title"))
+      .toContain("weeks 1-4");
   });
 });

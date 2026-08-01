@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0008_nullable_withheld_interval"
+	ForecastMigrationRevision = "0009_forecast_interval_contract"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -837,13 +837,58 @@ func (s *ForecastStore) workbench(
 				stores.name AS store_name,
 				stores.city AS store_city,
 				SUM(series.yhat_p50) AS ai_forecast,
-				SUM(series.yhat_p90) AS ai_forecast_p90,
-				SUM(
-					series.confidence * GREATEST(series.yhat_p50, 1.0)
-				) / NULLIF(
-					SUM(GREATEST(series.yhat_p50, 1.0)),
+				-- Decision #92 withholds the cold-start interval beyond h4 while
+				-- retaining P50 at every horizon, so a selected window of 8, 13 or
+				-- 26 weeks mixes horizons that carry an interval with horizons that
+				-- do not. Both aggregates below were written when every row had an
+				-- interval, and SUM skips nulls, so both silently changed meaning.
+				--
+				-- Frozen by decision #64 Q19 / parity amendment P4-0P-A1.
+				COUNT(*) FILTER (WHERE NOT series.interval_available)
+					AS interval_withheld_weeks,
+				MIN(series.horizon_week) FILTER (WHERE series.interval_available)
+					AS interval_covered_from,
+				MAX(series.horizon_week) FILTER (WHERE series.interval_available)
+					AS interval_covered_through,
+				MAX(series.interval_unavailable_reason)
+					AS interval_unavailable_reason,
+				-- The interval total is absent whenever the window contains a
+				-- withheld week. Confining the sum to h1-h4 would remove the
+				-- population mismatch and still label a sum of weekly upper bounds
+				-- as an interval for a multi-week total: a sum of P90 bounds is not
+				-- the P90 of the sum, which predates #92 and is not made true by
+				-- scoping.
+				CASE
+					WHEN COUNT(*) FILTER (WHERE NOT series.interval_available) = 0
+					THEN SUM(series.yhat_p90)
+				END AS ai_forecast_p90,
+				-- Confidence is repaired in two steps, because correcting the
+				-- arithmetic and choosing the presentation are different problems.
+				--
+				-- Step one, the arithmetic: decision #12 defines slice confidence as
+				-- the max(P50,1)-weighted mean of per-row confidence, and the old
+				-- expression let a retained P50 weight sit in a denominator whose
+				-- numerator had skipped it. Restricting BOTH sides to the weeks that
+				-- carry an interval is that same formula applied to the population
+				-- where confidence exists. Over the 398 affected series at 26 weeks
+				-- this moves the figure from 0.0814 to 0.5817.
+				SUM(series.confidence * GREATEST(series.yhat_p50, 1.0))
+					FILTER (WHERE series.interval_available)
+				/ NULLIF(
+					SUM(GREATEST(series.yhat_p50, 1.0))
+						FILTER (WHERE series.interval_available),
 					0
-				) AS confidence,
+				) AS confidence_covered_window_mean,
+				-- Step two, the presentation: a correct h1-h4 number under a heading
+				-- reading "Confidence", beside forecast values covering the whole
+				-- selection, still states a scope the screen does not. Q19 freezes it
+				-- unavailable when the window is mixed. At a 4-week selection nothing
+				-- is withheld, so this is the unchanged full-window mean.
+				CASE
+					WHEN COUNT(*) FILTER (WHERE NOT series.interval_available) = 0
+					THEN SUM(series.confidence * GREATEST(series.yhat_p50, 1.0))
+					   / NULLIF(SUM(GREATEST(series.yhat_p50, 1.0)), 0)
+				END AS confidence,
 				CASE MAX(
 					CASE series.data_quality_class
 						WHEN 'Issue' THEN 3
@@ -1016,6 +1061,11 @@ func (s *ForecastStore) workbench(
 				0
 			),
 			current_forecast.confidence,
+			current_forecast.confidence_covered_window_mean,
+			current_forecast.interval_covered_from,
+			current_forecast.interval_covered_through,
+			current_forecast.interval_withheld_weeks,
+			current_forecast.interval_unavailable_reason,
 			primary_drivers.driver,
 			current_forecast.data_quality_class,
 			COALESCE(primary_exceptions.severity, 'Low'),
@@ -1076,10 +1126,19 @@ func (s *ForecastStore) workbench(
 			lastActualWeek                                              *time.Time
 			accuracy, wape, bias, demandSharePct                        *float64
 			accuracyState                                               string
-			confidence                                                  float64
-			primaryDriver                                               *string
-			dataQuality, priority, status                               string
-			exceptionClass                                              *string
+			// Every aggregated interval value is scanned as nullable. The old
+			// non-pointer `confidence` survived only because the window is
+			// cumulative from h1 and therefore always contained a calibrated week;
+			// any horizon-range filter -- which the P4-1 truth table and Phase 4
+			// safety-stock work both invite -- turned it into a request-time scan
+			// error rather than a governed unavailable state.
+			confidence, confidenceCoveredWindowMean *float64
+			intervalCoveredFrom, intervalCoveredThrough *int32
+			intervalWithheldWeeks                       int64
+			intervalUnavailableReason                   *string
+			primaryDriver                               *string
+			dataQuality, priority, status               string
+			exceptionClass                             *string
 		)
 		if err := rows.Scan(
 			&rowTotal,
@@ -1104,6 +1163,11 @@ func (s *ForecastStore) workbench(
 			&bias,
 			&demandSharePct,
 			&confidence,
+			&confidenceCoveredWindowMean,
+			&intervalCoveredFrom,
+			&intervalCoveredThrough,
+			&intervalWithheldWeeks,
+			&intervalUnavailableReason,
 			&primaryDriver,
 			&dataQuality,
 			&priority,
@@ -1116,6 +1180,23 @@ func (s *ForecastStore) workbench(
 		var lastActualDate any
 		if lastActualWeek != nil {
 			lastActualDate = lastActualWeek.Format("2006-01-02")
+		}
+		// A mixed window is a governed unavailable state, not a missing value, so
+		// the reason travels with it. Without a state the consumer cannot tell an
+		// unavailable interval from an absent row, and "null means zero spread" is
+		// the coercion decision #92 exists to prevent.
+		intervalState := "available"
+		confidenceState := "measured"
+		if intervalWithheldWeeks > 0 {
+			intervalState = "unavailable_mixed_window"
+			confidenceState = "unavailable_mixed_window"
+		}
+		var coveredFrom, coveredThrough any
+		if intervalCoveredFrom != nil {
+			coveredFrom = int(*intervalCoveredFrom)
+		}
+		if intervalCoveredThrough != nil {
+			coveredThrough = int(*intervalCoveredThrough)
 		}
 		items = append(items, map[string]any{
 			"marketId": marketID, "skuId": skuID, "storeId": storeID,
@@ -1130,9 +1211,23 @@ func (s *ForecastStore) workbench(
 			"accuracyState": accuracyState, "accuracyGrain": "series_key",
 			"demandSharePct": demandSharePct,
 			"bias": bias, "confidence": confidence,
-			"primaryDriver": primaryDriver, "dataQuality": dataQuality,
-			"priority": priority, "exceptionClass": exceptionClass,
-			"status": status,
+			"confidenceState": confidenceState,
+			// Diagnostic, not the display value. The parity contract renders
+			// Confidence unavailable when the window is mixed; this is the
+			// arithmetically corrected covered-window mean that the regression
+			// asserts, exposed so an API consumer sees the honest figure rather
+			// than only its absence. It is rendered nowhere.
+			"confidenceCoveredWindowMean":   confidenceCoveredWindowMean,
+			"aiForecastP90State":            intervalState,
+			"intervalCoveredFromHorizon":    coveredFrom,
+			"intervalCoveredThroughHorizon": coveredThrough,
+			"intervalWithheldWeeks":         intervalWithheldWeeks,
+			"intervalUnavailableReason":     intervalUnavailableReason,
+			"primaryDriver":                 primaryDriver,
+			"dataQuality":                   dataQuality,
+			"priority":                      priority,
+			"exceptionClass":                exceptionClass,
+			"status":                        status,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1163,7 +1258,8 @@ func (s *ForecastStore) series(
 			COUNT(*) OVER(),
 			market_id, sku_id, store_id, channel_id, dept_id, category,
 			horizon_week, target_week_start, yhat_p50, yhat_p90,
-			confidence, interval_unavailable_reason, data_quality_class
+			confidence, interval_available, interval_unavailable_reason,
+			data_quality_class
 		FROM retail_serving.forecast_series
 		WHERE %s
 		ORDER BY market_id, store_id, sku_id, channel_id, horizon_week
@@ -1193,17 +1289,34 @@ func (s *ForecastStore) series(
 			// migration 0008 could not be adopted without this. A null must reach the
 			// client as null rather than as a zero: zero spread would be consumed
 			// arithmetically as certainty on the least predictable rows.
-			p90, confidence                                       *float64
-			intervalReason                                        *string
-			rowTotal                                              int64
+			p90, confidence *float64
+			// Read, never inferred. Migration 0009 stores availability explicitly
+			// and constrains it to agree with nullability, so deriving it here from
+			// `p90 != nil` would silently re-implement a rule the database already
+			// owns -- and would be unable to distinguish a governed withholding from
+			// a writer that lost the value.
+			intervalAvailable bool
+			intervalReason    *string
+			rowTotal          int64
 		)
 		if err := rows.Scan(
 			&rowTotal,
 			&marketID, &skuID, &storeID, &channelID, &deptID, &category,
-			&horizon, &targetWeek, &p50, &p90, &confidence, &intervalReason,
+			&horizon, &targetWeek, &p50, &p90, &confidence,
+			&intervalAvailable, &intervalReason,
 			&qualityClass,
 		); err != nil {
 			return nil, err
+		}
+		// Defence in depth against a projection written before 0009's constraints.
+		// The database refuses this combination now; a request-time refusal is
+		// still cheaper than serving a row whose availability disagrees with its
+		// own interval.
+		if intervalAvailable != (p90 != nil) {
+			return nil, forecastReadError(
+				ForecastReasonInvalid,
+				"interval availability disagrees with the stored interval",
+			)
 		}
 		total = rowTotal
 		items = append(items, map[string]any{
@@ -1213,7 +1326,7 @@ func (s *ForecastStore) series(
 			"p50": p50, "p90": p90, "confidence": confidence,
 			// Present so a client can distinguish "no interval was published, here is
 			// why" from "the field is missing", per decision #92.
-			"intervalAvailable": p90 != nil,
+			"intervalAvailable":         intervalAvailable,
 			"intervalUnavailableReason": intervalReason,
 			"dataQuality": qualityClass,
 		})

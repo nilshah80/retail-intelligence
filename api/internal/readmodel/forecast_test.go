@@ -189,6 +189,171 @@ func TestForecastAuthorityAmbiguityFailsClosed(t *testing.T) {
 	}
 }
 
+// TestWorkbenchIntervalAggregatesAtEverySelection is the §1.3.1 regression.
+//
+// The defect it guards is not a null-handling bug, which is why no null check
+// caught it: SUM skips nulls, so after decision #92's withholding the confidence
+// numerator omitted the withheld weeks while its denominator still counted their
+// retained P50 weight, and SUM(yhat_p90) covered h1-h4 beside a central total
+// covering the whole selection. Measured on the live version over the 398
+// affected series at 26 weeks: 0.0814 served against a covered-week 0.5817, and
+// 372 of 398 series returned an interval total below their own central total.
+//
+// The screen offers 4/8/13/26 and withholding starts at h5, so exactly one
+// selection is clean. All four are asserted, because the reason 8 weeks matters
+// is that it is one click from the default.
+func TestWorkbenchIntervalAggregatesAtEverySelection(t *testing.T) {
+	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("PostgreSQL forecast integration environment is not configured")
+	}
+	if lifecycle := os.Getenv("RETAIL_TEST_FORECAST_LIFECYCLE"); lifecycle != "" &&
+		lifecycle != "accepted" {
+		t.Skip("gate is running the governed NO-GO branch")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	connection, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect to forecast integration database: %v", err)
+	}
+	defer connection.Close(ctx)
+	var scope, publication string
+	if err := connection.QueryRow(
+		ctx,
+		`SELECT activation_scope_fingerprint, publication_semantic_fingerprint
+		 FROM retail_serving.active_forecast_versions`,
+	).Scan(&scope, &publication); err != nil {
+		t.Fatalf("discover active forecast identity: %v", err)
+	}
+	store := LoadForecast(ctx, ForecastConfig{
+		PostgresDSN:                    dsn,
+		ExpectedPublicationFingerprint: publication,
+		ActivationScopeFingerprint:     scope,
+		DBReadPool:                     2,
+	})
+	defer store.Close()
+	if !store.Available() {
+		t.Fatalf("active forecast is unavailable: %v", store.Unavailable())
+	}
+
+	for _, horizonWeeks := range []int{4, 8, 13, 26} {
+		payload, err := store.Read(
+			ctx,
+			"/api/v1/forecast/series",
+			ForecastQuery{View: "workbench", HorizonWeeks: horizonWeeks, Limit: 500},
+		)
+		if err != nil {
+			t.Fatalf("%d weeks: %v", horizonWeeks, err)
+		}
+		items, ok := payload["items"].([]map[string]any)
+		if !ok || len(items) == 0 {
+			t.Fatalf("%d weeks returned no items", horizonWeeks)
+		}
+
+		mixedRows := 0
+		for _, item := range items {
+			withheld, ok := item["intervalWithheldWeeks"].(int64)
+			if !ok {
+				t.Fatalf("%d weeks: withheld count is %T", horizonWeeks, item["intervalWithheldWeeks"])
+			}
+			confidence, _ := item["confidence"].(*float64)
+			intervalTotal, _ := item["aiForecastP90"].(*float64)
+			central, _ := item["aiForecast"].(*float64)
+			covered, _ := item["confidenceCoveredWindowMean"].(*float64)
+
+			if withheld == 0 {
+				// Nothing withheld: both cells stay numeric and the covered-window
+				// mean IS the full-window mean.
+				if item["confidenceState"] != "measured" {
+					t.Fatalf(
+						"%d weeks: clean window reports confidenceState %v",
+						horizonWeeks, item["confidenceState"],
+					)
+				}
+				if confidence == nil {
+					t.Fatalf("%d weeks: clean window withheld a numeric confidence", horizonWeeks)
+				}
+				if item["aiForecastP90State"] != "available" {
+					t.Fatalf(
+						"%d weeks: clean window reports interval state %v",
+						horizonWeeks, item["aiForecastP90State"],
+					)
+				}
+				continue
+			}
+
+			mixedRows++
+			// Q19's frozen behaviour: BOTH cells absent, with a reason, and no
+			// numeric confidence served.
+			if item["confidenceState"] != "unavailable_mixed_window" {
+				t.Fatalf(
+					"%d weeks: mixed window reports confidenceState %v",
+					horizonWeeks, item["confidenceState"],
+				)
+			}
+			if confidence != nil {
+				t.Fatalf(
+					"%d weeks: mixed window served a numeric confidence %v; Q19 "+
+						"freezes it unavailable",
+					horizonWeeks, *confidence,
+				)
+			}
+			if intervalTotal != nil {
+				t.Fatalf(
+					"%d weeks: mixed window served an interval total %v beside a "+
+						"differently scoped central total",
+					horizonWeeks, *intervalTotal,
+				)
+			}
+			if item["intervalUnavailableReason"] == nil {
+				t.Fatalf("%d weeks: unavailable interval carries no reason", horizonWeeks)
+			}
+			// The covered window must be published so the absence is explicable.
+			if item["intervalCoveredFromHorizon"] == nil ||
+				item["intervalCoveredThroughHorizon"] == nil {
+				t.Fatalf("%d weeks: covered window is not published", horizonWeeks)
+			}
+			if through, ok := item["intervalCoveredThroughHorizon"].(int); ok && through > 4 {
+				t.Fatalf(
+					"%d weeks: covered window reaches h%d beyond the calibrated h4",
+					horizonWeeks, through,
+				)
+			}
+			// The corrected reference is still computed, and it must not be the
+			// diluted figure. 0.0814 was the measured dilution; anything that low
+			// means the denominator is still counting weeks the numerator skipped.
+			if covered == nil {
+				t.Fatalf("%d weeks: covered-window confidence reference was not computed", horizonWeeks)
+			}
+			if *covered <= 0.10 {
+				t.Fatalf(
+					"%d weeks: covered-window confidence %v is still diluted; the "+
+						"ratio must be restricted on both sides",
+					horizonWeeks, *covered,
+				)
+			}
+			// P50 is never withdrawn. A withheld interval retracts a distribution
+			// claim, never a forecast.
+			if central == nil {
+				t.Fatalf("%d weeks: a withheld interval also removed the central forecast", horizonWeeks)
+			}
+		}
+
+		if horizonWeeks == 4 && mixedRows != 0 {
+			t.Fatalf("the 4-week default must contain no withheld week, found %d rows", mixedRows)
+		}
+		if horizonWeeks != 4 && mixedRows == 0 {
+			t.Fatalf(
+				"%d weeks returned no mixed-window row, so the regression proves "+
+					"nothing; the fixture must include withheld weeks",
+				horizonWeeks,
+			)
+		}
+	}
+}
+
 func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
 	scope := os.Getenv("RETAIL_TEST_FORECAST_SCOPE")

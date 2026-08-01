@@ -1,4 +1,4 @@
-"""The Phase 4 entry record must agree with the evidence it cites.
+"""The inventory & replenishment entry record must agree with what it cites.
 
 `P4-0`. This record is what a later package reads to decide whether it is
 authorized to start, so the failure mode is specific: a record that says "entry
@@ -19,13 +19,16 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-RECORD = REPO_ROOT / "contracts" / "evidence" / "phase4-entry-record.json"
+RECORD = (
+    REPO_ROOT / "contracts" / "evidence"
+    / "inventory-replenishment-entry-record.json"
+)
 CLOSURE = REPO_ROOT / "contracts" / "evidence" / "forecast-closure-record.json"
 
 
 def _record() -> dict:
     if not RECORD.is_file():
-        pytest.fail("the Phase 4 entry record is absent; P4-0 cannot have exited")
+        pytest.fail("the entry record is absent; P4-0 cannot have exited")
     return json.loads(RECORD.read_text(encoding="utf-8"))
 
 
@@ -35,8 +38,10 @@ def _closure() -> dict:
 
 def test_the_record_is_generated_not_hand_maintained() -> None:
     record = _record()
-    assert record["schemaVersion"] == "retail-phase4-entry-record/v1"
-    assert record["generatedBy"] == "tools/build_phase4_entry_record.py"
+    assert record["schemaVersion"] == (
+        "retail-inventory-replenishment-entry-record/v1"
+    )
+    assert record["generatedBy"] == "tools/build_inventory_entry_record.py"
 
 
 def test_exactly_one_forecast_authority_is_active() -> None:

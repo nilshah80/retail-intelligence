@@ -1,4 +1,4 @@
-"""Generate the Phase 4 entry record from live evidence.
+"""Generate the inventory & replenishment capability entry record.
 
 `P4-0` tasks 2, 12, 13 and the `P4-0P` recording obligation. This is the record a
 later package reads to answer "was Phase 4 authorized to start, and on what". It
@@ -22,7 +22,8 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RECORD = REPO_ROOT / "contracts" / "evidence" / "phase4-entry-record.json"
+RECORD = REPO_ROOT / "contracts" / "evidence" /\
+    "inventory-replenishment-entry-record.json"
 PARITY_CONTRACT = REPO_ROOT / "contracts" / "screens" / "demand-forecast.parity.yaml"
 SELECTION_ROOT = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
@@ -322,12 +323,12 @@ def build() -> dict[str, Any]:
         )
 
     return {
-        "schemaVersion": "retail-phase4-entry-record/v1",
-        "recordType": "generated_phase4_entry_record",
-        "generatedBy": "tools/build_phase4_entry_record.py",
+        "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
+        "recordType": "generated_capability_entry_record",
+        "generatedBy": "tools/build_inventory_entry_record.py",
         "note": (
             "Generated, never hand-edited. Regenerate with: "
-            "tools/dev.py phase4-entry-record"
+            "tools/dev.py inventory-entry-record"
         ),
         "package": "P4-0",
         "entryAuthorized": True,
@@ -381,12 +382,12 @@ def main(argv: list[str] | None = None) -> int:
     record = build()
     if args.check:
         if not RECORD.is_file():
-            print("phase 4 entry record is absent", file=sys.stderr)
+            print("inventory entry record is absent", file=sys.stderr)
             return 1
         if json.loads(RECORD.read_text(encoding="utf-8")) != record:
-            print("phase 4 entry record drifted from live evidence", file=sys.stderr)
+            print("inventory entry record drifted from live evidence", file=sys.stderr)
             return 1
-        print("phase 4 entry record matches live evidence")
+        print("inventory entry record matches live evidence")
         return 0
     RECORD.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
     print(

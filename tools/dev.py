@@ -512,13 +512,13 @@ def command_closure_record(args: argparse.Namespace) -> int:
     return _run([sys.executable, str(builder), str(args.forecast_run)])
 
 
-def command_phase4_entry_record(args: argparse.Namespace) -> int:
-    """Regenerate or verify the Phase 4 entry record."""
+def command_inventory_entry_record(args: argparse.Namespace) -> int:
+    """Regenerate or verify the inventory & replenishment entry record."""
 
     ingestion = _require_python(INGESTION_ENV, "ingestion")
-    builder = REPO_ROOT / "tools" / "build_phase4_entry_record.py"
+    builder = REPO_ROOT / "tools" / "build_inventory_entry_record.py"
     if not builder.is_file():
-        print("phase4 entry-record generator has not landed yet", file=sys.stderr)
+        print("inventory entry-record generator has not landed yet", file=sys.stderr)
         return 3
     command = [str(ingestion), str(builder)]
     if getattr(args, "check", False):
@@ -1487,8 +1487,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     closure_record.add_argument("--forecast-run", type=Path, required=True)
     entry_record = subparsers.add_parser(
-        "phase4-entry-record",
-        help="regenerate the Phase 4 entry record from live evidence",
+        "inventory-entry-record",
+        help="regenerate the inventory & replenishment entry record",
     )
     entry_record.add_argument("--check", action="store_true")
 
@@ -1636,7 +1636,7 @@ def main(argv: list[str] | None = None) -> int:
         "forecast-materialize": command_ml,
         "forecast-activate": command_ml,
         "closure-record": command_closure_record,
-        "phase4-entry-record": command_phase4_entry_record,
+        "inventory-entry-record": command_inventory_entry_record,
         "land": command_ingest_stage,
         "gate-a": command_ingest_stage,
         "stage": command_ingest_stage,

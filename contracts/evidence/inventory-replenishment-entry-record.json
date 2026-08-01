@@ -115,7 +115,7 @@
     "runSemanticFingerprint": "fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3",
     "versionId": "fv_3d66e3bd9939430d"
   },
-  "generatedBy": "tools/build_phase4_entry_record.py",
+  "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
   "intervalConsumersEnabled": false,
   "measured": {
@@ -149,7 +149,7 @@
       "series": 398
     }
   },
-  "note": "Generated, never hand-edited. Regenerate with: tools/dev.py phase4-entry-record",
+  "note": "Generated, never hand-edited. Regenerate with: tools/dev.py inventory-entry-record",
   "openEvidenceClassification": {
     "linuxPortability": {
       "artifactRetained": false,
@@ -227,9 +227,9 @@
       "Q19"
     ]
   },
-  "recordType": "generated_phase4_entry_record",
-  "schemaVersion": "retail-phase4-entry-record/v1",
-  "servingMigration": "0008_nullable_withheld_interval",
+  "recordType": "generated_capability_entry_record",
+  "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
+  "servingMigration": "0009_forecast_interval_contract",
   "sourceSelection": {
     "activeRecordId": "rec_06f9b355b6738dfd",
     "capabilityReadiness": "ready",

@@ -267,6 +267,26 @@ export const forecastWorkbenchSchema = z.object({
     // confidence is derived from that interval, so both can legitimately be absent. A
     // non-nullable schema would have rejected the payload outright.
     confidence: nullableNumber,
+    // Decision #64 Q19 / parity amendment P4-0P-A1. Every field below must be
+    // declared here or it never reaches a component: this is a plain `z.object`,
+    // so Zod strips unknown keys and a field added only server-side is discarded
+    // silently. That is why the scope fields land in the schema in the same change
+    // as the read model rather than after it.
+    //
+    // The selected window is cumulative from h1, and withholding starts at h5, so
+    // the 4-week default is clean while 8, 13 and 26 are mixed. In a mixed window
+    // both `confidence` and `aiForecastP90` are null by contract and the state
+    // fields say why -- never read the absence as zero spread.
+    confidenceState: z.enum(["measured", "unavailable_mixed_window"]),
+    // Diagnostic only. The corrected covered-window mean, restricted to the weeks
+    // that carry an interval on both sides of the ratio. Never rendered: the
+    // Confidence cell is unavailable when the window is mixed.
+    confidenceCoveredWindowMean: nullableNumber,
+    aiForecastP90State: z.enum(["available", "unavailable_mixed_window"]),
+    intervalCoveredFromHorizon: z.number().int().nullable(),
+    intervalCoveredThroughHorizon: z.number().int().nullable(),
+    intervalWithheldWeeks: z.number().int(),
+    intervalUnavailableReason: z.string().nullable(),
     primaryDriver: z.string().nullable(),
     dataQuality: z.string(),
     priority: z.string(),

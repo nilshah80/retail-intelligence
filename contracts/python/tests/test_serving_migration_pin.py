@@ -26,12 +26,18 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = REPO_ROOT / "db" / "migrations" / "versions"
 
-#: Regression floor. 0007 established the verifier-v5 boundary and 0006 was
-#: v4-only; both are inherited history. Naming either as the *current required
-#: head* is the specific regression this test exists to catch, so it is asserted
+#: Regression floor. Each of these was the required head once and is now
+#: inherited history: 0006 was v4-only, 0007 established the verifier-v5
+#: boundary, and 0008 made the withheld interval storable without making
+#: availability explicit. Naming any of them as the *current required head* is
+#: the specific regression this test exists to catch, so it is asserted
 #: explicitly rather than left to the graph comparison.
 RETIRED_HEADS = frozenset(
-    {"0006_cohorted_verifier_v4", "0007_activation_and_coverage"}
+    {
+        "0006_cohorted_verifier_v4",
+        "0007_activation_and_coverage",
+        "0008_nullable_withheld_interval",
+    }
 )
 
 
@@ -94,7 +100,7 @@ def _client_pins() -> dict[str, str]:
 
 
 def test_alembic_history_is_linear_with_one_head() -> None:
-    assert alembic_head() == "0008_nullable_withheld_interval"
+    assert alembic_head() == "0009_forecast_interval_contract"
 
 
 def test_the_required_head_is_not_a_retired_boundary() -> None:
