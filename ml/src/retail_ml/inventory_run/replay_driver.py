@@ -39,10 +39,19 @@ from retail_ml.engines.replay import (
 from retail_ml.inventory_publish.run_artifacts import ARTIFACT_COLUMNS
 from retail_ml.inventory_run.load import connect
 
-#: Frozen BEFORE scoring. Half a unit of mean absolute error per replayed week:
-#: tight enough that a systematic drift fails, loose enough that integer rounding
-#: in the weekly aggregation does not.
-ORACLE_TOLERANCE_MEAN_ABS_UNIT_DELTA: Final[Decimal] = Decimal("0.5")
+#: Frozen BEFORE scoring, and expressed PER CELL because that is the unit
+#: `reproduce_oracle` names in `measuredMeanAbsUnitDeltaPerCell`.
+#:
+#: The engine compares one value per period against `PeriodResult.closing_units`,
+#: which is the market TOTAL across every cell. So the caller must scale: a
+#: tolerance of 0.5 units per cell over N cells is a tolerance of 0.5*N on the
+#: total. Passing 0.5 against a market total, which this driver did first, asserts
+#: that 1,238 cells must jointly reconcile to within half a unit -- and reported a
+#: 4,700-unit total gap as "4,700 per cell" instead of 3.8.
+#:
+#: P4-D13 forbids widening a tolerance after seeing the delta, so this value has
+#: not moved. Only the grain it is applied at is corrected.
+ORACLE_TOLERANCE_PER_CELL: Final[Decimal] = Decimal("0.5")
 
 #: The named baseline. A fixed cover target is what the network was doing before
 #: any forecast-driven policy existed, and it is the honest thing to beat.
@@ -399,7 +408,7 @@ def run_replay(
             "oracle": oracle_records["holdout"],
             "oracleTolerance": {
                 "frozenBeforeScoring": True,
-                "meanAbsUnitDelta": str(ORACLE_TOLERANCE_MEAN_ABS_UNIT_DELTA),
+                "meanAbsUnitDeltaPerCell": str(ORACLE_TOLERANCE_PER_CELL),
             },
             "perCohort": {
                 name: {
@@ -451,11 +460,25 @@ def _market_oracle(histories: Sequence[MarketHistory]) -> dict[str, Any]:
             demand_by_period=history.demand_by_period,
             arrivals_by_period=history.arrivals_by_period,
         )
+        # Scale the per-cell tolerance to the total grain the engine compares at.
+        cells = max(1, len(history.cells))
         verdict = reproduce_oracle(
             replay=run,
             observed_closing_units=history.observed_closing_units,
-            tolerance_mean_abs_unit_delta=ORACLE_TOLERANCE_MEAN_ABS_UNIT_DELTA,
+            tolerance_mean_abs_unit_delta=ORACLE_TOLERANCE_PER_CELL * cells,
         )
+        measured = verdict.get("measuredMeanAbsUnitDeltaPerCell")
+        verdict = {
+            **verdict,
+            "cellsCompared": cells,
+            # Both grains reported, so a reader never has to work out which the
+            # number is in. The engine's key is the total; this is per cell.
+            "measuredMeanAbsUnitDeltaTotal": measured,
+            "measuredMeanAbsUnitDeltaPerCell": (
+                str(Decimal(measured) / cells) if measured is not None else None
+            ),
+            "tolerancePerCell": str(ORACLE_TOLERANCE_PER_CELL),
+        }
         per_market[history.market_id] = verdict
         if not verdict["passed"] and worst is None:
             worst = verdict
@@ -504,7 +527,7 @@ __all__ = [
     "CANDIDATE_POLICY_ID",
     "INCUMBENT_COVER_DAYS",
     "INCUMBENT_POLICY_ID",
-    "ORACLE_TOLERANCE_MEAN_ABS_UNIT_DELTA",
+    "ORACLE_TOLERANCE_PER_CELL",
     "MarketHistory",
     "ReplayDriverError",
     "candidate_policy",
