@@ -78,6 +78,13 @@ GOVERNED_REASONS: Final[frozenset[str]] = frozenset(
         # service level applies. P4-D6 forbids borrowing DC cost for a store, and
         # the engine's own reason code for this is ABC_UNIT_COST_UNAVAILABLE.
         "ABC_UNIT_COST_UNAVAILABLE",
+        # The node's demand is an additive P50 of the stores it supplies, which
+        # policy v2 permits, but `sumOfChannelP90: forbidden` -- the sum of upper
+        # quantiles is not the upper quantile of the sum, since it assumes every
+        # store peaks in the same week. So the node has a central scenario and no
+        # interval, and `nodeSafetyStockBasis:
+        # accepted_aggregate_residual_variability` is not in the forecast artifact.
+        "NODE_INTERVAL_BASIS_UNAVAILABLE",
     }
 )
 

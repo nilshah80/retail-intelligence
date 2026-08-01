@@ -105,12 +105,23 @@ def load_market_history(
 
     connection = connect(curated_root)
     try:
+        # Store-channel demand only. An online order recorded against a store id
+        # is not demand the store's own stock served -- policy v2's
+        # `directDcFulfillmentRequires` makes DC fulfilment a declared lane, and
+        # the numbers say so plainly: over 52 weeks india-west stores sold
+        # 1,365,486 store-channel units against 43,932 opening plus 1,395,522
+        # observed arrivals, while including the 369,203 online units pushed
+        # demand 275,419 above everything the stores could possibly have had. The
+        # replay then drained to zero every week and the oracle could never
+        # reproduce an observed closing balance that stays near 44,000.
         demand_rows = connection.execute(
             """
             SELECT sales.store_id, sales.sku_id, sales.date, SUM(sales.units) AS units
             FROM sales
             JOIN locations ON locations.location_id = sales.store_id
+            JOIN channels ON channels.channel_id = sales.channel_id
             WHERE locations.market_id = ?
+              AND channels.type = 'store'
               AND sales.date BETWEEN ? AND ?
               AND sales.known_as_of <= ?
             GROUP BY 1, 2, 3
@@ -347,11 +358,7 @@ def run_replay(
         # established once per market on the whole population and gates both
         # cohorts, which is what makes it a check on the mechanism rather than on
         # the split.
-        oracle = _market_oracle(
-            histories,
-            reorder_points=reorder_points,
-            order_up_to=order_up_to,
-        )
+        oracle = _market_oracle(histories)
         oracle_records[cohort] = oracle
         verdict = evaluate_acceptance(
             candidate=candidate,
@@ -405,28 +412,38 @@ def run_replay(
     }
 
 
-def _market_oracle(
-    histories: Sequence[MarketHistory],
-    *,
-    reorder_points: Mapping[str, Mapping[tuple[str, str], Decimal]],
-    order_up_to: Mapping[str, Mapping[tuple[str, str], Decimal]],
-) -> dict[str, Any]:
+#: The oracle's policy: order nothing. Not a placeholder -- see `_market_oracle`.
+def _no_order_policy(_row: Mapping[str, Any]) -> int:
+    return 0
+
+
+def _market_oracle(histories: Sequence[MarketHistory]) -> dict[str, Any]:
     """Reproduce observed closing stock across every market's full population.
 
-    Every market must reproduce. A pooled tolerance would let a market that
-    reconstructs badly hide behind one that reconstructs well, and the whole point
-    of the oracle is that the mechanism works where it will be used.
+    The oracle validates the replay MECHANISM, which is why it orders nothing.
+    Observed arrivals are already the ground truth of what the real network
+    ordered, so letting a policy generate orders on top of them counts the same
+    inbound units twice -- and worse, it turns a mechanism check into a check of
+    whether the candidate policy happens to match whatever the source simulator
+    ran. It never will, so the oracle could never pass and P4-D13's oracle-first
+    rule would block every run forever.
+
+    With no ordering, the replay reduces to the accounting identity the source
+    data must satisfy on its own: closing = opening + observed arrivals - served
+    demand - shrink. If that does not reproduce, the mechanism or the input scope
+    is wrong, which is exactly the finding the oracle exists to surface.
+
+    Every market must reproduce independently. A pooled tolerance would let a
+    market that reconstructs badly hide behind one that reconstructs well, and the
+    point is that the mechanism works where it will be used.
     """
 
     worst: dict[str, Any] | None = None
     per_market: dict[str, Any] = {}
     for history in histories:
         run = replay_market(
-            policy_id=CANDIDATE_POLICY_ID,
-            policy=candidate_policy(
-                reorder_points=reorder_points.get(history.market_id, {}),
-                order_up_to=order_up_to.get(history.market_id, {}),
-            ),
+            policy_id="oracle/no-order-mechanism-check",
+            policy=_no_order_policy,
             market_id=history.market_id,
             timezone=history.timezone,
             origins=history.origins,

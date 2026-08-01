@@ -84,12 +84,18 @@ COLD_START_REASON: Final[str] = "COLD_START_INTERVAL_UNCALIBRATED"
 UNRESOLVED_ROUTE_REASON: Final[str] = "SUPPLY_ROUTE_UNRESOLVED"
 NO_NODE_FORECAST_REASON: Final[str] = "FORECAST_ABSENT_FOR_NODE"
 NO_ABC_COST_REASON: Final[str] = "ABC_UNIT_COST_UNAVAILABLE"
+NO_NODE_INTERVAL_REASON: Final[str] = "NODE_INTERVAL_BASIS_UNAVAILABLE"
 assert {
     COLD_START_REASON,
     UNRESOLVED_ROUTE_REASON,
     NO_NODE_FORECAST_REASON,
     NO_ABC_COST_REASON,
+    NO_NODE_INTERVAL_REASON,
 } <= GOVERNED_REASONS
+
+#: Set by the loader when a node's demand is the additive P50 of the stores it
+#: supplies. Such a node has a central scenario and, by policy, no interval.
+AGGREGATED_BASIS: Final[str] = "aggregated_supplied_stores_p50"
 
 #: Reasons a non-interval value can be absent. Each names a real gap so a screen
 #: can say which one instead of showing a plausible zero.
@@ -267,8 +273,20 @@ def _index_forecast(
             "yhat_p50": float(row.yhat_p50),
             "yhat_p90": None if pd.isna(row.yhat_p90) else float(row.yhat_p90),
             "interval_available": bool(row.interval_available),
+            # Absent on a store series; the loader stamps it on an aggregated
+            # node so the builder can name the right reason for a missing
+            # interval instead of reporting every one as cold-start.
+            "demand_basis": getattr(row, "demand_basis", "store_series"),
         }
     return dict(nested)
+
+
+def _is_aggregated(horizons: Mapping[int, Mapping[str, Any]]) -> bool:
+    """True when every horizon came from the additive-supplied-stores basis."""
+
+    return bool(horizons) and all(
+        cell.get("demand_basis") == AGGREGATED_BASIS for cell in horizons.values()
+    )
 
 
 def _weekly(
@@ -510,8 +528,13 @@ def _build_demand_at_risk(
                 # same reason: an unforecast node and an uncalibrated horizon need
                 # different actions from whoever reads the exception.
                 absent = not horizons
+                aggregated = _is_aggregated(horizons)
                 reason = (
-                    NO_NODE_FORECAST_REASON if absent else COLD_START_REASON
+                    NO_NODE_FORECAST_REASON
+                    if absent
+                    else NO_NODE_INTERVAL_REASON
+                    if aggregated
+                    else COLD_START_REASON
                 )
                 rows.append(
                     {
@@ -535,6 +558,8 @@ def _build_demand_at_risk(
                         "exception_class": (
                             "node_forecast_absent"
                             if absent
+                            else "node_interval_basis_unavailable"
+                            if aggregated
                             else "cold_start_interval_unavailable"
                         ),
                         "severity": "info",
@@ -543,6 +568,9 @@ def _build_demand_at_risk(
                             "no forecast series exists for this node, so it has "
                             "no interval to assess risk from"
                             if absent
+                            else "node demand is the additive P50 of supplied "
+                            "stores; summing their P90s is forbidden"
+                            if aggregated
                             else f"demand-at-risk needs horizons 1..{weeks}; the "
                             "cold-start interval is calibrated through 4"
                         ),
@@ -1041,6 +1069,19 @@ def _replenishment_plan(
                     evidence = (
                         "no forecast series exists for this node, so it has no "
                         "interval of its own at any horizon"
+                    )
+                elif _is_aggregated(horizons):
+                    # A node whose demand is the additive P50 of its stores has a
+                    # central scenario and no interval, because policy v2 forbids
+                    # summing channel P90s. Its P50 is still published, so the
+                    # warehouse screen shows real demand; only the safety stock
+                    # that needs a spread is withheld.
+                    gate_reason = NO_NODE_INTERVAL_REASON
+                    exception_class = "node_interval_basis_unavailable"
+                    evidence = (
+                        "node demand is the additive P50 of supplied stores; "
+                        "summing their P90s is forbidden because the sum of upper "
+                        "quantiles assumes every store peaks in the same week"
                     )
                 elif upper is None or centre is None:
                     gate_reason = COLD_START_REASON

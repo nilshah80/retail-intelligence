@@ -13,14 +13,16 @@ snapshot at or before the origin, not the latest one that exists.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Final, Mapping
+from typing import Any, Final, Mapping, Sequence
 
 import duckdb
 import pandas as pd
 
+from retail_ml.engines.analytics import store_wac_minor
 from retail_ml.inventory_run.build import InventoryInputs
 
 #: Trailing window for the demand rate every cover, ageing action and transfer
@@ -234,9 +236,31 @@ def load_waste(connection: duckdb.DuckDBPyConnection, *, as_of: date) -> pd.Data
 def load_unit_costs(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> pd.DataFrame:
-    """Store weighted-average cost per cell as of the origin (P4-D6)."""
+    """Accepted unit cost per cell as of the origin, per P4-D6's preference order.
 
-    return _frame(
+    P4-D6 ranks the sources, and the first one is
+    `receipt_or_transfer_line_accepted_unit_cost`. That matters here because
+    `inventory_cost` in this publication holds DC rows only -- 2,736 cells, not one
+    of them a store -- so reading it alone leaves every store cell uncosted, which
+    means no cost-weighted ABC, no service level and no reorder point for the
+    entire store echelon. The first version of this loader did exactly that and
+    withheld all 4,741 rows.
+
+    The store's own receipts are right there: `inventory_transfer_events` records
+    320,717 received DC->store movements and every one carries
+    `unit_cost_minor`. That is the store's OWN cost evidence, so
+    `engines.analytics.store_wac_minor` computes a real store WAC from it -- no
+    lane-imputed DC fallback, which P4-D6 makes a separately approved and visibly
+    labelled thing this code must never do silently.
+
+    SQL groups the events by DISTINCT unit cost per cell rather than returning
+    them raw. The engine accumulates `total_units += qty` and
+    `total_cost += qty * cost`, so pre-summing quantity within one cost is exactly
+    distributive and the arithmetic is bit-identical -- while 320,717 rows become a
+    few thousand.
+    """
+
+    dc_costs = _frame(
         connection,
         """
         SELECT DISTINCT ON (cost.sku_id, cost.location_id)
@@ -253,6 +277,63 @@ def load_unit_costs(
         """,
         [as_of, as_of],
     )
+    receipt_groups = _rows(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            transfers.to_location_id AS location_id,
+            transfers.sku_id,
+            transfers.unit_cost_minor,
+            transfers.currency_code,
+            SUM(transfers.qty) AS qty
+        FROM inventory_transfer_events AS transfers
+        JOIN locations ON locations.location_id = transfers.to_location_id
+        WHERE transfers.status = 'received'
+          AND CAST(transfers.status_effective_at AS DATE) <= ?
+          AND transfers.known_as_of <= ?
+          AND transfers.unit_cost_minor IS NOT NULL
+        GROUP BY 1, 2, 3, 4, 5
+        """,
+        [as_of, as_of],
+    )
+    by_cell: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in receipt_groups:
+        key = (str(row["market_id"]), str(row["location_id"]), str(row["sku_id"]))
+        by_cell[key].append(
+            {
+                "qty": int(row["qty"]),
+                "unit_cost_minor": int(row["unit_cost_minor"]),
+                "currency_code": str(row["currency_code"]),
+            }
+        )
+    receipt_rows: list[dict[str, Any]] = []
+    for (market, location, sku), receipts in sorted(by_cell.items()):
+        verdict = store_wac_minor(receipts)
+        if verdict["wac_minor"] is None:
+            # The engine's own reason code, carried rather than replaced. A cell
+            # with no cost-carrying receipt is simply absent from this frame and
+            # the builder withholds it with ABC_UNIT_COST_UNAVAILABLE.
+            continue
+        receipt_rows.append(
+            {
+                "market_id": market,
+                "location_id": location,
+                "sku_id": sku,
+                "unit_cost_minor": int(verdict["wac_minor"]),
+                "cost_method": str(verdict["method"]),
+            }
+        )
+    receipts_frame = pd.DataFrame(
+        receipt_rows,
+        columns=["market_id", "location_id", "sku_id", "unit_cost_minor", "cost_method"],
+    )
+    # Receipt evidence wins where both exist: it is the store's own cost, and
+    # P4-D6 ranks it above a canonical WAC computed from receipt-shaped facts.
+    combined = pd.concat([receipts_frame, dc_costs], ignore_index=True)
+    return combined.drop_duplicates(
+        ["market_id", "location_id", "sku_id"], keep="first"
+    ).reset_index(drop=True)
 
 
 def load_wms_variance(
@@ -412,15 +493,36 @@ def load_suppliers(
 
 
 def load_forecast(
-    forecast_series: pd.DataFrame, *, positions: pd.DataFrame
+    forecast_series: pd.DataFrame,
+    *,
+    positions: pd.DataFrame,
+    lanes: Sequence[Mapping[str, Any]],
+    as_of: date,
 ) -> pd.DataFrame:
     """Reshape the served forecast onto the location grain the builder needs.
 
-    The forecast is keyed on store_id; inventory is keyed on location_id, and DC
-    positions have no forecast of their own. Rather than invent one, a DC row is
-    left without horizons -- the builder then withholds its interval-derived
-    numbers with a governed reason, which is the truthful outcome for a node whose
-    demand nothing forecast.
+    The forecast is store-grain and inventory is location-grain, so a DC has no
+    series of its own. Leaving DCs unforecast entirely -- which the first version
+    did -- means every DC recommendation withholds for want of any demand estimate,
+    and the warehouse screen has nothing to show at all.
+
+    Policy v2 says how to fix that: `channelPolicy.nodeDemandAggregation:
+    additive_central_p50_scenario_only`. A DC's demand is the additive P50 of the
+    stores it supplies over declared lanes. Note what that permits and what it
+    does not:
+
+    * P50 sums. It is a central scenario, and the policy labels it as exactly that
+      rather than as a statistical median of the aggregate.
+    * P90 does NOT. `sumOfChannelP90: forbidden`, because the sum of upper
+      quantiles is not the upper quantile of the sum -- it assumes every store
+      peaks in the same week. So an aggregated DC row carries a P50 and no
+      interval, and the builder withholds its safety stock with a governed reason.
+      `nodeSafetyStockBasis: accepted_aggregate_residual_variability` is the real
+      basis and the forecast artifact does not carry it.
+
+    Only rank-1 lanes contribute. A store's demand belongs to its primary supply
+    node; adding it to every alternate DC as well would double-count the same
+    units across the network.
     """
 
     required = {
@@ -436,6 +538,8 @@ def load_forecast(
         raise InventoryLoadError(f"forecast series lacks columns {missing}")
     frame = forecast_series.rename(columns={"store_id": "location_id"}).copy()
     frame["interval_available"] = frame["yhat_p90"].notna()
+    frame["demand_basis"] = "store_series"
+
     known = set(
         zip(
             positions["market_id"].astype(str),
@@ -443,25 +547,78 @@ def load_forecast(
             positions["sku_id"].astype(str),
         )
     )
-    keys = list(
-        zip(
-            frame["market_id"].astype(str),
-            frame["location_id"].astype(str),
-            frame["sku_id"].astype(str),
-        )
-    )
-    frame = frame.loc[[key in known for key in keys]]
-    return frame[
+    columns = [
+        "market_id",
+        "location_id",
+        "sku_id",
+        "horizon_week",
+        "yhat_p50",
+        "yhat_p90",
+        "interval_available",
+        "demand_basis",
+    ]
+    store_rows = frame.loc[
         [
-            "market_id",
-            "location_id",
-            "sku_id",
-            "horizon_week",
-            "yhat_p50",
-            "yhat_p90",
-            "interval_available",
+            key in known
+            for key in zip(
+                frame["market_id"].astype(str),
+                frame["location_id"].astype(str),
+                frame["sku_id"].astype(str),
+            )
         ]
-    ].reset_index(drop=True)
+    ][columns]
+
+    # market -> primary DC per store, from the rank-1 active lane only.
+    primary_dc: dict[tuple[str, str], str] = {}
+    for lane in lanes:
+        if str(lane["lane_type"]) != "replenishment":
+            continue
+        if int(lane["priority_rank"]) != 1:
+            continue
+        effective_to = lane.get("effective_to")
+        if as_of < lane["effective_from"]:
+            continue
+        if effective_to is not None and as_of > effective_to:
+            continue
+        primary_dc[(str(lane["market_id"]), str(lane["demand_location_id"]))] = str(
+            lane["supply_location_id"]
+        )
+    if not primary_dc:
+        return store_rows.reset_index(drop=True)
+
+    supplied = frame.assign(
+        dc_location_id=[
+            primary_dc.get((str(market), str(location)))
+            for market, location in zip(frame["market_id"], frame["location_id"])
+        ]
+    ).dropna(subset=["dc_location_id"])
+    if supplied.empty:
+        return store_rows.reset_index(drop=True)
+
+    aggregated = (
+        supplied.groupby(
+            ["market_id", "dc_location_id", "sku_id", "horizon_week"], as_index=False
+        )["yhat_p50"]
+        .sum()
+        .rename(columns={"dc_location_id": "location_id"})
+    )
+    aggregated["yhat_p90"] = pd.NA
+    aggregated["interval_available"] = False
+    aggregated["demand_basis"] = "aggregated_supplied_stores_p50"
+    aggregated = aggregated.loc[
+        [
+            key in known
+            for key in zip(
+                aggregated["market_id"].astype(str),
+                aggregated["location_id"].astype(str),
+                aggregated["sku_id"].astype(str),
+            )
+        ]
+    ][columns]
+
+    return pd.concat([store_rows, aggregated], ignore_index=True).reset_index(
+        drop=True
+    )
 
 
 def load_inventory_inputs(
@@ -498,16 +655,19 @@ def load_inventory_inputs(
             raise InventoryLoadError(
                 f"no resolved policy for markets {unresolved}"
             )
+        lanes = load_lanes(connection, as_of=as_of)
         return InventoryInputs(
             as_of=as_of,
             positions=positions.drop(columns=["currency_code"]),
             trailing_demand=load_trailing_demand(connection, as_of=as_of),
-            forecast=load_forecast(forecast_series, positions=positions),
+            forecast=load_forecast(
+                forecast_series, positions=positions, lanes=lanes, as_of=as_of
+            ),
             batches=load_batches(connection, as_of=as_of),
             waste=load_waste(connection, as_of=as_of),
             unit_costs=load_unit_costs(connection, as_of=as_of),
             wms_variance=load_wms_variance(connection, as_of=as_of),
-            lanes=load_lanes(connection, as_of=as_of),
+            lanes=lanes,
             supply_terms=load_supply_terms(connection, as_of=as_of),
             suppliers=load_suppliers(connection, as_of=as_of),
             channel_demand=load_channel_demand(connection, as_of=as_of),
