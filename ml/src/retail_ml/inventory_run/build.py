@@ -77,9 +77,12 @@ from retail_ml.inventory_publish.run_artifacts import (
     GOVERNED_REASONS,
 )
 
-#: The single reason Phase 4 may cite for an absent interval-derived value.
+#: The two governed reasons Phase 4 may cite for an absent interval-derived
+#: value. They are different findings: one says "wait for calibration", the other
+#: says "declare a route", and an operator shown the wrong one waits forever.
 COLD_START_REASON: Final[str] = "COLD_START_INTERVAL_UNCALIBRATED"
-assert COLD_START_REASON in GOVERNED_REASONS
+UNRESOLVED_ROUTE_REASON: Final[str] = "SUPPLY_ROUTE_UNRESOLVED"
+assert {COLD_START_REASON, UNRESOLVED_ROUTE_REASON} <= GOVERNED_REASONS
 
 #: Reasons a non-interval value can be absent. Each names a real gap so a screen
 #: can say which one instead of showing a plausible zero.
@@ -408,13 +411,29 @@ def _build_demand_at_risk(
 
     per_market_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
     cells: dict[str, list[tuple[str, str, str, int]]] = defaultdict(list)
+    unresolved: list[dict[str, Any]] = []
     for record in emitted.itertuples(index=False):
         row = record._asdict()
         market = str(row["market_id"])
         location = str(row["location_id"])
         sku = str(row["sku_id"])
         key = (market, location, sku)
-        weeks = supply[key].horizon_weeks
+        cell_supply = supply[key]
+        if not cell_supply.resolved:
+            # No declared route means no protection period, so there is no window
+            # over which to assess risk at all. Withheld with the route's own
+            # reason rather than assessed over a window nobody derived.
+            unresolved.append(
+                {
+                    "market_id": market,
+                    "location_id": location,
+                    "sku_id": sku,
+                    "reason": str(cell_supply.resolution_reason),
+                }
+            )
+            continue
+        weeks = cell_supply.horizon_weeks
+        assert weeks is not None
         horizons = forecasts.get(key, {})
         cost, _ = unit_costs.get(key, (None, None))
         cells[market].append((market, location, sku, weeks))
@@ -511,6 +530,35 @@ def _build_demand_at_risk(
                     "reason_code": None,
                 }
             )
+    for cell in unresolved:
+        rows.append(
+            {
+                "market_id": cell["market_id"],
+                "location_id": cell["location_id"],
+                "sku_id": cell["sku_id"],
+                "channel_id": NODE_CHANNEL,
+                "risk_units": None,
+                "risk_value_minor": None,
+                "currency_code": None,
+                "interval_available": False,
+                "reason_code": UNRESOLVED_ROUTE_REASON,
+            }
+        )
+        exceptions.append(
+            {
+                "market_id": cell["market_id"],
+                "location_id": cell["location_id"],
+                "sku_id": cell["sku_id"],
+                "channel_id": NODE_CHANNEL,
+                "exception_class": "supply_route_unresolved",
+                "severity": "warning",
+                "reason_code": UNRESOLVED_ROUTE_REASON,
+                "evidence": (
+                    f"{cell['reason']}; with no declared route there is no "
+                    "protection period to assess risk over"
+                ),
+            }
+        )
     frame = pd.DataFrame(
         rows, columns=list(ARTIFACT_COLUMNS["inventory_demand_at_risk"])
     )
@@ -559,9 +607,9 @@ def _build_ageing(
         action = ageing_action(
             on_hand_age_days=oldest[key],
             cover_days=_optional_decimal(cover),
-            hold_cover_days=int(market_policy["ageingHoldCoverDays"]),
-            markdown_cover_days=int(market_policy["ageingMarkdownCoverDays"]),
-            markdown_pct=_decimal(market_policy["ageingMarkdownPct"]),
+            hold_cover_days=int(market_policy["holdCoverDays"]),
+            markdown_cover_days=int(market_policy["markdownCoverDays"]),
+            markdown_pct=_decimal(market_policy["markdownPct"]),
         )
         markdown = action["markdown_pct"]
         rows.append(
@@ -741,18 +789,20 @@ class CellSupply:
     """
 
     supply_location_id: str | None
-    lead_time_days: int
-    moq: int
-    pack_qty: int
+    lead_time_days: int | None
+    moq: int | None
+    pack_qty: int | None
     resolution_reason: str | None
-    protection_days: int
-    horizon_weeks: int
+    protection_days: int | None
+    horizon_weeks: int | None
+
+    @property
+    def resolved(self) -> bool:
+        return self.resolution_reason is None
 
 
-def _supply_for(
-    row: Mapping[str, Any], *, inputs: InventoryInputs
-) -> tuple[str | None, int, int, int, str | None]:
-    """Resolve (supply node, lead time, MOQ, pack, reason) for one node.
+def _supply_for(row: Mapping[str, Any], *, inputs: InventoryInputs) -> CellSupply:
+    """Resolve one cell's supply, or fail closed with the resolver's reason.
 
     Branches on echelon because the declared contracts do. A store's supply is a
     DC over a `service_lanes` row whose `transit_days` IS the lead time -- no
@@ -760,16 +810,17 @@ def _supply_for(
     would return SUPPLY_TERM_ABSENT on every store. A DC's supply is an external
     supplier under a `supply_terms` row, which carries its own lead time, MOQ and
     pack, and needs no lane because the origin is outside the network.
+
+    There is deliberately NO default lead time, MOQ or pack. Policy v2 says
+    `laneResolution.unresolvedBehavior: fail_closed` and
+    `supplyTermResolution.ambiguityBehavior: fail_closed`, and an earlier version
+    of this function fell back to market defaults instead -- which would have
+    published a confident reorder point for a node whose route nobody declared.
+    Falling back is exactly what fail-closed forbids: the recommendation looks
+    identical to a resolved one and there is no way to tell them apart on screen.
     """
 
-    market_policy = inputs.policy[str(row["market_id"])]
     location = str(row["location_id"])
-    default = (
-        None,
-        int(market_policy["defaultLeadTimeDays"]),
-        int(market_policy["defaultMoq"]),
-        int(market_policy["defaultPackQty"]),
-    )
     if str(row["location_kind"]) == "store":
         try:
             lane = active_lanes(
@@ -779,21 +830,25 @@ def _supply_for(
                 on_date=inputs.as_of,
             )[0]
         except ResolutionError as error:
-            return (*default, error.reason_code)
-        return (
-            str(lane["supply_location_id"]),
-            int(lane["transit_days"]),
-            int(market_policy["defaultMoq"]),
-            int(market_policy["defaultPackQty"]),
-            None,
+            return _unresolved(error.reason_code)
+        return _resolved(
+            row,
+            inputs=inputs,
+            supply_location_id=str(lane["supply_location_id"]),
+            lead_time_days=int(lane["transit_days"]),
+            # An internal DC -> store move has no purchase-order minimum: the
+            # units already belong to the network. Pack rounding is a supplier
+            # constraint and there is no supplier on this leg.
+            moq=1,
+            pack_qty=1,
         )
     matching = [
         term
         for term in inputs.supply_terms
         if str(term["destination_location_id"]) == location
     ]
-    origins = sorted({str(term["origin_id"]) for term in matching})
-    for origin in origins:
+    last_reason = "SUPPLY_TERM_ABSENT"
+    for origin in sorted({str(term["origin_id"]) for term in matching}):
         try:
             term = resolve_supply_term(
                 matching,
@@ -805,16 +860,54 @@ def _supply_for(
                 category=str(row["category"]),
                 on_date=inputs.as_of,
             )
-        except ResolutionError:
+        except ResolutionError as error:
+            last_reason = error.reason_code
             continue
-        return (
-            origin,
-            int(term["lead_time_days"]),
-            int(term["moq"]),
-            int(term["pack_qty"]),
-            None,
+        return _resolved(
+            row,
+            inputs=inputs,
+            supply_location_id=origin,
+            lead_time_days=int(term["lead_time_days"]),
+            moq=int(term["moq"]),
+            pack_qty=int(term["pack_qty"]),
         )
-    return (*default, "SUPPLY_TERM_ABSENT")
+    return _unresolved(last_reason)
+
+
+def _unresolved(reason: str) -> CellSupply:
+    return CellSupply(
+        supply_location_id=None,
+        lead_time_days=None,
+        moq=None,
+        pack_qty=None,
+        resolution_reason=reason,
+        protection_days=None,
+        horizon_weeks=None,
+    )
+
+
+def _resolved(
+    row: Mapping[str, Any],
+    *,
+    inputs: InventoryInputs,
+    supply_location_id: str,
+    lead_time_days: int,
+    moq: int,
+    pack_qty: int,
+) -> CellSupply:
+    protection = protection_period_days(
+        lead_time_days,
+        int(inputs.policy[str(row["market_id"])]["reviewPeriodDays"]),
+    )
+    return CellSupply(
+        supply_location_id=supply_location_id,
+        lead_time_days=lead_time_days,
+        moq=moq,
+        pack_qty=pack_qty,
+        resolution_reason=None,
+        protection_days=protection,
+        horizon_weeks=required_horizon_weeks(protection),
+    )
 
 
 def _resolve_supply(
@@ -822,25 +915,14 @@ def _resolve_supply(
 ) -> dict[tuple[str, str, str], CellSupply]:
     """Resolve every cell's supply and protection window exactly once."""
 
-    resolved: dict[tuple[str, str, str], CellSupply] = {}
-    for record in emitted.itertuples(index=False):
-        row = record._asdict()
-        market = str(row["market_id"])
-        key = (market, str(row["location_id"]), str(row["sku_id"]))
-        location_id, lead_time, moq, pack, reason = _supply_for(row, inputs=inputs)
-        protection = protection_period_days(
-            lead_time, int(inputs.policy[market]["reviewPeriodDays"])
-        )
-        resolved[key] = CellSupply(
-            supply_location_id=location_id,
-            lead_time_days=lead_time,
-            moq=moq,
-            pack_qty=pack,
-            resolution_reason=reason,
-            protection_days=protection,
-            horizon_weeks=required_horizon_weeks(protection),
-        )
-    return resolved
+    return {
+        (
+            str(row["market_id"]),
+            str(row["location_id"]),
+            str(row["sku_id"]),
+        ): _supply_for(row, inputs=inputs)
+        for row in (record._asdict() for record in emitted.itertuples(index=False))
+    }
 
 
 def _replenishment_plan(
@@ -872,42 +954,65 @@ def _replenishment_plan(
         market_policy = inputs.policy[market]
         abc = abc_classes.get((sku, location), {})
         abc_class = abc.get("abc_class")
-        service_level = market_policy["serviceLevelByClass"].get(str(abc_class))
+        service_level = market_policy["serviceLevelsByClass"].get(str(abc_class))
 
         cell = supply[key]
         supply_location = cell.supply_location_id
-        lead_time_days = cell.lead_time_days
-        resolution_reason = cell.resolution_reason
         protection = cell.protection_days
         weeks = cell.horizon_weeks
         horizons = forecasts.get(key, {})
 
+        # An unresolved route is checked FIRST and separately. Policy v2 fails
+        # closed here, and there is no protection period to ask the interval
+        # question about, so this is not a cold-start row wearing a different
+        # label -- it withholds for its own reason and the exception says which.
         gate_reason: str | None = None
-        try:
-            require_interval_horizon(
-                consumer="replenishment", required_horizon_weeks=weeks
-            )
-        except IntervalUnavailable:
-            gate_reason = COLD_START_REASON
+        exception_class = "cold_start_interval_unavailable"
+        severity = "info"
+        evidence = ""
         spreads: tuple[float, ...] | None = None
         centre: tuple[float, ...] | None = None
-        if gate_reason is None:
-            upper = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
-            centre = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
-            if upper is None or centre is None:
-                gate_reason = COLD_START_REASON
-            else:
-                spreads = tuple(
-                    max(0.0, high - mid) for high, mid in zip(upper, centre)
+        if not cell.resolved:
+            gate_reason = UNRESOLVED_ROUTE_REASON
+            exception_class = "supply_route_unresolved"
+            severity = "warning"
+            evidence = (
+                f"{cell.resolution_reason}; policy v2 fails closed rather than "
+                "applying a default lead time to a route nobody declared"
+            )
+        else:
+            assert weeks is not None and protection is not None
+            try:
+                require_interval_horizon(
+                    consumer="replenishment", required_horizon_weeks=weeks
                 )
-        if gate_reason is None and service_level is None:
-            # No ABC class means no service level, and inventing one would set a
-            # target nobody chose. The engine's own reason code is carried through.
-            gate_reason = str(abc.get("reason_code") or COLD_START_REASON)
+            except IntervalUnavailable:
+                gate_reason = COLD_START_REASON
+            if gate_reason is None:
+                upper = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
+                centre = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
+                if upper is None or centre is None:
+                    gate_reason = COLD_START_REASON
+                else:
+                    spreads = tuple(
+                        max(0.0, high - mid) for high, mid in zip(upper, centre)
+                    )
+            if gate_reason is None and service_level is None:
+                # No ABC class means no service level, and inventing one would set
+                # a target nobody chose.
+                gate_reason = COLD_START_REASON
+                evidence = (
+                    f"{abc.get('reason_code') or 'ABC_CLASS_UNAVAILABLE'}; no "
+                    "service level applies without a class"
+                )
+            if gate_reason == COLD_START_REASON and not evidence:
+                evidence = (
+                    f"protection period {protection}d needs horizon {weeks}; the "
+                    "cold-start interval is calibrated to 4"
+                )
 
         if gate_reason is not None or spreads is None or centre is None:
-            reason = gate_reason or COLD_START_REASON
-            governed = reason if reason in GOVERNED_REASONS else COLD_START_REASON
+            governed = gate_reason or COLD_START_REASON
             safety_rows.append(
                 {
                     "market_id": market,
@@ -940,23 +1045,16 @@ def _replenishment_plan(
                     "location_id": location,
                     "sku_id": sku,
                     "channel_id": None,
-                    "exception_class": "cold_start_interval_unavailable",
-                    "severity": "info",
+                    "exception_class": exception_class,
+                    "severity": severity,
                     "reason_code": governed,
-                    "evidence": (
-                        f"protection period {protection}d needs horizon {weeks}; "
-                        f"the cold-start interval is calibrated to 4 ({reason})"
-                    ),
+                    "evidence": evidence,
                 }
             )
-            if resolution_reason is not None:
-                exceptions.append(
-                    _resolution_exception(
-                        market, location, sku, resolution_reason, lead_time_days
-                    )
-                )
             continue
 
+        assert protection is not None and cell.moq is not None
+        assert cell.pack_qty is not None
         stock = safety_stock_units(
             weekly_spreads=spreads,
             protection_days=protection,
@@ -1002,12 +1100,6 @@ def _replenishment_plan(
                         "evidence": f"{error.reason_code}: {error}",
                     }
                 )
-        if resolution_reason is not None:
-            exceptions.append(
-                _resolution_exception(
-                    market, location, sku, resolution_reason, lead_time_days
-                )
-            )
         safety_rows.append(
             {
                 "market_id": market,
@@ -1049,21 +1141,6 @@ def _replenishment_plan(
         safety_rows, columns=list(ARTIFACT_COLUMNS["replenishment_safety_stock"])
     )
     return recommendation_frame, safety_frame, exceptions
-
-
-def _resolution_exception(
-    market: str, location: str, sku: str, reason: str, lead_time_days: int
-) -> dict[str, Any]:
-    return {
-        "market_id": market,
-        "location_id": location,
-        "sku_id": sku,
-        "channel_id": None,
-        "exception_class": "supply_route_unresolved",
-        "severity": "warning",
-        "reason_code": None,
-        "evidence": f"{reason}; fell back to a {lead_time_days}d lead time",
-    }
 
 
 def _build_transfers(
@@ -1111,11 +1188,11 @@ def _build_transfers(
         daily = trailing.get((market, location, sku), Decimal(0))
         atp_by_key[(location, sku)] = int(row["atp_units"])
         residual_cover[(location, sku)] = int(
-            daily * int(market_policy["transferDonorKeepCoverDays"])
+            daily * int(market_policy["transferDonorRetainedCoverDays"])
         )
         headroom[(location, sku)] = max(
             0,
-            int(daily * int(market_policy["transferTargetCoverDays"]))
+            int(daily * int(market_policy["maxCoverDays"]))
             - int(row["position_units"]),
         )
         rows_by_key[(market, location, sku)] = row
@@ -1257,7 +1334,7 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
             lead_time_std_days=std_days,
             capacity_confirmed_pct=_decimal(row["capacity_confirmed_pct"]),
             capacity_floor_pct=_decimal(
-                inputs.policy[market]["supplierCapacityFloorPct"]
+                inputs.policy[market]["supplierCapacityConfirmedPctFloor"]
             ),
         )
         mean_days = _optional_decimal(row["lead_time_mean_days"])
@@ -1450,6 +1527,8 @@ def coverage_summary(artifacts: Mapping[str, pd.DataFrame]) -> dict[str, Any]:
 __all__ = [
     "COLD_START_REASON",
     "COST_UNAVAILABLE",
+    "UNRESOLVED_ROUTE_REASON",
+    "CellSupply",
     "InventoryBuildError",
     "InventoryInputs",
     "build_artifacts",

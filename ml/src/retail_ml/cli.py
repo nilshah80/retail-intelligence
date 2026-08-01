@@ -424,6 +424,13 @@ def build_parser() -> argparse.ArgumentParser:
     activate.add_argument("--postgres-dsn", default=None)
     activate.set_defaults(handler=_command_activate_serving)
 
+    # Registered from the package that owns them: the four inventory steps share
+    # the same three modules and only make sense together, so their arguments
+    # belong next to their handlers rather than restated here.
+    from retail_ml.inventory_run.cli import register as register_inventory
+
+    register_inventory(subparsers)
+
     for name in ("train", "run"):
         future = subparsers.add_parser(name)
         future.set_defaults(handler=_command_not_landed)

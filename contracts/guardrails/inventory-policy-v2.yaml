@@ -41,6 +41,29 @@ globalDefaults:
   calibrationCohortPct: "5"
   validationHoldoutPct: "95"
 
+  # Health-class boundaries. These were engine defaults until P4-7 wired the
+  # builder, which was wrong: `health_class` is a PUBLISHED classification on the
+  # store and overview screens, so the thresholds that produce it belong in the
+  # policy a bundle records the fingerprint of. A default buried in
+  # `classify_health` is a threshold nobody approved and nobody can audit.
+  understockCoverDays: "7"
+  overstockCoverDays: "45"
+
+  # Forward expiry window. Same reasoning: `expiring_units` and its money
+  # exposure are published, so the window that defines "expiring" is contractual.
+  expiryWindowDays: 30
+
+  # The number behind `transferOptimizer.sourceConstraint`. The constraint said
+  # "source retains residual cover" and named no quantity, which made the rule
+  # unimplementable without inventing one.
+  transferDonorRetainedCoverDays: 7
+
+  # The floor behind `channelPolicy.allocationPriority`'s
+  # `minimum_share_guarantee`. Zero means priority spends the whole pool, which
+  # is a real policy choice and the one in force -- but it has to be STATED,
+  # because a guarantee with no value reads as though some floor were protected.
+  allocationMinimumShare: "0"
+
   # P4-D7. Cost-weighted, not revenue-weighted, and market-local. Ranking on
   # nominal money across INR and USD would order SKUs by exchange rate.
   abc:

@@ -45,10 +45,18 @@ POLICY_VERSION: Final[str] = "inventory-policy/2.0.0"
 #: mechanism change, never a field a run gets to set.
 CALIBRATED_MAX_HORIZON: Final[int] = 4
 
-#: The only reason a Phase 4 artifact may cite for a withheld interval. Extending
-#: this set means a new governed reason exists, which is a contract change.
+#: Every reason a Phase 4 artifact may cite for withholding an interval-derived
+#: value. Extending this set means a new governed reason exists, which is a
+#: contract change and not a convenience.
+#:
+#: The second reason is not about the interval itself. Policy v2 makes lane and
+#: supply-term resolution fail closed, so a cell whose route nobody declared has
+#: no lead time, hence no protection period, hence no horizon -- the interval
+#: question cannot even be asked. It withholds for a DIFFERENT cause than a
+#: cold-start row, and collapsing the two would tell an operator to wait for
+#: calibration when what is actually missing is a declared route.
 GOVERNED_REASONS: Final[frozenset[str]] = frozenset(
-    {"COLD_START_INTERVAL_UNCALIBRATED"}
+    {"COLD_START_INTERVAL_UNCALIBRATED", "SUPPLY_ROUTE_UNRESOLVED"}
 )
 
 #: Decision P4-D11: recommendations are shadow-only. The column exists so the

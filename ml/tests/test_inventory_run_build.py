@@ -14,9 +14,12 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from retail_contracts.guardrails import resolve_guardrails
+
 from retail_ml.inventory_publish.run_artifacts import ARTIFACT_COLUMNS
 from retail_ml.inventory_run.build import (
     COLD_START_REASON,
+    UNRESOLVED_ROUTE_REASON,
     InventoryBuildError,
     InventoryInputs,
     build_artifacts,
@@ -31,26 +34,20 @@ ALT_DC = f"{MARKET}:pune-overflow"
 STORE = f"{MARKET}:mumbai-bandra"
 OTHER_STORE = f"{OTHER}:ny-manhattan"
 
-POLICY: dict[str, Any] = {
-    "understockCoverDays": "7",
-    "overstockCoverDays": "45",
-    "defaultLeadTimeDays": 7,
-    "reviewPeriodDays": 7,
-    "defaultMoq": 1,
-    "defaultPackQty": 1,
-    "maxCoverDays": 90,
-    "ageingHoldCoverDays": 30,
-    "ageingMarkdownCoverDays": 45,
-    "ageingMarkdownPct": "0.25",
-    "expiryWindowDays": 30,
-    "transferDonorKeepCoverDays": 7,
-    "transferTargetCoverDays": 21,
-    "allocationMinimumShare": "0",
-    "supplierCapacityFloorPct": "0.90",
-    "serviceLevelByClass": {"A": "0.98", "B": "0.95", "C": "0.90"},
-}
-POLICIES = {MARKET: POLICY, OTHER: POLICY}
 CURRENCIES = {MARKET: "INR", OTHER: "USD"}
+
+#: Resolved from the committed contract, not restated. A hand-written fixture
+#: policy passes happily while production reads a key the contract renamed -- which
+#: is exactly what happened here: the first version of this file declared
+#: `ageingHoldCoverDays` and `serviceLevelByClass`, neither of which
+#: inventory-policy-v2.yaml has ever contained. Resolving the real document means
+#: a rename breaks these tests at the same moment it breaks the run.
+POLICIES = {
+    market: resolve_guardrails(
+        market, currency, inventory_policy_generation="v2"
+    )["inventoryPolicy"]
+    for market, currency in CURRENCIES.items()
+}
 
 LANES = [
     {
@@ -471,6 +468,63 @@ def test_a_dc_is_supplied_by_its_external_supplier_term(artifacts) -> None:
 def test_every_recommendation_is_shadow_only(artifacts) -> None:
     statuses = set(artifacts["replenishment_recommendations"]["erp_status"])
     assert statuses == {"shadow_not_sent"}
+
+
+def test_an_undeclared_route_fails_closed_instead_of_using_a_default() -> None:
+    """Policy v2 says `laneResolution.unresolvedBehavior: fail_closed`.
+
+    An earlier version applied a market default lead time here, which published a
+    confident reorder point for a node whose route nobody declared -- and it
+    looked identical on screen to a resolved one. The row must withhold, and it
+    must withhold for the ROUTE's reason, not the cold-start one: an operator told
+    to wait for calibration will wait forever for a missing lane.
+    """
+
+    orphaned = [
+        lane for lane in LANES if lane["demand_location_id"] != STORE
+    ]
+    artifacts = build_artifacts(
+        _inputs(lanes=orphaned), replay_metrics=_metrics()
+    )
+
+    recommendations = artifacts["replenishment_recommendations"]
+    row = recommendations[
+        (recommendations["destination_location_id"] == STORE)
+        & (recommendations["sku_id"] == "sku-1")
+    ].iloc[0]
+    assert bool(row["interval_available"]) is False
+    assert row["reason_code"] == UNRESOLVED_ROUTE_REASON
+    assert pd.isna(row["recommended_units"])
+    assert pd.isna(row["reorder_point_units"])
+    assert row["supply_location_id"] is None
+
+    risk = artifacts["inventory_demand_at_risk"]
+    risk_row = risk[
+        (risk["location_id"] == STORE) & (risk["sku_id"] == "sku-1")
+    ].iloc[0]
+    assert bool(risk_row["interval_available"]) is False
+    assert risk_row["reason_code"] == UNRESOLVED_ROUTE_REASON
+
+    exceptions = artifacts["replenishment_exceptions"]
+    unresolved = exceptions[
+        exceptions["exception_class"] == "supply_route_unresolved"
+    ]
+    assert not unresolved.empty
+    assert set(unresolved["severity"]) == {"warning"}
+    assert "NO_ACTIVE_SERVICE_LANE" in " ".join(unresolved["evidence"])
+
+
+def test_the_two_governed_reasons_stay_distinguishable(artifacts) -> None:
+    """A cold-start withholding and an unresolved route are different findings.
+
+    If they collapsed to one code the exceptions screen could not tell an operator
+    which lever to pull.
+    """
+
+    safety = artifacts["replenishment_safety_stock"]
+    withheld = set(safety.loc[~safety["interval_available"].astype(bool), "reason_code"])
+    assert withheld <= {COLD_START_REASON, UNRESOLVED_ROUTE_REASON}
+    assert COLD_START_REASON in withheld
 
 
 # -- transfers over the declared alternate lane --------------------------------
