@@ -283,7 +283,27 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/forecast/signals",
         "/api/v1/forecast/exceptions",
     }
-    expected_paths = live_paths | forecast_paths
+    # P4-4: the inventory/replenishment surface -- the version endpoint plus one
+    # route per screen destination. Enumerated exactly, like everything else in
+    # this inventory: an endpoint appearing without a contract change is drift.
+    inventory_paths = {
+        "/api/v1/inventory/versions",
+        "/api/v1/inventory/overview",
+        "/api/v1/inventory/stores",
+        "/api/v1/inventory/warehouses",
+        "/api/v1/inventory/ageing",
+        "/api/v1/inventory/transfers",
+        "/api/v1/inventory/valuation",
+        "/api/v1/inventory/expiry-waste",
+        "/api/v1/inventory/stock-health",
+        "/api/v1/replenishment/planner",
+        "/api/v1/replenishment/orders",
+        "/api/v1/replenishment/suppliers",
+        "/api/v1/replenishment/safety-stock",
+        "/api/v1/replenishment/allocations",
+        "/api/v1/replenishment/exceptions",
+    }
+    expected_paths = live_paths | forecast_paths | inventory_paths
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:
         raise ContractValidationError("OpenAPI path inventory drifted")
@@ -294,8 +314,12 @@ def validate_openapi(path: Path) -> None:
         operation = methods["get"]
         if not isinstance(operation, Mapping) or not operation.get("operationId"):
             raise ContractValidationError(f"{endpoint}: operationId is absent")
+        # Both governed surfaces carry the full live/stale/unavailable triple:
+        # a route that can only say 200 has no honest way to refuse.
         expected_responses = (
-            {"200", "409", "503"} if endpoint in forecast_paths else {"200"}
+            {"200", "409", "503"}
+            if endpoint in forecast_paths or endpoint in inventory_paths
+            else {"200"}
         )
         responses = operation.get("responses", {})
         if set(responses) != expected_responses:

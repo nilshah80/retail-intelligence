@@ -12,6 +12,23 @@ from retail_contracts.entities import validate_contract_tree
 from retail_contracts.fingerprint import semantic_fingerprint
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+INVENTORY_API_PATHS = {
+    "/api/v1/inventory/versions",
+    "/api/v1/inventory/overview",
+    "/api/v1/inventory/stores",
+    "/api/v1/inventory/warehouses",
+    "/api/v1/inventory/ageing",
+    "/api/v1/inventory/transfers",
+    "/api/v1/inventory/valuation",
+    "/api/v1/inventory/expiry-waste",
+    "/api/v1/inventory/stock-health",
+    "/api/v1/replenishment/planner",
+    "/api/v1/replenishment/orders",
+    "/api/v1/replenishment/suppliers",
+    "/api/v1/replenishment/safety-stock",
+    "/api/v1/replenishment/allocations",
+    "/api/v1/replenishment/exceptions",
+}
 FORECAST_API_PATHS = {
     "/api/v1/forecast/versions",
     "/api/v1/forecast/summary",
@@ -165,18 +182,24 @@ def main() -> int:
     if workflow_files:
         raise ValueError("repository CI is prohibited by validation policy")
     screen_root = REPO_ROOT / "contracts" / "screens"
-    screen_contracts = [
-        yaml.safe_load(path.read_text(encoding="utf-8"))
-        for path in sorted(screen_root.glob("*.yaml"))
-    ]
-    screen_ids = [contract.get("screenId") for contract in screen_contracts]
-    if (
-        any(
-            contract.get("schemaVersion") != "retail-screen-contract/v1"
-            for contract in screen_contracts
-        )
-        or len(screen_ids) != len(set(screen_ids))
-    ):
+    screen_ids: list[str] = []
+    for path in sorted(screen_root.glob("*.yaml")):
+        contract = yaml.safe_load(path.read_text(encoding="utf-8"))
+        schema_version = contract.get("schemaVersion")
+        if schema_version == "retail-screen-contract/v1":
+            screen_ids.append(contract.get("screenId"))
+        elif schema_version == "retail-screen-contract-set/v1":
+            # One document, many destinations. Introduced for the 14
+            # inventory/replenishment screens so the directory does not carry
+            # fourteen copies of identical shell/behavior boilerplate; each
+            # section still freezes its own endpoint, artifacts and elements.
+            sections = contract.get("screens")
+            if not isinstance(sections, list) or not sections:
+                raise ValueError(f"{path.name}: contract set declares no screens")
+            screen_ids.extend(section.get("screenId") for section in sections)
+        else:
+            raise ValueError(f"{path.name}: unknown screen contract schema")
+    if len(screen_ids) != len(set(screen_ids)) or None in screen_ids:
         raise ValueError("invalid or duplicate screen contract")
     # `P4-0` tasks 4/5. Decision #73 selections were an unvalidated directory:
     # the lifecycle module existed, the schema existed, and nothing checked that
@@ -202,6 +225,21 @@ def main() -> int:
             raise ValueError(
                 f"{path} must declare live, stale, and unavailable states"
             )
+    # P4-4: the version endpoint plus one route per screen, every one of them
+    # carrying the same governed live/stale/unavailable triple as forecast.
+    if not INVENTORY_API_PATHS <= set(openapi.get("paths", {})):
+        missing = sorted(INVENTORY_API_PATHS - set(openapi.get("paths", {})))
+        raise ValueError(f"OpenAPI contract is missing inventory routes: {missing}")
+    for path in INVENTORY_API_PATHS:
+        responses = openapi["paths"][path]["get"]["responses"]
+        if responses != {
+            "200": {"$ref": "#/components/responses/InventoryLive"},
+            "409": {"$ref": "#/components/responses/InventoryStale"},
+            "503": {"$ref": "#/components/responses/InventoryUnavailable"},
+        }:
+            raise ValueError(
+                f"{path} must declare live, stale, and unavailable states"
+            )
     print(
         json.dumps(
             {
@@ -218,6 +256,7 @@ def main() -> int:
                 "apiContract": {
                     "version": openapi["info"]["version"],
                     "forecastRoutes": len(FORECAST_API_PATHS),
+                    "inventoryRoutes": len(INVENTORY_API_PATHS),
                     "forecastState": "live_stale_or_fail_closed",
                 },
                 "validationPolicy": {
