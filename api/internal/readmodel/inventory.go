@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,17 +59,17 @@ type InventoryConfig struct {
 }
 
 type InventoryStore struct {
-	pool               *pgxpool.Pool
-	reasonCode         string
-	message            string
-	inventoryVersionID string
-	inventoryRunID     string
+	pool                *pgxpool.Pool
+	reasonCode          string
+	message             string
+	inventoryVersionID  string
+	inventoryRunID      string
 	semanticFingerprint string
-	forecastRunID      string
-	forecastVersionID  string
-	policyVersion      string
-	markets            []string
-	decisionAsOf       time.Time
+	forecastRunID       string
+	forecastVersionID   string
+	policyVersion       string
+	markets             []string
+	decisionAsOf        time.Time
 }
 
 func unavailableInventory(reasonCode, message string) *InventoryStore {
@@ -446,7 +447,169 @@ func (s *InventoryStore) tableSlice(
 	payload["pagination"] = map[string]any{
 		"offset": query.Offset, "limit": query.Limit, "total": total,
 	}
+	// KPI tiles are aggregated HERE, in SQL, over every scoped row of the active
+	// version -- not client-side over the returned page. Summing 100 of 4,741 rows
+	// in the browser and rendering the result as "On-Hand Inventory" would be a
+	// fabricated total, which is the one thing these screens must never show. The
+	// aggregate reuses the same clauses and args as the page query above, so a
+	// filter can never apply to the table and not to the tiles above it.
+	summary, err := s.aggregate(ctx, table, clauses, args[:len(args)-2])
+	if err != nil {
+		return nil, err
+	}
+	if summary != nil {
+		payload["summary"] = summary
+	}
 	return payload, nil
+}
+
+// inventoryAggregates names, per projection table, the KPI expressions its screen
+// needs. Keyed by the camelCase field the UI reads. Written as SQL rather than Go
+// so the whole active version is reduced in the database.
+//
+// Money stays in market-local minor units: policy v2 forbids a nominal sum across
+// INR and USD, so a caller wanting one figure converts under approved reporting FX
+// after this returns. `currencyCount` is published so a consumer can see when a
+// money aggregate spans more than one currency and refuse to add it.
+var inventoryAggregates = map[string]map[string]string{
+	"inventory_positions": {
+		"onHandUnits":       "COALESCE(SUM(on_hand_units), 0)",
+		"atpUnits":          "COALESCE(SUM(atp_units), 0)",
+		"inTransitUnits":    "COALESCE(SUM(in_transit_units), 0)",
+		"onOrderUnits":      "COALESCE(SUM(on_order_units), 0)",
+		"committedUnits":    "COALESCE(SUM(committed_units), 0)",
+		"damagedUnits":      "COALESCE(SUM(damaged_units), 0)",
+		"cells":             "COUNT(*)",
+		"residualOnlyCells": "COUNT(*) FILTER (WHERE residual_only)",
+		"activeCells":       "COUNT(*) FILTER (WHERE assortment_active)",
+		"storeCells":        "COUNT(*) FILTER (WHERE location_kind = 'store')",
+		"dcCells":           "COUNT(*) FILTER (WHERE location_kind = 'dc')",
+	},
+	"inventory_stock_health": {
+		"cells":                 "COUNT(*)",
+		"healthyCells":          "COUNT(*) FILTER (WHERE health_class = 'healthy')",
+		"understockCells":       "COUNT(*) FILTER (WHERE health_class = 'understock')",
+		"overstockCells":        "COUNT(*) FILTER (WHERE health_class = 'overstock')",
+		"stockoutCells":         "COUNT(*) FILTER (WHERE health_class = 'stockout')",
+		"deadCells":             "COUNT(*) FILTER (WHERE health_class = 'dead')",
+		"coverUnavailableCells": "COUNT(*) FILTER (WHERE cover_days IS NULL)",
+		"meanCoverDays":         "AVG(cover_days)",
+	},
+	"inventory_demand_at_risk": {
+		"cells":          "COUNT(*)",
+		"assessedCells":  "COUNT(*) FILTER (WHERE interval_available)",
+		"withheldCells":  "COUNT(*) FILTER (WHERE NOT interval_available)",
+		"riskUnits":      "COALESCE(SUM(risk_units), 0)",
+		"riskValueMinor": "COALESCE(SUM(risk_value_minor), 0)",
+		"currencyCount":  "COUNT(DISTINCT currency_code)",
+	},
+	"inventory_ageing": {
+		"cells":         "COUNT(*)",
+		"onHandUnits":   "COALESCE(SUM(on_hand_units), 0)",
+		"residualUnits": "COALESCE(SUM(on_hand_units) FILTER (WHERE residual_only), 0)",
+		"markdownCells": "COUNT(*) FILTER (WHERE action = 'markdown_candidate')",
+	},
+	"inventory_expiry_waste": {
+		"cells":         "COUNT(*)",
+		"expiringUnits": "COALESCE(SUM(expiring_units), 0)",
+		"expiredUnits":  "COALESCE(SUM(expired_units), 0)",
+		"wasteUnits":    "COALESCE(SUM(waste_units), 0)",
+		"exposureMinor": "COALESCE(SUM(exposure_minor), 0)",
+		"currencyCount": "COUNT(DISTINCT currency_code)",
+	},
+	"inventory_valuation": {
+		"rows":             "COUNT(*)",
+		"grossValueMinor":  "COALESCE(SUM(gross_value_minor), 0)",
+		"unvaluedRows":     "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
+		"wmsVarianceUnits": "COALESCE(SUM(wms_variance_units), 0)",
+		"currencyCount":    "COUNT(DISTINCT currency_code)",
+	},
+	"replenishment_recommendations": {
+		"cells":            "COUNT(*)",
+		"assessedCells":    "COUNT(*) FILTER (WHERE interval_available)",
+		"withheldCells":    "COUNT(*) FILTER (WHERE NOT interval_available)",
+		"recommendedUnits": "COALESCE(SUM(recommended_units), 0)",
+		"cellsToOrder":     "COUNT(*) FILTER (WHERE recommended_units > 0)",
+	},
+	"replenishment_safety_stock": {
+		"cells":            "COUNT(*)",
+		"assessedCells":    "COUNT(*) FILTER (WHERE interval_available)",
+		"withheldCells":    "COUNT(*) FILTER (WHERE NOT interval_available)",
+		"safetyStockUnits": "COALESCE(SUM(safety_stock_units), 0)",
+		"classACells":      "COUNT(*) FILTER (WHERE abc_class = 'A')",
+		"classBCells":      "COUNT(*) FILTER (WHERE abc_class = 'B')",
+		"classCCells":      "COUNT(*) FILTER (WHERE abc_class = 'C')",
+	},
+	"replenishment_transfers": {
+		"rows":                 "COUNT(*)",
+		"units":                "COALESCE(SUM(units), 0)",
+		"expectedBenefitMinor": "COALESCE(SUM(expected_benefit_minor), 0)",
+		"lanes":                "COUNT(DISTINCT lane_id)",
+		"currencyCount":        "COUNT(DISTINCT currency_code)",
+	},
+	"replenishment_allocations": {
+		"rows":           "COUNT(*)",
+		"requestedUnits": "COALESCE(SUM(requested_units), 0)",
+		"allocatedUnits": "COALESCE(SUM(allocated_units), 0)",
+		"shortfallUnits": "COALESCE(SUM(shortfall_units), 0)",
+		"channels":       "COUNT(DISTINCT channel_id)",
+	},
+	"replenishment_suppliers": {
+		"suppliers":        "COUNT(*)",
+		"highRisk":         "COUNT(*) FILTER (WHERE risk_class = 'high')",
+		"mediumRisk":       "COUNT(*) FILTER (WHERE risk_class = 'medium')",
+		"lowRisk":          "COUNT(*) FILTER (WHERE risk_class = 'low')",
+		"meanOtdRate":      "AVG(otd_rate)",
+		"meanLeadTimeDays": "AVG(lead_time_mean_days)",
+	},
+	"replenishment_exceptions": {
+		"rows":     "COUNT(*)",
+		"warnings": "COUNT(*) FILTER (WHERE severity = 'warning')",
+		"infos":    "COUNT(*) FILTER (WHERE severity = 'info')",
+		"classes":  "COUNT(DISTINCT exception_class)",
+	},
+}
+
+// aggregate reduces the whole scoped set for the KPI tiles. It returns nil when a
+// table declares no aggregates, so a screen without tiles costs no query.
+func (s *InventoryStore) aggregate(
+	ctx context.Context,
+	table string,
+	clauses []string,
+	args []any,
+) (map[string]any, error) {
+	expressions, present := inventoryAggregates[table]
+	if !present {
+		return nil, nil
+	}
+	// Sorted so the generated SQL is stable across runs and diffable in logs.
+	names := make([]string, 0, len(expressions))
+	for name := range expressions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	projections := make([]string, 0, len(names))
+	for _, name := range names {
+		projections = append(projections, expressions[name])
+	}
+	statement := fmt.Sprintf(
+		"SELECT %s FROM retail_serving.%s WHERE %s",
+		strings.Join(projections, ", "), table, strings.Join(clauses, " AND "),
+	)
+	row := s.pool.QueryRow(ctx, statement, args...)
+	values := make([]any, len(names))
+	pointers := make([]any, len(names))
+	for index := range values {
+		pointers[index] = &values[index]
+	}
+	if err := row.Scan(pointers...); err != nil {
+		return nil, err
+	}
+	summary := make(map[string]any, len(names))
+	for index, name := range names {
+		summary[name] = values[index]
+	}
+	return summary, nil
 }
 
 func snakeToCamel(name string) string {

@@ -958,3 +958,99 @@ tr[data-partial="true"] {
     gap: 8px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Inventory & replenishment destinations (P4-9).
+
+   Class names and visual treatment are taken from the reference document
+   `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` so the built
+   screens and the approved design stay one thing. Only what the reference uses
+   and this stylesheet lacked is added here; .kpi, .kpi-grid, .delta, .grid-2,
+   .grid-3, .card, .card-head, .table, .badge and .filter already existed and are
+   reused unchanged.
+   --------------------------------------------------------------------------- */
+
+.b-blue { background: rgba(47, 128, 237, .12); color: var(--blue); }
+.b-gray { background: rgba(107, 118, 140, .14); color: var(--muted); }
+.b-purple { background: rgba(124, 77, 255, .12); color: var(--purple); }
+
+/* The sub-caption under a KPI value. Carries the basis of the number -- what it
+   counts, what it excludes -- so a tile is never a figure without provenance. */
+.demo-note {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.inventory-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.alert:last-child { border-bottom: 0; }
+
+.alert-icon {
+  display: grid;
+  flex: 0 0 26px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(47, 128, 237, .12);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.alert strong { display: block; font-size: 12px; }
+.alert span { display: block; color: var(--muted); font-size: 11px; }
+
+.donut-wrap { display: flex; gap: 16px; align-items: center; }
+
+/* A conic gradient rather than a chart library: the reference draws a static
+   ring, and the slice values are set inline from live data. */
+.donut {
+  flex: 0 0 108px;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+}
+
+.donut::after {
+  display: block;
+  width: 62px;
+  height: 62px;
+  margin: 23px;
+  border-radius: 50%;
+  background: var(--card);
+  content: "";
+}
+
+.legend { display: grid; gap: 6px; font-size: 11px; color: var(--muted); }
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+
+/* An unavailable KPI keeps the tile's shape so the grid does not reflow, and
+   states the reason where the delta would be. */
+.kpi .value.unavailable {
+  color: var(--amber);
+  font-size: 17px;
+  font-style: italic;
+  letter-spacing: -.1px;
+}

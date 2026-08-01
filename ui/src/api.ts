@@ -446,6 +446,13 @@ export const inventorySliceSchema = z.object({
   policyVersion: z.string(),
   markets: z.array(z.string()),
   items: z.array(z.record(z.string(), z.unknown())),
+  // SQL aggregates over every scoped row of the active version, for the KPI
+  // tiles. Optional because a projection may declare none, and validated rather
+  // than passed through: a tile whose value arrived unchecked is a tile nobody
+  // can trace. Absent it entirely and Zod strips it, which renders five
+  // "Not available" tiles over a working API -- which is exactly what happened.
+  summary: z.record(z.string(), z.union([z.number(), z.string(), z.null()]))
+    .optional(),
   pagination: z.object({
     offset: z.number().int(),
     limit: z.number().int(),

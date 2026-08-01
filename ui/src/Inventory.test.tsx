@@ -9,6 +9,10 @@ import {
   INVENTORY_CONTRACT_SET_ID,
   INVENTORY_SCREEN_CONTRACTS
 } from "./generated/inventoryScreenContracts";
+import {
+  REFERENCE_SCREENS,
+  REFERENCE_SCREEN_BY_ID
+} from "./generated/inventoryScreenLayout";
 
 const PAGE_IDS = Object.keys(inventoryScreens) as InventoryPageId[];
 
@@ -39,10 +43,6 @@ describe("inventory & replenishment destinations", () => {
   // -- parity with the frozen contract ----------------------------------------
 
   it("matches the approved parity contract screen for screen", () => {
-    // Two hand-maintained lists of the same fourteen rows -- the component's
-    // table and the parity YAML -- with nothing checking they agree is how a
-    // screen ends up with a button label nobody approved. The contract side is
-    // generated, so this compares the real thing rather than a copy of it.
     expect(INVENTORY_SCREEN_CONTRACTS).toHaveLength(14);
     expect(INVENTORY_CONTRACT_SET_ID).toBe("inventoryReplenishment");
 
@@ -52,9 +52,6 @@ describe("inventory & replenishment destinations", () => {
         .toBeDefined();
       expect(declared.title).toBe(contract.title);
       expect(declared.endpoint).toBe(contract.endpoint);
-      // Order matters: the toolbar renders in declaration order and the
-      // contract's order is the approved one.
-      expect(declared.actions).toEqual([...contract.actions]);
     }
     // And nothing extra: a destination the contract never approved must not
     // exist in the component either.
@@ -63,18 +60,77 @@ describe("inventory & replenishment destinations", () => {
     );
   });
 
-  it("renders the toolbar in the contract's declared order", async () => {
+  it("takes every action label from the reference document", () => {
+    // Actions are no longer declared in the component at all -- they come from
+    // `inventoryScreenLayout`, generated from the reference HTML. That change was
+    // forced by finding the labels I had hand-written were invented: the reference
+    // gives Stock Health "Assign Owner" and "Create Action" while the component
+    // claimed "Stock Health Export". Nothing retypes them now, so nothing can
+    // drift.
+    expect(REFERENCE_SCREENS).toHaveLength(14);
+    expect(new Set(REFERENCE_SCREENS.map((s) => s.screenId))).toEqual(
+      new Set(PAGE_IDS)
+    );
+    const stockHealth = REFERENCE_SCREEN_BY_ID.stockHealth;
+    expect(stockHealth.actions).toEqual(["Assign Owner", "Create Action"]);
+    for (const reference of REFERENCE_SCREENS) {
+      expect(reference.actions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders the action strip in the reference's order", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
     renderPage("inventoryOverview");
 
-    const toolbar = await screen.findByLabelText("Inventory Overview actions");
-    const labels = [...toolbar.querySelectorAll("button")].map(
+    const strip = await screen.findByLabelText("inventoryOverview actions");
+    const labels = [...strip.querySelectorAll("button")].map(
       (button) => button.textContent
     );
-    const contract = INVENTORY_SCREEN_CONTRACTS.find(
-      (entry) => entry.screenId === "inventoryOverview"
+    expect(labels).toEqual([
+      ...REFERENCE_SCREEN_BY_ID.inventoryOverview.actions
+    ]);
+  });
+
+  it("renders every reference table column, in order, headers included", async () => {
+    // A column the platform cannot fill still renders with its header and a
+    // governed cell. Dropping it would silently change the approved layout, which
+    // is the failure this whole rebuild was for.
+    const payload = {...partialPayload, items: [partialPayload.items[0]]};
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => payload
+    }));
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    const headers = [...table.querySelectorAll("th")].map((th) => th.textContent);
+    const referenceColumns =
+      REFERENCE_SCREEN_BY_ID.safetyStock.tables[0].columns;
+    expect(headers).toEqual([...referenceColumns]);
+  });
+
+  it("renders the reference's five KPI captions where it has them", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => partialPayload
+    }));
+    renderPage("safetyStock");
+
+    await screen.findByRole("table");
+    const captions = [...document.querySelectorAll(".kpi small")].map(
+      (node) => node.textContent
     );
-    expect(labels).toEqual([...contract!.actions]);
+    expect(captions).toEqual([
+      ...REFERENCE_SCREEN_BY_ID.safetyStock.kpiCaptions
+    ]);
+  });
+
+  it("shows no KPI grid on a destination the reference gives none", async () => {
+    // Stock Health is a toolbar and one table in the reference. Inventing five
+    // tiles for it would be as wrong as omitting them where they exist.
+    expect(REFERENCE_SCREEN_BY_ID.stockHealth.kpiCaptions).toHaveLength(0);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+    renderPage("stockHealth");
+    await screen.findByText("Live inventory data is unavailable.");
+    expect(document.querySelector(".kpi-grid")).not.toBeInTheDocument();
   });
 
   it("renders the governed unavailable state on 503, never a sample table", async () => {
@@ -109,10 +165,11 @@ describe("inventory & replenishment destinations", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
     renderPage("suggestedOrders");
 
-    const toolbar = screen.getByLabelText("Suggested Orders actions");
+    const toolbar = screen.getByLabelText("suggestedOrders actions");
     const buttons = within(toolbar).getAllByRole("button");
+    // The reference's labels, not the ones an earlier version invented.
     expect(buttons.map((button) => button.textContent)).toEqual([
-      "Send to ERP", "Orders Export"
+      ...REFERENCE_SCREEN_BY_ID.suggestedOrders.actions
     ]);
     for (const button of buttons) {
       // P4-D11: the control renders and cannot fire. `disabled` is the native
@@ -187,8 +244,17 @@ describe("inventory & replenishment destinations", () => {
     renderPage("stockHealth");
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Not available")).toBeInTheDocument();
+    // More than one, and that is the point: the reference's Stock Health table has
+    // columns this platform cannot fill (Ageing, Financial Exposure) alongside the
+    // genuinely absent cover. Every one renders the governed treatment, and the
+    // column keeps its header rather than being dropped from the approved layout.
+    const governed = within(table).getAllByText("Not available");
+    expect(governed.length).toBeGreaterThanOrEqual(3);
+    for (const cell of governed) {
+      expect(cell).toHaveAttribute("data-unavailable", "true");
+    }
     expect(within(table).getByText("DEAD_STOCK_DEASSORTED")).toBeInTheDocument();
+    // Never a zero standing in for an absent value.
     expect(within(table).queryByText("0")).not.toBeInTheDocument();
   });
 
@@ -271,9 +337,9 @@ describe("inventory & replenishment destinations", () => {
 
     const table = await screen.findByRole("table");
     const withheld = within(table).getAllByText("Manual judgment required");
-    // Two withheld rows x two interval-derived columns (serviceLevel,
-    // safetyStockUnits).
-    expect(withheld).toHaveLength(4);
+    // Two withheld rows x the three interval-derived columns the reference gives
+    // Safety Stock: Service Target, Current Value and Recommended Value.
+    expect(withheld).toHaveLength(6);
     // The forbidden renderings, all four of them.
     expect(within(table).queryByText("0")).not.toBeInTheDocument();
     expect(within(table).queryByText("0.0")).not.toBeInTheDocument();
@@ -286,8 +352,10 @@ describe("inventory & replenishment destinations", () => {
     renderPage("safetyStock");
 
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("18.5")).toBeInTheDocument();
-    expect(within(table).getByText("0.97")).toBeInTheDocument();
+    // Service Target renders as a percentage because that is the reference's
+    // column; the buffer appears in both Current and Recommended Value.
+    expect(within(table).getByText("97.0%")).toBeInTheDocument();
+    expect(within(table).getAllByText("19").length).toBeGreaterThan(0);
     // Three rows plus the header: a withheld row must not be collapsed away.
     expect(within(table).getAllByRole("row")).toHaveLength(4);
   });
@@ -303,8 +371,8 @@ describe("inventory & replenishment destinations", () => {
     const unresolved = table.querySelectorAll(
       '[data-reason-code="SUPPLY_ROUTE_UNRESOLVED"]'
     );
-    expect(coldStart).toHaveLength(2);
-    expect(unresolved).toHaveLength(2);
+    expect(coldStart).toHaveLength(3);
+    expect(unresolved).toHaveLength(3);
     // The titles must not be interchangeable: one resolves as the product ages,
     // the other needs somebody to declare a route.
     expect(coldStart[0].getAttribute("title")).toContain("horizon 4");
@@ -319,30 +387,22 @@ describe("inventory & replenishment destinations", () => {
     expect(table.querySelectorAll('tr[data-partial="true"]')).toHaveLength(2);
   });
 
-  it("states the partial count above the table", async () => {
-    // A screen that is partly unassessed and does not say so reads as fully
-    // assessed, and nobody scrolls every row to find out.
-    stubPartial();
-    renderPage("safetyStock");
-
-    const notice = await screen.findByTestId("partial-notice");
-    expect(notice).toHaveTextContent("2 of 3 rows need manual judgment.");
-    expect(notice).toHaveTextContent("remaining 1 rows are fully");
-  });
-
-  it("shows no partial notice when every row is assessed", async () => {
+  it("discloses partial coverage through the reference's own KPI tile", async () => {
+    // An earlier version added a bespoke notice card above the table. The
+    // reference has no such element, so it is gone: deviating from the approved
+    // layout in order to carry a disclosure is still deviating. Safety Stock's own
+    // "Policy Coverage" tile is the reference-native place for it.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        ...partialPayload,
-        items: [partialPayload.items[0]],
-        pagination: {offset: 0, limit: 100, total: 1}
-      })
+      ok: true, json: async () => partialPayload
     }));
     renderPage("safetyStock");
 
     await screen.findByRole("table");
-    expect(screen.queryByTestId("partial-notice")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-testid="partial-notice"]'))
+      .not.toBeInTheDocument();
+    const coverage = document.querySelector('[data-kpi="Policy Coverage"]');
+    expect(coverage).toBeInTheDocument();
+    expect(coverage).toHaveTextContent("Cells with an available interval");
   });
 
   it("leaves non-interval columns alone on a withheld row", async () => {
@@ -353,9 +413,6 @@ describe("inventory & replenishment destinations", () => {
     renderPage("safetyStock");
 
     const table = await screen.findByRole("table");
-    expect(
-      within(table).getByText("india-west:pune-overflow")
-    ).toBeInTheDocument();
     expect(within(table).getByText("sku-new")).toBeInTheDocument();
     expect(within(table).getByText("C")).toBeInTheDocument();
   });
