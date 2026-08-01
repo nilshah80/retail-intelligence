@@ -156,8 +156,17 @@ def test_materialization_refuses_a_bundle_whose_forecast_is_not_active(
             row = cursor.fetchone()
             # All-or-nothing: a refused materialization leaves no partial trace.
             assert row is not None and int(row[0]) == 0
+            # Scoped to the REFUSED run's own version, not the whole table. The
+            # first version asserted the table was globally empty, which held only
+            # while no bundle had ever been materialized -- once a real one was
+            # activated the assertion failed on 4,741 legitimate rows and said
+            # nothing about the refusal it was written to check.
             cursor.execute(
-                f"SELECT count(*) FROM {SERVING_SCHEMA}.inventory_positions"
+                f"""
+                SELECT count(*) FROM {SERVING_SCHEMA}.inventory_positions
+                WHERE inventory_version_id = %s
+                """,
+                ("iv_" + verified.inventory_run_id.removeprefix("ir_"),),
             )
             positions = cursor.fetchone()
             assert positions is not None and int(positions[0]) == 0
