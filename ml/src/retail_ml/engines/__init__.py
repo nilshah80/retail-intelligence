@@ -39,16 +39,25 @@ from retail_ml.engines.resolution import (
     resolve_supply_term,
 )
 from retail_ml.engines.clock import monday_period_bounds, opening_snapshot_instant
+from retail_ml.engines.replay import (
+    ReplayResult,
+    evaluate_acceptance,
+    replay_market,
+    reproduce_oracle,
+    split_cohorts,
+)
 
 __all__ = [
-    "InventoryPosition",
     "IntervalUnavailable",
+    "InventoryPosition",
     "OrderConstraintError",
     "PartialConsumerLedger",
+    "ReplayResult",
     "ResolutionError",
     "apply_order_constraints",
     "assign_cohort",
     "classify_abc",
+    "evaluate_acceptance",
     "fractional_horizon_rss",
     "fractional_horizon_sum",
     "inventory_position",
@@ -57,10 +66,13 @@ __all__ = [
     "order_up_to_level",
     "protection_period_days",
     "reorder_point",
+    "replay_market",
+    "reproduce_oracle",
     "require_interval_horizon",
     "resolve_lane",
     "resolve_supply_term",
     "round_up_to_pack",
     "safety_stock_units",
     "service_level_z",
+    "split_cohorts",
 ]
