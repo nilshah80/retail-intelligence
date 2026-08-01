@@ -1431,28 +1431,40 @@ identity; source pin `a92f0254…`, publication `7d6946ef…`.
       Its machine-checkable half is generated into
       `ui/src/generated/inventoryScreenContracts.ts`, so title/endpoint/action-order
       drift fails both the generator's `--check` and a UI test.
-- [ ] Extend the read-only Go API and build those UI slices from their reviewed matrices with
+- [x] Extend the read-only Go API and build those UI slices from their reviewed matrices with
       inventory, demand-at-risk, reorder, transfer and replenishment read models. Unavailable
       evidence follows the approved element-level unavailable behavior; it is not replaced by a
       new capability panel, phase message or fabricated zero.
-      **Go API half is complete**: 15 fail-closed routes, market/location/lane scope
-      applied in SQL, governed 409/503, and the request path proven unable to open a
-      file or spawn a process. **UI half is outstanding**: routing, live binding,
-      409/503 states, the interval-withholding treatment and the parity gate are in
-      place, but each destination still renders one generic auto-derived table where
-      the reference HTML carries KPI tiles, KPI grids, cards, card heads,
-      colour-coded badges, per-screen filters and tabs (Stock Health alone: 10 KPIs,
-      2 KPI grids, 18 cards, 7 tables). This is the largest remaining piece.
+      15 fail-closed routes with market/location/lane scope applied in SQL, governed
+      409/503, and the request path proven unable to open a file or spawn a process.
+      KPI tiles read a `summary` the read model aggregates in SQL over every scoped
+      row of the active version, reusing the page query's clauses so a filter applies
+      to tiles and table together — never summed in the browser from a 100-row page.
+      The screens are built FROM the reference document rather than from a reading of
+      it: `tools/extract_reference_layout.py` extracts action labels, filter options,
+      KPI captions and column orders into `ui/src/generated/inventoryScreenLayout.ts`
+      and `--check` fails on divergence. That was forced by discovering nine of
+      fourteen action label sets in the parity contract were invented — the reference
+      gives Stock Health "Assign Owner"/"Create Action" where the contract claimed
+      "Stock Health Export". Structure only is extracted; the reference's
+      illustrative figures are not, so no sample number can reach a screen. A KPI or
+      column the platform cannot measure renders the governed unavailable treatment
+      with a reason and KEEPS its header, because dropping it would silently change
+      the approved layout.
 - [ ] Require screenshot/DOM/data parity and human review for each Inventory/Replenishment page
       before it is included in Demo 4; one accepted page cannot be used as evidence for the other
       navigation destinations.
       Fourteen independent human sign-offs, plus manual Windows/Linux developer
       evidence. Not performable from a macOS host by the implementer; accepted as
       outstanding.
-- [ ] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
+- [~] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
       screens preserve the original HTML and render live market/location-scoped outputs.
-      Blocked on the two items above. The replay/holdout half is disclosed rather
-      than passing; see the `[~]` note.
+      The screen half is met: all fourteen destinations render the reference
+      structure with live market/location-scoped values from the active bundle, and
+      the reference is machine-checked rather than eyeballed. The replay/holdout half
+      is disclosed rather than passing — see the `[~]` replay note — so the checkpoint
+      is demoable but not fully exited. Human sign-off and cross-OS evidence remain
+      outstanding by acceptance.
 
 ### Phase 4 production readiness — disclosed, not solved
 
