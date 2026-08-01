@@ -25,6 +25,84 @@ FORECAST_API_PATHS = {
 }
 
 
+def _validate_publication_selections() -> dict[str, object]:
+    """Validate every committed decision-#73 selection against its own schema.
+
+    Also enforces the two invariants the schema alone cannot express: the three
+    lifecycle records share one `selectionId` while chaining distinct `recordId`s,
+    and exactly one record per scope is active.
+    """
+
+    selection_root = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+    if not selection_root.is_dir():
+        raise ValueError(
+            "no decision-#73 publication selection exists; a source pin cannot "
+            "be forecast authority without a governed selection"
+        )
+    schema = json.loads(
+        (
+            REPO_ROOT / "contracts" / "onboarding" / "publication-selection.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+
+    selections: list[dict] = []
+    predecessors: list[dict] = []
+    for path in sorted(selection_root.glob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("schemaVersion") == "retail-publication-selection-predecessor/v1":
+            predecessors.append(record)
+            continue
+        validator.validate(record)
+        selections.append(record)
+
+    if not selections:
+        raise ValueError("publication-selections contains no selection record")
+
+    by_scope: dict[tuple, list[dict]] = {}
+    for record in selections:
+        scope = record["scope"]
+        key = (
+            scope["retailerId"],
+            scope["tenantId"],
+            scope["capability"],
+            scope["environment"],
+        )
+        by_scope.setdefault(key, []).append(record)
+
+    for key, group in by_scope.items():
+        selection_ids = {record["selectionId"] for record in group}
+        if len(selection_ids) != 1:
+            raise ValueError(
+                f"scope {'/'.join(key)} has more than one selectionId: "
+                f"{sorted(selection_ids)}"
+            )
+        record_ids = [record["lifecycle"]["recordId"] for record in group]
+        if len(set(record_ids)) != len(record_ids):
+            raise ValueError(f"scope {'/'.join(key)} reuses a lifecycle recordId")
+        states = [record["lifecycle"]["state"] for record in group]
+        if states.count("active") != 1:
+            raise ValueError(
+                f"scope {'/'.join(key)} has {states.count('active')} active "
+                "selections; exactly one is required"
+            )
+        # A legacy predecessor must be disclosed as unselected, never as a
+        # supersession chain that never happened.
+        for predecessor in predecessors:
+            if predecessor.get("selectionRecordExists") is not False:
+                raise ValueError(
+                    "a legacy predecessor disclosure must record "
+                    "selectionRecordExists: false"
+                )
+
+    return {
+        "scopes": ["/".join(key) for key in sorted(by_scope)],
+        "records": len(selections),
+        "legacyPredecessors": len(predecessors),
+    }
+
+
 def main() -> int:
     summary = validate_contract_tree()
     ml_contract_root = REPO_ROOT / "contracts" / "ml"
@@ -100,6 +178,11 @@ def main() -> int:
         or len(screen_ids) != len(set(screen_ids))
     ):
         raise ValueError("invalid or duplicate screen contract")
+    # `P4-0` tasks 4/5. Decision #73 selections were an unvalidated directory:
+    # the lifecycle module existed, the schema existed, and nothing checked that
+    # a committed record satisfied either. An unchecked governance record reads
+    # as authority while being whatever someone last typed.
+    selection_summary = _validate_publication_selections()
     openapi = yaml.safe_load(
         (REPO_ROOT / "contracts" / "api" / "openapi.yaml").read_text(
             encoding="utf-8"
@@ -131,6 +214,7 @@ def main() -> int:
                     "classificationPolicy": classification_policy["schemaVersion"],
                 },
                 "screenContracts": screen_ids,
+                "publicationSelections": selection_summary,
                 "apiContract": {
                     "version": openapi["info"]["version"],
                     "forecastRoutes": len(FORECAST_API_PATHS),

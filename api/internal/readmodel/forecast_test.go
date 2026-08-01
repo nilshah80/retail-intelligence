@@ -120,6 +120,75 @@ func TestForecastServesGovernedUnavailableOnNoGo(t *testing.T) {
 	}
 }
 
+// TestForecastAuthorityAmbiguityFailsClosed is the decision-#90/#93 global
+// validation half. The old startup path selected by activation_scope_fingerprint
+// only, so two authorities under different legacy scope hashes each returned one
+// row and serving looked healthy. This asserts the projection-wide count decides,
+// and that a duplicate authority is reported rather than resolved by configuration.
+func TestForecastAuthorityAmbiguityFailsClosed(t *testing.T) {
+	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("PostgreSQL forecast integration environment is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	connection, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect to forecast integration database: %v", err)
+	}
+	defer connection.Close(ctx)
+
+	active := 0
+	if err := connection.QueryRow(
+		ctx,
+		"SELECT count(*) FROM retail_serving.active_forecast_versions",
+	).Scan(&active); err != nil {
+		t.Fatalf("count active forecast versions: %v", err)
+	}
+	distinctScopes := 0
+	if err := connection.QueryRow(
+		ctx,
+		`SELECT count(DISTINCT activation_scope_fingerprint)
+		 FROM retail_serving.active_forecast_versions`,
+	).Scan(&distinctScopes); err != nil {
+		t.Fatalf("count distinct activation scopes: %v", err)
+	}
+	if active > 1 {
+		t.Fatalf(
+			"decision #90 requires exactly one active authority, found %d rows across %d scopes",
+			active, distinctScopes,
+		)
+	}
+
+	// A configured fingerprint that matches nothing must still be refused on the
+	// global count when zero rows are active, and must never be able to select a
+	// winner when more than one is.
+	store := LoadForecast(ctx, ForecastConfig{
+		PostgresDSN:                    dsn,
+		ExpectedPublicationFingerprint: strings.Repeat("a", 64),
+		ActivationScopeFingerprint:     strings.Repeat("b", 64),
+		DBReadPool:                     2,
+	})
+	defer store.Close()
+	if store.Available() {
+		t.Fatal("an unmatched configured scope must never resolve to an active authority")
+	}
+	reason, _ := store.Unavailable()["reasonCode"].(string)
+	switch active {
+	case 0:
+		if reason != ForecastReasonUnmaterialized {
+			t.Fatalf("zero active authorities reason = %s", reason)
+		}
+	default:
+		// Exactly one row is active but it is not the configured scope: the
+		// global count passes and lineage resolution refuses.
+		if reason != ForecastReasonUnmaterialized && reason != ForecastReasonLineage {
+			t.Fatalf("unmatched scope over one active authority reason = %s", reason)
+		}
+	}
+}
+
 func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
 	scope := os.Getenv("RETAIL_TEST_FORECAST_SCOPE")

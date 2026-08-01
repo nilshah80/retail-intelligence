@@ -24,6 +24,13 @@ const (
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
 	ForecastReasonUnmaterialized = "FORECAST_READ_MODEL_UNAVAILABLE"
+	// Decision #90 authority uniqueness is a property of the whole projection,
+	// not of one configured scope. Selecting by activation_scope_fingerprint
+	// alone returns one row per scope hash, so a second authority activated
+	// under a different legacy scope reads as healthy. This reason exists so
+	// that state is reported as an ambiguous authority rather than silently
+	// served, and it maps to 503 like the other governed unavailable reasons.
+	ForecastReasonAuthorityAmbiguous = "FORECAST_AUTHORITY_AMBIGUOUS"
 )
 
 type ForecastReadError struct {
@@ -148,6 +155,37 @@ func LoadForecast(ctx context.Context, config ForecastConfig) *ForecastStore {
 		return unavailableForecast(
 			ForecastReasonInvalid,
 			"The PostgreSQL forecast schema is not at the required migration.",
+		)
+	}
+
+	// Decision #90 / #93: prove the global authority count BEFORE resolving the
+	// configured fingerprint. Configuration may select the one proven row; it may
+	// never hide a competing one.
+	var activeAuthorities int
+	err = pool.QueryRow(
+		ctx,
+		"SELECT count(*) FROM retail_serving.active_forecast_versions",
+	).Scan(&activeAuthorities)
+	if err != nil {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonUnmaterialized,
+			"The active forecast authority count could not be verified.",
+		)
+	}
+	if activeAuthorities == 0 {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonUnmaterialized,
+			"The accepted forecast projection has not been activated.",
+		)
+	}
+	if activeAuthorities > 1 {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonAuthorityAmbiguous,
+			"More than one forecast version is active; serving fails closed "+
+				"until exactly one authority remains.",
 		)
 	}
 
@@ -286,30 +324,44 @@ func (s *ForecastStore) Read(
 	if !s.Available() {
 		return nil, errors.New("forecast store is unavailable")
 	}
+	// Two facts are revalidated per request, and they are not the same fact.
+	// `activeAuthorities` is the decision-#90 global invariant across every
+	// activation scope hash; `stillActive` is this store's own lineage. A second
+	// authority activated mid-process is invisible to the second check alone,
+	// which is exactly the hole the configured-scope-only query left open.
+	var activeAuthorities int
 	var stillActive bool
 	err := s.pool.QueryRow(
 		ctx,
 		`
-		SELECT EXISTS (
-			SELECT 1
-			FROM retail_serving.active_forecast_versions
-			WHERE activation_scope_fingerprint = $1
-			  AND forecast_run_id = $2
-			  AND version_id = $3
-			  AND run_semantic_fingerprint = $4
-			  AND publication_semantic_fingerprint = $5
-		)
+		SELECT
+			(SELECT count(*) FROM retail_serving.active_forecast_versions),
+			EXISTS (
+				SELECT 1
+				FROM retail_serving.active_forecast_versions
+				WHERE activation_scope_fingerprint = $1
+				  AND forecast_run_id = $2
+				  AND version_id = $3
+				  AND run_semantic_fingerprint = $4
+				  AND publication_semantic_fingerprint = $5
+			)
 		`,
 		s.activationScopeFingerprint,
 		s.forecastRunID,
 		s.versionID,
 		s.semanticFingerprint,
 		s.publicationFingerprint,
-	).Scan(&stillActive)
+	).Scan(&activeAuthorities, &stillActive)
 	if err != nil {
 		return nil, forecastReadError(
 			ForecastReasonUnmaterialized,
 			"forecast activation could not be revalidated",
+		)
+	}
+	if activeAuthorities != 1 {
+		return nil, forecastReadError(
+			ForecastReasonAuthorityAmbiguous,
+			"forecast authority is not unique across activation scopes",
 		)
 	}
 	if !stillActive {

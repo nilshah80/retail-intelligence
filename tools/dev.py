@@ -484,7 +484,46 @@ def command_contracts(_: argparse.Namespace) -> int:
     result = _run([str(ingestion), str(validator)])
     if result:
         return result
-    return _run([str(ingestion), str(generator), "--check"])
+    result = _run([str(ingestion), str(generator), "--check"])
+    if result:
+        return result
+    # `P4-0`: a committed selection record must still match a fresh derivation
+    # from the retained publication evidence. A hand-edited governance record is
+    # indistinguishable from a real one until something recomputes it.
+    selections = REPO_ROOT / "tools" / "build_publication_selection.py"
+    if selections.is_file():
+        return _run([str(ingestion), str(selections), "--check"])
+    return 0
+
+
+def command_closure_record(args: argparse.Namespace) -> int:
+    """Regenerate the forecast closure record from the bundle and live activation.
+
+    The record's own note told developers to run `tools/dev.py closure-record`,
+    but the subcommand was never wired up, so the only way to regenerate the
+    thing that must never drift was to remember the script path. `P4-0` needs it
+    regenerated against migration 0008, so the advertised command now exists.
+    """
+
+    builder = REPO_ROOT / "tools" / "build_closure_record.py"
+    if not builder.is_file():
+        print("closure-record generator has not landed yet", file=sys.stderr)
+        return 3
+    return _run([sys.executable, str(builder), str(args.forecast_run)])
+
+
+def command_phase4_entry_record(args: argparse.Namespace) -> int:
+    """Regenerate or verify the Phase 4 entry record."""
+
+    ingestion = _require_python(INGESTION_ENV, "ingestion")
+    builder = REPO_ROOT / "tools" / "build_phase4_entry_record.py"
+    if not builder.is_file():
+        print("phase4 entry-record generator has not landed yet", file=sys.stderr)
+        return 3
+    command = [str(ingestion), str(builder)]
+    if getattr(args, "check", False):
+        command.append("--check")
+    return _run(command)
 
 
 def command_ingest_stage(args: argparse.Namespace) -> int:
@@ -1442,6 +1481,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     forecast_activate.add_argument("--actor", required=True)
+    closure_record = subparsers.add_parser(
+        "closure-record",
+        help="regenerate the forecast closure record from a bundle and live activation",
+    )
+    closure_record.add_argument("--forecast-run", type=Path, required=True)
+    entry_record = subparsers.add_parser(
+        "phase4-entry-record",
+        help="regenerate the Phase 4 entry record from live evidence",
+    )
+    entry_record.add_argument("--check", action="store_true")
 
     for name in (
         "land",
@@ -1586,6 +1635,8 @@ def main(argv: list[str] | None = None) -> int:
         "ml-bench": command_ml,
         "forecast-materialize": command_ml,
         "forecast-activate": command_ml,
+        "closure-record": command_closure_record,
+        "phase4-entry-record": command_phase4_entry_record,
         "land": command_ingest_stage,
         "gate-a": command_ingest_stage,
         "stage": command_ingest_stage,

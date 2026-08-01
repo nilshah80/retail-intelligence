@@ -1,0 +1,254 @@
+{
+  "authorityLedger": {
+    "currentEventId": 9,
+    "currentPriorEventId": 8,
+    "identitiesWithoutRetainedBytes": [
+      "fr_9aaa1d4431381570"
+    ],
+    "nullPredecessorEventIds": [
+      1,
+      2,
+      7
+    ],
+    "supersededIdentityCount": 3
+  },
+  "decision92Residue": {
+    "handedTo": "P4-1",
+    "openItems": [
+      "versioned cold_start_interval_unavailable series exception (one per affected series, not one per horizon)",
+      "exact availability/reason/nullability truth table enforced in the Parquet row, not derived from P90 nullability in Go",
+      "migration 0009 explicit interval_available column forbidding a reason on an available interval",
+      "served interval aggregate repair (plan \u00a71.3.1): the P50-weighted confidence mean counts withheld weeks in its denominator only",
+      "final-pin republication after the P4-3 source pin changes",
+      "interval-consumer integration under P4-D17"
+    ],
+    "servedAggregateDefectMeasured": {
+      "affectedSelections": [
+        8,
+        13,
+        26
+      ],
+      "affectedSeries": 398,
+      "cleanSelections": [
+        4
+      ],
+      "coveredWeekMeanWeightedConfidence": 0.5817,
+      "gatedBy": "P4-0P",
+      "planReference": "plans/local/phase4-implementation-plan.md \u00a71.3.1",
+      "seriesWithIntervalTotalBelowCentralTotal": 372,
+      "servedMeanWeightedConfidence": 0.0814
+    },
+    "servedFieldWithholdingImplemented": true,
+    "twoOperationsAreDistinct": {
+      "excludedFromOneGateCell": {
+        "cell": "A2_per_cohort.cold_start",
+        "effect": "removed from that cohort's coverage denominator only. Whole-population A2 still scores all 708,708 evaluation rows, and forecast_eval_predictions retains non-null P90/confidence on every one of them.",
+        "rows": 86636
+      },
+      "withheldFromPublication": {
+        "cohort": "cold_start",
+        "effect": "null P90/confidence in the artifact, the projection and the API. This is what a planner and a Phase 4 engine consume.",
+        "horizonRange": "H5-H26",
+        "rows": 8756,
+        "series": 398
+      }
+    }
+  },
+  "decisionStates": {
+    "85": {
+      "boundary": "acceptance-v5 / verifier-v5",
+      "gateMode": "hard",
+      "remaining": null,
+      "state": "decided_hard_and_active"
+    },
+    "86": {
+      "remaining": null,
+      "state": "decided_and_enforced_in_publication"
+    },
+    "87": {
+      "candidates": {
+        "C6": "rejected",
+        "C7": "rejected"
+      },
+      "note": "Historical evidence only. C6's grid may not be extended, C7 may not be refit on confirmation origins, and neither may return under a new label.",
+      "remaining": null,
+      "state": "closed_both_candidates_rejected"
+    },
+    "88": {
+      "remaining": "P4-2 verification",
+      "state": "decided_option_a_implemented"
+    },
+    "89": {
+      "remaining": "P4-2 implementation/adoption verification",
+      "state": "decided_and_implemented"
+    },
+    "90": {
+      "closedAtP40": "Go now counts the entire active_forecast_versions projection at startup and per request before applying the configured fingerprint. A competing authority under a different legacy scope hash can no longer read as healthy.",
+      "remaining": null,
+      "state": "decided_option_a_implemented"
+    },
+    "91": {
+      "coldStartCoverage": 0.8063,
+      "floor": 0.85,
+      "note": "C8 is not the H1-H4 serving producer. The accepted C5 interval is.",
+      "remaining": "P4-1 must retain executable C8 rejection evidence",
+      "state": "decided_c8_rejected_as_full_range_remedy"
+    },
+    "92": {
+      "remaining": "P4-1",
+      "state": "decided_served_field_withholding_live_contract_incomplete"
+    },
+    "93": {
+      "remaining": null,
+      "state": "decided_reconciled_at_p4_0"
+    }
+  },
+  "entryAuthorized": true,
+  "forecastAuthority": {
+    "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+    "activeAuthorityCount": 1,
+    "bundlePath": "ml/data/artifacts/forecast_run_final2",
+    "featureSemanticFingerprint": "c72ebd9c679fbba4ff8e6f5a9c5f134b02733504ef3d73aa2a7629b9bf229e78",
+    "forecastRunId": "fr_357575f586905b11",
+    "lifecycleStatus": "accepted",
+    "publicationSemanticFingerprint": "fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0",
+    "runSemanticFingerprint": "fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3",
+    "versionId": "fv_3d66e3bd9939430d"
+  },
+  "generatedBy": "tools/build_phase4_entry_record.py",
+  "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
+  "intervalConsumersEnabled": false,
+  "measured": {
+    "currentCycle": {
+      "confidenceNullRows": 8756,
+      "distinctHorizons": 26,
+      "distinctUnavailableReasons": 1,
+      "horizonRange": [
+        1,
+        26
+      ],
+      "p50NullRows": 0,
+      "p90NullRows": 8756,
+      "rows": 52884,
+      "servedSeriesKeys": 2034
+    },
+    "evaluationPopulation": {
+      "confidenceNullRows": 0,
+      "distinctHorizons": 26,
+      "note": "Withholding is per-field on the served cycle only. Evaluation retains a non-null interval on every row, which is what makes the A2 gate scoping falsifiable rather than self-fulfilling.",
+      "p90NullRows": 0,
+      "rows": 708708
+    },
+    "withheldFromPublication": {
+      "horizonRange": [
+        5,
+        26
+      ],
+      "reasonCode": "COLD_START_INTERVAL_UNCALIBRATED",
+      "rows": 8756,
+      "series": 398
+    }
+  },
+  "note": "Generated, never hand-edited. Regenerate with: tools/dev.py phase4-entry-record",
+  "openEvidenceClassification": {
+    "linuxPortability": {
+      "artifactRetained": false,
+      "classification": "user_attested",
+      "host": "macOS only on this host"
+    },
+    "safePerformanceBenchmark": {
+      "artifact": "contracts/evidence/profile-invariance-record.json",
+      "artifactRetained": true,
+      "classification": "locally_verified"
+    },
+    "trackA": {
+      "artifactRetained": false,
+      "classification": "user_attested"
+    },
+    "visualApproval": {
+      "artifactRetained": false,
+      "classification": "user_attested",
+      "note": "The P4-0P confidence-cell amendment adds a NEW outstanding visual review that no prior attestation covers."
+    },
+    "windowsPortability": {
+      "artifactRetained": false,
+      "classification": "user_attested",
+      "host": "macOS only on this host"
+    }
+  },
+  "p4d0Disposition": {
+    "resolution": "The bounded decision-#92 publication and migration 0008 already ran on the current pin, so no pre-start ordering decision remains. Source-only P4-2/P4-3 work may follow P4-0; exactly one final-pin P4-1 publication remains after the P4-0P approval.",
+    "sourceOnlyForbids": [
+      "reading P50/P90 artifacts in Phase 4 code",
+      "calculating safety stock, reorder, replay or policy results",
+      "publishing a Phase 4 run",
+      "materializing or serving a Phase 4 number",
+      "presenting sample or static values as live"
+    ],
+    "state": "resolved_by_as_built_ordering"
+  },
+  "package": "P4-0",
+  "parityAmendment": {
+    "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
+    "amendedContractSha256": "8de45c92f2a831c0425d2d216cb99d0be45b8d1d32b42a2a23c72fab5567354f",
+    "amendmentId": "P4-0P-A1",
+    "approval": {
+      "actor": "nilay.shah",
+      "approvedAt": "2026-08-01",
+      "authorization": "Explicit user instruction to complete Phase 4 autonomously, deciding without pausing for input and documenting any deviation for review. The plan's own recommendation for both fields was adopted unchanged.",
+      "classification": "autonomous_authorization_not_independent_human_review",
+      "reviewOutstanding": "A per-screen human visual review of the amended Confidence cell is still owed and is tracked as a P4-0P deviation, not as a completed approval.",
+      "status": "approved"
+    },
+    "decisionAmendment": "Decision #64 Q19",
+    "frozenBehavior": {
+      "confidence": "unavailable_when_mixed",
+      "intervalTotal": "absent_with_governed_reason_when_mixed"
+    },
+    "resolvedDecisionQuestions": [
+      "Q1",
+      "Q2",
+      "Q3",
+      "Q4",
+      "Q5",
+      "Q6",
+      "Q7",
+      "Q8",
+      "Q9",
+      "Q10",
+      "Q11",
+      "Q12",
+      "Q13",
+      "Q14",
+      "Q15",
+      "Q16",
+      "Q17",
+      "Q18",
+      "Q19"
+    ]
+  },
+  "recordType": "generated_phase4_entry_record",
+  "schemaVersion": "retail-phase4-entry-record/v1",
+  "servingMigration": "0008_nullable_withheld_interval",
+  "sourceSelection": {
+    "activeRecordId": "rec_06f9b355b6738dfd",
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "lifecycleRecords": [
+      "retailer-demo-demand-forecast-local-active.json",
+      "retailer-demo-demand-forecast-local-approved.json",
+      "retailer-demo-demand-forecast-local-candidate.json",
+      "retailer-demo-demand-forecast-local-legacy-predecessor.json"
+    ],
+    "objectCount": 2069,
+    "publicationSemanticFingerprint": "fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0",
+    "scope": {
+      "capability": "demand_forecast_non_pit",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "tenantId": "tenant-demo"
+    },
+    "selectionId": "sel_eeb6d9dfe7b201f8",
+    "sourceSnapshotId": "e010c5499de1a53cb2d02edbed2c1b0fef350c12f1d30317f495415ecf7cdd09"
+  }
+}

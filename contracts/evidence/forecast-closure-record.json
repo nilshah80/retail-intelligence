@@ -28,6 +28,92 @@
     "forecast-run-manifest.json": "867d4915573bd24dbeaa925fa42c09d51fb65d7168983da8edbd2647cdd9e082",
     "forecast_acceptance.json": "cc03472ad568aa4ed2aedaf87eebb96cb40cf49951b1403bcc60b0b0d507aa64"
   },
+  "authorityLedger": {
+    "currentEventId": 9,
+    "currentPriorEventId": 8,
+    "events": [
+      {
+        "activationScopeFingerprint": "04c9019b638a138dbdb55839bcdf7eff7e95d108acabb4cb17f85accc6b3d8ee",
+        "actor": "nilay.shah",
+        "eventId": 1,
+        "eventType": "active",
+        "forecastRunId": "fr_9aaa1d4431381570",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 13:25:58.177128+00",
+        "versionId": "fv_efcbbc03d991007f"
+      },
+      {
+        "activationScopeFingerprint": "5585b7dbfb0abea45e7b74ba41b71b50db8d338e98d958470c1f6d27fb843594",
+        "actor": "nilay.shah",
+        "eventId": 2,
+        "eventType": "active",
+        "forecastRunId": "fr_422e1113355eb05b",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 13:40:52.01365+00",
+        "versionId": "fv_86cd60c37be7e203"
+      },
+      {
+        "activationScopeFingerprint": "04c9019b638a138dbdb55839bcdf7eff7e95d108acabb4cb17f85accc6b3d8ee",
+        "actor": "migration:0007_activation_and_coverage",
+        "eventId": 5,
+        "eventType": "superseded",
+        "forecastRunId": "fr_9aaa1d4431381570",
+        "priorEventId": 1,
+        "recordedAt": "2026-07-31 14:43:15.403522+00",
+        "versionId": "fv_efcbbc03d991007f"
+      },
+      {
+        "activationScopeFingerprint": "5585b7dbfb0abea45e7b74ba41b71b50db8d338e98d958470c1f6d27fb843594",
+        "actor": "migration:0007_activation_and_coverage",
+        "eventId": 6,
+        "eventType": "superseded",
+        "forecastRunId": "fr_422e1113355eb05b",
+        "priorEventId": 2,
+        "recordedAt": "2026-07-31 14:43:15.403522+00",
+        "versionId": "fv_86cd60c37be7e203"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 7,
+        "eventType": "active",
+        "forecastRunId": "fr_b2ef3d33f398095b",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 16:51:27.852994+00",
+        "versionId": "fv_23722eff8e3b8995"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 8,
+        "eventType": "superseded",
+        "forecastRunId": "fr_b2ef3d33f398095b",
+        "priorEventId": 7,
+        "recordedAt": "2026-07-31 18:15:10.737055+00",
+        "versionId": "fv_23722eff8e3b8995"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 9,
+        "eventType": "active",
+        "forecastRunId": "fr_357575f586905b11",
+        "priorEventId": 8,
+        "recordedAt": "2026-07-31 18:15:10.737055+00",
+        "versionId": "fv_3d66e3bd9939430d"
+      }
+    ],
+    "nullPredecessorEventIds": [
+      1,
+      2,
+      7
+    ],
+    "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
+    "unusedEventIds": [
+      3,
+      4
+    ]
+  },
   "bundlePath": "ml/data/artifacts/forecast_run_final2",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
@@ -44,7 +130,106 @@
     ],
     "reportOnlyCriteria": []
   },
+  "decision92Residue": {
+    "handedTo": "P4-1",
+    "openItems": [
+      "versioned cold_start_interval_unavailable series exception (one per affected series, not one per horizon)",
+      "exact availability/reason/nullability truth table enforced in the Parquet row, not derived from P90 nullability in Go",
+      "migration 0009 explicit interval_available column forbidding a reason on an available interval",
+      "served interval aggregate repair (plan \u00a71.3.1): the P50-weighted confidence mean counts withheld weeks in its denominator only",
+      "final-pin republication after the P4-3 source pin changes",
+      "interval-consumer integration under P4-D17"
+    ],
+    "servedAggregateDefectMeasured": {
+      "affectedSelections": [
+        8,
+        13,
+        26
+      ],
+      "affectedSeries": 398,
+      "cleanSelections": [
+        4
+      ],
+      "coveredWeekMeanWeightedConfidence": 0.5817,
+      "gatedBy": "P4-0P",
+      "planReference": "plans/local/phase4-implementation-plan.md \u00a71.3.1",
+      "seriesWithIntervalTotalBelowCentralTotal": 372,
+      "servedMeanWeightedConfidence": 0.0814
+    },
+    "servedFieldWithholdingImplemented": true,
+    "twoOperationsAreDistinct": {
+      "excludedFromOneGateCell": {
+        "cell": "A2_per_cohort.cold_start",
+        "effect": "removed from that cohort's coverage denominator only. Whole-population A2 still scores all 708,708 evaluation rows, and forecast_eval_predictions retains non-null P90/confidence on every one of them.",
+        "rows": 86636
+      },
+      "withheldFromPublication": {
+        "cohort": "cold_start",
+        "effect": "null P90/confidence in the artifact, the projection and the API. This is what a planner and a Phase 4 engine consume.",
+        "horizonRange": "H5-H26",
+        "rows": 8756,
+        "series": 398
+      }
+    }
+  },
   "generatedBy": "tools/build_closure_record.py",
+  "historicalAttestationLedger": {
+    "attestationClassification": {
+      "note": "Attested evidence is labelled attested, never locally_verified. No retained execution artifact exists for these on this host.",
+      "trackA": "user_attested",
+      "windowsLinuxPortability": "user_attested"
+    },
+    "disposition": "retained_by_reference_with_declared_missing_hashes",
+    "hashedGenerations": [
+      {
+        "generation": "pitfix_v12",
+        "hashesRetained": true
+      },
+      {
+        "generation": "pitfix_v14",
+        "hashesRetained": true
+      },
+      {
+        "generation": "pitfix_v15",
+        "hashesRetained": true
+      },
+      {
+        "generation": "v6_cohort82",
+        "hashesRetained": true,
+        "note": "Separately rejected; retained as rejected evidence."
+      },
+      {
+        "generation": "forecast_run_v6_c5_final",
+        "hashesRetained": true,
+        "note": "The only one of the five C5 siblings with retained hashes."
+      }
+    ],
+    "note": "The pre-v2 closure ledger held manifest and acceptance hashes for older generations that never reached the current serving schema. Those that were hashed remain verifiable by reference; those whose bytes are gone are recorded as missing and are never reconstructed.",
+    "reconstructionForbidden": true,
+    "unhashedSiblingReason": "Bundle bytes were deleted before their manifest/acceptance hashes were retained. Superseded by retained run id, original directory, generation label and reason only.",
+    "unhashedSupersededSiblings": [
+      {
+        "forecastRunId": "fr_463f53be6353e481",
+        "generation": "_c5",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_f62041e95fe7c305",
+        "generation": "_v2",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_b55046df351c1a65",
+        "generation": "_grain",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_8e73fb0f8d3c502c",
+        "generation": "_gov",
+        "hashesRetained": false
+      }
+    ]
+  },
   "inputBundle": {
     "gateASemanticFingerprint": "594566312da4f81c2887b125f26778ead2045ee762ea1e95f5d1729ce89e1ec6",
     "gateBSemanticFingerprint": "cdb41e026ee927ef2cd48de863875bcd5aa432795213a6de35445a1b654f94dd",
@@ -76,5 +261,35 @@
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0007_activation_and_coverage"
+  "servingMigration": "0008_nullable_withheld_interval",
+  "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
+  "supersededIdentities": [
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": true,
+      "bundlePath": "ml/data/artifacts/forecast_run_final",
+      "forecastRunId": "fr_b2ef3d33f398095b",
+      "forecastVersionId": "fv_23722eff8e3b8995",
+      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
+      "rollbackEligible": true
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": true,
+      "bundlePath": "ml/data/artifacts/forecast_run_rebuild",
+      "forecastRunId": "fr_422e1113355eb05b",
+      "forecastVersionId": "fv_86cd60c37be7e203",
+      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
+      "rollbackEligible": true
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_9aaa1d4431381570",
+      "forecastVersionId": "fv_efcbbc03d991007f",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    }
+  ]
 }

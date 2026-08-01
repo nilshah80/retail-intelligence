@@ -1,5 +1,18 @@
 {
   "adoption": {
+    "accuracyClaim": {
+      "isAccuracyImprovement": false,
+      "retainedAtP40": true,
+      "statement": "C5 is a decision-#86 gate_remediation candidate and must never be presented as an accuracy improvement. It captures +1.754% of global relative WAPE against decision #75's 5% floor, which is a fail, and it was adopted only under the remediation class."
+    },
+    "currentServedIdentity": {
+      "forecastRunId": "fr_357575f586905b11",
+      "forecastVersionId": "fv_3d66e3bd9939430d",
+      "note": "The C5 method is unchanged; the bundle that serves it is not the one it was first published as. fr_b2ef3d33f398095b was activated by event 7 with a null predecessor and was superseded by event 8 when the decision-#92 field withholding required a replacement bundle. Event 9 activated fr_357575f586905b11 with prior_event_id = 8. Both ids are retained: the historical one is what this candidate record measured, the current one is what serves.",
+      "reconciledAt": "2026-08-01",
+      "reconciledBy": "P4-0 task 12",
+      "supersessionChain": "event 7 (active, null predecessor) -> 8 (superseded) -> 9 (active)"
+    },
     "notUnder": "decision #75, whose 5% global floor it does not meet (+1.754%)",
     "on": "2026-07-31",
     "publishedRunId": "fr_b2ef3d33f398095b",
@@ -83,8 +96,8 @@
       "verdict": "PASS"
     }
   },
-  "schemaVersion": "retail-candidate-result-record/v1",
-  "verdict": "C5 repairs the A1 blocker in every scope and does not satisfy decision #75. It is adopted under decision #86 as a gate-remediation candidate, not as an accuracy improvement, and #86 forbids presenting it as one. The #75 shortfall below is published rather than suppressed.",
+  "rebuildNote": "Re-published by the authorized clean-slate rebuild. The prior identities (fr_8e73fb0f8d3c502c, fr_f48fd0ab1380bc49, fr_422e1113355eb05b, fr_9aaa1d4431381570, fr_cee27c1618c9f9bb / fv_fe38d1f029dbcc30, fv_8e7be33eaa236160, fv_86cd60c37be7e203, fv_efcbbc03d991007f) are superseded, not corrected: the earlier run was real, its bundle is simply no longer the served one. See decision #89 for why the input fingerprints moved while the data did not.",
   "rebuiltOn": "2026-07-31",
-  "rebuildNote": "Re-published by the authorized clean-slate rebuild. The prior identities (fr_8e73fb0f8d3c502c, fr_f48fd0ab1380bc49, fr_422e1113355eb05b, fr_9aaa1d4431381570, fr_cee27c1618c9f9bb / fv_fe38d1f029dbcc30, fv_8e7be33eaa236160, fv_86cd60c37be7e203, fv_efcbbc03d991007f) are superseded, not corrected: the earlier run was real, its bundle is simply no longer the served one. See decision #89 for why the input fingerprints moved while the data did not."
+  "schemaVersion": "retail-candidate-result-record/v1",
+  "verdict": "C5 repairs the A1 blocker in every scope and does not satisfy decision #75. It is adopted under decision #86 as a gate-remediation candidate, not as an accuracy improvement, and #86 forbids presenting it as one. The #75 shortfall below is published rather than suppressed."
 }

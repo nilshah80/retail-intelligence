@@ -126,6 +126,10 @@ func TestForecastUnavailableStatus(t *testing.T) {
 	for _, reason := range []string{
 		readmodel.ForecastReasonInvalid,
 		readmodel.ForecastReasonUnmaterialized,
+		// An ambiguous authority is a governed unavailable state, not a
+		// staleness conflict: 409 would imply one activated version we could
+		// name, and the whole point is that we cannot.
+		readmodel.ForecastReasonAuthorityAmbiguous,
 	} {
 		if status := forecastUnavailableStatus(reason); status != http.StatusServiceUnavailable {
 			t.Fatalf("%s status = %d", reason, status)
