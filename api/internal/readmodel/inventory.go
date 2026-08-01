@@ -458,9 +458,52 @@ func (s *InventoryStore) tableSlice(
 		return nil, err
 	}
 	if summary != nil {
+		// A dashboard screen shows figures from more than one projection -- the
+		// reference's Inventory Overview carries a health mix beside its position
+		// breakdown. Those are merged under a prefix rather than fetched by a second
+		// browser request, so one scope is applied once and the tiles cannot
+		// disagree with the table beneath them.
+		for _, related := range dashboardCompanions[table] {
+			companion, err := s.aggregate(ctx, related.table, relatedClauses(clauses, related.table), args[:len(args)-2])
+			if err != nil {
+				return nil, err
+			}
+			for name, value := range companion {
+				summary[related.prefix+strings.ToUpper(name[:1])+name[1:]] = value
+			}
+		}
 		payload["summary"] = summary
 	}
 	return payload, nil
+}
+
+// A companion projection whose aggregates a dashboard screen also needs.
+type dashboardCompanion struct {
+	table  string
+	prefix string
+}
+
+// Only the enterprise overview pulls from a second projection. Every other screen
+// reads its own, which keeps a page to one query and one scope.
+var dashboardCompanions = map[string][]dashboardCompanion{
+	"inventory_positions": {{table: "inventory_stock_health", prefix: "health"}},
+}
+
+// relatedClauses drops any clause naming a column the companion table lacks, so a
+// filter that cannot apply is omitted rather than failing the whole request. The
+// version clause always applies.
+func relatedClauses(clauses []string, table string) []string {
+	kept := make([]string, 0, len(clauses))
+	for _, clause := range clauses {
+		if strings.Contains(clause, "category =") && table == "inventory_stock_health" {
+			continue
+		}
+		if strings.Contains(clause, "location_kind") {
+			continue
+		}
+		kept = append(kept, clause)
+	}
+	return kept
 }
 
 // inventoryAggregates names, per projection table, the KPI expressions its screen
@@ -475,6 +518,9 @@ var inventoryAggregates = map[string]map[string]string{
 	"inventory_positions": {
 		"onHandUnits":       "COALESCE(SUM(on_hand_units), 0)",
 		"atpUnits":          "COALESCE(SUM(atp_units), 0)",
+		"reservedUnits":     "COALESCE(SUM(reserved_units), 0)",
+		"storeOnHandUnits":  "COALESCE(SUM(on_hand_units) FILTER (WHERE location_kind = 'store'), 0)",
+		"dcOnHandUnits":     "COALESCE(SUM(on_hand_units) FILTER (WHERE location_kind = 'dc'), 0)",
 		"inTransitUnits":    "COALESCE(SUM(in_transit_units), 0)",
 		"onOrderUnits":      "COALESCE(SUM(on_order_units), 0)",
 		"committedUnits":    "COALESCE(SUM(committed_units), 0)",

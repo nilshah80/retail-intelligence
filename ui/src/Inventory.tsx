@@ -77,16 +77,106 @@ interface TableSpec {
   readonly columns: readonly ColumnSpec[];
 }
 
+/**
+ * How one row of a reference BREAKDOWN card is filled. The reference's label is
+ * the approved vocabulary; `field` names the SQL aggregate behind it and `of`
+ * turns it into the share the reference shows beside the value.
+ */
+interface BreakdownRow {
+  readonly label: string;
+  readonly field: string | null;
+  readonly format: KpiSpec["format"];
+  readonly of?: string;
+  readonly unavailableReason?: string;
+}
+
 interface ScreenSpec {
   readonly title: string;
   readonly subtitle: string;
   readonly endpoint: string;
   readonly kpis: readonly KpiSpec[];
   readonly tables: readonly TableSpec[];
+  /** Reference label -> live aggregate, for breakdown, donut and alert cards. */
+  readonly breakdown?: readonly BreakdownRow[];
 }
 
 const UNAVAILABLE = "Not available";
 const WITHHELD = "Manual judgment required";
+
+/**
+ * Why a measure is absent and what would make it appear. Every unavailable
+ * element carries one: "Not available" on its own tells a retailer nothing, and
+ * the first question in a demo is always whether the gap is permanent.
+ */
+const AVAILABILITY: Record<string, {why: string; when: string}> = {
+  REPLAY_UNAVAILABLE: {
+    why: "the weekly replay does not yet reconstruct observed stock closely enough to compare policies against it",
+    when: "when replay reconstruction reaches the accuracy threshold frozen before scoring"
+  },
+  RISK_ON_ANOTHER_MEASURE: {
+    why: "risk is measured per SKU and store rather than as one enterprise figure",
+    when: "now, on Stock Health and Expiry & Waste"
+  },
+  TRANSFER_ON_ANOTHER_MEASURE: {
+    why: "transfer opportunity is measured per lane",
+    when: "now, on Stock Transfers"
+  },
+  POSITION_COMPARISON_ON_ANOTHER_MEASURE: {
+    why: "the comparison of position against buffer is made per cell",
+    when: "now, on Replenishment Planner"
+  },
+  BUCKET_SPLIT_ON_TABLE: {
+    why: "ageing is held per bucket rather than as one cumulative total",
+    when: "now, in the table below"
+  },
+  CAPACITY_SPLIT_ON_TABLE: {
+    why: "capacity is confirmed per supplier",
+    when: "now, in the table below"
+  },
+  TRANSIT_SPLIT_ON_TABLE: {
+    why: "transit time is a property of each declared lane",
+    when: "now, in the table below"
+  },
+  NRV_UNAVAILABLE: {
+    why: "net realizable value and its provisions need an approved markdown and pricing-floor policy",
+    when: "when that policy is approved; the platform will not estimate a finance figure without one"
+  },
+  DOCK_TO_STOCK_NOT_INSTRUMENTED: {
+    why: "the source records receipts but not putaway completion",
+    when: "when warehouse operations emit a putaway timestamp"
+  },
+  ACCEPTANCE_NOT_INSTRUMENTED: {
+    why: "recommendations are read-only in this release, so none has been accepted or rejected",
+    when: "when the approval workflow is enabled"
+  },
+  PRIOR_PERIOD_NOT_COMPARED: {
+    why: "only the current trailing window is published",
+    when: "when a second window is retained to compare against"
+  },
+  ORDER_VALUE_NEEDS_COSTED_LINES: {
+    why: "a recommendation carries units, not a costed order line",
+    when: "when order lines are priced at creation"
+  },
+  BUDGET_NOT_APPLIED: {
+    why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
+    when: "when the budget cap is enforced in the replenishment engine"
+  },
+  ERP_SHADOW_ONLY: {
+    why: "ERP transmission is shadow-only and no send path exists",
+    when: "when ERP integration is enabled; until then there are no failures to report"
+  },
+  UNIT_COST_UNAVAILABLE: {
+    why: "at least one on-hand SKU in this group has no accepted unit cost, and another node's cost is never borrowed",
+    when: "when the missing receipts carry a cost"
+  }
+};
+
+function availabilityNote(reason: string | undefined): string | null {
+  if (!reason) return null;
+  const entry = AVAILABILITY[reason];
+  if (!entry) return null;
+  return `Not available because ${entry.why}. Available ${entry.when}.`;
+}
 
 /** Reasons a value is absent, in the words a retailer needs, not a code. */
 const REASON_TEXT: Record<string, string> = {
@@ -196,14 +286,60 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        of: "onHandUnits", note: "After committed, reserved and damaged"},
       {caption: "Inventory in Transit", field: "inTransitUnits", format: "units",
        note: "Received against a declared lane"},
-      {caption: "Inventory at Risk", field: null, format: "units",
-       unavailableReason: "RISK_ON_ANOTHER_MEASURE",
-       note: "Measured on Stock Health and Expiry & Waste"},
+      {caption: "Inventory at Risk", field: "healthUnderstockCells",
+       format: "count",
+       note: "Cells the health engine classes understocked or stocked out"},
       {caption: "Stock Turn", field: null, format: "count",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
     ],
+    breakdown: [
+      // "Inventory Position" -- the reference's aggregation card.
+      {label: "Store inventory", field: "storeOnHandUnits", format: "units",
+       of: "onHandUnits"},
+      {label: "Warehouse inventory", field: "dcOnHandUnits", format: "units",
+       of: "onHandUnits"},
+      {label: "In transit", field: "inTransitUnits", format: "units",
+       of: "onHandUnits"},
+      {label: "Reserved stock", field: "reservedUnits", format: "units",
+       of: "onHandUnits"},
+      {label: "Damaged / blocked", field: "damagedUnits", format: "units",
+       of: "onHandUnits"},
+      // "Inventory by Health" donut. Health class is projected per cell on Stock
+      // Health, not on the position summary, so these name where they live.
+      // The overview is a dashboard, so the read model merges the stock-health
+      // projection's class counts under a `health` prefix. "At Risk" is the
+      // reference's word for the understocked and dead classes together.
+      {label: "Healthy", field: "healthHealthyCells", format: "count"},
+      {label: "At Risk", field: "healthDeadCells", format: "count"},
+      {label: "Overstock", field: "healthOverstockCells", format: "count"},
+      {label: "Out of Stock", field: "healthStockoutCells", format: "count"},
+      // "Immediate Decisions".
+      {label: "Transfer excess stock", field: "healthOverstockCells",
+       format: "count"},
+      {label: "Approve ageing-stock markdown", field: "healthDeadCells",
+       format: "count"},
+      {label: "Accelerate replenishment", field: "residualOnlyCells",
+       format: "count"}
+    ],
     tables: [
+      // Reference order: Ageing Inventory, Inventory Risk by Category, then the
+      // full-width Location-Level table. The position projection cannot fill the
+      // first two, so every column renders its governed cell and keeps its header.
+      {heading: "Ageing Inventory", columns: [
+        {header: "Age Bucket", field: null},
+        {header: "SKUs", field: "skuId"},
+        {header: "Inventory Value", field: "onHandUnits", format: "units"},
+        {header: "Sell-through", field: null},
+        {header: "Recommended Action", field: null}
+      ]},
+      {heading: "Inventory Risk by Category", columns: [
+        {header: "Category", field: "locationId"},
+        {header: "Value", field: "onHandUnits", format: "units"},
+        {header: "Days of Supply", field: null},
+        {header: "Risk", field: "residualOnly", badge: true},
+        {header: "Action", field: null}
+      ]},
       {heading: "Location-Level Inventory Performance", columns: [
         {header: "Location", field: "locationId"},
         {header: "Type", field: "locationKind"},
@@ -235,8 +371,21 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
     ],
+    breakdown: [
+      // "Store Exception Summary" -- an aggregation card, not a row table. An
+      // earlier version rendered the heatmap's columns under this heading and
+      // dropped the aggregation entirely.
+      {label: "High stock-out risk", field: "healthStockoutCells",
+       format: "count"},
+      {label: "High overstock risk", field: "healthOverstockCells",
+       format: "count"},
+      {label: "Display stock mismatch", field: null, format: "count",
+       unavailableReason: "DOCK_TO_STOCK_NOT_INSTRUMENTED"},
+      {label: "Negative inventory", field: "damagedUnits", format: "count"},
+      {label: "Transfer candidates", field: "residualOnlyCells", format: "count"}
+    ],
     tables: [
-      {heading: "Store Exception Summary", columns: [
+      {heading: "Store Inventory Heatmap", columns: [
         {header: "Store", field: "locationId"},
         {header: "Availability", field: "atpUnits", format: "units"},
         {header: "DoS", field: null},
@@ -650,12 +799,20 @@ function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
 
   if (spec.field === null) {
     // Nothing measures this. The tile keeps its position so the grid does not
-    // reflow, and says what is missing rather than showing a zero.
+    // reflow, and states WHY and WHEN rather than just "Not available" -- the
+    // first question anyone asks of an empty tile is whether it is permanent.
+    const note = availabilityNote(spec.unavailableReason) ?? spec.note;
     return (
-      <div className="kpi" data-kpi={spec.caption} data-unavailable="true">
+      <div
+        className="kpi"
+        data-kpi={spec.caption}
+        data-unavailable="true"
+        data-reason-code={spec.unavailableReason}
+        title={note ?? undefined}
+      >
         <small>{spec.caption}</small>
         <div className="value unavailable">{UNAVAILABLE}</div>
-        {spec.note && <div className="demo-note">{spec.note}</div>}
+        {note && <div className="demo-note">{note}</div>}
       </div>
     );
   }
@@ -755,7 +912,7 @@ function DataCard({
         </div>
       )}
       <div className="table-scroll">
-        <table className="table">
+        <table className="table" data-card-kind="rows">
           <thead>
             <tr>
               {table.columns.map((column) => (
@@ -874,14 +1031,272 @@ export function InventoryPage({pageId}: {pageId: InventoryPageId}) {
               <small>Zero rows is a governed result, not a failure.</small>
             </div>
           ) : (
-            <div style={{display: "grid", gap: 14, marginTop: 14}}>
-              {screen.tables.map((table, index) => (
-                <DataCard key={index} table={table} slice={slice.data} />
-              ))}
-            </div>
+            <CardBlocks screen={screen} reference={reference} slice={slice.data} />
           )}
         </>
       ) : null}
     </>
+  );
+}
+
+/* -- reference card kinds ---------------------------------------------------- */
+
+/**
+ * A BREAKDOWN card: the reference's headerless label/value table. This is the
+ * aggregation view -- "Store inventory / ₹31.6 Cr / 64.9%" -- and it reads the
+ * endpoint's SQL summary, never the page's rows. An earlier version omitted this
+ * card kind entirely, which is why Inventory Overview and Store Inventory came out
+ * wrong: their aggregation was simply missing.
+ */
+function BreakdownCard({
+  heading, link, labels, rows, slice
+}: {
+  heading: string | null;
+  link: string | null;
+  labels: readonly string[];
+  rows: readonly BreakdownRow[];
+  slice: InventorySlice;
+}) {
+  const summary = slice.summary;
+  const currency = sliceCurrency(slice);
+  return (
+    <div className="card">
+      {heading && (
+        <div className="card-head">
+          <h3>{heading}</h3>
+          {link && <span className="link-button" aria-hidden="true">{link}</span>}
+        </div>
+      )}
+      <table className="table" data-card-kind="breakdown">
+        <tbody>
+          {labels.map((label) => {
+            const spec = rows.find((row) => row.label === label);
+            const raw = spec?.field ? summary?.[spec.field] : null;
+            const numeric = asNumber(raw);
+            if (!spec || spec.field === null || numeric === null) {
+              const note = availabilityNote(spec?.unavailableReason);
+              return (
+                <tr key={label} data-unavailable="true">
+                  <td>{label}</td>
+                  <td className="cell-unavailable" title={note ?? undefined}>
+                    {UNAVAILABLE}
+                  </td>
+                  <td className="demo-note">{note ?? ""}</td>
+                </tr>
+              );
+            }
+            const denominator = spec.of ? asNumber(summary?.[spec.of]) : null;
+            const share =
+              denominator && denominator > 0 ? numeric / denominator : null;
+            return (
+              <tr key={label}>
+                <td>{label}</td>
+                <td>{formatValue(numeric, spec.format, currency)}</td>
+                <td>{share === null ? "" : `${(share * 100).toFixed(1)}%`}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * The reference's donut plus legend. The ring is a conic gradient built from the
+ * live shares, so the picture and the legend cannot disagree -- and a slice with no
+ * measure is dropped from the ring rather than drawn at an invented size.
+ */
+const DONUT_COLOURS = ["#1fbf75", "#ffae1a", "#f05a67", "#a8b2c2", "#2f80ed"];
+
+function DonutCard({
+  heading, link, labels, rows, slice
+}: {
+  heading: string | null;
+  link: string | null;
+  labels: readonly string[];
+  rows: readonly BreakdownRow[];
+  slice: InventorySlice;
+}) {
+  const summary = slice.summary;
+  const measured = labels.map((label, index) => {
+    const spec = rows.find((row) => row.label === label);
+    const value = spec?.field ? asNumber(summary?.[spec.field]) : null;
+    return {label, value, colour: DONUT_COLOURS[index % DONUT_COLOURS.length]};
+  });
+  const total = measured.reduce((sum, slice_) => sum + (slice_.value ?? 0), 0);
+  let cursor = 0;
+  const stops = measured
+    .filter((entry) => entry.value !== null && total > 0)
+    .map((entry) => {
+      const start = (cursor / total) * 360;
+      cursor += entry.value ?? 0;
+      const end = (cursor / total) * 360;
+      return `${entry.colour} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`;
+    });
+  return (
+    <div className="card">
+      {heading && (
+        <div className="card-head">
+          <h3>{heading}</h3>
+          {link && <span className="link-button" aria-hidden="true">{link}</span>}
+        </div>
+      )}
+      <div className="donut-wrap">
+        <div
+          className="donut"
+          data-testid="donut"
+          style={{
+            background:
+              stops.length > 0
+                ? `conic-gradient(${stops.join(", ")})`
+                : "var(--line)"
+          }}
+        />
+        <div className="legend">
+          {measured.map((entry) => (
+            <div key={entry.label}>
+              <span className="dot" style={{background: entry.colour}} />
+              {entry.label}{" "}
+              {entry.value === null || total === 0
+                ? UNAVAILABLE
+                : `${((entry.value / total) * 100).toFixed(0)}%`}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reference's decision list. Each alert is a live count with the reference's
+ * own headline; an alert whose count is zero is still shown, because "nothing to
+ * do here" is information and a vanished row reads as an unrendered screen.
+ */
+function AlertsCard({
+  heading, link, labels, rows, slice
+}: {
+  heading: string | null;
+  link: string | null;
+  labels: readonly string[];
+  rows: readonly BreakdownRow[];
+  slice: InventorySlice;
+}) {
+  const summary = slice.summary;
+  const currency = sliceCurrency(slice);
+  const icons = ["!", "₹", "↗", "•"];
+  return (
+    <div className="card">
+      {heading && (
+        <div className="card-head">
+          <h3>{heading}</h3>
+          {link && <span className="link-button" aria-hidden="true">{link}</span>}
+        </div>
+      )}
+      {labels.map((label, index) => {
+        const spec = rows.find((row) => row.label === label);
+        const numeric = spec?.field ? asNumber(summary?.[spec.field]) : null;
+        const note = availabilityNote(spec?.unavailableReason);
+        return (
+          <div className="alert" key={label}>
+            <div className="alert-icon">{icons[index % icons.length]}</div>
+            <div>
+              <strong>{label}</strong>
+              <span>
+                {numeric === null
+                  ? note ?? UNAVAILABLE
+                  : `${formatValue(numeric, spec!.format, currency)} in scope`}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Cards in the reference's own layout blocks and document order. */
+function CardBlocks({
+  screen, reference, slice
+}: {
+  screen: ScreenSpec;
+  reference: ReferenceScreen | undefined;
+  slice: InventorySlice;
+}) {
+  if (!reference) return null;
+  const breakdown = screen.breakdown ?? [];
+  // Group consecutive cards sharing a layout, so a grid-3 row renders as one.
+  const blocks: {layout: string; cards: typeof reference.cards}[] = [];
+  for (const card of reference.cards) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.layout === card.layout && card.layout !== "full") {
+      last.cards = [...last.cards, card];
+    } else {
+      blocks.push({layout: card.layout, cards: [card]});
+    }
+  }
+  let rowsIndex = 0;
+  return (
+    <div style={{display: "grid", gap: 14, marginTop: 14}}>
+      {blocks.map((block, blockIndex) => (
+        <div
+          key={blockIndex}
+          className={block.layout === "full" ? undefined : block.layout}
+          style={block.layout === "full" ? undefined : {display: "grid", gap: 14}}
+        >
+          {block.cards.map((card, cardIndex) => {
+            const key = `${blockIndex}-${cardIndex}`;
+            if (card.kind === "breakdown") {
+              return (
+                <BreakdownCard
+                  key={key}
+                  heading={card.heading}
+                  link={card.link}
+                  labels={card.labels}
+                  rows={breakdown}
+                  slice={slice}
+                />
+              );
+            }
+            if (card.kind === "donut") {
+              return (
+                <DonutCard
+                  key={key}
+                  heading={card.heading}
+                  link={card.link}
+                  labels={card.labels}
+                  rows={breakdown}
+                  slice={slice}
+                />
+              );
+            }
+            if (card.kind === "alerts") {
+              return (
+                <AlertsCard
+                  key={key}
+                  heading={card.heading}
+                  link={card.link}
+                  labels={card.labels}
+                  rows={breakdown}
+                  slice={slice}
+                />
+              );
+            }
+            // A `rows` card: take the next declared table spec, so the reference's
+            // column order drives what is rendered.
+            const table = screen.tables[rowsIndex++];
+            if (!table) return null;
+            return (
+              <DataCard
+                key={key}
+                table={{...table, heading: card.heading}}
+                slice={slice}
+              />
+            );
+          })}
+        </div>
+      ))}
+    </div>
   );
 }

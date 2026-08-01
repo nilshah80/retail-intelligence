@@ -16,6 +16,21 @@ import {
 
 const PAGE_IDS = Object.keys(inventoryScreens) as InventoryPageId[];
 
+/**
+ * The row table specifically. A screen now renders the reference's card kinds --
+ * a `rows` table alongside a headerless `breakdown` aggregation -- so asking for
+ * "the table" is ambiguous, and the ambiguity is the correct structure rather
+ * than a fault.
+ */
+async function findRowsTable(): Promise<HTMLElement> {
+  const tables = await screen.findAllByRole("table");
+  const rows = tables.find(
+    (table) => table.getAttribute("data-card-kind") === "rows"
+  );
+  if (!rows) throw new Error("no rows-kind table rendered");
+  return rows;
+}
+
 function renderPage(pageId: InventoryPageId) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   return render(
@@ -101,10 +116,11 @@ describe("inventory & replenishment destinations", () => {
     }));
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     const headers = [...table.querySelectorAll("th")].map((th) => th.textContent);
     const referenceColumns =
-      REFERENCE_SCREEN_BY_ID.safetyStock.tables[0].columns;
+      REFERENCE_SCREEN_BY_ID.safetyStock.cards.find((c) => c.kind === "rows")!
+        .columns;
     expect(headers).toEqual([...referenceColumns]);
   });
 
@@ -114,7 +130,7 @@ describe("inventory & replenishment destinations", () => {
     }));
     renderPage("safetyStock");
 
-    await screen.findByRole("table");
+    await findRowsTable();
     const captions = [...document.querySelectorAll(".kpi small")].map(
       (node) => node.textContent
     );
@@ -209,7 +225,7 @@ describe("inventory & replenishment destinations", () => {
     }));
     renderPage("storeInventory");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     expect(within(table).getByText("42")).toBeInTheDocument();
     expect(within(table).getByText("india-west:mumbai-bandra")).toBeInTheDocument();
     // A false boolean renders as "No", never as a blank that reads like absence.
@@ -243,7 +259,7 @@ describe("inventory & replenishment destinations", () => {
     }));
     renderPage("stockHealth");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     // More than one, and that is the point: the reference's Stock Health table has
     // columns this platform cannot fill (Ageing, Financial Exposure) alongside the
     // genuinely absent cover. Every one renders the governed treatment, and the
@@ -335,7 +351,7 @@ describe("inventory & replenishment destinations", () => {
     stubPartial();
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     const withheld = within(table).getAllByText("Manual judgment required");
     // Two withheld rows x the three interval-derived columns the reference gives
     // Safety Stock: Service Target, Current Value and Recommended Value.
@@ -351,7 +367,7 @@ describe("inventory & replenishment destinations", () => {
     stubPartial();
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     // Service Target renders as a percentage because that is the reference's
     // column; the buffer appears in both Current and Recommended Value.
     expect(within(table).getByText("97.0%")).toBeInTheDocument();
@@ -364,7 +380,7 @@ describe("inventory & replenishment destinations", () => {
     stubPartial();
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     const coldStart = table.querySelectorAll(
       '[data-reason-code="COLD_START_INTERVAL_UNCALIBRATED"]'
     );
@@ -383,7 +399,7 @@ describe("inventory & replenishment destinations", () => {
     stubPartial();
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     expect(table.querySelectorAll('tr[data-partial="true"]')).toHaveLength(2);
   });
 
@@ -397,7 +413,7 @@ describe("inventory & replenishment destinations", () => {
     }));
     renderPage("safetyStock");
 
-    await screen.findByRole("table");
+    await findRowsTable();
     expect(document.querySelector('[data-testid="partial-notice"]'))
       .not.toBeInTheDocument();
     const coverage = document.querySelector('[data-kpi="Policy Coverage"]');
@@ -412,7 +428,7 @@ describe("inventory & replenishment destinations", () => {
     stubPartial();
     renderPage("safetyStock");
 
-    const table = await screen.findByRole("table");
+    const table = await findRowsTable();
     expect(within(table).getByText("sku-new")).toBeInTheDocument();
     expect(within(table).getByText("C")).toBeInTheDocument();
   });
