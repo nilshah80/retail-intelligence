@@ -1,0 +1,89 @@
+{
+  "activeIdentity": null,
+  "baseUrl": "http://127.0.0.1:8080",
+  "checked": [
+    "governedStatusIs503",
+    "noIdentityLeakedInUnavailableBody",
+    "allFifteenAgree"
+  ],
+  "routeCount": 15,
+  "routes": [
+    {
+      "path": "/api/v1/inventory/versions",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/overview",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/stores",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/warehouses",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/ageing",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/transfers",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/valuation",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/expiry-waste",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/inventory/stock-health",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/planner",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/orders",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/suppliers",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/safety-stock",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/allocations",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    },
+    {
+      "path": "/api/v1/replenishment/exceptions",
+      "reasonCode": "INVENTORY_READ_MODEL_UNAVAILABLE",
+      "status": 503
+    }
+  ],
+  "schemaVersion": "retail-inventory-api-smoke/v1",
+  "state": "unavailable_no_active_bundle"
+}
