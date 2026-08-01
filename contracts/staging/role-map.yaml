@@ -100,6 +100,11 @@ relationRoleMap:
   locations:        {provider: shopify_locations, role: location}
   prices:           {provider: shopify_prices, role: sell_price}
   supplier_terms:   {provider: bc_supplier_terms, role: supplier_term}
+  # Source contract v13. `supplier_terms` above stays mapped: v1 rows remain
+  # readable and remain replay-ineligible, while `supply_terms` carries the
+  # typed origin the resolver needs.
+  supply_terms:     {provider: bc_supply_terms, role: supply_term}
+  service_lanes:    {provider: companion_service_lanes, role: service_lane}
   invoice_sales_control: {provider: bc_sales_control, role: invoice_sales_control}
   customer_segment_counts:
     provider: shopify_customer_segment_counts
@@ -107,7 +112,13 @@ relationRoleMap:
   inventory_cost:   {provider: bc_inventory_cost, role: inventory_cost}
   inventory_batches: {provider: bc_inventory_batches, role: inventory_batch}
   inbound_shipments: {provider: bc_inbound_shipments, role: inbound_shipment}
+  inbound_status_events:
+    provider: bc_inbound_status_events
+    role: inbound_status_event
   transfer_orders:  {provider: bc_transfer_orders, role: transfer_order}
+  inventory_transfer_events:
+    provider: bc_inventory_transfer_events
+    role: inventory_transfer_event
   waste_events:     {provider: bc_waste_events, role: waste_event}
   warehouse_capacity: {provider: bc_warehouse_capacity, role: warehouse_capacity}
   wms_comparisons:  {provider: bc_wms_comparisons, role: wms_comparison}
@@ -191,10 +202,15 @@ roleProviderMap:
   inventory:              {providers: [bc_inventory]}
   receipt:                {providers: [bc_receipts]}
   supplier_term:          {providers: [bc_supplier_terms]}
+  supply_term:            {providers: [bc_supply_terms]}
+  service_lane:           {providers: [companion_service_lanes]}
   inventory_cost:         {providers: [bc_inventory_cost]}
   inventory_batch:        {providers: [bc_inventory_batches]}
   inbound_shipment:       {providers: [bc_inbound_shipments]}
+  inbound_status_event:   {providers: [bc_inbound_status_events]}
   transfer_order:         {providers: [bc_transfer_orders]}
+  inventory_transfer_event:
+    providers: [bc_inventory_transfer_events]
   waste_event:            {providers: [bc_waste_events]}
   warehouse_capacity:     {providers: [bc_warehouse_capacity]}
   wms_comparison:         {providers: [bc_wms_comparisons]}

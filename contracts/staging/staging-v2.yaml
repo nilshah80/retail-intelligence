@@ -410,6 +410,140 @@ roles:
     controlledEnums: [status]
     providerResolution: exclusive
 
+  # Source-neutral name on purpose. Every retailer has some notion of "which node
+  # supplies this store", and the platform's job is to receive it as a typed fact
+  # rather than to recognise a particular vendor's spelling of it. Decision #88's
+  # neutral location vocabulary applies: `*_location_source_key`, never a dialect
+  # field name.
+  service_lane:
+    version: v2
+    group: inventory
+    purpose: >-
+      source-declared, effective-dated supply relationship between a demand
+      location and the node that serves it
+    grain: lane
+    key: [source_instance, source_lane_id]
+    requiredFields:
+      - source_lane_id
+      - lane_type
+      - demand_location_source_key
+      - supply_location_source_key
+      - priority_rank
+      - effective_from
+    # `channel_source_key` is optional and its absence is the market-wide default
+    # for that demand location. It is NOT a wildcard: an exact channel match wins,
+    # and resolution never falls back to "any channel".
+    optionalFields: [channel_source_key, transit_days, effective_to]
+    quantity: [priority_rank, transit_days]
+    controlledEnums: [lane_type]
+    timeSemantics: {effective_from: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies:
+      - inventory_replenishment_current_snapshot
+      - inventory_replenishment_replay
+
+  inbound_status_event:
+    version: v2
+    group: inventory
+    purpose: >-
+      status history for an inbound shipment, so a position is reconstructible at
+      an arbitrary origin rather than at the cutoff only
+    grain: shipment line x status transition
+    key:
+      - source_instance
+      - source_shipment_id
+      - sku_source_key
+      - status
+      - status_effective_at
+    requiredFields:
+      - source_shipment_id
+      - sku_source_key
+      - location_source_key
+      - qty
+      - status
+      - status_effective_at
+    optionalFields: [from_location_source_key, expected_date]
+    quantity: [qty]
+    controlledEnums: [status]
+    # `status_effective_at` is an observation, NOT availability. Conflating them is
+    # what let 15.8 million fulfillment rows become knowable before they occurred:
+    # Gate B B05 requires known_as_of >= status_effective_at.
+    timeSemantics:
+      status_effective_at: observation
+      expected_date: business
+      known_as_of: availability
+    providerResolution: exclusive
+    capabilityDependencies: [inventory_replenishment_replay]
+
+  inventory_transfer_event:
+    version: v2
+    group: inventory
+    purpose: >-
+      cost-carrying internal movement history, distinct from the transfer
+      recommendation snapshot
+    grain: transfer line x status transition
+    key:
+      - source_instance
+      - source_transfer_id
+      - sku_source_key
+      - status
+      - status_effective_at
+    requiredFields:
+      - source_transfer_id
+      - sku_source_key
+      - from_location_source_key
+      - to_location_source_key
+      - qty
+      - status
+      - status_effective_at
+    # Cost is optional at the role boundary because not every dialect carries it on
+    # the movement, but a store WAC computed without it is a labelled fallback
+    # rather than observed cost.
+    optionalFields: [unit_cost_minor, currency_code]
+    quantity: [qty]
+    money: [unit_cost_minor]
+    controlledEnums: [status]
+    timeSemantics:
+      status_effective_at: observation
+      known_as_of: availability
+    providerResolution: exclusive
+    capabilityDependencies: [inventory_replenishment_replay]
+
+  supply_term:
+    version: v2
+    group: inventory
+    purpose: >-
+      origin-safe lead time, MOQ and pack terms keyed on an explicit origin kind
+    grain: destination x typed origin x merchandise scope
+    key:
+      - source_instance
+      - destination_location_source_key
+      - origin_kind
+      - origin_source_key
+      - merch_scope_type
+      - merch_scope_id
+      - effective_from
+    # `origin_kind` and `origin_source_key` are both required. The v1
+    # `supplier_term` role permitted a null origin, which the resolver then read as
+    # a wildcard: an external supplier term matched an internal transfer lane by
+    # accident. An absent origin is not an origin that matches everything.
+    requiredFields:
+      - destination_location_source_key
+      - origin_kind
+      - origin_source_key
+      - merch_scope_type
+      - merch_scope_id
+      - effective_from
+      - lead_time_days
+    optionalFields: [lead_time_std_days, moq_units, pack_size_units, effective_to]
+    quantity: [moq_units, pack_size_units]
+    controlledEnums: [origin_kind, merch_scope_type]
+    timeSemantics: {effective_from: business, known_as_of: availability}
+    providerResolution: exclusive
+    capabilityDependencies:
+      - inventory_replenishment_current_snapshot
+      - inventory_replenishment_replay
+
   waste_event:
     version: v2
     group: inventory

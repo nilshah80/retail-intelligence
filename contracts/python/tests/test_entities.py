@@ -18,11 +18,15 @@ from retail_contracts.entities import (
 
 
 def test_entire_contract_tree_validates() -> None:
+    # Contract revision 2 adds the four multi-echelon inventory entities and their
+    # four staging roles. Asserted as exact totals rather than lower bounds: an
+    # entity or role appearing without a deliberate contract change is the thing
+    # this test exists to catch.
     assert validate_contract_tree() == {
-        "entities": 53,
+        "entities": 57,
         "tiers": 3,
         "stagingEnvelopes": 6,
-        "stagingV2Roles": 35,
+        "stagingV2Roles": 39,
         "jsonSchemas": 5,
         "openApiContracts": 1,
         "guardrailVectors": 2,

@@ -11,7 +11,18 @@ from typing import Any, Mapping
 import yaml
 from jsonschema import Draft202012Validator
 
-EXPECTED_ENTITY_COUNT = 53
+#: Contract revision 2 adds the four entities multi-echelon inventory needs and
+#: the current pin cannot express: `service_lanes` (a typed, effective-dated
+#: planning relationship rather than a `allocations.priority` string),
+#: `inbound_shipment_status_events` and `inventory_transfer_events` (status
+#: history, so a position is reconstructible at an arbitrary origin instead of at
+#: the cutoff only), and `supply_terms` (an explicit origin kind, so a null
+#: external origin stops matching an internal lane by accident).
+#:
+#: The count is asserted rather than inferred on purpose: an entity appearing or
+#: disappearing silently is a contract change, and this is the line that makes it
+#: a deliberate one.
+EXPECTED_ENTITY_COUNT = 57
 VERSIONED_ENTITIES = {
     "sales": "sales_version",
     "sales_adjustments": "adjustment_version",

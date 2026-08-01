@@ -328,7 +328,11 @@ def test_the_report_summarises_every_capability(policy: dict) -> None:
     )
 
     assert report["schemaVersion"] == "retail-readiness-report/v1"
-    assert report["policyId"] == "retail-temporal-evidence/v1"
+    # Pinned to the loaded policy rather than to a literal, because the report's
+    # job is to name the policy that actually produced its verdicts. Hard-coding
+    # v1 here would keep passing after v2 was loaded, which is the same class of
+    # stale assertion as a test that asserted `no_accepted_forecast`.
+    assert report["policyId"] == policy["policyId"]
     assert report["tenantId"] == "tenant-a"
     declared = set(policy["capabilities"]["definitions"])
     assert set(report["capabilities"]) == declared

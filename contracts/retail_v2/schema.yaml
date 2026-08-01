@@ -1,5 +1,5 @@
 schemaVersion: retail_v2
-contractRevision: 1
+contractRevision: 2
 fingerprintSpec: semantic-fingerprint/v1
 description: Canonical source-neutral retail contract produced by ingestion.
 
@@ -597,6 +597,147 @@ entities:
       dispatch_date: {type: date, required: false}
       expected_receipt_date: {type: date, required: true}
       status: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  # Source-declared planning relationship between a demand location and the node
+  # that supplies it. Fulfillment history proves what OCCURRED; it does not declare
+  # the retailer's effective-dated relationship or its priority order, and the
+  # current pin's seven observed store-to-DC pairs were never typed facts. Parsing
+  # `allocations.priority` for this is explicitly forbidden: a priority string is
+  # not a lane, and spill behaviour legitimately varies with stock state.
+  service_lanes:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain: [lane_id, known_as_of]
+    primaryKey: [lane_id, known_as_of]
+    fields:
+      lane_id: {type: string, required: true}
+      market_id: {type: string, required: true}
+      lane_type:
+        type: string
+        required: true
+        enum: [replenishment, customer_fulfillment]
+      demand_location_id: {type: string, required: true}
+      # Null is the market-wide default for the demand location. An exact channel
+      # match always wins; null never means "any channel by accident".
+      channel_id: {type: string, required: true, nullable: true}
+      supply_location_id: {type: string, required: true}
+      priority_rank: {type: int32, required: true, minimum: 1}
+      transit_days: {type: int32, required: true, minimum: 0}
+      effective_from: {type: date, required: true}
+      effective_to: {type: date, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  # Status history for an inbound shipment. `inbound_shipments` carries only the
+  # CURRENT status, so an origin-visible position could be reconstructed at the
+  # cutoff and nowhere else -- which is what makes replay unavailable rather than
+  # merely partial. One row per status transition, timed by when the status became
+  # effective and separately by when it became knowable.
+  inbound_shipment_status_events:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [shipment_id, sku_id, status, status_effective_at, known_as_of]
+    primaryKey: [shipment_id, sku_id, status, status_effective_at, known_as_of]
+    fields:
+      shipment_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      from_location: {type: string, required: false}
+      to_location: {type: string, required: true}
+      qty: {type: int64, required: true}
+      status:
+        type: string
+        required: true
+        enum: [on_order, in_transit, received, cancelled, exception]
+      # When the status became true in the business world. Separate from
+      # `known_as_of`, which is when it became knowable. Gate B B05 requires
+      # known_as_of >= status_effective_at: a status cannot be knowable before it
+      # happened, and using a business date as availability is a hard stop.
+      status_effective_at: {type: timestamp, required: true}
+      expected_receipt_date: {type: date, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  # Source-owned movement history for internal transfers, carrying cost. The
+  # `[poc]` `transfer_orders` entity below is a RECOMMENDATION snapshot: it has no
+  # event date and no `known_as_of`, so it cannot represent historical status in
+  # principle, and overloading it would make a recommendation indistinguishable
+  # from a movement that occurred.
+  inventory_transfer_events:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [transfer_id, sku_id, status, status_effective_at, known_as_of]
+    primaryKey: [transfer_id, sku_id, status, status_effective_at, known_as_of]
+    fields:
+      transfer_id: {type: string, required: true}
+      sku_id: {type: string, required: true}
+      from_location_id: {type: string, required: true}
+      to_location_id: {type: string, required: true}
+      qty: {type: int64, required: true, minimum: 0}
+      status:
+        type: string
+        required: true
+        enum: [created, dispatched, in_transit, received, cancelled]
+      status_effective_at: {type: timestamp, required: true}
+      # Cost travels with the movement so store WAC can be computed from receipt
+      # evidence instead of borrowed from the supplying DC. A lane-imputed DC WAC
+      # is a separately approved, visibly labelled fallback -- never store-observed
+      # cost.
+      unit_cost_minor: {type: int64, required: false, semantic: money_minor}
+      currency_code: {type: string, required: false}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
+  # Origin-safe supply terms. The resolver key is destination + an EXPLICIT origin
+  # kind and value + merchandise scope. The current pin's `suppliers_leadtimes`
+  # rows are category-only with a null origin, which reads as a wildcard: a null
+  # external origin matched an internal lane by accident. Here an external
+  # supplier and an internal location are different `origin_kind` values, so
+  # neither can silently match the other.
+  supply_terms:
+    ownership: in
+    tier: t1_core
+    temporalClass: observational
+    grain:
+      - destination_location_id
+      - origin_kind
+      - origin_id
+      - merch_scope_type
+      - merch_scope_id
+      - effective_from
+      - known_as_of
+    primaryKey:
+      - destination_location_id
+      - origin_kind
+      - origin_id
+      - merch_scope_type
+      - merch_scope_id
+      - effective_from
+      - known_as_of
+    fields:
+      destination_location_id: {type: string, required: true}
+      origin_kind:
+        type: string
+        required: true
+        enum: [external_supplier, internal_location]
+      # Never null. A typed external supplier id or a typed internal location id;
+      # the absence of an origin is not an origin that matches everything.
+      origin_id: {type: string, required: true}
+      merch_scope_type: {type: string, required: true, enumRef: merchScopeType}
+      merch_scope_id: {type: string, required: true}
+      effective_from: {type: date, required: true}
+      effective_to: {type: date, required: false}
+      lead_time_days: {type: int32, required: true, minimum: 0}
+      # Variability is required for safety stock: a constant lead time produces a
+      # zero-variance buffer, which is a misleading number rather than a missing
+      # one.
+      lead_time_std_days: {type: decimal, required: false, minimum: 0}
+      moq: {type: int64, required: true, minimum: 0}
+      pack_qty: {type: int64, required: true, minimum: 1}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
