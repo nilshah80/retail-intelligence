@@ -37,6 +37,7 @@ SELECTION_SCHEMA = "retail-publication-selection/v1"
 #: authority the contract tests have never reasoned about.
 EXPECTED_CAPABILITIES = {
     "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
     "inventory_replenishment_replay",
 }
 

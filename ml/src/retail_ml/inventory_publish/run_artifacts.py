@@ -445,7 +445,40 @@ def _validate_artifact(name: str, frame: pd.DataFrame, *, markets: list[str]) ->
         )
 
 
-def _validate_replay(replay: dict[str, Any], *, metrics: pd.DataFrame) -> None:
+#: The two capabilities temporal-evidence policy v2 split the retired
+#: `inventory_replenishment` into. They are scoped separately here because they
+#: rest on different evidence and fail independently.
+CURRENT_SNAPSHOT_CAPABILITY: Final[str] = "inventory_replenishment_current_snapshot"
+REPLAY_CAPABILITY: Final[str] = "inventory_replenishment_replay"
+
+#: Artifacts whose every value is current-state or forecast-derived. None of them
+#: consumes a replay, so none of them is affected by whether the replay reproduced.
+CURRENT_SNAPSHOT_ARTIFACTS: Final[frozenset[str]] = frozenset(
+    set(ARTIFACT_SCHEMAS) - {"inventory_replay_metrics"}
+)
+
+
+def _validate_replay(
+    replay: dict[str, Any], *, metrics: pd.DataFrame, claimed: bool
+) -> None:
+    """Structural checks on the replay record, and the oracle only if claimed.
+
+    The oracle is a precondition for COMPARING POLICIES, not for serving current
+    state. An earlier version made it a precondition for the whole bundle, which
+    meant a network whose weekly stock could not be reconstructed served nothing at
+    all -- not even its own observed positions, which need no replay to be true.
+    That conflated a policy-acceptance gate with a data-availability gate.
+
+    So `claimed` decides. A run that claims the replay capability must have
+    reproduced; a run that declares it unavailable publishes its measured delta and
+    its failing gate rows as the evidence for that unavailability, and the twelve
+    current-state artifacts stand on their own.
+
+    What does NOT relax either way: the tolerance must still be frozen before
+    scoring, and the incumbent must still be named. Those are about honesty of
+    method, and a run with no method has nothing to disclose.
+    """
+
     _require(
         replay.get("oracleTolerance", {}).get("frozenBeforeScoring") is True,
         "the oracle tolerance must be recorded as frozen before scoring; a "
@@ -456,17 +489,52 @@ def _validate_replay(replay: dict[str, Any], *, metrics: pd.DataFrame) -> None:
         "an incumbent policy id is required; an incumbent inferred from outcomes "
         "is a second candidate, not a baseline",
     )
+    if claimed:
+        _require(
+            replay.get("oracle", {}).get("passed") is True,
+            "a run claiming the replay capability must have reproduced observed "
+            "closing stock; it has no standing to compare policies otherwise. "
+            "Declare the capability unavailable to publish current state without "
+            "it.",
+        )
+        cohorts = set(metrics["cohort"].astype(str))
+        _require(
+            cohorts == {"calibration", "holdout"},
+            f"replay metrics cover cohorts {sorted(cohorts)}; both the calibration "
+            "and holdout cohorts must be published or the split proves nothing",
+        )
+        return
+
     _require(
-        replay.get("oracle", {}).get("passed") is True,
-        "a run whose oracle did not reproduce observed closing stock has no "
-        "standing to compare policies against reality",
+        replay.get("oracle", {}).get("passed") is False,
+        "the replay capability is declared unavailable, so the oracle record "
+        "must show why it did not reproduce. An unavailable capability with a "
+        "passing oracle is a contradiction.",
     )
-    cohorts = set(metrics["cohort"].astype(str))
+    # No gate rows are required here, and requiring them would be incoherent: the
+    # oracle-first rule means a failed oracle stops the comparison BEFORE any gate
+    # is scored, so there is nothing to publish. Demanding rows would force
+    # scoring the gates anyway, which is precisely what oracle-first forbids.
+    #
+    # The evidence for the unavailability is the oracle's own measured record, per
+    # market. That is what has to be there.
+    per_market = (replay.get("oracle") or {}).get("perMarket") or {}
     _require(
-        cohorts == {"calibration", "holdout"},
-        f"replay metrics cover cohorts {sorted(cohorts)}; both the calibration "
-        "and holdout cohorts must be published or the split proves nothing",
+        bool(per_market),
+        "an unavailable replay capability must publish the oracle's per-market "
+        "measurement; without it the unavailability is asserted, not evidenced",
     )
+    for market, verdict in sorted(per_market.items()):
+        _require(
+            verdict.get("measuredMeanAbsUnitDeltaPerCell") is not None,
+            f"{market}: the oracle record carries no measured delta, so nothing "
+            "says how far the reconstruction actually was",
+        )
+        _require(
+            verdict.get("tolerancePerCell") is not None,
+            f"{market}: the oracle record carries no tolerance, so the measured "
+            "delta cannot be judged against anything",
+        )
 
 
 def publish_inventory_run(
@@ -503,7 +571,12 @@ def publish_inventory_run(
 
     for name in ARTIFACT_SCHEMAS:
         _validate_artifact(name, frames[name], markets=sorted(markets))
-    _validate_replay(replay, metrics=frames["inventory_replay_metrics"])
+    replay_claimed = bool(acceptance_passed)
+    _validate_replay(
+        replay,
+        metrics=frames["inventory_replay_metrics"],
+        claimed=replay_claimed,
+    )
 
     for market in sorted(markets):
         _require(
@@ -531,15 +604,24 @@ def publish_inventory_run(
         frame = frames[name]
         path = root / f"{name}.parquet"
         frame.to_parquet(path, index=False)
+        # Fingerprint the READ-BACK frame, not the in-memory one. A semantic
+        # fingerprint describes what a consumer will see, and Parquet does not
+        # round-trip every Python value to the same type: `reason_codes` is written
+        # as a list and comes back as a numpy array, which `_normalized_scalar`
+        # renders through `str()` into a different string. The verifier reads from
+        # disk, so fingerprinting the in-memory frame guaranteed a mismatch on
+        # every artifact carrying a list column -- which is exactly what the
+        # verifier caught on `replenishment_suppliers`.
+        written = pd.read_parquet(path)
         artifacts[name] = {
             "schemaVersion": schema_version,
             "path": path.name,
             "bytes": path.stat().st_size,
             "sha256": _sha256_file(path),
             "semanticFingerprint": _frame_semantic_fingerprint(
-                frame, schema_version=schema_version
+                written, schema_version=schema_version
             ),
-            "rowCount": len(frame),
+            "rowCount": len(written),
         }
         row_counts[name] = len(frame)
 
@@ -554,10 +636,34 @@ def publish_inventory_run(
         encoding="utf-8",
     )
 
-    lifecycle_status = "accepted" if acceptance_passed else "rejected"
+    # The bundle is accepted when its current-state artifacts satisfy their own
+    # contract, which the per-artifact validation above has just established. The
+    # replay verdict scopes ONE capability; it is not the bundle's lifecycle.
+    # Making it so meant an unreproducible replay withheld the observed positions
+    # too, and those need no replay to be true.
+    lifecycle_status = "accepted"
+    capabilities = {
+        CURRENT_SNAPSHOT_CAPABILITY: {
+            "available": True,
+            "artifacts": sorted(CURRENT_SNAPSHOT_ARTIFACTS),
+        },
+        REPLAY_CAPABILITY: {
+            "available": bool(acceptance_passed),
+            "artifacts": ["inventory_replay_metrics"],
+            "reasonCode": (
+                None
+                if acceptance_passed
+                else "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+            ),
+            # The measured delta travels with the unavailability so the claim is
+            # auditable rather than asserted.
+            "oracle": replay.get("oracle"),
+        },
+    }
     manifest: dict[str, Any] = {
         "schemaVersion": RUN_SCHEMA_VERSION,
         "lifecycleStatus": lifecycle_status,
+        "capabilities": capabilities,
         "markets": sorted(markets),
         "decisionAsOf": decision_as_of.isoformat(),
         "createdAt": created_at.isoformat(),

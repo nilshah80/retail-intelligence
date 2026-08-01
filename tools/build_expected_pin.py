@@ -50,6 +50,7 @@ RUN = "run-5bf9580d18d67e36"
 #: satisfy the pin check while making the inventory run impossible.
 REQUIRED_CAPABILITIES = [
     "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
     "inventory_replenishment_replay",
 ]
 

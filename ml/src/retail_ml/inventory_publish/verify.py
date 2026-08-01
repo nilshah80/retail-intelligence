@@ -27,6 +27,9 @@ import pandas as pd
 from retail_contracts.fingerprint import semantic_fingerprint
 
 from retail_ml.inventory_publish.run_artifacts import (
+    CURRENT_SNAPSHOT_ARTIFACTS,
+    CURRENT_SNAPSHOT_CAPABILITY,
+    REPLAY_CAPABILITY,
     ARTIFACT_SCHEMAS,
     CALIBRATED_MAX_HORIZON,
     POLICY_VERSION,
@@ -267,6 +270,12 @@ def verify_inventory_run(
         _validate_replay(
             manifest.get("replay") or {},
             metrics=frames["inventory_replay_metrics"],
+            claimed=bool(
+                (
+                    (manifest.get("capabilities") or {}).get(REPLAY_CAPABILITY)
+                    or {}
+                ).get("available")
+            ),
         )
     except RuntimeError as exc:
         raise InventoryVerificationError(
@@ -285,27 +294,68 @@ def verify_inventory_run(
         "recorded for it",
     )
     _require(
-        isinstance(acceptance.get("passed"), bool)
-        and acceptance["passed"] is True
-        and recorded_acceptance.get("passed") is True,
-        "an accepted lifecycle requires a passing acceptance document",
+        isinstance(acceptance.get("passed"), bool),
+        "the acceptance document must record a boolean verdict",
+    )
+    _require(
+        acceptance["passed"] == recorded_acceptance.get("passed"),
+        "the acceptance document and the manifest disagree about the verdict",
     )
     _require(
         acceptance.get("replay") == manifest.get("replay"),
         "the acceptance document and the manifest disagree about the replay",
     )
-    # Every published gate must actually have passed. A verdict of "accepted" over
-    # a failing gate row is exactly the state the per-market gates exist to stop.
+
+    # -- capabilities: what this bundle claims, checked against its own rows ----
+    capabilities = manifest.get("capabilities") or {}
+    current = capabilities.get(CURRENT_SNAPSHOT_CAPABILITY) or {}
+    replay_capability = capabilities.get(REPLAY_CAPABILITY) or {}
+    _require(
+        current.get("available") is True,
+        "a servable bundle must declare the current-snapshot capability "
+        "available; every one of its twelve artifacts is current state and needs "
+        "no replay to be true",
+    )
+    _require(
+        sorted(current.get("artifacts") or []) == sorted(CURRENT_SNAPSHOT_ARTIFACTS),
+        "the current-snapshot capability does not name exactly its own artifacts",
+    )
+    _require(
+        replay_capability.get("available") == recorded_acceptance.get("passed"),
+        "the replay capability's availability disagrees with the acceptance "
+        "verdict; they are the same fact stated twice and must not diverge",
+    )
+
+    # A failing gate row is a violation only when the run CLAIMS the replay. When
+    # the capability is declared unavailable those rows ARE the disclosure -- the
+    # measured comparison that justifies withholding it -- and refusing them would
+    # leave the unavailability asserted with no evidence behind it.
     gates = frames["inventory_replay_metrics"]
     failed = gates[~gates["passed"].astype(bool)]
-    _require(
-        failed.empty,
-        "accepted run publishes failing replay gates: "
-        + ", ".join(
-            f"{row.market_id}/{row.metric}/{row.cohort}"
-            for row in failed.itertuples()
-        ),
-    )
+    if replay_capability.get("available"):
+        _require(
+            failed.empty,
+            "a run claiming the replay capability publishes failing gates: "
+            + ", ".join(
+                f"{row.market_id}/{row.metric}/{row.cohort}"
+                for row in failed.itertuples()
+            ),
+        )
+    else:
+        _require(
+            bool(replay_capability.get("reasonCode")),
+            "an unavailable replay capability must name its reason code",
+        )
+        # Deliberately NOT requiring gate rows. Oracle-first means a failed oracle
+        # stops the comparison before any gate is scored, so there are none to
+        # publish; `_validate_replay` above has already required the oracle's own
+        # per-market measurement instead, which is the evidence that exists.
+        oracle = (manifest.get("replay") or {}).get("oracle") or {}
+        _require(
+            oracle.get("passed") is False and bool(oracle.get("perMarket")),
+            "an unavailable replay capability must carry the oracle's per-market "
+            "measurement as its evidence",
+        )
 
     # -- lineage: against external authority, never against self --------------
     input_bundle = manifest.get("inputBundle") or {}

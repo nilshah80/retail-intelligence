@@ -34,12 +34,17 @@ Three things this deliberately does NOT do:
 * It does not invent a separate readiness report fingerprint. The readiness
   verdict lives in the retained `gate-b.json` capability mask, so that evidence's
   own fingerprint is bound and named for what it is.
-* It does not create a selection for `inventory_replenishment_current_snapshot`,
-  even though Gate B reports it available. Nothing resolves it: P4-D15 makes the
-  bundle the activation unit and the bundle names one source selection, and the
-  replay capability is strictly the stronger claim -- it requires everything the
-  current claim requires plus origin-safety. An active selection with no consumer
-  is a claim nobody checks.
+`P4-7` then added a fourth chain, and the reason it was missing is worth keeping.
+An earlier version of this file argued that
+`inventory_replenishment_current_snapshot` needed no selection because the replay
+capability was "strictly the stronger claim". That was wrong in a way only running
+the pipeline revealed: twelve of the bundle's thirteen artifacts are current state
+and consume no replay at all, so when the replay oracle failed to reproduce this
+network's weekly stock they were withheld along with it -- observed positions,
+ageing, valuation, all of it -- for want of a capability none of them depends on.
+The two capabilities rest on different evidence and fail independently, which is
+exactly why temporal-evidence policy v2 split them, and each therefore needs its
+own governed selection.
 """
 
 from __future__ import annotations
@@ -331,6 +336,29 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
             "change, so exactly one selection is active for this scope."
         ),
     )
+    current_chain = build_chain(
+        run=PHASE_4_RUN,
+        capability="inventory_replenishment_current_snapshot",
+        approved_at=PHASE_4_APPROVED_AT,
+        reason_code="PHASE_4_CURRENT_SNAPSHOT",
+        candidate_reason=(
+            "Store-grain and DC positions, batches, costs, lanes and terms are all "
+            "present at the cutoff, which is what a current-state claim needs. This "
+            "capability backs the twelve artifacts computed from observed state and "
+            "the served forecast; none of them consumes a replay."
+        ),
+        approved_reason=(
+            "Gate B reports the capability available with no missing entities, "
+            "reverified here against the retained mask rather than the pipeline "
+            "result."
+        ),
+        active_reason=(
+            "Adopted as the active source authority for the current-state half of "
+            "the Phase 4 bundle. It is selected separately from the replay "
+            "capability because the two rest on different evidence and fail "
+            "independently -- which is why policy v2 split them."
+        ),
+    )
     replay_chain = build_chain(
         run=PHASE_4_RUN,
         capability="inventory_replenishment_replay",
@@ -382,6 +410,7 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         phase_3_active,
         phase_3_superseded,
         *forecast_chain,
+        *current_chain,
         *replay_chain,
     ]
     # The Phase 3 active record stays on disk as history, so the directory now
@@ -398,6 +427,7 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
 
     legacy_prefix = f"{RETAILER_ID}-demand-forecast-{ENVIRONMENT}"
     forecast_prefix = f"{RETAILER_ID}-demand-forecast-ten-year-{ENVIRONMENT}"
+    current_prefix = f"{RETAILER_ID}-inventory-current-ten-year-{ENVIRONMENT}"
     replay_prefix = f"{RETAILER_ID}-inventory-replay-ten-year-{ENVIRONMENT}"
     return [
         (f"{legacy_prefix}-candidate.json", phase_3_candidate),
@@ -408,6 +438,9 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         (f"{forecast_prefix}-candidate.json", forecast_chain[0]),
         (f"{forecast_prefix}-approved.json", forecast_chain[1]),
         (f"{forecast_prefix}-active.json", forecast_chain[2]),
+        (f"{current_prefix}-candidate.json", current_chain[0]),
+        (f"{current_prefix}-approved.json", current_chain[1]),
+        (f"{current_prefix}-active.json", current_chain[2]),
         (f"{replay_prefix}-candidate.json", replay_chain[0]),
         (f"{replay_prefix}-approved.json", replay_chain[1]),
         (f"{replay_prefix}-active.json", replay_chain[2]),

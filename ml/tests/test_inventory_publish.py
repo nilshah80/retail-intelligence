@@ -675,29 +675,106 @@ def test_a_bundle_computed_from_a_superseded_forecast_is_refused(
         )
 
 
-def test_a_rejected_run_cannot_be_verified_for_materialization(
+def test_a_failed_replay_still_serves_current_state(tmp_path: Path) -> None:
+    """The correction that made this bundle demoable at all.
+
+    Twelve of the thirteen artifacts are current state and consume no replay, so
+    an unreproducible replay must not withhold observed positions, ageing or
+    valuation. It scopes ONE capability. The earlier design made the oracle a
+    precondition for the whole bundle, which meant a network whose weekly stock
+    could not be reconstructed served nothing -- not even its own stock levels.
+    """
+
+    frames = _frames()
+    frames["inventory_replay_metrics"]["passed"] = False
+    replay = json.loads(json.dumps(REPLAY))
+    replay["oracle"] = {
+        "passed": False,
+        "reasonCode": "TOLERANCE_BREACHED",
+        "perMarket": {
+            market: {
+                "passed": False,
+                "measuredMeanAbsUnitDeltaPerCell": "13.84",
+                "tolerancePerCell": "0.5",
+            }
+            for market in MARKETS
+        },
+    }
+    published = _publish(tmp_path, frames=frames, replay=replay,
+                         acceptance_passed=False)
+    # Still accepted, and still verifiable: the current-state artifacts stand.
+    assert published.lifecycle_status == "accepted"
+    verified = _verify(published.root)
+
+    capabilities = verified.manifest["capabilities"]
+    assert capabilities["inventory_replenishment_current_snapshot"][
+        "available"
+    ] is True
+    replay_capability = capabilities["inventory_replenishment_replay"]
+    assert replay_capability["available"] is False
+    assert replay_capability["reasonCode"] == "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+    # The measured oracle travels with the unavailability, so the claim is
+    # auditable rather than asserted.
+    assert replay_capability["oracle"]["passed"] is False
+
+
+def test_a_run_claiming_the_replay_must_have_reproduced(tmp_path: Path) -> None:
+    """Claiming the capability still requires the oracle. Only the coupling to
+    the bundle's lifecycle was wrong, not the gate itself."""
+
+    replay = json.loads(json.dumps(REPLAY))
+    replay["oracle"]["passed"] = False
+    with pytest.raises(InventoryPublicationError, match="no standing"):
+        _publish(tmp_path, replay=replay, acceptance_passed=True)
+
+
+def test_a_run_claiming_the_replay_may_not_publish_a_failing_gate(
     tmp_path: Path,
 ) -> None:
-    published = _publish(tmp_path, acceptance_passed=False)
-    assert published.lifecycle_status == "rejected"
-    with pytest.raises(InventoryVerificationError, match="only an accepted run"):
-        _verify(published.root)
-
-
-def test_an_accepted_run_publishing_a_failing_gate_is_refused(
-    tmp_path: Path,
-) -> None:
-    """The publisher accepts a `passed: False` gate row, because a rejected run
-    must be able to publish its own failure. The verifier is what stops that row
-    reaching serving under an accepted lifecycle."""
-
     frames = _frames()
     frames["inventory_replay_metrics"].loc[0, "passed"] = False
     published = _publish(tmp_path, frames=frames)
     with pytest.raises(
-        InventoryVerificationError, match="publishes failing replay gates"
+        InventoryVerificationError, match="claiming the replay capability"
     ):
         _verify(published.root)
+
+
+def test_an_unavailable_replay_must_publish_the_evidence_for_it(
+    tmp_path: Path,
+) -> None:
+    """An unavailability with no measured rows behind it is an assertion."""
+
+    frames = _frames()
+    frames["inventory_replay_metrics"]["passed"] = False
+    replay = json.loads(json.dumps(REPLAY))
+    replay["oracle"] = {
+        "passed": False,
+        "reasonCode": "TOLERANCE_BREACHED",
+        "perMarket": {
+            market: {
+                "passed": False,
+                "measuredMeanAbsUnitDeltaPerCell": "13.84",
+                "tolerancePerCell": "0.5",
+            }
+            for market in MARKETS
+        },
+    }
+    published = _publish(tmp_path, frames=frames, replay=replay,
+                         acceptance_passed=False)
+    metrics = published.root / "inventory_replay_metrics.parquet"
+    pd.DataFrame(columns=list(ARTIFACT_COLUMNS["inventory_replay_metrics"])).to_parquet(
+        metrics, index=False
+    )
+    with pytest.raises(InventoryVerificationError):
+        _verify(published.root)
+
+
+def test_an_unavailable_capability_with_a_passing_oracle_is_a_contradiction(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(InventoryPublicationError, match="contradiction"):
+        _publish(tmp_path, acceptance_passed=False)
 
 
 def test_a_moved_interval_boundary_is_refused(tmp_path: Path) -> None:
