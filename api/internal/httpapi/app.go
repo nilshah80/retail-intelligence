@@ -13,6 +13,7 @@ import (
 func New(
 	store *readmodel.Store,
 	forecast *readmodel.ForecastStore,
+	inventory *readmodel.InventoryStore,
 	profile execution.Resolved,
 	openAPISpec []byte,
 ) (*aarv.App, error) {
@@ -60,6 +61,7 @@ func New(
 		return c.JSON(http.StatusOK, store.QualityFindings())
 	})
 	mountForecastRoutes(app, forecast)
+	mountInventoryRoutes(app, inventory)
 	app.Get("/openapi.yaml", func(c *aarv.Context) error {
 		return c.Blob(
 			http.StatusOK,

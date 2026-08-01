@@ -80,7 +80,21 @@ func main() {
 	})
 	cancelForecastLoad()
 	defer forecast.Close()
-	app, err := httpapi.New(store, forecast, profile, spec)
+	inventoryLoadContext, cancelInventoryLoad := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	// Fail-closed by construction: with no accepted activation the store is
+	// unavailable and every inventory route returns the governed 503. There is
+	// no configured version id to select -- one active version total is the
+	// P4-D15 scope, so the projection is the authority.
+	inventory := readmodel.LoadInventory(inventoryLoadContext, readmodel.InventoryConfig{
+		PostgresDSN: *postgresDSN,
+		DBReadPool:  profile.API.DBReadPool,
+	})
+	cancelInventoryLoad()
+	defer inventory.Close()
+	app, err := httpapi.New(store, forecast, inventory, profile, spec)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
