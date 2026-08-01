@@ -10,10 +10,17 @@ turns into a COPY failure during a materialization nobody can roll back halfway.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import pytest
 
-from retail_ml.inventory_publish.postgres import MIGRATION_REVISION, SERVING_SCHEMA
+from retail_ml.inventory_publish.postgres import (
+    MIGRATION_REVISION,
+    SERVING_SCHEMA,
+    InventoryServingError,
+    activate_inventory_version,
+    materialize_inventory_run,
+)
 from retail_ml.inventory_publish.run_artifacts import ARTIFACT_COLUMNS
 
 
@@ -83,7 +90,7 @@ def test_the_singleton_cannot_hold_two_rows() -> None:
     with _cursor() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                f"""
+                """
                 SELECT count(*) FROM information_schema.table_constraints
                 WHERE table_schema = %s
                   AND table_name = 'active_inventory_state'
@@ -93,3 +100,87 @@ def test_the_singleton_cannot_hold_two_rows() -> None:
             )
             row = cursor.fetchone()
             assert row is not None and int(row[0]) >= 2
+
+
+# -- the refusals, exercised against the live database -------------------------
+
+def _bundle(tmp_path) -> Any:
+    """A verified bundle naming a forecast that is deliberately NOT active."""
+
+    from test_inventory_publish import PIN, SELECTION_ID, _publish, _verify
+
+    published = _publish(tmp_path)
+    return _verify(published.root), PIN, SELECTION_ID
+
+
+def test_materialization_refuses_a_bundle_whose_forecast_is_not_active(
+    tmp_path,
+) -> None:
+    """The check that stops a silent 503.
+
+    A bundle can verify perfectly and still name a forecast that has since been
+    superseded. Loading it would put rows in the projection that the fail-closed
+    active view can never join -- so the API would answer 503 while the database
+    quietly held a full, unreachable materialization. Refusing here makes the
+    failure something an operator can read.
+    """
+
+    verified, _, _ = _bundle(tmp_path)
+    dsn = os.environ.get("RETAIL_TEST_POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("PostgreSQL integration environment is not configured")
+
+    with pytest.raises(
+        InventoryServingError, match="not the active .*authority|schema must be at"
+    ):
+        materialize_inventory_run(verified, postgres_dsn=dsn)
+
+    with _cursor() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT count(*) FROM {SERVING_SCHEMA}.inventory_materializations
+                WHERE inventory_run_id = %s
+                """,
+                (verified.inventory_run_id,),
+            )
+            row = cursor.fetchone()
+            # All-or-nothing: a refused materialization leaves no partial trace.
+            assert row is not None and int(row[0]) == 0
+            cursor.execute(
+                f"SELECT count(*) FROM {SERVING_SCHEMA}.inventory_positions"
+            )
+            positions = cursor.fetchone()
+            assert positions is not None and int(positions[0]) == 0
+
+
+def test_activation_refuses_a_run_that_was_never_materialized() -> None:
+    """Activation reads the database, not the caller's word for it."""
+
+    dsn = os.environ.get("RETAIL_TEST_POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("PostgreSQL integration environment is not configured")
+
+    with pytest.raises(InventoryServingError, match="no accepted, independently"):
+        activate_inventory_version(
+            postgres_dsn=dsn,
+            inventory_run_id="ir_deadbeefdeadbeef",
+            expected_run_semantic_fingerprint="f" * 64,
+            actor="integration-test",
+        )
+
+
+def test_activation_refuses_an_empty_actor() -> None:
+    """An activation nobody is named for is an activation nobody owns."""
+
+    dsn = os.environ.get("RETAIL_TEST_POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("PostgreSQL integration environment is not configured")
+
+    with pytest.raises(InventoryServingError, match="actor is required"):
+        activate_inventory_version(
+            postgres_dsn=dsn,
+            inventory_run_id="ir_deadbeefdeadbeef",
+            expected_run_semantic_fingerprint="f" * 64,
+            actor="   ",
+        )
