@@ -173,6 +173,148 @@ describe("inventory & replenishment destinations", () => {
     ).toBeInTheDocument();
   });
 
+  // -- P4-9 task 12: the withheld interval ------------------------------------
+
+  const partialPayload = {
+    schemaVersion: "retail-replenishment-safety-stock/v1",
+    dataMode: "live",
+    inventoryRunId: "ir_0123456789abcdef",
+    inventoryVersionId: "iv_0123456789abcdef",
+    semanticFingerprint: "a".repeat(64),
+    forecastAuthority: {
+      forecastRunId: "fr_357575f586905b11",
+      forecastVersionId: "fv_3d66e3bd9939430d"
+    },
+    policyVersion: "inventory-policy/2.0.0",
+    markets: ["india-west"],
+    items: [
+      // Current-pin H2 row: fully assessed, and it must stay that way. If the
+      // withholding below also suppressed this one, the screen would understate
+      // its own coverage.
+      {
+        marketId: "india-west", locationId: "india-west:mumbai-bandra",
+        skuId: "sku-fast", abcClass: "A", serviceLevel: 0.97,
+        safetyStockUnits: 18.5, intervalAvailable: true, reasonCode: null
+      },
+      // Varied-term H5+ cold-start row: visibly partial.
+      {
+        marketId: "india-west", locationId: "india-west:pune-overflow",
+        skuId: "sku-new", abcClass: "C", serviceLevel: null,
+        safetyStockUnits: null, intervalAvailable: false,
+        reasonCode: "COLD_START_INTERVAL_UNCALIBRATED"
+      },
+      // No declared route: withheld for a DIFFERENT reason.
+      {
+        marketId: "india-west", locationId: "india-west:orphan-store",
+        skuId: "sku-any", abcClass: null, serviceLevel: null,
+        safetyStockUnits: null, intervalAvailable: false,
+        reasonCode: "SUPPLY_ROUTE_UNRESOLVED"
+      }
+    ],
+    pagination: {offset: 0, limit: 100, total: 3}
+  };
+
+  function stubPartial() {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => partialPayload
+    }));
+  }
+
+  it("renders a withheld interval as manual judgment, never zero", async () => {
+    stubPartial();
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    const withheld = within(table).getAllByText("Manual judgment required");
+    // Two withheld rows x two interval-derived columns (serviceLevel,
+    // safetyStockUnits).
+    expect(withheld).toHaveLength(4);
+    // The forbidden renderings, all four of them.
+    expect(within(table).queryByText("0")).not.toBeInTheDocument();
+    expect(within(table).queryByText("0.0")).not.toBeInTheDocument();
+    expect(within(table).queryByText("null")).not.toBeInTheDocument();
+    expect(within(table).queryByText("undefined")).not.toBeInTheDocument();
+  });
+
+  it("keeps a fully assessed row fully rendered beside a withheld one", async () => {
+    stubPartial();
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("18.5")).toBeInTheDocument();
+    expect(within(table).getByText("0.97")).toBeInTheDocument();
+    // Three rows plus the header: a withheld row must not be collapsed away.
+    expect(within(table).getAllByRole("row")).toHaveLength(4);
+  });
+
+  it("distinguishes the two governed reasons on the row itself", async () => {
+    stubPartial();
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    const coldStart = table.querySelectorAll(
+      '[data-reason-code="COLD_START_INTERVAL_UNCALIBRATED"]'
+    );
+    const unresolved = table.querySelectorAll(
+      '[data-reason-code="SUPPLY_ROUTE_UNRESOLVED"]'
+    );
+    expect(coldStart).toHaveLength(2);
+    expect(unresolved).toHaveLength(2);
+    // The titles must not be interchangeable: one resolves as the product ages,
+    // the other needs somebody to declare a route.
+    expect(coldStart[0].getAttribute("title")).toContain("horizon 4");
+    expect(unresolved[0].getAttribute("title")).toContain("service lane");
+  });
+
+  it("marks the partial rows without hiding them", async () => {
+    stubPartial();
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    expect(table.querySelectorAll('tr[data-partial="true"]')).toHaveLength(2);
+  });
+
+  it("states the partial count above the table", async () => {
+    // A screen that is partly unassessed and does not say so reads as fully
+    // assessed, and nobody scrolls every row to find out.
+    stubPartial();
+    renderPage("safetyStock");
+
+    const notice = await screen.findByTestId("partial-notice");
+    expect(notice).toHaveTextContent("2 of 3 rows need manual judgment.");
+    expect(notice).toHaveTextContent("remaining 1 rows are fully");
+  });
+
+  it("shows no partial notice when every row is assessed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...partialPayload,
+        items: [partialPayload.items[0]],
+        pagination: {offset: 0, limit: 100, total: 1}
+      })
+    }));
+    renderPage("safetyStock");
+
+    await screen.findByRole("table");
+    expect(screen.queryByTestId("partial-notice")).not.toBeInTheDocument();
+  });
+
+  it("leaves non-interval columns alone on a withheld row", async () => {
+    // The withholding is scoped to interval-DERIVED values. A withheld row still
+    // has a real market, location and SKU, and blanking them would destroy the
+    // only thing that makes the row actionable by a human.
+    stubPartial();
+    renderPage("safetyStock");
+
+    const table = await screen.findByRole("table");
+    expect(
+      within(table).getByText("india-west:pune-overflow")
+    ).toBeInTheDocument();
+    expect(within(table).getByText("sku-new")).toBeInTheDocument();
+    expect(within(table).getByText("C")).toBeInTheDocument();
+  });
+
   it("refuses a payload whose envelope cannot be traced to an authority", async () => {
     // A response without the consumed forecast identity is not servable data:
     // a rendered number nobody can trace to a version is exactly what the

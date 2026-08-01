@@ -283,3 +283,43 @@ describe("Data Management screen contract", () => {
     expect(screen.queryByText("Retail POS")).not.toBeInTheDocument();
   });
 });
+
+describe("browser tab identity", () => {
+  it("names the active destination, not the page index.html was built for", async () => {
+    // index.html hard-codes "Data Management" and nothing updated it, so every
+    // tab claimed to be that page whatever it showed. Sixteen destinations and a
+    // handful of tabs makes the tab strip useless, which is how somebody loses
+    // the window they were working in.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+    window.history.replaceState({}, "", "/?page=safetyStock");
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(document.title).toBe("Retail Intelligence · Safety Stock");
+    });
+  });
+
+  it("follows navigation rather than only the initial deep link", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+    window.history.replaceState({}, "", "/?page=dataManagement");
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>
+    );
+    await waitFor(() => {
+      expect(document.title).toBe("Retail Intelligence · Data Management");
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: /Stock Health/}));
+    await waitFor(() => {
+      expect(document.title).toBe("Retail Intelligence · Stock Health");
+    });
+  });
+});

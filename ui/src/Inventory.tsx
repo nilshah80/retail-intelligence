@@ -138,11 +138,63 @@ function headingFor(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/**
+ * P4-9 task 12. A withheld interval is a judgment the platform declined to make,
+ * and the cell has to say so in those terms.
+ *
+ * "Not available" is right for a value that is simply absent. It is wrong here,
+ * because it reads as a gap in the data rather than as a boundary in what the
+ * model was calibrated for -- and the person looking at a safety-stock cell needs
+ * to know that the decision is theirs to make, not that a number failed to load.
+ * A zero would be worse still: zero safety stock and unassessed safety stock look
+ * identical and mean opposite things.
+ */
+const WITHHELD_LABEL = "Manual judgment required";
+
+/** Human text per governed reason. The two are different findings: one resolves
+ *  itself as the product ages, the other needs somebody to declare a route. */
+const REASON_TEXT: Record<string, string> = {
+  COLD_START_INTERVAL_UNCALIBRATED:
+    "the forecast interval is calibrated only through horizon 4 and this row's protection period reaches further",
+  SUPPLY_ROUTE_UNRESOLVED:
+    "no active service lane or supply term resolves for this row, so it has no protection period at all"
+};
+
+/** Columns whose value is derived from the forecast interval. When
+ *  `interval_available` is false these are withheld together -- publishing one
+ *  without the other would assert a certainty the interval does not support. */
+const INTERVAL_DERIVED = new Set([
+  "riskUnits", "riskValueMinor",
+  "safetyStockUnits", "serviceLevel",
+  "recommendedUnits", "reorderPointUnits", "orderUpToUnits"
+]);
+
+function isWithheld(item: Record<string, unknown>): boolean {
+  return item.intervalAvailable === false;
+}
+
 function renderValue(value: unknown): string {
   if (value === null || value === undefined) return "Not available";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.join(", ");
   return String(value);
+}
+
+function Cell({
+  column, item
+}: {column: string; item: Record<string, unknown>}) {
+  const value = item[column];
+  if (isWithheld(item) && INTERVAL_DERIVED.has(column)) {
+    const reason = typeof item.reasonCode === "string" ? item.reasonCode : "";
+    return (
+      <td className="cell-unavailable" data-unavailable="true"
+        data-reason-code={reason || undefined}
+        title={REASON_TEXT[reason] ?? "This value was withheld by policy."}>
+        {WITHHELD_LABEL}
+      </td>
+    );
+  }
+  return <td>{renderValue(value)}</td>;
 }
 
 function LiveTable({slice}: {slice: InventorySlice}) {
@@ -155,23 +207,44 @@ function LiveTable({slice}: {slice: InventorySlice}) {
     );
   }
   const columns = Object.keys(slice.items[0]);
+  const withheld = slice.items.filter(isWithheld).length;
   return (
-    <div className="card" style={{overflowX: "auto"}}>
-      <table>
-        <thead>
-          <tr>{columns.map((column) => <th key={column}>{headingFor(column)}</th>)}</tr>
-        </thead>
-        <tbody>
-          {slice.items.map((item: Record<string, unknown>, index: number) => (
-            <tr key={index}>
-              {columns.map((column) => (
-                <td key={column}>{renderValue(item[column])}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {withheld > 0 && (
+        // Stated once above the table so the partial state is visible without
+        // scrolling every row. A screen that is partly unassessed and does not
+        // say so is a screen that reads as fully assessed.
+        <div className="state-card" data-testid="partial-notice">
+          <strong>
+            {withheld} of {slice.items.length} rows need manual judgment.
+          </strong>
+          <span>
+            Their forecast interval was withheld, so the platform did not
+            compute an interval-derived value for them.
+          </span>
+          <small>
+            The remaining {slice.items.length - withheld} rows are fully
+            assessed and shown normally.
+          </small>
+        </div>
+      )}
+      <div className="card" style={{overflowX: "auto"}}>
+        <table>
+          <thead>
+            <tr>{columns.map((column) => <th key={column}>{headingFor(column)}</th>)}</tr>
+          </thead>
+          <tbody>
+            {slice.items.map((item: Record<string, unknown>, index: number) => (
+              <tr key={index} data-partial={isWithheld(item) ? "true" : undefined}>
+                {columns.map((column) => (
+                  <Cell key={column} column={column} item={item} />
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

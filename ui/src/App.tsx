@@ -914,6 +914,14 @@ export default function App() {
     queryFn: loadForecastSummary,
     enabled: page === "demandForecast"
   });
+  // The tab label follows the destination. index.html hard-codes "Data
+  // Management" and nothing ever updated it, so every tab claimed to be that page
+  // regardless of what it showed. With sixteen destinations and several tabs open
+  // that is not cosmetic: the tab strip is how someone finds the window they
+  // want, and all of them read the same.
+  useEffect(() => {
+    document.title = `Retail Intelligence · ${pageTitle(page)}`;
+  }, [page]);
   const changePage = (nextPage: PageId) => {
     setPage(nextPage);
     const url = new URL(window.location.href);

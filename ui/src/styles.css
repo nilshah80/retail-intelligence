@@ -449,6 +449,39 @@ button.filter {
   color: var(--red);
 }
 
+/* A withheld interval-derived value (P4-9 task 12). Amber rather than red: the
+   row is not an error and nothing failed -- the platform declined to compute a
+   value outside its calibrated range, and the decision passes to a person. Red
+   would send someone looking for a fault that does not exist. */
+.cell-unavailable {
+  color: var(--amber);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Marks the row without hiding it. A collapsed or greyed-out row reads as
+   "nothing here"; a partial row has real position, health and ageing values
+   beside the withheld ones and they are all still worth reading. */
+tr[data-partial="true"] {
+  background: rgba(255, 174, 26, .06);
+}
+
+/* The partial notice is informational, so it sits at content height rather than
+   filling the 220px empty-state box, which would push the table off screen. */
+.state-card[data-testid="partial-notice"] {
+  min-height: 0;
+  place-items: start;
+  align-content: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  text-align: left;
+}
+
+.state-card[data-testid="partial-notice"] strong {
+  color: var(--text);
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 1000;
