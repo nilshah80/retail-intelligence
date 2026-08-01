@@ -18,17 +18,25 @@ class ResolutionError(RuntimeError):
         self.reason_code = reason_code
 
 
-def resolve_lane(
+def active_lanes(
     lanes: Sequence[Mapping[str, Any]],
     *,
     demand_location_id: str,
     channel_id: str | None,
     on_date: date,
     lane_type: str = "replenishment",
-) -> Mapping[str, Any]:
-    """Resolve the rank-1 active lane: exact channel first, then the null-channel
-    default. A NULL channel is a declared default, never a wildcard that
-    competes with an exact row."""
+) -> list[Mapping[str, Any]]:
+    """Every active lane serving this demand, in priority-rank order.
+
+    Exact channel first, then the null-channel default. A NULL channel is a
+    declared default, never a wildcard that competes with an exact row.
+
+    The rank validation lives here rather than in `resolve_lane` because a caller
+    reading the ALTERNATES needs the same guarantee the winner gets: ranks that
+    are not unique and contiguous from 1 mean the declared network disagrees with
+    itself, and "second choice" is then undefined regardless of which lane is
+    being asked for.
+    """
 
     def active(lane: Mapping[str, Any]) -> bool:
         if lane["lane_type"] != lane_type:
@@ -62,7 +70,26 @@ def resolve_lane(
             f"from 1: {ranks}",
             reason_code="LANE_RANKS_INVALID",
         )
-    winner = min(candidates, key=lambda lane: int(lane["priority_rank"]))
+    return sorted(candidates, key=lambda lane: int(lane["priority_rank"]))
+
+
+def resolve_lane(
+    lanes: Sequence[Mapping[str, Any]],
+    *,
+    demand_location_id: str,
+    channel_id: str | None,
+    on_date: date,
+    lane_type: str = "replenishment",
+) -> Mapping[str, Any]:
+    """Resolve the rank-1 active lane."""
+
+    winner = active_lanes(
+        lanes,
+        demand_location_id=demand_location_id,
+        channel_id=channel_id,
+        on_date=on_date,
+        lane_type=lane_type,
+    )[0]
     if winner["supply_location_id"] == demand_location_id:
         raise ResolutionError(
             f"lane {winner.get('lane_id')} is a self-loop",
@@ -137,4 +164,9 @@ def resolve_supply_term(
     )
 
 
-__all__ = ["ResolutionError", "resolve_lane", "resolve_supply_term"]
+__all__ = [
+    "ResolutionError",
+    "active_lanes",
+    "resolve_lane",
+    "resolve_supply_term",
+]

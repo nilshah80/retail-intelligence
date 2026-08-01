@@ -1,0 +1,564 @@
+"""Load canonical inputs for one decision origin (P4-7/P4-8).
+
+Every read is scoped and aggregated in SQL. The alternative -- pull the entity and
+filter in pandas -- means materializing 2.5 million stock rows and 15.8 million
+fulfillment rows to keep a few thousand, which is both slow and the thing the plan
+forbids for the Go handlers for the same reason.
+
+Origin safety is the other rule. Nothing here reads a row whose `known_as_of` is
+later than the decision origin, because a replay that can see facts recorded after
+its own origin is not a replay. `stock_snapshots` therefore takes the latest
+snapshot at or before the origin, not the latest one that exists.
+"""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Final, Mapping
+
+import duckdb
+import pandas as pd
+
+from retail_ml.inventory_run.build import InventoryInputs
+
+#: Trailing window for the demand rate every cover, ageing action and transfer
+#: headroom is measured against. Thirteen weeks: long enough that one promotion
+#: does not dominate, short enough to still be the current selling rate.
+TRAILING_DAYS: Final[int] = 91
+
+
+class InventoryLoadError(RuntimeError):
+    """Canonical inputs cannot be loaded for this origin."""
+
+
+def connect(curated_root: str | Path) -> duckdb.DuckDBPyConnection:
+    """Open the curated database read-only, positioned on the canonical schema."""
+
+    path = Path(curated_root) / "retail_v2.duckdb"
+    if not path.is_file():
+        raise InventoryLoadError(f"curated database is absent: {path}")
+    connection = duckdb.connect(str(path), read_only=True)
+    connection.execute("SET schema = 'canonical_data'")
+    return connection
+
+
+def _frame(
+    connection: duckdb.DuckDBPyConnection, sql: str, parameters: list[Any]
+) -> pd.DataFrame:
+    return connection.execute(sql, parameters).fetch_df()
+
+
+def _rows(
+    connection: duckdb.DuckDBPyConnection, sql: str, parameters: list[Any]
+) -> list[dict[str, Any]]:
+    cursor = connection.execute(sql, parameters)
+    columns = [description[0] for description in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def load_positions(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """The latest position per cell at or before the origin, plus assortment.
+
+    `assortment_active` and the DISTINCT-ON pick are both done here so the builder
+    never has to reason about which of several snapshot dates it is looking at.
+    The canonical `atp_units` is loaded rather than recomputed, and checked below.
+    """
+
+    frame = _frame(
+        connection,
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (stock.sku_id, stock.location_id)
+                stock.sku_id,
+                stock.location_id,
+                stock.snapshot_date,
+                stock.on_hand_units,
+                stock.committed_units,
+                stock.reserved_units,
+                stock.damaged_units,
+                stock.on_order_units,
+                stock.in_transit_units,
+                stock.atp_units
+            FROM stock_snapshots AS stock
+            WHERE stock.snapshot_date <= ?
+              AND stock.known_as_of <= ?
+            ORDER BY stock.sku_id, stock.location_id, stock.snapshot_date DESC
+        )
+        SELECT
+            locations.market_id,
+            latest.location_id,
+            locations.type AS location_kind,
+            latest.sku_id,
+            products.dept_id,
+            products.category,
+            latest.on_hand_units,
+            latest.committed_units,
+            latest.reserved_units,
+            latest.damaged_units,
+            latest.on_order_units,
+            latest.in_transit_units,
+            latest.atp_units AS canonical_atp_units,
+            locations.currency_code,
+            COALESCE(assortment.active, FALSE) AS assortment_active
+        FROM latest
+        JOIN locations ON locations.location_id = latest.location_id
+        JOIN products ON products.sku_id = latest.sku_id
+        LEFT JOIN (
+            SELECT DISTINCT sku_id, store_id, TRUE AS active
+            FROM assortment_calendar
+            WHERE active_from <= ?
+              AND (active_to IS NULL OR active_to >= ?)
+              AND known_as_of <= ?
+        ) AS assortment
+          ON assortment.sku_id = latest.sku_id
+         AND assortment.store_id = latest.location_id
+        WHERE locations.active
+        """,
+        [as_of, as_of, as_of, as_of, as_of],
+    )
+    if frame.empty:
+        raise InventoryLoadError(
+            f"no canonical stock positions at or before {as_of}; an inventory "
+            "bundle over zero positions would publish empty artifacts as facts"
+        )
+    # The canonical layer computes ATP with atp_method='derived_buckets', which is
+    # the same subtraction Phase 4 needs. Assert it instead of choosing: if the two
+    # definitions ever diverge, a silent pick would make every availability number
+    # on every screen ambiguous.
+    expected = (
+        frame["on_hand_units"]
+        - frame["committed_units"]
+        - frame["reserved_units"]
+        - frame["damaged_units"]
+    ).clip(lower=0)
+    mismatched = int((expected != frame["canonical_atp_units"]).sum())
+    if mismatched:
+        raise InventoryLoadError(
+            f"{mismatched} rows where canonical atp_units disagrees with "
+            "on_hand - committed - reserved - damaged. The two definitions have "
+            "diverged and Phase 4 must not choose one silently."
+        )
+    return frame.drop(columns=["canonical_atp_units"])
+
+
+def load_trailing_demand(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Average daily units sold per cell over the trailing window.
+
+    Divided by the window length rather than by the number of days that had a
+    sale: a SKU selling on 3 of 91 days has a low rate, and dividing by 3 would
+    report it as a fast mover and then buy safety stock for a rate it never has.
+    """
+
+    start = as_of - timedelta(days=TRAILING_DAYS - 1)
+    return _frame(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            sales.location_id,
+            sales.sku_id,
+            CAST(SUM(sales.units) AS DOUBLE) / ? AS trailing_avg_daily_units
+        FROM sales
+        JOIN locations ON locations.location_id = sales.location_id
+        WHERE sales.sale_date BETWEEN ? AND ?
+          AND sales.known_as_of <= ?
+        GROUP BY 1, 2, 3
+        """,
+        [float(TRAILING_DAYS), start, as_of, as_of],
+    )
+
+
+def load_batches(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    return _frame(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            batches.location_id,
+            batches.sku_id,
+            batches.batch_id,
+            batches.receipt_date AS received_on,
+            batches.expiry_date AS expires_on,
+            batches.batch_qty AS on_hand_units,
+            batches.unit_cost AS unit_cost_minor
+        FROM inventory_batches AS batches
+        JOIN locations ON locations.location_id = batches.location_id
+        WHERE batches.receipt_date <= ?
+          AND batches.known_as_of <= ?
+          AND batches.batch_qty > 0
+        """,
+        [as_of, as_of],
+    )
+
+
+def load_waste(connection: duckdb.DuckDBPyConnection, *, as_of: date) -> pd.DataFrame:
+    """Waste and expiry in the trailing window, split by cause.
+
+    `expired_units` is the subset whose reason code names expiry; the rest is
+    damage, shrink and the other reasons. Reporting one number would make an
+    expiry-management screen unable to say whether its own lever moved.
+    """
+
+    start = as_of - timedelta(days=TRAILING_DAYS - 1)
+    return _frame(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            waste.location_id,
+            waste.sku_id,
+            SUM(waste.units) AS waste_units,
+            SUM(CASE WHEN lower(waste.reason_code) LIKE '%expir%'
+                THEN waste.units ELSE 0 END) AS expired_units
+        FROM waste_events AS waste
+        JOIN locations ON locations.location_id = waste.location_id
+        WHERE waste.event_date BETWEEN ? AND ?
+          AND waste.known_as_of <= ?
+        GROUP BY 1, 2, 3
+        """,
+        [start, as_of, as_of],
+    )
+
+
+def load_unit_costs(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Store weighted-average cost per cell as of the origin (P4-D6)."""
+
+    return _frame(
+        connection,
+        """
+        SELECT DISTINCT ON (cost.sku_id, cost.location_id)
+            locations.market_id,
+            cost.location_id,
+            cost.sku_id,
+            cost.wac_cost AS unit_cost_minor,
+            cost.method AS cost_method
+        FROM inventory_cost AS cost
+        JOIN locations ON locations.location_id = cost.location_id
+        WHERE cost.as_of_date <= ?
+          AND cost.known_as_of <= ?
+        ORDER BY cost.sku_id, cost.location_id, cost.as_of_date DESC
+        """,
+        [as_of, as_of],
+    )
+
+
+def load_wms_variance(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Absolute ERP-versus-WMS discrepancy at the latest comparison per cell.
+
+    Absolute, not signed: a location 50 units over on one SKU and 50 under on
+    another has 100 units of discrepancy, and a signed sum would report zero and
+    call a reconciliation problem clean.
+    """
+
+    return _frame(
+        connection,
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (sku_id, location_id)
+                sku_id, location_id, difference_units
+            FROM wms_inventory_comparisons
+            WHERE snapshot_date <= ? AND known_as_of <= ?
+            ORDER BY sku_id, location_id, snapshot_date DESC
+        )
+        SELECT
+            locations.market_id,
+            latest.location_id,
+            latest.sku_id,
+            abs(latest.difference_units) AS variance_units
+        FROM latest
+        JOIN locations ON locations.location_id = latest.location_id
+        """,
+        [as_of, as_of],
+    )
+
+
+def load_channel_demand(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Per-channel requested units over the trailing window.
+
+    Requested rather than fulfilled: allocation is about contention, and using
+    what was actually shipped would hand the optimizer the answer it is meant to
+    compute.
+    """
+
+    start = as_of - timedelta(days=TRAILING_DAYS - 1)
+    return _frame(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            sales.location_id,
+            sales.channel_id,
+            sales.sku_id,
+            SUM(sales.units) AS requested_units
+        FROM sales
+        JOIN locations ON locations.location_id = sales.location_id
+        WHERE sales.sale_date BETWEEN ? AND ?
+          AND sales.known_as_of <= ?
+        GROUP BY 1, 2, 3, 4
+        HAVING SUM(sales.units) > 0
+        """,
+        [start, as_of, as_of],
+    )
+
+
+def load_lanes(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> list[dict[str, Any]]:
+    return _rows(
+        connection,
+        """
+        SELECT lane_id, market_id, lane_type, demand_location_id, channel_id,
+               supply_location_id, priority_rank, transit_days,
+               effective_from, effective_to
+        FROM service_lanes
+        WHERE known_as_of <= ?
+        """,
+        [as_of],
+    )
+
+
+def load_supply_terms(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> list[dict[str, Any]]:
+    """Origin-safe terms only.
+
+    `origin_id IS NOT NULL` is the filter that matters: the v1 `suppliers_leadtimes`
+    generation carried a null origin, which the resolver treats as the wildcard it
+    refuses. Loading those rows would make every term lookup ambiguous.
+    """
+
+    return _rows(
+        connection,
+        """
+        SELECT destination_location_id, origin_kind, origin_id, merch_scope_type,
+               merch_scope_id, effective_from, effective_to, lead_time_days,
+               lead_time_std_days, moq, pack_qty
+        FROM supply_terms
+        WHERE known_as_of <= ?
+          AND origin_id IS NOT NULL
+          AND effective_from <= ?
+        """,
+        [as_of, as_of],
+    )
+
+
+def load_suppliers(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """On-time delivery, lead-time moments and confirmed capacity per supplier."""
+
+    return _frame(
+        connection,
+        """
+        WITH performance AS (
+            SELECT DISTINCT ON (supplier_id)
+                supplier_id, otd_rate, lead_time_mean_days, lead_time_std_days,
+                capacity_confirmed_pct, as_of_date
+            FROM supplier_performance
+            WHERE as_of_date <= ? AND known_as_of <= ?
+            ORDER BY supplier_id, as_of_date DESC
+        )
+        SELECT DISTINCT ON (performance.supplier_id)
+            locations.market_id,
+            performance.supplier_id,
+            performance.otd_rate,
+            performance.lead_time_mean_days,
+            performance.lead_time_std_days,
+            performance.capacity_confirmed_pct
+        FROM performance
+        JOIN suppliers_leadtimes AS terms
+          ON terms.supplier_id = performance.supplier_id
+        JOIN locations
+          ON locations.location_id = terms.destination_location_id
+        ORDER BY performance.supplier_id, locations.market_id
+        """,
+        [as_of, as_of],
+    )
+
+
+def load_forecast(
+    forecast_series: pd.DataFrame, *, positions: pd.DataFrame
+) -> pd.DataFrame:
+    """Reshape the served forecast onto the location grain the builder needs.
+
+    The forecast is keyed on store_id; inventory is keyed on location_id, and DC
+    positions have no forecast of their own. Rather than invent one, a DC row is
+    left without horizons -- the builder then withholds its interval-derived
+    numbers with a governed reason, which is the truthful outcome for a node whose
+    demand nothing forecast.
+    """
+
+    required = {
+        "market_id",
+        "store_id",
+        "sku_id",
+        "horizon_week",
+        "yhat_p50",
+        "yhat_p90",
+    }
+    missing = sorted(required - set(forecast_series.columns))
+    if missing:
+        raise InventoryLoadError(f"forecast series lacks columns {missing}")
+    frame = forecast_series.rename(columns={"store_id": "location_id"}).copy()
+    frame["interval_available"] = frame["yhat_p90"].notna()
+    known = set(
+        zip(
+            positions["market_id"].astype(str),
+            positions["location_id"].astype(str),
+            positions["sku_id"].astype(str),
+        )
+    )
+    keys = list(
+        zip(
+            frame["market_id"].astype(str),
+            frame["location_id"].astype(str),
+            frame["sku_id"].astype(str),
+        )
+    )
+    frame = frame.loc[[key in known for key in keys]]
+    return frame[
+        [
+            "market_id",
+            "location_id",
+            "sku_id",
+            "horizon_week",
+            "yhat_p50",
+            "yhat_p90",
+            "interval_available",
+        ]
+    ].reset_index(drop=True)
+
+
+def load_inventory_inputs(
+    curated_root: str | Path,
+    *,
+    as_of: date,
+    forecast_series: pd.DataFrame,
+    policy: Mapping[str, Mapping[str, Any]],
+) -> InventoryInputs:
+    """Assemble every input for one origin from the curated publication."""
+
+    connection = connect(curated_root)
+    try:
+        positions = load_positions(connection, as_of=as_of)
+        currency_by_market = {
+            str(market): str(code)
+            for market, code in positions.groupby("market_id")["currency_code"]
+            .agg(lambda values: sorted(set(values))[0])
+            .items()
+        }
+        conflicting = {
+            str(market): sorted(set(group))
+            for market, group in positions.groupby("market_id")["currency_code"]
+            if len(set(group)) > 1
+        }
+        if conflicting:
+            raise InventoryLoadError(
+                f"markets report more than one currency {conflicting}; a money "
+                "column would then mean different things in the same column"
+            )
+        markets = sorted(currency_by_market)
+        unresolved = [market for market in markets if market not in policy]
+        if unresolved:
+            raise InventoryLoadError(
+                f"no resolved policy for markets {unresolved}"
+            )
+        return InventoryInputs(
+            as_of=as_of,
+            positions=positions.drop(columns=["currency_code"]),
+            trailing_demand=load_trailing_demand(connection, as_of=as_of),
+            forecast=load_forecast(forecast_series, positions=positions),
+            batches=load_batches(connection, as_of=as_of),
+            waste=load_waste(connection, as_of=as_of),
+            unit_costs=load_unit_costs(connection, as_of=as_of),
+            wms_variance=load_wms_variance(connection, as_of=as_of),
+            lanes=load_lanes(connection, as_of=as_of),
+            supply_terms=load_supply_terms(connection, as_of=as_of),
+            suppliers=load_suppliers(connection, as_of=as_of),
+            channel_demand=load_channel_demand(connection, as_of=as_of),
+            policy={market: policy[market] for market in markets},
+            currency_by_market=currency_by_market,
+        )
+    finally:
+        connection.close()
+
+
+def lane_coverage_pct(
+    curated_root: str | Path, *, as_of: date
+) -> tuple[Decimal, int, int]:
+    """Share of trailing fulfillments whose route resolves to a declared lane.
+
+    The publisher refuses below 100%: a fulfillment the declared network cannot
+    explain is a route that exists in reality and not in the contract, and a
+    replay over it would be reconstructing a network nobody declared.
+    """
+
+    connection = connect(curated_root)
+    try:
+        start = as_of - timedelta(days=TRAILING_DAYS - 1)
+        row = connection.execute(
+            """
+            WITH shipped AS (
+                SELECT transfers.from_location_id, transfers.to_location_id
+                FROM inventory_transfer_events AS transfers
+                WHERE CAST(transfers.status_effective_at AS DATE) BETWEEN ? AND ?
+                  AND transfers.known_as_of <= ?
+            )
+            SELECT
+                count(*) AS total,
+                count(*) FILTER (WHERE lanes.lane_id IS NOT NULL) AS covered
+            FROM shipped
+            LEFT JOIN service_lanes AS lanes
+              ON lanes.demand_location_id = shipped.to_location_id
+             AND lanes.supply_location_id = shipped.from_location_id
+             AND lanes.effective_from <= ?
+             AND (lanes.effective_to IS NULL OR lanes.effective_to >= ?)
+            """,
+            [start, as_of, as_of, as_of, as_of],
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None or int(row[0]) == 0:
+        # No movement in the window is not full coverage. Returning 100% here
+        # would let a window with no evidence satisfy a gate about evidence.
+        return Decimal(0), 0, 0
+    total, covered = int(row[0]), int(row[1])
+    return (
+        (Decimal(covered) * 100 / Decimal(total)).quantize(Decimal("0.0001")),
+        covered,
+        total,
+    )
+
+
+__all__ = [
+    "TRAILING_DAYS",
+    "InventoryLoadError",
+    "connect",
+    "lane_coverage_pct",
+    "load_batches",
+    "load_channel_demand",
+    "load_forecast",
+    "load_inventory_inputs",
+    "load_lanes",
+    "load_positions",
+    "load_suppliers",
+    "load_supply_terms",
+    "load_trailing_demand",
+    "load_unit_costs",
+    "load_waste",
+    "load_wms_variance",
+]
