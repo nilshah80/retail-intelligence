@@ -29,7 +29,7 @@ def test_entire_contract_tree_validates() -> None:
         "stagingV2Roles": 39,
         "jsonSchemas": 5,
         "openApiContracts": 1,
-        "guardrailVectors": 2,
+        "guardrailVectors": 4,
         "determinismContracts": 1,
     }
 

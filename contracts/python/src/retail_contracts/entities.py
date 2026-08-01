@@ -405,28 +405,47 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
     from .fingerprint import canonical_json_bytes
     from .guardrails import resolve_guardrails, resolved_guardrail_fingerprint
 
-    guardrail_vectors = json.loads(
-        (contract_root / "guardrails" / "resolved-policy-v1.json").read_text(
-            encoding="utf-8"
-        )
+    # Each vector file is verified against the policy generation it was
+    # fingerprinted under. Resolving a v1 vector with whatever generation happens
+    # to be newest would make an immutable artifact unreproducible the moment a
+    # v2 landed -- and would report that as drift in the vector rather than in
+    # the resolution.
+    guardrail_vector_files = (
+        ("resolved-policy-v1.json", "v1", "sha256"),
+        ("resolved-inventory-policy-v2.json", "v2", "semanticFingerprint"),
     )
-    for vector in guardrail_vectors["vectors"]:
-        resolved = resolve_guardrails(
-            vector["marketId"], vector["currencyCode"], root=contract_root
-        )
-        if canonical_json_bytes(resolved).decode("utf-8") != vector["canonical"]:
-            raise ContractValidationError(
-                f"resolved guardrail bytes drifted for {vector['marketId']}"
+    guardrail_vector_count = 0
+    for file_name, generation, fingerprint_key in guardrail_vector_files:
+        vector_path = contract_root / "guardrails" / file_name
+        if not vector_path.is_file():
+            continue
+        vectors = json.loads(vector_path.read_text(encoding="utf-8"))["vectors"]
+        for vector in vectors:
+            resolved = resolve_guardrails(
+                vector["marketId"],
+                vector["currencyCode"],
+                root=contract_root,
+                inventory_policy_generation=generation,
             )
-        if (
-            resolved_guardrail_fingerprint(
-                vector["marketId"], vector["currencyCode"], root=contract_root
-            )
-            != vector["sha256"]
-        ):
-            raise ContractValidationError(
-                f"resolved guardrail fingerprint drifted for {vector['marketId']}"
-            )
+            if canonical_json_bytes(resolved).decode("utf-8") != vector["canonical"]:
+                raise ContractValidationError(
+                    f"resolved guardrail bytes drifted for "
+                    f"{vector['marketId']} under {generation}"
+                )
+            if (
+                resolved_guardrail_fingerprint(
+                    vector["marketId"],
+                    vector["currencyCode"],
+                    root=contract_root,
+                    inventory_policy_generation=generation,
+                )
+                != vector[fingerprint_key]
+            ):
+                raise ContractValidationError(
+                    f"resolved guardrail fingerprint drifted for "
+                    f"{vector['marketId']} under {generation}"
+                )
+            guardrail_vector_count += 1
     return {
         "entities": len(schema["entities"]),
         "tiers": len(tiers["tiers"]),
@@ -434,7 +453,7 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "stagingV2Roles": staging_roles,
         "jsonSchemas": 5,
         "openApiContracts": 1,
-        "guardrailVectors": len(guardrail_vectors["vectors"]),
+        "guardrailVectors": guardrail_vector_count,
         "determinismContracts": 1,
     }
 

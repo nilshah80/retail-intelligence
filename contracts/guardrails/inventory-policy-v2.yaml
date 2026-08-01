@@ -1,0 +1,351 @@
+schemaVersion: retail-inventory-policy/v2
+policyVersion: inventory-policy/2.0.0
+decisionIds: [6, 7, 12, 39, 71, 85, 88, 92]
+
+# Side by side with v1, which stays immutable: every artifact published against
+# `inventory-policy/1.0.0` was resolved under it, and rewriting v1 would
+# retroactively change what those artifacts claim to have applied.
+#
+# Two defects in v1 made this version necessary rather than merely desirable:
+#
+#   1. `resolve_guardrails("india-west", "INR")` RAISES. Pricing rules require
+#      exactly one market/currency match and v1's vector still names the retired
+#      `india-mumbai` id, so one of the two live supported markets cannot resolve
+#      any policy at all. That is an executable failure, not vector staleness.
+#   2. The resolver always returned inventory policy from `globalDefaults` and had
+#      no market-override merge path. A per-market service level or budget was
+#      therefore unexpressible, which multi-echelon replenishment requires.
+supersedes:
+  policyVersion: inventory-policy/1.0.0
+  reason: >-
+    Adds market/currency overrides for the live market ids and freezes the
+    P4-D decisions the inventory engines consume. v1 remains resolvable and
+    remains bound to every artifact published under it.
+
+# ---------------------------------------------------------------------------
+# Dimensionless or unit/time controls that are genuinely shared. Anything with a
+# money threshold belongs in a marketCurrencyRule, because money never crosses a
+# currency boundary in this platform.
+# ---------------------------------------------------------------------------
+globalDefaults:
+  serviceLevelsByClass:
+    A: "0.96"
+    B: "0.9"
+    C: "0.8"
+  reviewPeriodDays: 7
+  maxCoverDays: 30
+  holdDeclineThreshold: "0.15"
+  holdCoverDays: 14
+  markdownCoverDays: 21
+  markdownPct: "0.1"
+  calibrationCohortPct: "5"
+  validationHoldoutPct: "95"
+
+  # P4-D7. Cost-weighted, not revenue-weighted, and market-local. Ranking on
+  # nominal money across INR and USD would order SKUs by exchange rate.
+  abc:
+    basis: annualized_consumption_value
+    formula: >-
+      annualized_value_minor = trailing_avg_weekly_units * 52
+      * accepted_unit_cost_minor
+    trailingWeeks: 13
+    # The SKU that CROSSES 80% stays in A and the one that crosses 95% stays in B:
+    # the comparison is against the cumulative share BEFORE the current SKU, which
+    # is what the specification and M5's `classify_abc` both do.
+    cumulativeThresholds:
+      aBelow: "0.80"
+      bBelow: "0.95"
+    thresholdComparison: share_before_current_sku
+    valueTieBreak: [annualized_value_minor_desc, sku_id_asc]
+    missingCostBehavior: exclude_and_reason_code
+    missingCostReasonCode: ABC_UNIT_COST_UNAVAILABLE
+    crossMarketRanking: forbidden
+
+  # P4-D5 / §3.5. The canonical period is the market-local ISO week. Inventory
+  # snapshots are Thursday state evidence and must NOT be treated as the Monday
+  # opening merely because they fall in the same ISO week.
+  replayClock:
+    periodGrain: market_local_iso_week
+    periodOpen: "monday_00:00_inclusive"
+    periodClose: "next_monday_00:00_exclusive"
+    openingSnapshot: immediately_preceding_thursday
+    openingSnapshotLocalTime: "23:00"
+    # Zoned local instants, so a daylight-saving transition is not forced to 73
+    # elapsed hours. The ordinary-week duration is a consequence, not the rule.
+    bridgeRule: zoned_local_instants
+    ordinaryWeekBridgeHours: 73
+    receiptExactlyAtOpeningCutoff: opening_period
+    receiptExactlyAtSnapshotCutoff: next_period
+    dailyReplay: deferred_requires_daily_state_evidence
+    interpolationFromWeeklyState: forbidden
+
+  # Frozen ordering inside each period. Candidate orders are created AFTER demand
+  # realization, so a period cannot order against demand it has already served.
+  periodSequence:
+    - select_origin_visible_opening_state_and_active_versions
+    - receive_inbound_and_transfer_events_effective_by_review_cutoff
+    - expire_block_and_waste_units_effective_in_interval
+    - fulfill_origin_visible_demand_subject_to_availability
+    - compute_lost_units_stockout_fill_closing_atp_and_exposure
+    - create_candidate_orders_and_transfers
+    - schedule_recommendations_under_weekly_arrival_rule
+    - reconcile_closing_state_to_next_observed_snapshot
+
+  inventoryPosition:
+    onHandBuckets: [on_hand_units]
+    # Disjoint by contract. A unit counted in two buckets inflates ATP, and the
+    # engine asserts disjointness rather than trusting the source.
+    unavailableBuckets: [committed_units, reserved_units, damaged_units]
+    inboundBuckets: [on_order_units, in_transit_units]
+    atpFormula: >-
+      atp = max(0, on_hand_units - committed_units - reserved_units
+      - damaged_units)
+    inventoryPositionFormula: >-
+      position = atp + on_order_units + in_transit_units
+    bucketOverlap: forbidden
+    negativeOnHand: critical_quality_violation
+
+  # §3.6. Resolution is ordered and fails closed; it never guesses a route.
+  laneResolution:
+    order:
+      - exact_demand_location_and_exact_channel_within_effective_window
+      - demand_location_with_null_channel_default
+    activeRankOneRequired: true
+    rankUniqueness: unique_and_contiguous
+    marketConsistency: all_nodes_share_market_and_currency
+    selfLoop: forbidden
+    cycle: forbidden
+    fulfillmentCoverage: every_row_resolves_to_an_active_lane
+    unresolvedBehavior: fail_closed
+    unresolvedReasonCode: NO_ACTIVE_SERVICE_LANE
+    # Observed volume shares validate a declared lane. They never become routing
+    # targets: real spill behaviour legitimately varies with stock state.
+    observedSharesAreRoutingTargets: false
+
+  # §3.7. An external null origin is a typed external origin, never a wildcard.
+  supplyTermResolution:
+    precedence:
+      - exact_origin_and_sku
+      - exact_origin_and_dept
+      - exact_origin_and_category
+    originKindRequired: true
+    nullOriginWildcard: forbidden
+    internalTransferRequiresExactFromLocation: true
+    internalTransferMayReuseLaneTransitDays: true
+    ambiguityBehavior: fail_closed
+    ambiguityReasonCode: SUPPLY_TERM_AMBIGUOUS
+    equalPrecedenceMultipleMatches: fail_closed
+
+  leadTime:
+    variabilityMethod: supplier_performance_mean_and_std
+    minimumObservations: 8
+    # A constant lead time produces a zero-variance buffer, which is a misleading
+    # number rather than a missing one. Absent variability is reason-coded.
+    zeroVarianceBehavior: reason_code_not_zero_buffer
+    zeroVarianceReasonCode: LEAD_TIME_VARIABILITY_UNAVAILABLE
+    protectionPeriodFormula: lead_time_days + review_period_days
+    weeklyProtectionRounding: ceil
+    fractionalWeekBehavior: round_up_never_truncate
+
+  safetyStock:
+    formula: >-
+      safety_stock = service_level_z * sqrt(
+        protection_weeks * demand_variance_weekly
+        + mean_weekly_demand^2 * lead_time_variance_weeks
+      )
+    intervalSource: accepted_forecast_p90_minus_p50
+    # Decision #92. An unavailable interval is not a zero spread. Coercing it
+    # would return zero safety stock on the newest, least predictable products.
+    unavailableIntervalBehavior: skip_row_and_emit_exception
+    unavailableIntervalReasonCode: COLD_START_INTERVAL_UNCALIBRATED
+    coerceNullSpreadToZero: forbidden
+
+  reorder:
+    reorderPointFormula: >-
+      reorder_point = expected_demand_over_protection_period + safety_stock
+    orderUpToFormula: >-
+      order_up_to = reorder_point + expected_demand_over_review_period
+    rounding:
+      order: [apply_moq, apply_pack_multiple, apply_caps]
+      moqRule: raise_to_moq_when_order_is_positive
+      packRule: round_up_to_pack_multiple
+      # Rounding may never push an order past its own caps. When MOQ and the
+      # max-cover cap conflict the order is refused with a reason rather than
+      # silently violating one of them.
+      capConflictBehavior: refuse_with_reason
+      capConflictReasonCode: MOQ_EXCEEDS_MAX_COVER
+    caps: [order_up_to, max_cover_days, node_capacity, market_budget]
+    zeroDemandBehavior: no_order
+    negativeDemandBehavior: treat_as_zero_and_reason_code
+
+  # P4-D16. Channel is never silently discarded.
+  channelPolicy:
+    preserveChannelThroughReplay: true
+    nodeDemandAggregation: additive_central_p50_scenario_only
+    sumOfChannelP90: forbidden
+    aggregatedSumIsStatisticalP50: false
+    nodeSafetyStockBasis: accepted_aggregate_residual_variability
+    allocationPriority:
+      - service_class
+      - minimum_share_guarantee
+      - value_weight
+      - deterministic_tie_break
+    deterministicTieBreak: [market_id, location_id, channel_id, sku_id]
+    conservationAssertion: allocated_plus_residual_equals_node_atp
+    doubleAllocation: forbidden
+    channelDemandDisappearance: forbidden
+    onlineChannelDefaultSource: store_atp
+    # A replenishment lane or an allocation priority string is not sufficient
+    # authority for an online order to draw from a DC.
+    directDcFulfillmentRequires: source_declared_customer_fulfillment_lane
+
+  transferOptimizer:
+    candidateScope: active_typed_lanes_only
+    sourceConstraint: source_retains_residual_cover
+    targetConstraint: target_respects_max_cover
+    expectedBenefitCurrency: single_market_local
+    objective: maximize_expected_benefit_minor
+    deterministicTieBreak:
+      - expected_benefit_minor_desc
+      - transit_days_asc
+      - from_location_id_asc
+      - to_location_id_asc
+      - sku_id_asc
+
+  # P4-D6 / §3.8. Store cost is observed or explicitly labelled, never borrowed.
+  valuation:
+    storeCostPreference:
+      - receipt_or_transfer_line_accepted_unit_cost
+      - canonical_store_wac_from_receipt_shaped_facts
+      - fifo_for_batch_tracked_with_accepted_lineage
+    laneImputedDcWacFallback:
+      permitted: requires_separate_approval
+      label: derived_lane_wac
+      presentedAsStoreObservedCost: forbidden
+    grossValuationBasis: accepted_unit_cost_times_on_hand
+    # P4-D10. NRV and provisions stay unavailable without an approved
+    # markdown/pricing-floor policy; a fabricated finance value is worse than an
+    # absent one.
+    nrvAndProvisions: unavailable_pending_markdown_policy
+    erpWmsVarianceScope: dc_only_unless_reconciled_store_wms_evidence_exists
+
+  # P4-D13. Frozen BEFORE any candidate replay runs. Tuning materiality after
+  # seeing a result is the failure this block exists to prevent.
+  replayAcceptance:
+    incumbentPolicyIdSource: versioned_source_simulator_config
+    incumbentInferredFromOutcomes: forbidden
+    identicalInputsRequired:
+      - origins
+      - initial_states
+      - events
+      - lanes
+      - terms
+      - costs
+      - cohort_keys
+    serviceGates:
+      stockoutPeriods: fewer_than_incumbent
+      lostUnits: fewer_than_incumbent
+      fillRate: no_worse_than_incumbent
+    inventoryGates:
+      meanInventoryUnitsPerMarket: lower_than_incumbent
+      meanInventoryValuePerMarket: lower_than_incumbent
+    # A global value gate across INR and USD is meaningless as nominal money.
+    globalValueComparison: approved_reporting_fx_or_frozen_dimensionless_delta
+    nominalMultiCurrencySum: forbidden
+    perMarketGatesRequired: true
+    pooledResultMayHideMarketFailure: false
+    tieBehavior: fails_the_gate
+    zeroDenominatorBehavior: insufficient_evidence_not_pass
+    insufficientCohortBehavior: insufficient_evidence_not_pass
+    missingCostBehavior: reason_coded_exclusion
+    supportingEvidence:
+      - paired_sku_location_weekly_deltas
+      - seeded_clustered_interval
+    materialityThresholdPct: "0.0"
+    nonInferiorityTolerancePct: "0.0"
+    thresholdsFrozenBeforeResults: true
+
+  # P4-D14. The whole key goes to one cohort. Splitting a key across cohorts
+  # leaks calibration into holdout through shared state.
+  cohortIdentity:
+    key: [retailer_id, tenant_id, market_id, location_id, sku_id]
+    assignment: whole_key_to_one_cohort
+    hashVersion: cohort-assignment/v1
+    seed: 20260801
+    calibrationPct: "5"
+    holdoutPct: "95"
+    allWeeksSameCohort: true
+    allChannelRowsSameCohort: true
+    incumbentAndCandidateSameCohort: true
+    boundFingerprints:
+      - forecast
+      - publication
+      - lane
+      - policy
+      - replay
+
+  # P4-D17. Cold-start H5+ is a declared partial capability, not a silent skip.
+  intervalConsumers:
+    requiredHorizonDerivation: origin_safe_lead_time_plus_review_period
+    allOrNothingConsumerBehavior: refuse_at_startup
+    partialConsumerBehavior: skip_interval_dependent_row_only
+    retainCentralForecastWhenAuthorized: true
+    exceptionClass: cold_start_interval_unavailable
+    branchOnP90IsNull: forbidden
+    branchOn: interval_available
+    marketSubCapabilityUnavailableWhen: >-
+      100 percent of the market's cold-start SeriesKeys or cold-start demand is
+      skipped
+    wholeMarketConsumerUnavailableWhen: no_recommendation_row_remains
+    postResultThresholdWeakening: forbidden
+
+# ---------------------------------------------------------------------------
+# Market/currency overrides. The live market ids, which is the whole point: v1's
+# vector named `india-mumbai` and `india-west` could not resolve.
+#
+# Budget ceilings are market-local minor units (P4-D11). They appear here rather
+# than in globalDefaults precisely because money never crosses a currency.
+# ---------------------------------------------------------------------------
+marketCurrencyRules:
+  - marketId: india-west
+    currencyCode: INR
+    timezone: Asia/Kolkata
+    weeklyReplenishmentBudgetMinor: 250000000
+    nodeCapacityUnits: 180000
+    serviceLevelsByClass:
+      A: "0.97"
+      B: "0.91"
+      C: "0.80"
+    supplierCapacityConfirmedPctFloor: "0.70"
+
+  - marketId: us-new-york
+    currencyCode: USD
+    timezone: America/New_York
+    weeklyReplenishmentBudgetMinor: 4000000
+    nodeCapacityUnits: 120000
+    serviceLevelsByClass:
+      A: "0.96"
+      B: "0.90"
+      C: "0.80"
+    supplierCapacityConfirmedPctFloor: "0.70"
+
+# ---------------------------------------------------------------------------
+# P4-D11. ERP transmission is shadow-only in this phase and no send path exists.
+# ---------------------------------------------------------------------------
+erpTransmission:
+  status: shadow_not_sent
+  sendPathExists: false
+  actionControlsRendered: visible_and_natively_disabled
+
+# ---------------------------------------------------------------------------
+# Resolution semantics the resolver must implement exactly.
+# ---------------------------------------------------------------------------
+resolution:
+  mergeOrder: [globalDefaults, marketCurrencyRule]
+  # An override REPLACES a shared default for that market; it never inherits an
+  # absolute rule from a different market, which would silently apply one
+  # market's money or capacity to another.
+  crossMarketInheritance: forbidden
+  zeroMatchBehavior: fail_closed
+  duplicateMatchBehavior: fail_closed
+  wrongCurrencyBehavior: fail_closed
