@@ -1577,3 +1577,119 @@ changing datagen merely to manufacture greener metrics.
       contracts and `__init__`; `_free_port` was never called; the horizon limit did not
       validate against its own measured bands and now asserts at import; and the pipeline
       orchestration had no tests, now nine.
+
+---
+
+## Phase 4 — inventory & replenishment: completion status
+
+Recorded at the end of the Phase 4 build. Three states are used and they mean
+different things: **complete** is built, tested and running on the ten-year pin;
+**partial** is built and running with a disclosed limitation, with the limitation
+and its measurement named below; **not done** is what remains.
+
+### Complete
+
+- **P4-0 / P4-0P** — Phase 3 lineage reconciled, interval parity amendment frozen.
+- **P4-1** — decision-#92 interval contract completed end to end. The forecast is
+  refit and live on the ten-year pin (`fr_5f6fa2015d80eee5` /
+  `fv_ba2791b4273e3b4f`), exactly one active version, and the withholding lands
+  where it should: 0 rows withheld at h1–h4, 398 per horizon from h5, 8,756 total
+  (398 × 22), with P90 nulls, confidence nulls and withheld counts all equal and
+  one governed reason. Migration 0009's explicit `interval_available` is populated
+  by the writer and reconciled against the publisher's own withheld count.
+- **P4-2** — source contract v13 adds six datasets (`inboundStatusEvents`,
+  `serviceLanes`, `storeInventorySnapshots`, `storeTransferEvents`,
+  `storeWasteEvents`, `supplyTerms`). Both gates pass on the real run and
+  `inventory_replenishment_replay` reports available with all five blocking reason
+  codes absent.
+- **P4-3** — 254,826,891-row ten-year run generated, landed, ingested and
+  published; four governed decision-#73 selection chains; the pin is now DERIVED
+  from retained evidence by `tools/build_expected_pin.py` rather than hand-edited.
+- **P4-4** — inventory policy v2 with market overrides, run/acceptance/verifier
+  schemas, 15 OpenAPI routes, and one 14-screen parity contract whose
+  machine-checkable half is generated into `ui/src/generated/` so screen drift
+  fails two gates.
+- **P4-5 / P4-6** — engine foundation and the net-new engines, with golden vectors.
+- **P4-8** — publish, verify, materialize, activate, and the read-only Go serving
+  path. Bundle `ir_b10bb797108e80a7` / `iv_b10bb797108e80a7` is verified,
+  materialized and ACTIVE; all 15 API routes return 200 with envelopes bound to
+  the active identity; the request path is proven unable to open a file or spawn a
+  process.
+
+### Partial — with the limitation named
+
+- **P4-7 · weekly replay, cohorts, independent acceptance.** All machinery is
+  built and has RUN on 52 weeks × 2 markets with 5%/95% cohorts, a named
+  incumbent, and a tolerance frozen before scoring. The replay's reconstruction of
+  observed weekly store stock does not reach that tolerance, so the
+  `inventory_replenishment_replay` capability is published as UNAVAILABLE with its
+  measurement on record, while the twelve current-state artifacts serve normally.
+
+  Measured mean absolute delta per cell against a frozen tolerance of 0.5:
+
+  | market | first measurement | after the P4-D5 bridge fix |
+  |---|---|---|
+  | india-west | 13.840 | **8.035** |
+  | us-new-york | 7.938 | **3.194** |
+
+  The tolerance has never been widened; P4-D13 forbids it
+  (`postResultThresholdWeakening: forbidden`). What was corrected instead were
+  four defects in the driver, in the order found: online demand counted as a store
+  stock draw; the oracle replaying the candidate policy on top of observed
+  arrivals and so double-counting inbound; the per-cell tolerance applied to a
+  market total; and the Thursday state snapshot compared directly to a
+  Monday-to-Monday close instead of being bridged 73 hours as
+  `replayClock` defines.
+
+  Screen impact is 3 of 62 contracted elements: Inventory Turn (Inventory
+  Overview), Fill rate (Warehouse Inventory), and a channel-preservation note on
+  Allocation & Fulfillment that the allocations artifact already satisfies.
+
+### Not done
+
+- **P4-9 · the fourteen React destinations.** Routing, live binding, governed
+  409/503 and unavailable states, the interval-withholding treatment, and the
+  parity gate against the frozen contract are all in place. The screens do NOT yet
+  reproduce the reference design in
+  `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html`: each currently
+  renders one generic table with auto-derived headers, where the reference has KPI
+  tiles, KPI grids, cards, card heads, colour-coded badges, per-screen filters and
+  tabs (Stock Health alone: 10 KPIs, 2 KPI grids, 18 cards, 7 tables). This is the
+  largest remaining piece of Phase 4.
+- **P4-9 tasks 10–11** — fourteen independent human sign-offs, and manual
+  Windows/Linux developer evidence. Not performable from this host; explicitly
+  accepted as outstanding.
+
+### Production readiness — what is disclosed, not solved
+
+Nothing in the shipped bundle is fabricated, sampled or placeholder: every served
+value is computed from the ten-year publication and the live forecast, and every
+absent value carries a governed reason. The items below are real limitations to
+close before production, not demo shortcuts.
+
+1. **Replay fidelity.** The remaining 8.0 / 3.2 units-per-cell gap is not yet
+   explained. Two candidates are unapplied by the replay and both would move it:
+   returns crediting stock back to a node, and inventory adjustments. Neither is
+   read today. Until the oracle reproduces, no replay-backed comparison of the
+   candidate policy against the incumbent may be presented as validated.
+2. **Store unit cost.** Store WAC is computed from the store's own received
+   transfer lines, which is P4-D6's first-preference source and correct. Six of
+   2,552 store cells have no cost-carrying receipt and are excluded with
+   `ABC_UNIT_COST_UNAVAILABLE` rather than inheriting a DC cost —
+   `laneImputedDcWacFallback` remains unapproved and unused.
+3. **DC interval basis.** A DC's demand is the additive P50 of the stores its
+   rank-1 lane supplies, which policy v2 permits. Its safety stock is withheld
+   under `NODE_INTERVAL_BASIS_UNAVAILABLE` because `sumOfChannelP90: forbidden`
+   and the aggregate residual variability
+   (`nodeSafetyStockBasis: accepted_aggregate_residual_variability`) is not
+   carried in the forecast artifact. Producing it is a forecasting change, not a
+   serving one.
+4. **Cold-start interval boundary.** 3,724 of 4,741 cells withhold their
+   interval-derived values. The dominant cause is the two above, not horizon: DC
+   lead times are 4–9 days and store lane transit 1–2, so protection periods land
+   at horizon 2–3, well inside the calibrated 4.
+5. **ERP transmission** is shadow-only by P4-D11. No send path exists and the
+   action controls are visible and natively disabled.
+6. **Point-in-time forecasting and pricing elasticity** remain unavailable with
+   their inherited reason codes (`LANDING_BACKFILL_DEPENDENCY`,
+   `PRICE_AVAILABILITY_BACKFILLED`). Phase 4 did not change either.
