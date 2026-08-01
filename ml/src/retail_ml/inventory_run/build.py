@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Final, Mapping
 
@@ -82,7 +82,14 @@ from retail_ml.inventory_publish.run_artifacts import (
 #: says "declare a route", and an operator shown the wrong one waits forever.
 COLD_START_REASON: Final[str] = "COLD_START_INTERVAL_UNCALIBRATED"
 UNRESOLVED_ROUTE_REASON: Final[str] = "SUPPLY_ROUTE_UNRESOLVED"
-assert {COLD_START_REASON, UNRESOLVED_ROUTE_REASON} <= GOVERNED_REASONS
+NO_NODE_FORECAST_REASON: Final[str] = "FORECAST_ABSENT_FOR_NODE"
+NO_ABC_COST_REASON: Final[str] = "ABC_UNIT_COST_UNAVAILABLE"
+assert {
+    COLD_START_REASON,
+    UNRESOLVED_ROUTE_REASON,
+    NO_NODE_FORECAST_REASON,
+    NO_ABC_COST_REASON,
+} <= GOVERNED_REASONS
 
 #: Reasons a non-interval value can be absent. Each names a real gap so a screen
 #: can say which one instead of showing a plausible zero.
@@ -203,10 +210,24 @@ def _atp(row: Mapping[str, Any]) -> int:
 
 
 def _as_date(value: Any) -> date | None:
-    if value is None or value is pd.NA:
+    """Coerce a Parquet date-ish value to a plain `date`, or None.
+
+    The datetime check comes BEFORE the date check, and that order is the whole
+    point: `pd.Timestamp` subclasses `datetime`, which subclasses `date`, so an
+    `isinstance(value, date)` test first returns the Timestamp unconverted.
+    Subtracting one from a `date` then raises TypeError -- which is exactly how
+    the ageing builder failed on real Parquet rows after passing every fixture
+    test, because the fixtures used `datetime.date` literals.
+    """
+
+    # One null test, first, over every null pandas has: None, NaN, NaT and pd.NA.
+    # Type-specific null checks miss NaT, which is itself a `datetime` instance --
+    # so it passed the isinstance dispatch below, `.date()` returned NaT again, and
+    # the comparison downstream raised "Cannot compare NaT with datetime.date".
+    if value is None or pd.isna(value):
         return None
-    if isinstance(value, float) and pd.isna(value):
-        return None
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     timestamp = pd.Timestamp(value)
@@ -485,6 +506,13 @@ def _build_demand_at_risk(
             horizons = forecasts.get((market, location, sku), {})
             complete = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
             if complete is None:
+                # Same three-way distinction the replenishment plan makes, for the
+                # same reason: an unforecast node and an uncalibrated horizon need
+                # different actions from whoever reads the exception.
+                absent = not horizons
+                reason = (
+                    NO_NODE_FORECAST_REASON if absent else COLD_START_REASON
+                )
                 rows.append(
                     {
                         "market_id": market,
@@ -495,7 +523,7 @@ def _build_demand_at_risk(
                         "risk_value_minor": None,
                         "currency_code": None,
                         "interval_available": False,
-                        "reason_code": COLD_START_REASON,
+                        "reason_code": reason,
                     }
                 )
                 exceptions.append(
@@ -504,11 +532,18 @@ def _build_demand_at_risk(
                         "location_id": location,
                         "sku_id": sku,
                         "channel_id": NODE_CHANNEL,
-                        "exception_class": "cold_start_interval_unavailable",
+                        "exception_class": (
+                            "node_forecast_absent"
+                            if absent
+                            else "cold_start_interval_unavailable"
+                        ),
                         "severity": "info",
-                        "reason_code": COLD_START_REASON,
+                        "reason_code": reason,
                         "evidence": (
-                            f"demand-at-risk needs horizons 1..{weeks}; the "
+                            "no forecast series exists for this node, so it has "
+                            "no interval to assess risk from"
+                            if absent
+                            else f"demand-at-risk needs horizons 1..{weeks}; the "
                             "cold-start interval is calibrated through 4"
                         ),
                     }
@@ -988,27 +1023,47 @@ def _replenishment_plan(
                 )
             except IntervalUnavailable:
                 gate_reason = COLD_START_REASON
+                evidence = (
+                    f"protection period {protection}d needs horizon {weeks}; the "
+                    "cold-start interval is calibrated to 4"
+                )
             if gate_reason is None:
                 upper = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
                 centre = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
-                if upper is None or centre is None:
+                if not horizons:
+                    # Nothing forecast this node at all. A DC's demand is derived
+                    # from the stores it supplies rather than forecast directly, so
+                    # this is a modelling boundary and NOT a calibration gap --
+                    # calling it cold-start would send someone to wait for
+                    # calibration that was never the obstacle.
+                    gate_reason = NO_NODE_FORECAST_REASON
+                    exception_class = "node_forecast_absent"
+                    evidence = (
+                        "no forecast series exists for this node, so it has no "
+                        "interval of its own at any horizon"
+                    )
+                elif upper is None or centre is None:
                     gate_reason = COLD_START_REASON
+                    evidence = (
+                        f"the forecast covers this node but not every horizon in "
+                        f"1..{weeks} that a {protection}d protection period needs"
+                    )
                 else:
                     spreads = tuple(
                         max(0.0, high - mid) for high, mid in zip(upper, centre)
                     )
             if gate_reason is None and service_level is None:
                 # No ABC class means no service level, and inventing one would set
-                # a target nobody chose.
-                gate_reason = COLD_START_REASON
+                # a target nobody chose. P4-D6 forbids borrowing another node's
+                # cost, so an uncosted cell is genuinely unclassifiable.
+                gate_reason = str(abc.get("reason_code") or NO_ABC_COST_REASON)
+                if gate_reason not in GOVERNED_REASONS:
+                    gate_reason = NO_ABC_COST_REASON
+                exception_class = "abc_class_unavailable"
+                severity = "warning"
                 evidence = (
-                    f"{abc.get('reason_code') or 'ABC_CLASS_UNAVAILABLE'}; no "
-                    "service level applies without a class"
-                )
-            if gate_reason == COLD_START_REASON and not evidence:
-                evidence = (
-                    f"protection period {protection}d needs horizon {weeks}; the "
-                    "cold-start interval is calibrated to 4"
+                    f"{gate_reason}: no accepted unit cost, so cost-weighted ABC "
+                    "cannot rank this cell and no service level applies"
                 )
 
         if gate_reason is not None or spreads is None or centre is None:

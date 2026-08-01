@@ -16,6 +16,8 @@ import pytest
 
 from retail_contracts.guardrails import resolve_guardrails
 
+from retail_ml.engines.analytics import AGE_BUCKETS, age_bucket
+
 from retail_ml.inventory_publish.run_artifacts import ARTIFACT_COLUMNS
 from retail_ml.inventory_run.build import (
     COLD_START_REASON,
@@ -655,6 +657,38 @@ def test_a_batch_with_no_expiry_contributes_no_exposure(artifacts) -> None:
     row = expiry[expiry["sku_id"] == "sku-3"]
     if not row.empty:
         assert int(row.iloc[0]["expiring_units"]) == 0
+
+
+def test_ageing_handles_pandas_timestamps_not_only_date_literals() -> None:
+    """Parquet gives Timestamps, and this fixture used to give only date literals.
+
+    `pd.Timestamp` subclasses `datetime` which subclasses `date`, so an
+    `isinstance(value, date)` check returns it unconverted and the subtraction
+    that follows raises TypeError. Every fixture test passed while the real run
+    died on the first batch row, which is the exact shape of gap a fixture that
+    is tidier than production leaves behind.
+    """
+
+    inputs = _inputs()
+    batches = inputs.batches.copy()
+    for column in ("received_on", "expires_on"):
+        batches[column] = pd.to_datetime(batches[column])
+    artifacts = build_artifacts(
+        _inputs(batches=batches), replay_metrics=_metrics()
+    )
+    ageing = artifacts["inventory_ageing"]
+    assert not ageing.empty
+    # The engine owns the bucket vocabulary. Ask it for the labels rather than
+    # restating them: AGE_BUCKETS holds the numeric ranges, and `age_bucket` is
+    # what turns a range into the published string.
+    labels = {
+        age_bucket(on_hand_age_days=days)
+        for lower, upper in AGE_BUCKETS
+        for days in (lower, (upper - 1) if upper else lower + 1)
+    }
+    assert set(ageing["age_bucket"]) <= labels
+    expiry = artifacts["inventory_expiry_waste"]
+    assert int(expiry[expiry["sku_id"] == "sku-1"].iloc[0]["expiring_units"]) == 2
 
 
 def test_ageing_buckets_are_keyed_by_receipt_age(artifacts) -> None:

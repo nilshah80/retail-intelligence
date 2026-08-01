@@ -117,6 +117,9 @@ def load_market_history(
             """,
             [market_id, window_start, window_end, window_end],
         ).fetchall()
+        # Kept explicit rather than folded into the aggregate above: the replay
+        # buckets by market-local ISO week in Python, so daily rows are the grain
+        # this needs and a SQL-side weekly bucket would use UTC boundaries.
         arrival_rows = connection.execute(
             """
             SELECT transfers.to_location_id, transfers.sku_id,

@@ -55,8 +55,30 @@ CALIBRATED_MAX_HORIZON: Final[int] = 4
 #: question cannot even be asked. It withholds for a DIFFERENT cause than a
 #: cold-start row, and collapsing the two would tell an operator to wait for
 #: calibration when what is actually missing is a declared route.
+#: The four causes are separated because each has a DIFFERENT remedy, and the
+#: first run against real ten-year data proved why it matters: every one of 4,741
+#: rows was withheld and every one was labelled cold-start, while not a single one
+#: actually exceeded the calibrated horizon. DC lead times are 4-9 days and store
+#: lane transit is 1-2, so every protection period lands at horizon 2-3. The real
+#: causes were that `inventory_cost` carries no store rows and the forecast is
+#: store-grain so no DC has one. An operator reading "cold start" on all of it
+#: would have waited for calibration that was never the problem.
 GOVERNED_REASONS: Final[frozenset[str]] = frozenset(
-    {"COLD_START_INTERVAL_UNCALIBRATED", "SUPPLY_ROUTE_UNRESOLVED"}
+    {
+        # Protection period genuinely reaches past the calibrated horizon.
+        "COLD_START_INTERVAL_UNCALIBRATED",
+        # No active lane or supply term resolves, so there is no lead time and
+        # hence no protection period to ask the interval question about.
+        "SUPPLY_ROUTE_UNRESOLVED",
+        # Nothing forecast this node's demand. DC demand is derived from the
+        # stores it supplies and is not itself forecast, so a DC has no interval
+        # of its own -- which is a modelling boundary, not a calibration gap.
+        "FORECAST_ABSENT_FOR_NODE",
+        # No accepted unit cost, so cost-weighted ABC cannot rank the cell, so no
+        # service level applies. P4-D6 forbids borrowing DC cost for a store, and
+        # the engine's own reason code for this is ABC_UNIT_COST_UNAVAILABLE.
+        "ABC_UNIT_COST_UNAVAILABLE",
+    }
 )
 
 #: Decision P4-D11: recommendations are shadow-only. The column exists so the

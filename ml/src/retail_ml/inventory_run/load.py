@@ -156,17 +156,20 @@ def load_trailing_demand(
     """
 
     start = as_of - timedelta(days=TRAILING_DAYS - 1)
+    # `sales` keys on store_id and dates its rows with `date`. Joining
+    # locations.location_id to it is what makes a store's sales a node's demand;
+    # a DC has no sales of its own and correctly gets no trailing rate.
     return _frame(
         connection,
         """
         SELECT
             locations.market_id,
-            sales.location_id,
+            sales.store_id AS location_id,
             sales.sku_id,
             CAST(SUM(sales.units) AS DOUBLE) / ? AS trailing_avg_daily_units
         FROM sales
-        JOIN locations ON locations.location_id = sales.location_id
-        WHERE sales.sale_date BETWEEN ? AND ?
+        JOIN locations ON locations.location_id = sales.store_id
+        WHERE sales.date BETWEEN ? AND ?
           AND sales.known_as_of <= ?
         GROUP BY 1, 2, 3
         """,
@@ -300,13 +303,13 @@ def load_channel_demand(
         """
         SELECT
             locations.market_id,
-            sales.location_id,
+            sales.store_id AS location_id,
             sales.channel_id,
             sales.sku_id,
             SUM(sales.units) AS requested_units
         FROM sales
-        JOIN locations ON locations.location_id = sales.location_id
-        WHERE sales.sale_date BETWEEN ? AND ?
+        JOIN locations ON locations.location_id = sales.store_id
+        WHERE sales.date BETWEEN ? AND ?
           AND sales.known_as_of <= ?
         GROUP BY 1, 2, 3, 4
         HAVING SUM(sales.units) > 0
@@ -359,18 +362,36 @@ def load_supply_terms(
 def load_suppliers(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> pd.DataFrame:
-    """On-time delivery, lead-time moments and confirmed capacity per supplier."""
+    """On-time delivery, lead-time moments and confirmed capacity per supplier.
+
+    Two source shapes have to be reconciled here.
+
+    `supplier_performance.period` is a month string ('2026-07-01'), not a date
+    column, so the latest period at or before the origin is picked by casting it
+    -- ordering the text would happen to work for ISO dates and break silently
+    the moment a period is written any other way.
+
+    `otd_pct` and `capacity_confirmed_pct` are percentages on 0..100 in the
+    source, while `engines.analytics.supplier_risk` compares against 0.90 and a
+    policy floor expressed as "0.70". Dividing by 100 here rather than in the
+    engine keeps the unit conversion at the IO boundary, which is the only place
+    that knows what the source meant.
+    """
 
     return _frame(
         connection,
         """
         WITH performance AS (
             SELECT DISTINCT ON (supplier_id)
-                supplier_id, otd_rate, lead_time_mean_days, lead_time_std_days,
-                capacity_confirmed_pct, as_of_date
+                supplier_id,
+                CAST(otd_pct AS DOUBLE) / 100.0 AS otd_rate,
+                lead_time_mean_days,
+                CAST(lead_time_std_days AS DOUBLE) AS lead_time_std_days,
+                CAST(capacity_confirmed_pct AS DOUBLE) / 100.0
+                    AS capacity_confirmed_pct
             FROM supplier_performance
-            WHERE as_of_date <= ? AND known_as_of <= ?
-            ORDER BY supplier_id, as_of_date DESC
+            WHERE CAST(period AS DATE) <= ? AND known_as_of <= ?
+            ORDER BY supplier_id, CAST(period AS DATE) DESC
         )
         SELECT DISTINCT ON (performance.supplier_id)
             locations.market_id,
