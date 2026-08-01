@@ -282,6 +282,7 @@ def _command_activate_serving(args: argparse.Namespace) -> int:
             input_bundle.publication_semantic_fingerprint
         ),
         actor=args.actor,
+        retire_other_scopes=bool(args.retire_other_scopes),
     )
     print(json.dumps(asdict(result), indent=2, sort_keys=True))
     return 0
@@ -422,6 +423,16 @@ def build_parser() -> argparse.ArgumentParser:
     activate.add_argument("--activation-scope-fingerprint", required=True)
     activate.add_argument("--actor", required=True)
     activate.add_argument("--postgres-dsn", default=None)
+    activate.add_argument(
+        "--retire-other-scopes",
+        action="store_true",
+        help=(
+            "supersede every other active activation scope in the same "
+            "transaction. Required when re-pinning onto a new publication, "
+            "because the scope fingerprint covers the input bundle and the new "
+            "publication therefore mints a new scope that supersedes nothing."
+        ),
+    )
     activate.set_defaults(handler=_command_activate_serving)
 
     # Registered from the package that owns them: the four inventory steps share

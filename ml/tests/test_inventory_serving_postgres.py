@@ -55,9 +55,18 @@ def test_every_projection_table_matches_the_published_column_contract() -> None:
                 )
                 actual = tuple(record[0] for record in cursor.fetchall())
                 assert actual, f"{table} does not exist in {SERVING_SCHEMA}"
-                assert actual == ("inventory_version_id", *columns), (
-                    f"{table}: schema has {actual}, the publisher writes "
-                    f"{('inventory_version_id', *columns)}"
+                # Sets, not order. These tables were created in one migration so
+                # the orders happen to agree today, but `ADD COLUMN` appends and
+                # `_copy_frame` names every column in its COPY statement, so
+                # physical order is not something the writer depends on. Ordered
+                # here, this assertion would fail on the next added column while
+                # proving nothing. Tuple-versus-dataframe order is what matters and
+                # `build_artifacts` reindexes each frame to enforce it.
+                expected = {"inventory_version_id", *columns}
+                assert set(actual) == expected, (
+                    f"{table}: schema has {sorted(set(actual) - expected)} the "
+                    f"publisher omits, and the publisher names "
+                    f"{sorted(expected - set(actual))} the schema lacks"
                 )
 
 

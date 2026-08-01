@@ -1052,16 +1052,16 @@ def command_pipeline(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            _pipeline_step(
-                "activate",
-                [
-                    str(ml), "-m", "retail_ml.cli", "activate-serving",
-                    "--forecast-run-id", run,
-                    "--activation-scope-fingerprint", scope,
-                    "--actor", args.actor,
-                    "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
-                ],
-            )
+            activate_command = [
+                str(ml), "-m", "retail_ml.cli", "activate-serving",
+                "--forecast-run-id", run,
+                "--activation-scope-fingerprint", scope,
+                "--actor", args.actor,
+                "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+            ]
+            if args.retire_other_scopes:
+                activate_command.append("--retire-other-scopes")
+            _pipeline_step("activate", activate_command)
             print(
                 f"\nserving {run} / {materialized.get('version_id')}\n"
                 "Start the API separately; it reads the activation scope from "
@@ -1358,6 +1358,18 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--decision-as-of", default="2026-07-31T00:00:00Z")
     pipeline.add_argument("--tracking-uri", default="http://127.0.0.1:5000")
     pipeline.add_argument("--actor", default=os.environ.get("USER", "developer"))
+    pipeline.add_argument(
+        "--retire-other-scopes",
+        action="store_true",
+        help=(
+            "at activate, supersede every other active activation scope in the "
+            "same transaction. Needed when re-pinning onto a new publication: the "
+            "activation scope covers the input bundle, so a new publication mints "
+            "a new scope which supersedes nothing and decision #90 then refuses "
+            "two active forecasts. Off by default -- retiring a competing lineage "
+            "is a decision, not a step."
+        ),
+    )
     pipeline.add_argument(
         "--execution-profile", choices=("safe", "balanced", "performance", "ultra-performance"),
         default=None
