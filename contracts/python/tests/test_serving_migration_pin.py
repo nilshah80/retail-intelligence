@@ -37,6 +37,7 @@ RETIRED_HEADS = frozenset(
         "0006_cohorted_verifier_v4",
         "0007_activation_and_coverage",
         "0008_nullable_withheld_interval",
+        "0009_forecast_interval_contract",
     }
 )
 
@@ -100,7 +101,7 @@ def _client_pins() -> dict[str, str]:
 
 
 def test_alembic_history_is_linear_with_one_head() -> None:
-    assert alembic_head() == "0009_forecast_interval_contract"
+    assert alembic_head() == "0010_inventory_serving"
 
 
 def test_the_required_head_is_not_a_retired_boundary() -> None:

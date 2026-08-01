@@ -22,6 +22,26 @@ def test_forecast_serving_schema_integration() -> None:
         "forecast_series_dimensions",
         "forecast_stores",
         "forecast_versions",
+        # Migration 0010: the inventory/replenishment serving surface. Same
+        # exhaustive posture as the forecast set -- a table appearing without a
+        # deliberate migration is drift.
+        "inventory_materializations",
+        "inventory_versions",
+        "inventory_activation_events",
+        "active_inventory_state",
+        "inventory_positions",
+        "inventory_stock_health",
+        "inventory_demand_at_risk",
+        "inventory_ageing",
+        "inventory_expiry_waste",
+        "inventory_valuation",
+        "replenishment_recommendations",
+        "replenishment_safety_stock",
+        "replenishment_transfers",
+        "replenishment_allocations",
+        "replenishment_suppliers",
+        "replenishment_exceptions",
+        "inventory_replay_metrics",
     }
     with psycopg.connect(dsn) as connection:
         with connection.cursor() as cursor:
@@ -31,7 +51,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0009_forecast_interval_contract",)
+            assert cursor.fetchone() == ("0010_inventory_serving",)
             cursor.execute(
                 """
                 SELECT table_name

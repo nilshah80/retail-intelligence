@@ -229,7 +229,7 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0009_forecast_interval_contract",
+  "servingMigration": "0010_inventory_serving",
   "sourceSelection": {
     "activeRecordId": "rec_06f9b355b6738dfd",
     "capabilityReadiness": "ready",
