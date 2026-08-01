@@ -88,33 +88,85 @@ def _validate_publication_selections() -> dict[str, object]:
         )
         by_scope.setdefault(key, []).append(record)
 
+    # Currency is derived from the supersedes edges, never from filenames or
+    # order. A re-pinned scope legitimately holds two chains -- the retired one
+    # ending at `superseded`, the new one at `active` -- and both keep a record
+    # whose state reads `active`, because history is appended rather than edited.
+    # Resolving that by position would be the arbitrary tie-break decision #90 was
+    # written against, so the invariant is stated over LIVE chain heads.
+    terminal_states = {"superseded", "rejected"}
+    superseded_ids = {
+        record["lifecycle"]["supersedes"]
+        for record in selections
+        if record["lifecycle"].get("supersedes")
+    }
+    live_scopes: dict[tuple, str] = {}
     for key, group in by_scope.items():
-        selection_ids = {record["selectionId"] for record in group}
-        if len(selection_ids) != 1:
-            raise ValueError(
-                f"scope {'/'.join(key)} has more than one selectionId: "
-                f"{sorted(selection_ids)}"
-            )
         record_ids = [record["lifecycle"]["recordId"] for record in group]
         if len(set(record_ids)) != len(record_ids):
             raise ValueError(f"scope {'/'.join(key)} reuses a lifecycle recordId")
-        states = [record["lifecycle"]["state"] for record in group]
-        if states.count("active") != 1:
+        heads = [
+            record
+            for record in group
+            if record["lifecycle"]["recordId"] not in superseded_ids
+        ]
+        live = [
+            record
+            for record in heads
+            if record["lifecycle"]["state"] not in terminal_states
+        ]
+        if len(live) != 1:
             raise ValueError(
-                f"scope {'/'.join(key)} has {states.count('active')} active "
-                "selections; exactly one is required"
+                f"scope {'/'.join(key)} has {len(live)} live selections: "
+                f"{sorted(record['selectionId'] for record in live)}; exactly one "
+                "is required"
             )
-        # A legacy predecessor must be disclosed as unselected, never as a
-        # supersession chain that never happened.
-        for predecessor in predecessors:
-            if predecessor.get("selectionRecordExists") is not False:
+        state = live[0]["lifecycle"]["state"]
+        if state != "active":
+            raise ValueError(
+                f"scope {'/'.join(key)} resolves to a {state} selection, which "
+                "serves nothing"
+            )
+        live_scopes[key] = str(live[0]["selectionId"])
+        # Every chain in this scope must be complete: an approval event that never
+        # reached `active` is a selection nobody finished making.
+        for selection_id in {record["selectionId"] for record in group}:
+            chain_states = {
+                record["lifecycle"]["state"]
+                for record in group
+                if record["selectionId"] == selection_id
+            }
+            missing = {"candidate", "approved", "active"} - chain_states
+            if missing:
                 raise ValueError(
-                    "a legacy predecessor disclosure must record "
-                    "selectionRecordExists: false"
+                    f"selection {selection_id} is missing lifecycle records "
+                    f"{sorted(missing)}"
                 )
+
+    unknown = {
+        record["lifecycle"]["state"] for record in selections
+    } - ({"candidate", "approved", "active"} | terminal_states)
+    if unknown:
+        raise ValueError(
+            f"unclassified lifecycle states {sorted(unknown)}; the currency rule "
+            "above cannot decide whether they are live"
+        )
+
+    # A legacy predecessor must be disclosed as unselected, never as a
+    # supersession chain that never happened.
+    for predecessor in predecessors:
+        if predecessor.get("selectionRecordExists") is not False:
+            raise ValueError(
+                "a legacy predecessor disclosure must record "
+                "selectionRecordExists: false"
+            )
 
     return {
         "scopes": ["/".join(key) for key in sorted(by_scope)],
+        "liveSelections": {
+            "/".join(key): selection_id
+            for key, selection_id in sorted(live_scopes.items())
+        },
         "records": len(selections),
         "legacyPredecessors": len(predecessors),
     }

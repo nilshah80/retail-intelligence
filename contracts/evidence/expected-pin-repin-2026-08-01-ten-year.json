@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "retail-ml-expected-pin-repin/v1",
+  "recordType": "input_pin_repin_provenance",
+  "subject": "contracts/ml/expected-pin.json",
+  "recordedAt": "2026-08-01T20:20:00Z",
+  "decisionIds": [73, 90, 92],
+  "reason": "P4-3 re-pins ML onto the ten-year v13 publication run-5bf9580d18d67e36. This is NOT an equivalence re-pin. The generated demand is unchanged and provably so, but the source now carries six supply-side datasets that did not exist before, and Phase 4 cannot be built without them: without versioned inbound status, versioned transfer status, declared service lanes, store-grain inventory and origin-safe supply terms, the inventory_replenishment_replay capability stays unavailable and no replay-backed acceptance is possible.",
+  "supersededPin": {
+    "sourceSnapshotId": "e010c5499de1a53cb2d02edbed2c1b0fef350c12f1d30317f495415ecf7cdd09",
+    "publicationSemanticFingerprint": "fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0",
+    "objectCount": 2069,
+    "sourceRun": "run-c5eb1506ecd4c550",
+    "sourceSpecVersion": "retail-source-config/v12",
+    "generatorVersion": "0.13.0",
+    "selectionId": "sel_eeb6d9dfe7b201f8",
+    "selectionState": "superseded",
+    "bytesRetained": true
+  },
+  "newPin": {
+    "sourceSnapshotId": "a92f025475f24949178526341c2c2176468620e7762d08a78925d8eaebfe98d2",
+    "publicationSemanticFingerprint": "7d6946eff7862a4214d677af52fa73dd191858c05eaa0360a76382af90029d74",
+    "objectCount": 1549,
+    "sourceRun": "run-5bf9580d18d67e36",
+    "sourceSpecVersion": "retail-source-config/v13",
+    "generatorVersion": "0.14.0",
+    "selectionIds": {
+      "demand_forecast_non_pit": "sel_f95ca0db797b5704",
+      "inventory_replenishment_replay": "sel_2d3c5e156bedabd4"
+    },
+    "requiredCapabilities": [
+      "demand_forecast_non_pit",
+      "inventory_replenishment_replay"
+    ]
+  },
+  "whatIsUnchanged": [
+    "Logical window identical: 2016-07-28 to 2026-07-28.",
+    "masterSeed 20260728 and scenarioVersion 1.0.0 identical.",
+    "controlsByCurrency identical to the cent: INR gross 97238216662.69, net 84426913125.00, tax 12811303537.69, orders 4590902, units 11354448; USD gross 1261917926.25, net 1170730807.46, tax 91187118.79, orders 4209420, units 8917814.",
+    "simulationControls identical: fillRate 0.976855, orders 8800322, orderLines 15785727, fulfillments 9419289, realizedSalesUnits 20272262, lostSalesUnits 480328, skuStoreDays 7471784, transferLines 12055.",
+    "38 of the 40 canonical entities present in both publications carry identical row counts. No canonical entity was removed and none lost rows."
+  ],
+  "whatChanged": {
+    "sourceDatasetsAdded": {
+      "inboundStatusEvents": 313194,
+      "serviceLanes": 7,
+      "storeInventorySnapshots": 986531,
+      "storeTransferEvents": 641434,
+      "storeWasteEvents": 9774,
+      "supplyTerms": 2200
+    },
+    "sourceRowDelta": 1954114,
+    "sourceRowDeltaReconciliation": "1953140 rows in the six new datasets, plus 4 rows in `locations` for the store-echelon nodes, plus 970 rows in the non-authoritative `sourceRunDuckdb` object catalog which tracks the object count. 1953140 + 4 + 970 = 1954114, exactly.",
+    "canonicalEntitiesAdded": [
+      "inbound_shipment_status_events",
+      "inventory_transfer_events",
+      "reconciliation_results",
+      "service_lanes",
+      "supply_terms"
+    ],
+    "canonicalEntitiesChanged": {
+      "stock_snapshots": {
+        "before": 1506240,
+        "after": 2492771,
+        "explanation": "The delta is 986531, exactly the storeInventorySnapshots row count. The DC-grain rows are unchanged; store-grain positions are new, which is what makes the store echelon representable at all."
+      },
+      "quality_violations": {
+        "before": 0,
+        "after": 2,
+        "explanation": "Neither violation is new. B15 (`active price paths contain gaps over 180 days`, outcome `warning`) and B21 (`historical availability evidence is landing-time backfill`, outcome `capability_downgrade` on point_in_time_forecasting with reason LANDING_BACKFILL_DEPENDENCY) both fired on the superseded publication too -- the prior re-pin record quotes B15 staleIntervals 1906 and B21 affectedEntities among its expected values. What changed is that the P4-2 canonical layer now PROJECTS gate violations into a queryable entity instead of leaving them only in gate-b.json. A count moving from 0 to 2 here is evidence becoming visible, not quality regressing."
+      }
+    },
+    "objectCountDirection": "The published object count FELL from 2069 to 1549 while source rows rose. Publication objects are partitioned canonical outputs, not source objects; the v13 transform emits fewer, larger partitions for the same rows. Row counts, not object counts, are the equivalence evidence, which is why 38 unchanged entity counts appear above."
+  },
+  "capabilityChange": {
+    "gained": {
+      "inventory_replenishment_replay": "All five blocking reason codes are absent: HISTORICAL_INBOUND_STATUS_NOT_VERSIONED, HISTORICAL_TRANSFER_STATUS_NOT_VERSIONED, SERVICE_LANES_NOT_DECLARED, STORE_GRAIN_INVENTORY_ABSENT and ORIGIN_SAFE_SUPPLY_TERMS_ABSENT. The superseded publication failed on all five.",
+      "inventory_replenishment_current_snapshot": "Available. No selection was created for it: P4-D15 makes the bundle the activation unit and the bundle names one source selection, and the replay capability requires everything this one requires plus origin-safety."
+    },
+    "unchanged": {
+      "point_in_time_forecasting": "Still unavailable, still LANDING_BACKFILL_DEPENDENCY. Adding supply-side evidence does not make historical availability point-in-time accurate, and this re-pin makes no such claim.",
+      "pricing_elasticity": "Still unavailable, still PRICE_AVAILABILITY_BACKFILLED."
+    }
+  },
+  "verification": [
+    "Gate A status pass, semantic fingerprint 38e6ce74128b77c3eac099ba0b30e62867a3ea267af13f7de14e731882080b58.",
+    "Gate B status pass, semantic fingerprint 6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67.",
+    "The pin was DERIVED from retained evidence by tools/build_expected_pin.py, not transcribed. That tool refuses to write a pin whose required capabilities lack an active decision-#73 selection naming the same publication, and it recomputes the curated DuckDB sha256 and byte size from the file rather than trusting the manifest that declared them.",
+    "The superseded selection transitioned through the lifecycle module rather than being edited: sel_eeb6d9dfe7b201f8 moved active -> superseded with reasonCode PHASE_4_TEN_YEAR_REPIN, and its record chains to the prior active recordId."
+  ],
+  "note": "Kept outside the pin itself because input-bundle.schema.json is additionalProperties:false, and amending a frozen contract to carry a prose justification would be the wrong trade. The pin stays machine-checkable; the reasoning lives here. This record deliberately does not repeat the previous re-pin's equivalence claim, because the claim here is different: the demand evidence is equivalent AND the supply evidence is new. Asserting plain equivalence would hide the only reason the re-pin was necessary."
+}
