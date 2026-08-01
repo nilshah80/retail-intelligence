@@ -5,6 +5,10 @@ import {cleanup, render, screen, within} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {InventoryPage, inventoryScreens, type InventoryPageId} from "./Inventory";
+import {
+  INVENTORY_CONTRACT_SET_ID,
+  INVENTORY_SCREEN_CONTRACTS
+} from "./generated/inventoryScreenContracts";
 
 const PAGE_IDS = Object.keys(inventoryScreens) as InventoryPageId[];
 
@@ -30,6 +34,47 @@ describe("inventory & replenishment destinations", () => {
     for (const endpoint of endpoints) {
       expect(endpoint).toMatch(/^\/api\/v1\/(inventory|replenishment)\//);
     }
+  });
+
+  // -- parity with the frozen contract ----------------------------------------
+
+  it("matches the approved parity contract screen for screen", () => {
+    // Two hand-maintained lists of the same fourteen rows -- the component's
+    // table and the parity YAML -- with nothing checking they agree is how a
+    // screen ends up with a button label nobody approved. The contract side is
+    // generated, so this compares the real thing rather than a copy of it.
+    expect(INVENTORY_SCREEN_CONTRACTS).toHaveLength(14);
+    expect(INVENTORY_CONTRACT_SET_ID).toBe("inventoryReplenishment");
+
+    for (const contract of INVENTORY_SCREEN_CONTRACTS) {
+      const declared = inventoryScreens[contract.screenId as InventoryPageId];
+      expect(declared, `no component screen for ${contract.screenId}`)
+        .toBeDefined();
+      expect(declared.title).toBe(contract.title);
+      expect(declared.endpoint).toBe(contract.endpoint);
+      // Order matters: the toolbar renders in declaration order and the
+      // contract's order is the approved one.
+      expect(declared.actions).toEqual([...contract.actions]);
+    }
+    // And nothing extra: a destination the contract never approved must not
+    // exist in the component either.
+    expect(new Set(PAGE_IDS)).toEqual(
+      new Set(INVENTORY_SCREEN_CONTRACTS.map((c) => c.screenId))
+    );
+  });
+
+  it("renders the toolbar in the contract's declared order", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+    renderPage("inventoryOverview");
+
+    const toolbar = await screen.findByLabelText("Inventory Overview actions");
+    const labels = [...toolbar.querySelectorAll("button")].map(
+      (button) => button.textContent
+    );
+    const contract = INVENTORY_SCREEN_CONTRACTS.find(
+      (entry) => entry.screenId === "inventoryOverview"
+    );
+    expect(labels).toEqual([...contract!.actions]);
   });
 
   it("renders the governed unavailable state on 503, never a sample table", async () => {

@@ -16,6 +16,9 @@ SCHEMA_PATH = REPO_ROOT / "contracts" / "retail_v2" / "schema.yaml"
 HEALTH_POLICY_PATH = (
     REPO_ROOT / "contracts" / "ml" / "forecast-health-policy.json"
 )
+INVENTORY_PARITY_PATH = (
+    REPO_ROOT / "contracts" / "screens" / "inventory-replenishment.parity.yaml"
+)
 UI_GENERATED_ROOT = REPO_ROOT / "ui" / "src" / "generated"
 OUTPUT_ROOT = REPO_ROOT / "contracts" / "generated"
 HEADER = "Generated from contracts/retail_v2/schema.yaml; DO NOT EDIT."
@@ -257,6 +260,71 @@ def render_forecast_health_policy() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _ts(value: str) -> str:
+    """A TypeScript string literal, escaped."""
+
+    return json.dumps(value, ensure_ascii=False)
+
+
+def render_inventory_parity() -> str:
+    """Emit the fourteen destinations' frozen identity for the UI (P4-9 task 9).
+
+    Same reasoning as the health policy above: the React table must not hand-copy
+    a governed contract. `Inventory.tsx` declares a title, endpoint and action
+    list per destination, and the parity contract declares the approved ones --
+    two hand-maintained copies of the same fourteen rows, with nothing checking
+    that they agree. Generating the contract side means a divergence fails
+    `tools/dev.py contracts` and the UI test that compares them, instead of
+    shipping a screen whose button labels nobody approved.
+
+    Only the machine-checkable identity is emitted. `elements` and their
+    `intervalRule` prose stay in the YAML: they are for human review, and pulling
+    them into a TypeScript literal would invite treating the review text as a
+    runtime value.
+    """
+
+    document = yaml.safe_load(INVENTORY_PARITY_PATH.read_text(encoding="utf-8"))
+    screens = document["screens"]
+    lines = [
+        "// Generated from contracts/screens/inventory-replenishment.parity.yaml;",
+        "// DO NOT EDIT.",
+        "",
+        f"export const INVENTORY_CONTRACT_SET_ID = {_ts(document['contractSetId'])};",
+        "",
+        "export const INVENTORY_VIEWPORTS = {",
+        f"  desktop: {_ts(document['viewports']['desktop'])},",
+        f"  mobile: {_ts(document['viewports']['mobile'])}",
+        "} as const;",
+        "",
+        "export const INVENTORY_ACTION_BEHAVIOR =",
+        f"  {_ts(document['actionBehavior'])};",
+        "",
+        "export interface InventoryScreenContract {",
+        "  readonly screenId: string;",
+        "  readonly title: string;",
+        "  readonly endpoint: string;",
+        "  readonly grain: string;",
+        "  readonly actions: readonly string[];",
+        "}",
+        "",
+        "export const INVENTORY_SCREEN_CONTRACTS: readonly InventoryScreenContract[] = [",
+    ]
+    for screen in screens:
+        read_model = screen["readModel"]
+        actions = ", ".join(_ts(action) for action in screen["actions"])
+        lines.extend((
+            "  {",
+            f"    screenId: {_ts(screen['screenId'])},",
+            f"    title: {_ts(screen['title'])},",
+            f"    endpoint: {_ts(read_model['endpoint'])},",
+            f"    grain: {_ts(read_model['grain'])},",
+            f"    actions: [{actions}]",
+            "  },",
+        ))
+    lines.extend(("];", ""))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def expected_outputs() -> dict[Path, str]:
     schema = yaml.safe_load(SCHEMA_PATH.read_text(encoding="utf-8"))
     return {
@@ -265,6 +333,9 @@ def expected_outputs() -> dict[Path, str]:
         OUTPUT_ROOT / "typescript" / "retail_v2.ts": render_typescript(schema),
         UI_GENERATED_ROOT / "forecastHealthPolicy.ts": (
             render_forecast_health_policy()
+        ),
+        UI_GENERATED_ROOT / "inventoryScreenContracts.ts": (
+            render_inventory_parity()
         ),
     }
 
