@@ -2056,6 +2056,18 @@ def generate(
                         None,
                     ),
                     (
+                        "inbound_status_events.csv",
+                        "inboundStatusEvents",
+                        "inboundStatusEvents",
+                        "storeInventory",
+                    ),
+                    (
+                        "supply_terms.csv",
+                        "supplyTerms",
+                        "supplyTerms",
+                        "storeInventory",
+                    ),
+                    (
                         "warehouse_receipts.csv",
                         "warehouseReceipts",
                         "warehouseReceipts",

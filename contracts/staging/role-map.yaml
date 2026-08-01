@@ -35,13 +35,24 @@ boundaryAllowlist:
         `_create_standardized_views` still selects platform relations by name.
         PP3-A3 replaces this with role bindings; the occurrences are tracked
         here so the boundary test fails if new ones appear.
-      occurrences: 61
+        Raised 61 -> 65 at P4-2: source contract v13 adds four neutral roles
+        (service_lanes, inbound_status_events, inventory_transfer_events,
+        supply_terms), each contributing exactly one platform-relation mapping
+        in the same `direct` table every existing role uses. The builder IS the
+        boundary where platform spelling terminates, so these four belong here
+        and nowhere else; canonical transforms import only the neutral names.
+      occurrences: 65
     - path: ingestion/src/retail_ingestion/mappings/locations.py
       reason: >-
         location crosswalk construction reads `stage_data.shopify_locations` and
         an `upstream_topology_bc_code` field. PP3-A3 rebuilds both from neutral
         roles.
-      occurrences: 4
+        Raised 4 -> 5 at P4-2: v13 stores hold stock under their own Business
+        Central location code, and that code must resolve to the SAME canonical
+        store its Shopify location resolves to. The one new occurrence is the
+        store row's `upstream_topology_bc_code` authority label -- the same
+        vocabulary the warehouse mapping has always used.
+      occurrences: 5
   prohibited:
     - ingestion/src/retail_ingestion/transforms
     - ingestion/src/retail_ingestion/quality

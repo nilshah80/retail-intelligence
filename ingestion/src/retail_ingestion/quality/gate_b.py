@@ -599,6 +599,28 @@ def run_gate_b(
         )
         if future_sales:
             b05_errors.append(f"sales: {future_sales} facts known before business date")
+        # `P4-2` task 8. B05 checked this placement class for `sales` only, which
+        # is how 15.8M fulfillment rows shipped knowable before they occurred: the
+        # class of defect was guarded on one entity and present on another. Each
+        # event-bearing entity now pairs its own event time with known_as_of.
+        event_placement_rules = (
+            ("sales_fulfillments", "fulfilled_at"),
+            ("inbound_shipment_status_events", "status_effective_at"),
+            ("inventory_transfer_events", "status_effective_at"),
+        )
+        for entity, event_column in event_placement_rules:
+            if entity not in present:
+                continue
+            premature = _scalar(
+                connection,
+                f"SELECT count(*) FROM canonical_data.{entity} "
+                f"WHERE known_as_of < {event_column}",
+            )
+            if premature:
+                b05_errors.append(
+                    f"{entity}: {premature} rows knowable before {event_column}; "
+                    "a fact cannot be available before it occurred"
+                )
         rules.append(
             _critical("B05", "point-in-time placement validation failed", b05_errors)
             if b05_errors

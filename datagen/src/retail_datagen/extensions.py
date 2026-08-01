@@ -545,6 +545,15 @@ def build_commerce_extensions(
     }
 
 
+def _bc_iso(day: date, hour: int, timezone: str) -> str:
+    from zoneinfo import ZoneInfo
+    from datetime import time as _time
+
+    return datetime.combine(
+        day, _time(hour=min(23, max(0, hour))), tzinfo=ZoneInfo(timezone)
+    ).isoformat()
+
+
 def build_supply_extensions(
     config: dict[str, Any],
     markets: dict[str, dict[str, Any]],
@@ -619,9 +628,109 @@ def build_supply_extensions(
                 }
             )
 
+    # ------------------------------------------------------------------
+    # Source contract v13: origin-safe, varied supply terms.
+    #
+    # The v1 `vendorItemTerms` above are deliberately retained -- they are what
+    # the accepted pin ingested, and rewriting them would rebaseline v12
+    # consumers. Their defects are exactly why `supplyTerms` exists beside them:
+    # every row carries lead 5 / MOQ 12 / pack 6, category scope only, and no
+    # destination or origin, which reads as a wildcard downstream. Terms that
+    # never vary produce a zero-variance safety stock, and a null origin let an
+    # external supplier term match an internal transfer lane by accident.
+    #
+    # v13 terms are destination-scoped, carry an explicit external origin, vary
+    # deterministically by (vendor, destination, scope), and exercise the
+    # sku > dept > category precedence the resolver must implement: category is
+    # the base, roughly a third of vendor x dept pairs carry an override, and a
+    # twelfth of SKUs carry an exact term.
+    # ------------------------------------------------------------------
+    supply_terms = rows("supply-terms")
+    start = date.fromisoformat(config["time"]["startDate"])
+
+    def _term_values(*identity: str) -> dict[str, Any]:
+        lead = 4 + stable_integer("term-lead", *identity, modulo=6)          # 4..9
+        std_tenths = 5 + stable_integer("term-std", *identity, modulo=21)   # 0.5..2.5
+        moq = (6, 12, 24, 48)[stable_integer("term-moq", *identity, modulo=4)]
+        pack = (4, 6, 12)[stable_integer("term-pack", *identity, modulo=3)]
+        return {
+            "leadTimeDays": lead,
+            "leadTimeStdDevDays": f"{std_tenths / 10:.1f}",
+            "minimumOrderQuantity": moq,
+            "orderMultiple": pack,
+        }
+
+    if config["operations"]["features"].get("storeInventory"):
+        term_scope_seen: set[tuple[str, ...]] = set()
+        for market_id, variants in sorted(variants_by_market.items()):
+            market_warehouses = sorted(
+                warehouse["warehouseId"]
+                for warehouse in warehouses.values()
+                if warehouse["marketId"] == market_id
+            )
+            for variant in variants:
+                vendor_key = f"supplier:{market_id}:{variant['_brandCode']}"
+                for warehouse_id in market_warehouses:
+                    scopes: list[tuple[str, str]] = [
+                        ("category", variant["_categoryId"])
+                    ]
+                    if stable_integer(
+                        "term-dept-override",
+                        vendor_key,
+                        warehouse_id,
+                        variant["_departmentId"],
+                        modulo=3,
+                    ) == 0:
+                        scopes.append(("dept", variant["_departmentId"]))
+                    if stable_integer(
+                        "term-sku-override",
+                        vendor_key,
+                        warehouse_id,
+                        variant["sku"],
+                        modulo=12,
+                    ) == 0:
+                        scopes.append(("sku", variant["sku"]))
+                    for scope_type, scope_id in scopes:
+                        identity = (
+                            vendor_key,
+                            warehouse_id,
+                            scope_type,
+                            scope_id,
+                        )
+                        if identity in term_scope_seen:
+                            continue
+                        term_scope_seen.add(identity)
+                        timezone = markets[market_id]["timezone"]
+                        supply_terms.append(
+                            {
+                                "vendorId": bc_uuid("Vendor", vendor_key),
+                                "destinationLocationCode": warehouses[
+                                    warehouse_id
+                                ]["businessCentralLocationCode"],
+                                "originKind": "external_supplier",
+                                "merchScopeType": scope_type,
+                                "merchScopeId": scope_id,
+                                "effectiveFrom": start.isoformat(),
+                                **_term_values(*identity),
+                                "capacityUnitsPerMonth": 2000
+                                + stable_integer(
+                                    "term-capacity", *identity, modulo=3000
+                                ),
+                                "paymentTermsCode": "NET30",
+                                "observedAt": _bc_iso(start, 8, timezone),
+                            }
+                        )
+
     po_headers: dict[str, dict[str, Any]] = {}
     po_lines = rows("supply-purchase-order-lines")
     inbound_shipments: dict[str, dict[str, Any]] = {}
+    # v13: status history per shipment. `inboundShipments` above keeps only the
+    # CURRENT status, so a position was reconstructible at the cutoff and nowhere
+    # else. Each transition is timed by when it became true (statusEffectiveAt)
+    # and separately by when it became knowable (observedAt, strictly later):
+    # Gate B B05 requires known_as_of >= status_effective_at.
+    inbound_status_events = rows("supply-inbound-status-events")
+    inbound_status_seen: set[str] = set()
     receipt_headers: dict[str, dict[str, Any]] = {}
     receipt_lines = rows("supply-warehouse-receipt-lines")
     cost_layers = rows("supply-item-cost-layers")
@@ -675,6 +784,51 @@ def build_supply_extensions(
                 "currencyCode": receipt["currencyCode"],
             }
         )
+        if (
+            config["operations"]["features"].get("storeInventory")
+            and po_key not in inbound_status_seen
+        ):
+            inbound_status_seen.add(po_key)
+            shipment_id = bc_uuid("InboundShipment", po_key)
+            timezone = markets[
+                warehouses[receipt["warehouseId"]]["marketId"]
+            ]["timezone"]
+            order_day = date.fromisoformat(receipt["orderDate"])
+            actual_day = (
+                date.fromisoformat(receipt["actualDate"])
+                if receipt["status"] == "Received"
+                else None
+            )
+            # Dispatch the day after ordering, clamped so a fast receipt can
+            # never dispatch after it arrived.
+            dispatch_day = order_day + timedelta(days=1)
+            if actual_day is not None and dispatch_day > actual_day:
+                dispatch_day = order_day
+            transitions: list[tuple[str, date]] = [
+                ("on_order", order_day),
+                ("in_transit", dispatch_day),
+            ]
+            if actual_day is not None:
+                transitions.append(("received", actual_day))
+            for status_name, status_day in transitions:
+                inbound_status_events.append(
+                    {
+                        "shipmentId": shipment_id,
+                        "sku": receipt["sku"],
+                        "locationCode": warehouses[receipt["warehouseId"]][
+                            "businessCentralLocationCode"
+                        ],
+                        "quantity": receipt["quantity"],
+                        "status": status_name,
+                        # Effective at 08:00 local; knowable at 10:00 the same
+                        # day. Two hours of processing delay keeps B05's
+                        # known_as_of >= status_effective_at strict rather than
+                        # degenerate-equal.
+                        "statusEffectiveAt": _bc_iso(status_day, 8, timezone),
+                        "observedAt": _bc_iso(status_day, 10, timezone),
+                        "expectedReceiptDate": receipt["expectedDate"],
+                    }
+                )
         inbound_shipments.setdefault(
             po_key,
             {
@@ -963,9 +1117,11 @@ def build_supply_extensions(
     return {
         "vendors": vendors,
         "vendorItemTerms": vendor_terms,
+        "supplyTerms": supply_terms,
         "purchaseOrders": list(po_headers.values()),
         "purchaseOrderLines": po_lines,
         "inboundShipments": list(inbound_shipments.values()),
+        "inboundStatusEvents": inbound_status_events,
         "warehouseReceipts": list(receipt_headers.values()),
         "warehouseReceiptLines": receipt_lines,
         "itemCostLayers": cost_layers,

@@ -141,6 +141,16 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
         "eventId", "sku", "locationCode", "eventDate", "quantity",
         "reasonCode", "observedAt",
     ),
+    "inboundStatusEvents": (
+        "shipmentId", "sku", "locationCode", "quantity", "status",
+        "statusEffectiveAt", "observedAt", "expectedReceiptDate",
+    ),
+    "supplyTerms": (
+        "vendorId", "destinationLocationCode", "originKind", "merchScopeType",
+        "merchScopeId", "effectiveFrom", "leadTimeDays", "leadTimeStdDevDays",
+        "minimumOrderQuantity", "orderMultiple", "capacityUnitsPerMonth",
+        "paymentTermsCode", "observedAt",
+    ),
     "serviceLanes": (
         "laneKey", "marketKey", "laneType", "demandLocationKey", "channelKey",
         "supplyLocationKey", "priorityRank", "transitDays", "effectiveFrom",

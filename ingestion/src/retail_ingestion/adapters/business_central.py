@@ -9,7 +9,7 @@ from .registry import register_adapter
 @register_adapter
 class BusinessCentralAdapter(SourceAdapter):
     source_system = "businessCentral"
-    adapter_version = "business-central-adapter/1.1.0"
+    adapter_version = "business-central-adapter/1.2.0"
     raw_schema = "raw_business_central"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -60,6 +60,58 @@ class BusinessCentralAdapter(SourceAdapter):
             FROM raw_business_central.inventory_snapshots
             """
         )
+        if "store_inventory_snapshots" in {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'raw_business_central'
+                """
+            ).fetchall()
+        }:
+            # Source contract v13. Store rows flow into the SAME staging role as
+            # the DC rows -- one inventory relation, one canonical transform --
+            # so the two echelons cannot drift on ATP semantics. The store file
+            # carries assortment/residual context the DC file does not; those
+            # columns ride into canonical via the shared transform's passthrough
+            # of source-observed ATP and are re-derived downstream where needed.
+            con.execute(
+                f"""
+                INSERT INTO stage_data.bc_inventory
+                SELECT
+                    'businessCentral'::VARCHAR,
+                    _source_instance,
+                    '{source_schema_version}'::VARCHAR,
+                    '{snapshot_id}'::VARCHAR,
+                    {repr(native_snapshot_id)}::VARCHAR,
+                    concat(locationCode, ':', sku, ':', observedAt)::VARCHAR,
+                    _market_id,
+                    try_cast(observedAt AS TIMESTAMPTZ),
+                    'native_observed'::VARCHAR,
+                    'ERP_ACTUAL'::VARCHAR,
+                    _raw_object_hash,
+                    '{profile_version}'::VARCHAR,
+                    '{self.adapter_version}'::VARCHAR,
+                    sku::VARCHAR,
+                    locationCode::VARCHAR,
+                    cast(
+                        timezone(
+                            _business_timezone,
+                            try_cast(observedAt AS TIMESTAMPTZ)
+                        ) AS DATE
+                    ),
+                    try_cast(inventory AS BIGINT),
+                    try_cast(incomingInventory AS BIGINT),
+                    try_cast(committedInventory AS BIGINT),
+                    try_cast(reservedInventory AS BIGINT),
+                    try_cast(damagedInventory AS BIGINT),
+                    try_cast(qualityControlInventory AS BIGINT),
+                    try_cast(safetyStockInventory AS BIGINT),
+                    try_cast(availableInventory AS BIGINT),
+                    _raw_object_path
+                FROM raw_business_central.store_inventory_snapshots
+                """
+            )
 
         con.execute(
             f"""
@@ -284,6 +336,181 @@ class BusinessCentralAdapter(SourceAdapter):
              AND l._source_instance = s._source_instance
             """
         )
+        # Source contract v13. These three relations exist only when the source
+        # run was generated with the storeInventory feature; DuckDB CREATE OR
+        # REPLACE over a missing raw relation would fail, so presence is probed
+        # first and an empty typed table is created otherwise -- a v12 landing
+        # stays processable and simply carries no v13 evidence.
+        v13_relations = {
+            row[0]
+            for row in con.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'raw_business_central'
+                """
+            ).fetchall()
+        }
+        if "inbound_status_events" in v13_relations:
+            con.execute(
+                f"""
+                CREATE OR REPLACE TABLE stage_data.bc_inbound_status_events AS
+                SELECT
+                    'businessCentral'::VARCHAR AS source_system,
+                    _source_instance AS source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    concat(shipmentId, ':', sku, ':', status)::VARCHAR
+                        AS native_record_id,
+                    _market_id AS market_id,
+                    -- observedAt is when the status became knowable, and it is
+                    -- strictly after statusEffectiveAt by construction. Deriving
+                    -- known_as_of from the effective time instead would repeat
+                    -- the fulfillment defect this contract exists to close.
+                    try_cast(observedAt AS TIMESTAMPTZ) AS known_as_of,
+                    'native_observed'::VARCHAR AS evidence_grade,
+                    'ERP_ACTUAL'::VARCHAR AS row_provenance,
+                    _raw_object_hash AS raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    shipmentId::VARCHAR AS source_shipment_id,
+                    sku::VARCHAR AS sku_source_key,
+                    locationCode::VARCHAR AS location_source_key,
+                    NULL::VARCHAR AS from_location_source_key,
+                    try_cast(quantity AS BIGINT) AS qty,
+                    lower(status)::VARCHAR AS status,
+                    try_cast(statusEffectiveAt AS TIMESTAMPTZ)
+                        AS status_effective_at,
+                    try_cast(expectedReceiptDate AS DATE) AS expected_date,
+                    _raw_object_path AS raw_object_path
+                FROM raw_business_central.inbound_status_events
+                """
+            )
+        else:
+            con.execute(
+                """
+                CREATE OR REPLACE TABLE stage_data.bc_inbound_status_events (
+                    source_system VARCHAR, source_instance VARCHAR,
+                    source_schema_version VARCHAR, source_snapshot_id VARCHAR,
+                    native_snapshot_id VARCHAR, native_record_id VARCHAR,
+                    market_id VARCHAR, known_as_of TIMESTAMPTZ,
+                    evidence_grade VARCHAR, row_provenance VARCHAR,
+                    raw_object_hash VARCHAR, profile_version VARCHAR,
+                    adapter_version VARCHAR, source_shipment_id VARCHAR,
+                    sku_source_key VARCHAR, location_source_key VARCHAR,
+                    from_location_source_key VARCHAR, qty BIGINT,
+                    status VARCHAR, status_effective_at TIMESTAMPTZ,
+                    expected_date DATE, raw_object_path VARCHAR
+                )
+                """
+            )
+        if "store_transfer_events" in v13_relations:
+            con.execute(
+                f"""
+                CREATE OR REPLACE TABLE stage_data.bc_inventory_transfer_events AS
+                SELECT
+                    'businessCentral'::VARCHAR AS source_system,
+                    _source_instance AS source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    concat(transferId, ':', status)::VARCHAR AS native_record_id,
+                    _market_id AS market_id,
+                    try_cast(observedAt AS TIMESTAMPTZ) AS known_as_of,
+                    'native_observed'::VARCHAR AS evidence_grade,
+                    'ERP_ACTUAL'::VARCHAR AS row_provenance,
+                    _raw_object_hash AS raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    transferId::VARCHAR AS source_transfer_id,
+                    sku::VARCHAR AS sku_source_key,
+                    fromLocationCode::VARCHAR AS from_location_source_key,
+                    toLocationCode::VARCHAR AS to_location_source_key,
+                    try_cast(quantity AS BIGINT) AS qty,
+                    lower(status)::VARCHAR AS status,
+                    try_cast(statusEffectiveAt AS TIMESTAMPTZ)
+                        AS status_effective_at,
+                    try_cast(unitCostAmountMinor AS BIGINT) AS unit_cost_minor,
+                    currencyCode::VARCHAR AS currency_code,
+                    _raw_object_path AS raw_object_path
+                FROM raw_business_central.store_transfer_events
+                """
+            )
+        else:
+            con.execute(
+                """
+                CREATE OR REPLACE TABLE stage_data.bc_inventory_transfer_events (
+                    source_system VARCHAR, source_instance VARCHAR,
+                    source_schema_version VARCHAR, source_snapshot_id VARCHAR,
+                    native_snapshot_id VARCHAR, native_record_id VARCHAR,
+                    market_id VARCHAR, known_as_of TIMESTAMPTZ,
+                    evidence_grade VARCHAR, row_provenance VARCHAR,
+                    raw_object_hash VARCHAR, profile_version VARCHAR,
+                    adapter_version VARCHAR, source_transfer_id VARCHAR,
+                    sku_source_key VARCHAR, from_location_source_key VARCHAR,
+                    to_location_source_key VARCHAR, qty BIGINT, status VARCHAR,
+                    status_effective_at TIMESTAMPTZ, unit_cost_minor BIGINT,
+                    currency_code VARCHAR, raw_object_path VARCHAR
+                )
+                """
+            )
+        if "supply_terms" in v13_relations:
+            con.execute(
+                f"""
+                CREATE OR REPLACE TABLE stage_data.bc_supply_terms AS
+                SELECT
+                    'businessCentral'::VARCHAR AS source_system,
+                    _source_instance AS source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    concat(
+                        vendorId, ':', destinationLocationCode, ':',
+                        merchScopeType, ':', merchScopeId
+                    )::VARCHAR AS native_record_id,
+                    _market_id AS market_id,
+                    try_cast(observedAt AS TIMESTAMPTZ) AS known_as_of,
+                    'native_extracted'::VARCHAR AS evidence_grade,
+                    'ERP_ACTUAL'::VARCHAR AS row_provenance,
+                    _raw_object_hash AS raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    destinationLocationCode::VARCHAR
+                        AS destination_location_source_key,
+                    originKind::VARCHAR AS origin_kind,
+                    vendorId::VARCHAR AS origin_source_key,
+                    merchScopeType::VARCHAR AS merch_scope_type,
+                    merchScopeId::VARCHAR AS merch_scope_id,
+                    try_cast(effectiveFrom AS DATE) AS effective_from,
+                    try_cast(leadTimeDays AS INTEGER) AS lead_time_days,
+                    try_cast(leadTimeStdDevDays AS DECIMAL(8, 2))
+                        AS lead_time_std_days,
+                    try_cast(minimumOrderQuantity AS BIGINT) AS moq_units,
+                    try_cast(orderMultiple AS BIGINT) AS pack_size_units,
+                    _raw_object_path AS raw_object_path
+                FROM raw_business_central.supply_terms
+                """
+            )
+        else:
+            con.execute(
+                """
+                CREATE OR REPLACE TABLE stage_data.bc_supply_terms (
+                    source_system VARCHAR, source_instance VARCHAR,
+                    source_schema_version VARCHAR, source_snapshot_id VARCHAR,
+                    native_snapshot_id VARCHAR, native_record_id VARCHAR,
+                    market_id VARCHAR, known_as_of TIMESTAMPTZ,
+                    evidence_grade VARCHAR, row_provenance VARCHAR,
+                    raw_object_hash VARCHAR, profile_version VARCHAR,
+                    adapter_version VARCHAR,
+                    destination_location_source_key VARCHAR,
+                    origin_kind VARCHAR, origin_source_key VARCHAR,
+                    merch_scope_type VARCHAR, merch_scope_id VARCHAR,
+                    effective_from DATE, lead_time_days INTEGER,
+                    lead_time_std_days DECIMAL(8, 2), moq_units BIGINT,
+                    pack_size_units BIGINT, raw_object_path VARCHAR
+                )
+                """
+            )
         con.execute(
             """
             CREATE OR REPLACE TABLE stage_data.bc_transfer_orders AS
@@ -391,6 +618,9 @@ class BusinessCentralAdapter(SourceAdapter):
             "stage_data.bc_receipts",
             "stage_data.bc_products",
             "stage_data.bc_supplier_terms",
+            "stage_data.bc_supply_terms",
+            "stage_data.bc_inbound_status_events",
+            "stage_data.bc_inventory_transfer_events",
             "stage_data.bc_sales_control",
             "stage_data.bc_inventory_cost",
             "stage_data.bc_inventory_batches",

@@ -344,6 +344,12 @@ def _create_standardized_views(
         "warehouse_capacity": "bc_warehouse_capacity",
         "wms_comparisons": "bc_wms_comparisons",
         "supplier_performance": "bc_supplier_performance",
+        # Source contract v13. Neutral names, because the canonical transforms may
+        # import ONLY these: the platform spelling stops here.
+        "service_lanes": "companion_service_lanes",
+        "inbound_status_events": "bc_inbound_status_events",
+        "inventory_transfer_events": "bc_inventory_transfer_events",
+        "supply_terms": "bc_supply_terms",
     }
     # An adapter names its relation after the staging-v2 role, and several neutral
     # relations are not spelled like their role (`locations` <- `location`). The

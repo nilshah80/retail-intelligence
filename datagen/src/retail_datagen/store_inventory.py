@@ -234,9 +234,19 @@ class StoreEchelon:
             cell.on_hand += arrival["quantity"]
             if cell.oldest_receipt_day is None:
                 cell.oldest_receipt_day = day
-            yield {**arrival, "status": "received", "statusEffectiveAt": _iso_at(
+            received_at = _iso_at(
                 day, self.markets[arrival["marketKey"]]["timezone"]
-            )}
+            )
+            # Both stamps move to the receipt day. `**arrival` carries the
+            # dispatch-day observedAt, and leaving it would make every received
+            # event knowable BEFORE it became effective -- the exact placement
+            # class Gate B B05 refuses.
+            yield {
+                **arrival,
+                "status": "received",
+                "statusEffectiveAt": received_at,
+                "observedAt": received_at,
+            }
 
     def sell(
         self,

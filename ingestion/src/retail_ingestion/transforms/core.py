@@ -751,7 +751,14 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         """
         CREATE TABLE canonical_data.local_events AS
         SELECT
-            market_id, lower(geo_scope_type)::VARCHAR AS geo_scope_type,
+            market_id,
+            -- 'store' is the source's spelling of a location-scoped event. The
+            -- canonical enum is market/region/location, and a store IS a
+            -- location; passing the dialect word through was invisible until a
+            -- fixture actually carried store-targeted events.
+            CASE WHEN lower(geo_scope_type) = 'store' THEN 'location'
+                ELSE lower(geo_scope_type)
+            END::VARCHAR AS geo_scope_type,
             CASE WHEN lower(geo_scope_type) = 'market' THEN market_id
                 ELSE geo_scope_id
             END::VARCHAR AS geo_scope_id,
@@ -1053,6 +1060,208 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
           ON l.location_id = concat(t.market_id, ':', origin.canonical_location_key)
         """
     )
+    # ------------------------------------------------------------------
+    # Source contract v13 entities. Each staging relation is probed first: a v12
+    # staging database has none of them, and the canonical tables are then
+    # created empty so the entity inventory stays contract-complete on every
+    # generation of input.
+    # ------------------------------------------------------------------
+    # duckdb_tables()/duckdb_views() rather than information_schema: the staging
+    # database is ATTACHED under the name `stage`, and an attached catalog's
+    # information_schema is not addressable as `stage.information_schema`. Views
+    # are probed too, because the neutral role names are views over the adapter
+    # tables.
+    staged_relations = {
+        row[0]
+        for row in connection.execute(
+            """
+            SELECT table_name FROM duckdb_tables()
+            WHERE database_name = 'stage' AND schema_name = 'stage_data'
+            UNION ALL
+            SELECT view_name FROM duckdb_views()
+            WHERE database_name = 'stage' AND schema_name = 'stage_data'
+            """
+        ).fetchall()
+    }
+
+    if "service_lanes" in staged_relations:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.service_lanes AS
+            SELECT
+                concat(s.market_id, ':', s.laneKey)::VARCHAR AS lane_id,
+                s.market_id::VARCHAR AS market_id,
+                s.laneType::VARCHAR AS lane_type,
+                concat(s.market_id, ':', demand.canonical_location_key)::VARCHAR
+                    AS demand_location_id,
+                -- Empty string is the source's spelling of "market-wide default".
+                -- Canonical stores NULL: an exact channel row wins over it, and
+                -- an empty string that joined like a value would defeat the
+                -- default semantics the contract declares.
+                CASE WHEN s.channelKey IS NULL OR s.channelKey = ''
+                    THEN NULL ELSE s.channelKey
+                END::VARCHAR AS channel_id,
+                concat(s.market_id, ':', supply.canonical_location_key)::VARCHAR
+                    AS supply_location_id,
+                try_cast(s.priorityRank AS INTEGER) AS priority_rank,
+                try_cast(s.transitDays AS INTEGER) AS transit_days,
+                try_cast(s.effectiveFrom AS DATE) AS effective_from,
+                CASE WHEN s.effectiveTo IS NULL OR s.effectiveTo = ''
+                    THEN NULL ELSE try_cast(s.effectiveTo AS DATE)
+                END AS effective_to,
+                s.known_as_of,
+                s.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+            FROM stage.stage_data.service_lanes AS s
+            JOIN stage.stage_data.location_crosswalk AS demand
+              ON demand.source_system = s.source_system
+             AND demand.market_id = s.market_id
+             AND demand.source_location_key = s.demandLocationKey
+            JOIN stage.stage_data.location_crosswalk AS supply
+              ON supply.source_system = s.source_system
+             AND supply.market_id = s.market_id
+             AND supply.source_location_key = s.supplyLocationKey
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.service_lanes (
+                lane_id VARCHAR, market_id VARCHAR, lane_type VARCHAR,
+                demand_location_id VARCHAR, channel_id VARCHAR,
+                supply_location_id VARCHAR, priority_rank INTEGER,
+                transit_days INTEGER, effective_from DATE, effective_to DATE,
+                known_as_of TIMESTAMPTZ, known_as_of_evidence_grade VARCHAR
+            )
+            """
+        )
+
+    if "inbound_status_events" in staged_relations:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.inbound_shipment_status_events AS
+            SELECT
+                s.source_shipment_id::VARCHAR AS shipment_id,
+                concat(s.market_id, ':', s.sku_source_key)::VARCHAR AS sku_id,
+                CASE WHEN s.from_location_source_key IS NULL THEN NULL
+                    ELSE concat(s.market_id, ':', origin.canonical_location_key)
+                END::VARCHAR AS from_location,
+                concat(s.market_id, ':', dest.canonical_location_key)::VARCHAR
+                    AS to_location,
+                s.qty::BIGINT AS qty,
+                s.status::VARCHAR AS status,
+                s.status_effective_at,
+                s.expected_date AS expected_receipt_date,
+                s.known_as_of,
+                s.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+            FROM stage.stage_data.inbound_status_events AS s
+            JOIN stage.stage_data.location_crosswalk AS dest
+              ON dest.source_system = s.source_system
+             AND dest.market_id = s.market_id
+             AND dest.source_location_key = s.location_source_key
+            LEFT JOIN stage.stage_data.location_crosswalk AS origin
+              ON origin.source_system = s.source_system
+             AND origin.market_id = s.market_id
+             AND origin.source_location_key = s.from_location_source_key
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.inbound_shipment_status_events (
+                shipment_id VARCHAR, sku_id VARCHAR, from_location VARCHAR,
+                to_location VARCHAR, qty BIGINT, status VARCHAR,
+                status_effective_at TIMESTAMPTZ, expected_receipt_date DATE,
+                known_as_of TIMESTAMPTZ, known_as_of_evidence_grade VARCHAR
+            )
+            """
+        )
+
+    if "inventory_transfer_events" in staged_relations:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.inventory_transfer_events AS
+            SELECT
+                t.source_transfer_id::VARCHAR AS transfer_id,
+                concat(t.market_id, ':', t.sku_source_key)::VARCHAR AS sku_id,
+                concat(t.market_id, ':', origin.canonical_location_key)::VARCHAR
+                    AS from_location_id,
+                concat(t.market_id, ':', dest.canonical_location_key)::VARCHAR
+                    AS to_location_id,
+                t.qty::BIGINT AS qty,
+                t.status::VARCHAR AS status,
+                t.status_effective_at,
+                t.unit_cost_minor::BIGINT AS unit_cost_minor,
+                t.currency_code::VARCHAR AS currency_code,
+                t.known_as_of,
+                t.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+            FROM stage.stage_data.inventory_transfer_events AS t
+            JOIN stage.stage_data.location_crosswalk AS origin
+              ON origin.source_system = t.source_system
+             AND origin.market_id = t.market_id
+             AND origin.source_location_key = t.from_location_source_key
+            JOIN stage.stage_data.location_crosswalk AS dest
+              ON dest.source_system = t.source_system
+             AND dest.market_id = t.market_id
+             AND dest.source_location_key = t.to_location_source_key
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.inventory_transfer_events (
+                transfer_id VARCHAR, sku_id VARCHAR, from_location_id VARCHAR,
+                to_location_id VARCHAR, qty BIGINT, status VARCHAR,
+                status_effective_at TIMESTAMPTZ, unit_cost_minor BIGINT,
+                currency_code VARCHAR, known_as_of TIMESTAMPTZ,
+                known_as_of_evidence_grade VARCHAR
+            )
+            """
+        )
+
+    if "supply_terms" in staged_relations:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.supply_terms AS
+            SELECT
+                concat(t.market_id, ':', dest.canonical_location_key)::VARCHAR
+                    AS destination_location_id,
+                t.origin_kind::VARCHAR AS origin_kind,
+                concat(t.market_id, ':', t.origin_source_key)::VARCHAR
+                    AS origin_id,
+                t.merch_scope_type::VARCHAR AS merch_scope_type,
+                CASE WHEN t.merch_scope_type = 'sku'
+                    THEN concat(t.market_id, ':', t.merch_scope_id)
+                    ELSE t.merch_scope_id
+                END::VARCHAR AS merch_scope_id,
+                t.effective_from,
+                NULL::DATE AS effective_to,
+                t.lead_time_days::INTEGER AS lead_time_days,
+                t.lead_time_std_days,
+                t.moq_units::BIGINT AS moq,
+                t.pack_size_units::BIGINT AS pack_qty,
+                t.known_as_of,
+                t.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+            FROM stage.stage_data.supply_terms AS t
+            JOIN stage.stage_data.location_crosswalk AS dest
+              ON dest.source_system = t.source_system
+             AND dest.market_id = t.market_id
+             AND dest.source_location_key = t.destination_location_source_key
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.supply_terms (
+                destination_location_id VARCHAR, origin_kind VARCHAR,
+                origin_id VARCHAR, merch_scope_type VARCHAR,
+                merch_scope_id VARCHAR, effective_from DATE, effective_to DATE,
+                lead_time_days INTEGER, lead_time_std_days DECIMAL(8, 2),
+                moq BIGINT, pack_qty BIGINT, known_as_of TIMESTAMPTZ,
+                known_as_of_evidence_grade VARCHAR
+            )
+            """
+        )
+
     connection.execute(
         """
         CREATE TABLE canonical_data.allocations AS
@@ -1159,6 +1368,8 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         "inventory_batches", "inbound_shipments", "transfer_orders",
         "allocations", "waste_events", "warehouse_capacity_snapshots",
         "wms_inventory_comparisons", "supplier_performance",
+        "service_lanes", "inbound_shipment_status_events",
+        "inventory_transfer_events", "supply_terms",
     )
 
 

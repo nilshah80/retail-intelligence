@@ -91,6 +91,11 @@ class CompanionAdapter(SourceAdapter):
             "storeAssortment": "observedAt",
             "weatherActuals": "observedAt",
             "weatherForecasts": "issuedAt",
+            # Source contract v13. Lanes are effective-dated planning facts; their
+            # observation time is when the declaration was recorded, and without
+            # this entry they would fall back to landing_backfill and be
+            # replay-ineligible by construction.
+            "serviceLanes": "observedAt",
         }
         staged_datasets: dict[str, str] = {}
         for ref in context.catalog.for_source(self.source_system):
