@@ -82,6 +82,16 @@ class MarketHistory:
     cells: list[tuple[str, str]]
 
 
+def _as_day(value: Any) -> date:
+    """Normalise a DuckDB date-ish value to a plain `date`."""
+
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return pd.Timestamp(value).date()
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ReplayDriverError(message)
@@ -207,16 +217,49 @@ def load_market_history(
     for store, sku, day, units in arrival_rows:
         arrivals[period_for(day)][(str(sku), str(store))] += int(units)
 
-    # Closing stock per period is the snapshot on the LAST day of that period, so
-    # it is comparable to the replay's own closing state. Averaging the week would
-    # compare a mean to an instant.
-    closing_by_period: dict[datetime, dict[date, int]] = defaultdict(dict)
-    for day, units in observed_rows:
-        day_value = day if isinstance(day, date) else pd.Timestamp(day).date()
-        closing_by_period[period_for(day_value)][day_value] = int(units)
+    # Bridge the Thursday snapshot to the period close (P4-D5 / policy v2's
+    # `replayClock`). This is the correction that mattered most.
+    #
+    # 984,103 of 986,531 store snapshots in this publication are Thursday-dated,
+    # exactly as `openingSnapshot: immediately_preceding_thursday` declares, and
+    # the policy is explicit that such a snapshot is the OPENING evidence for the
+    # following Monday period, bridged forward 73 hours -- never the period's own
+    # closing state. Taking the last snapshot in the ISO week and calling it the
+    # close compared a Thursday 23:00 instant against a Sunday-midnight one, three
+    # days of demand and arrivals apart. Across ~26,000 units of weekly demand and
+    # 1,238 cells that gap is worth roughly nine units per cell, which is most of
+    # the 13.84 the oracle was reporting.
+    #
+    # So the observed close of period N is derived: the Thursday snapshot inside N,
+    # plus Friday-to-Sunday arrivals, less Friday-to-Sunday demand. Thursday's own
+    # movements are already inside a 23:00 snapshot, so the bridge starts Friday.
+    daily_demand: dict[date, int] = defaultdict(int)
+    for _store, _sku, day, units in demand_rows:
+        daily_demand[_as_day(day)] += int(units)
+    daily_arrivals: dict[date, int] = defaultdict(int)
+    for _store, _sku, day, units in arrival_rows:
+        daily_arrivals[_as_day(day)] += int(units)
+
+    snapshot_by_day: dict[date, int] = {
+        _as_day(day): int(units) for day, units in observed_rows
+    }
     observed: dict[datetime, int] = {}
-    for period, by_day in closing_by_period.items():
-        observed[period] = by_day[max(by_day)]
+    for origin in origins:
+        period_open = period_for(origin)
+        # The Thursday inside this period, and the three bridge days after it.
+        thursday = origin + timedelta(days=3)
+        snapshot = snapshot_by_day.get(thursday)
+        if snapshot is None:
+            # No state evidence for this period. Skipped rather than guessed: an
+            # interpolated snapshot is exactly what `interpolationFromWeeklyState:
+            # forbidden` rules out.
+            continue
+        bridged = snapshot
+        for offset in (4, 5, 6):
+            bridge_day = origin + timedelta(days=offset)
+            bridged += daily_arrivals.get(bridge_day, 0)
+            bridged -= daily_demand.get(bridge_day, 0)
+        observed[period_open] = max(0, bridged)
 
     opening = {
         (str(sku), str(store)): int(units)
