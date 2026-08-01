@@ -662,27 +662,27 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 	}
 	payload := s.envelope("retail-forecast-summary/v1")
 	payload["items"] = []map[string]any{{
-		"accuracy":            accuracy,
-		"bias":                bias,
-		"p90Coverage":         p90Coverage,
-		"baselineAccuracy":    baselineAccuracy,
-		"fvaVsMa13Pct":        fvaVsMA13,
-		"accuracyGrain":                  "series_key",
-		"baselineAccuracyGrain":          "series_key",
-		"fvaGrain":                       "series_key",
-		"portfolioAccuracy":              portfolio["accuracy"],
-		"portfolioBias":                  portfolio["bias"],
-		"portfolioBaselineAccuracy":      portfolio["baselineAccuracy"],
-		"portfolioFvaVsMa13Pct":          portfolio["fvaVsMa13Pct"],
-		"portfolioAccuracyGrain":         "market_portfolio",
-		"demandUnits":         demandUnits,
-		"seriesCount":         seriesCount,
-		"exceptionCount":      exceptionCount,
-		"exceptionCounts":     exceptionCounts,
-		"qualityCounts":       qualityCounts,
-		"forecastCoveragePct": forecastCoverage,
-		"backtestCoveragePct": backtestCoverage,
-		"categories":          categories,
+		"accuracy":                  accuracy,
+		"bias":                      bias,
+		"p90Coverage":               p90Coverage,
+		"baselineAccuracy":          baselineAccuracy,
+		"fvaVsMa13Pct":              fvaVsMA13,
+		"accuracyGrain":             "series_key",
+		"baselineAccuracyGrain":     "series_key",
+		"fvaGrain":                  "series_key",
+		"portfolioAccuracy":         portfolio["accuracy"],
+		"portfolioBias":             portfolio["bias"],
+		"portfolioBaselineAccuracy": portfolio["baselineAccuracy"],
+		"portfolioFvaVsMa13Pct":     portfolio["fvaVsMa13Pct"],
+		"portfolioAccuracyGrain":    "market_portfolio",
+		"demandUnits":               demandUnits,
+		"seriesCount":               seriesCount,
+		"exceptionCount":            exceptionCount,
+		"exceptionCounts":           exceptionCounts,
+		"qualityCounts":             qualityCounts,
+		"forecastCoveragePct":       forecastCoverage,
+		"backtestCoveragePct":       backtestCoverage,
+		"categories":                categories,
 	}}
 	return payload, nil
 }
@@ -1132,13 +1132,13 @@ func (s *ForecastStore) workbench(
 			// any horizon-range filter -- which the P4-1 truth table and Phase 4
 			// safety-stock work both invite -- turned it into a request-time scan
 			// error rather than a governed unavailable state.
-			confidence, confidenceCoveredWindowMean *float64
+			confidence, confidenceCoveredWindowMean     *float64
 			intervalCoveredFrom, intervalCoveredThrough *int32
 			intervalWithheldWeeks                       int64
 			intervalUnavailableReason                   *string
 			primaryDriver                               *string
 			dataQuality, priority, status               string
-			exceptionClass                             *string
+			exceptionClass                              *string
 		)
 		if err := rows.Scan(
 			&rowTotal,
@@ -1210,7 +1210,7 @@ func (s *ForecastStore) workbench(
 			"accuracy": accuracy, "wape": wape,
 			"accuracyState": accuracyState, "accuracyGrain": "series_key",
 			"demandSharePct": demandSharePct,
-			"bias": bias, "confidence": confidence,
+			"bias":           bias, "confidence": confidence,
 			"confidenceState": confidenceState,
 			// Diagnostic, not the display value. The parity contract renders
 			// Confidence unavailable when the window is mixed; this is the
@@ -1328,7 +1328,7 @@ func (s *ForecastStore) series(
 			// why" from "the field is missing", per decision #92.
 			"intervalAvailable":         intervalAvailable,
 			"intervalUnavailableReason": intervalReason,
-			"dataQuality": qualityClass,
+			"dataQuality":               qualityClass,
 		})
 	}
 	if err := rows.Err(); err != nil {
