@@ -307,8 +307,12 @@ func (s *InventoryStore) Read(
 			"location_kind = 'store'")
 	case "/api/v1/inventory/warehouses":
 		return s.tableSlice(ctx, query, "inventory_positions",
+			// residual_only drives the reference's Action column. It was absent
+			// from this route's projection alone, so every warehouse row showed
+			// a blank action while the same column filled on every other screen.
 			"market_id, location_id, location_kind, sku_id, on_hand_units, "+
-				"committed_units, damaged_units, atp_units",
+				"committed_units, damaged_units, atp_units, on_order_units, "+
+				"residual_only",
 			rankByPosition,
 			"location_kind IN ('dc', '3pl')")
 	case "/api/v1/inventory/ageing":
