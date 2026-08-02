@@ -114,6 +114,36 @@ func (s *InventoryStore) fxExpr(units string) string {
 	return fmt.Sprintf("SUM(CASE %s END)", strings.Join(branches, " "))
 }
 
+// fxMoneySum totals a column that is ALREADY money in the row's own currency,
+// converting each row before adding it. `currency` names the column holding that
+// currency, because the valuation projections carry their own rather than
+// borrowing the dimension's.
+//
+// Every money aggregate over a published amount used a bare SUM, which adds
+// rupees to dollars nominally -- the thing policy v2 forbids and the reason
+// "Store Inventory Value" read Rs 7.02L on the stores page while the overview's
+// own store row read Rs 17.60L. Enterprise gross valuation was out by the same
+// mechanism: Rs 26.92 Cr summed nominally against Rs 106.83 Cr converted.
+// `filter` is a complete " FILTER (WHERE ...)" clause or empty. Taken as an
+// argument rather than concatenated by the caller because it has to sit INSIDE
+// the COALESCE, attached to the aggregate -- appended outside it is a syntax
+// error, and the route would fail closed on a governed 503.
+func (s *InventoryStore) fxMoneySum(amount, currency, filter string) string {
+	if len(s.fxToReporting) == 0 {
+		return fmt.Sprintf("COALESCE(SUM(%s)%s, 0)", amount, filter)
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, code := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN %s = '%s' THEN %s::numeric * %s",
+			currency, code, amount, s.fxToReporting[code],
+		))
+	}
+	return fmt.Sprintf(
+		"COALESCE(SUM(CASE %s END)%s, 0)", strings.Join(branches, " "), filter,
+	)
+}
+
 // rowFXMoney converts an amount that is already denominated in minor units of
 // the row's own currency. rowFXExpr cannot serve here: it multiplies by
 // dim.unit_cost_minor, which for a published money column would square the cost.
@@ -1009,15 +1039,28 @@ var groupedCards = map[string][]groupedCard{
 		{
 			// "Valuation by Category" -- already at category grain in the
 			// projection, so this only needs the rollup across locations.
-			name:    "categories",
-			source:  "retail_serving.inventory_valuation",
-			groupBy: "category",
-			columns: `SUM(gross_value_minor) AS value_minor,
+			name: "categories",
+			// The label lives on the SKU dimension, so the card grouped by the
+			// slug and printed "electronics-laptops" under a Category header.
+			// Reduced to one row per category first: joining the dimension at its
+			// own market x location x SKU grain would multiply the value.
+			source: `retail_serving.inventory_valuation
+				LEFT JOIN (
+					SELECT inventory_version_id AS label_version,
+					       category AS label_category,
+					       MAX(category_label) AS category_label
+					FROM retail_serving.inventory_sku_dimension
+					GROUP BY inventory_version_id, category
+				) AS labels
+				ON labels.label_version = inventory_valuation.inventory_version_id
+				AND labels.label_category = inventory_valuation.category`,
+			groupBy: "inventory_valuation.category, labels.category_label",
+			columns: `%[3]s AS value_minor,
 				SUM(wms_variance_units) AS wms_variance_units,
 				COUNT(*) AS rows_in_group,
 				COUNT(*) FILTER (WHERE gross_value_minor IS NULL) AS unvalued_rows,
 				MAX(currency_code) AS currency_code`,
-			orderBy: "SUM(gross_value_minor) DESC NULLS LAST, category",
+			orderBy: "%[3]s DESC NULLS LAST, inventory_valuation.category",
 			limit:   20,
 		},
 	},
@@ -1358,12 +1401,11 @@ var inventoryAggregates = map[string]map[string]string{
 		"meanCoverDays":         "AVG(cover_days)",
 	},
 	"inventory_demand_at_risk": {
-		"cells":          "COUNT(*)",
-		"assessedCells":  "COUNT(*) FILTER (WHERE interval_available)",
-		"withheldCells":  "COUNT(*) FILTER (WHERE NOT interval_available)",
-		"riskUnits":      "COALESCE(SUM(risk_units), 0)",
-		"riskValueMinor": "COALESCE(SUM(risk_value_minor), 0)",
-		"currencyCount":  "COUNT(DISTINCT currency_code)",
+		"cells":         "COUNT(*)",
+		"assessedCells": "COUNT(*) FILTER (WHERE interval_available)",
+		"withheldCells": "COUNT(*) FILTER (WHERE NOT interval_available)",
+		"riskUnits":     "COALESCE(SUM(risk_units), 0)",
+		"currencyCount": "COUNT(DISTINCT currency_code)",
 	},
 	"inventory_ageing": {
 		"cells":         "COUNT(*)",
@@ -1387,17 +1429,11 @@ var inventoryAggregates = map[string]map[string]string{
 		"expiringUnits": "COALESCE(SUM(expiring_units), 0)",
 		"expiredUnits":  "COALESCE(SUM(expired_units), 0)",
 		"wasteUnits":    "COALESCE(SUM(waste_units), 0)",
-		"exposureMinor": "COALESCE(SUM(exposure_minor), 0)",
 		"currencyCount": "COUNT(DISTINCT currency_code)",
 	},
 	"inventory_valuation_by_kind": {
 		// `echelon` is this view's own alias for the kind, not the positions
 		// projection: valuation has no location_kind of its own.
-		"storeValueMinor": "COALESCE(SUM(gross_value_minor) FILTER " +
-			"(WHERE echelon.location_kind = 'store'), 0)",
-		"dcValueMinor": "COALESCE(SUM(gross_value_minor) FILTER " +
-			"(WHERE echelon.location_kind IN ('dc', '3pl')), 0)",
-		"grossValueMinor":  "COALESCE(SUM(gross_value_minor), 0)",
 		"wmsVarianceUnits": "COALESCE(SUM(wms_variance_units), 0)",
 		"currencyCount":    "COUNT(DISTINCT currency_code)",
 		"unvaluedRows":     "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
@@ -1405,7 +1441,6 @@ var inventoryAggregates = map[string]map[string]string{
 	"inventory_valuation": {
 		"negativeValueRows": "COUNT(*) FILTER (WHERE gross_value_minor < 0)",
 		"rows":              "COUNT(*)",
-		"grossValueMinor":   "COALESCE(SUM(gross_value_minor), 0)",
 		"unvaluedRows":      "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
 		"wmsVarianceUnits":  "COALESCE(SUM(wms_variance_units), 0)",
 		"currencyCount":     "COUNT(DISTINCT currency_code)",
@@ -1451,12 +1486,11 @@ var inventoryAggregates = map[string]map[string]string{
 		"classCCells":      "COUNT(*) FILTER (WHERE abc_class = 'C')",
 	},
 	"replenishment_transfers": {
-		"rows":                 "COUNT(*)",
-		"costedRows":           "COUNT(dim.unit_cost_minor)",
-		"units":                "COALESCE(SUM(units), 0)",
-		"expectedBenefitMinor": "COALESCE(SUM(expected_benefit_minor), 0)",
-		"lanes":                "COUNT(DISTINCT lane_id)",
-		"currencyCount":        "COUNT(DISTINCT currency_code)",
+		"rows":          "COUNT(*)",
+		"costedRows":    "COUNT(dim.unit_cost_minor)",
+		"units":         "COALESCE(SUM(units), 0)",
+		"lanes":         "COUNT(DISTINCT lane_id)",
+		"currencyCount": "COUNT(DISTINCT currency_code)",
 		// Transit time is a property of each declared lane, so the screen showed
 		// nothing. A mean over the lanes actually being recommended is the figure
 		// the reference's "Average Transfer Time" asks for.
@@ -1592,6 +1626,42 @@ var aggregateSource = map[string]string{
 		USING (inventory_version_id, market_id, location_id)`,
 }
 
+// moneyColumnAggregates names aggregates over a column that is ALREADY money,
+// as opposed to moneyAggregates whose entries are unit counts to be multiplied by
+// a cost. Both need the approved FX; only the second needs the cost. Every one of
+// these was a bare SUM adding rupees to dollars.
+var moneyColumnAggregates = map[string]map[string]struct {
+	amount   string
+	currency string
+	filter   string
+}{
+	"inventory_valuation_by_kind": {
+		"grossValueMinor": {"gross_value_minor", "currency_code", ""},
+		"storeValueMinor": {
+			"gross_value_minor", "currency_code",
+			" FILTER (WHERE echelon.location_kind = 'store')",
+		},
+		"dcValueMinor": {
+			"gross_value_minor", "currency_code",
+			" FILTER (WHERE echelon.location_kind IN ('dc', '3pl'))",
+		},
+	},
+	"inventory_valuation": {
+		"grossValueMinor": {"gross_value_minor", "currency_code", ""},
+	},
+	"inventory_expiry_waste": {
+		"exposureMinor": {"exposure_minor", "currency_code", ""},
+	},
+	"inventory_demand_at_risk": {
+		"riskValueMinor": {"risk_value_minor", "currency_code", ""},
+	},
+	"replenishment_transfers": {
+		"expectedBenefitMinor": {
+			"expected_benefit_minor", "replenishment_transfers.currency_code", "",
+		},
+	},
+}
+
 // aggregate reduces the whole scoped set for the KPI tiles. It returns nil when a
 // table declares no aggregates, so a screen without tiles costs no query.
 func (s *InventoryStore) aggregate(
@@ -1603,6 +1673,20 @@ func (s *InventoryStore) aggregate(
 	expressions, present := inventoryAggregates[table]
 	if !present {
 		return nil, nil
+	}
+	// Published money first, so a table with no unit-based money still gets its
+	// amounts converted rather than summed across currencies.
+	if columns, wanted := moneyColumnAggregates[table]; wanted {
+		converted := make(map[string]string, len(expressions)+len(columns))
+		for name, expression := range expressions {
+			converted[name] = expression
+		}
+		for name, column := range columns {
+			converted[name] = s.fxMoneySum(
+				column.amount, column.currency, column.filter,
+			)
+		}
+		expressions = converted
 	}
 	// Money is built here, not in the static map, because the conversion depends
 	// on the approved FX this store was constructed with.
@@ -1726,9 +1810,15 @@ func (s *InventoryStore) groupedCard(
 	// into a literal at package scope.
 	onHandValue := s.fxExpr("on_hand_units")
 	bufferValue := s.fxExpr("safety_stock_units")
+	// %[3]s totals a column that is already money, converting per row first.
+	// "Valuation by Category" summed gross_value_minor with a bare SUM, adding
+	// dollars to rupees: Rs 26.92 Cr nominal against Rs 106.83 Cr converted.
+	valuedAmount := s.fxMoneySum("gross_value_minor", "currency_code", "")
 	// Replacement, not Sprintf: a card whose columns carry no placeholder would
 	// otherwise pick up "%!(EXTRA string=...)" and ship it into the SQL.
-	replace := strings.NewReplacer("%[1]s", onHandValue, "%[2]s", bufferValue)
+	replace := strings.NewReplacer(
+		"%[1]s", onHandValue, "%[2]s", bufferValue, "%[3]s", valuedAmount,
+	)
 	cardColumns := replace.Replace(card.columns)
 	cardOrderBy := replace.Replace(card.orderBy)
 	statement := fmt.Sprintf(

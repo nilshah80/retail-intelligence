@@ -426,7 +426,14 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Store-level availability, overstock, understock and transfer opportunities",
     endpoint: "/api/v1/inventory/stores",
     kpis: [
-      {caption: "Store Inventory Value", field: "valuationStoreValueMinor",
+      // The SAME measure the overview's "Inventory Position" row shows, so the two
+      // screens agree. It used to read the valuation artifact, which is a governed
+      // finance figure at category grain that withholds any row without an accepted
+      // cost -- 68 of 326 here -- so this tile said Rs 14.79L where the overview
+      // said Rs 17.60L for what the caption calls the same thing. Valuation stays
+      // the source for the Inventory Valuation page, where the withholding is the
+      // point.
+      {caption: "Store Inventory Value", field: "onHandValueMinor",
        format: "money",
        note: "Gross value of stock held at store locations"},
       // In-stock rate over the assorted range, not ATP over on-hand: the latter
