@@ -114,6 +114,23 @@ func (s *InventoryStore) fxExpr(units string) string {
 	return fmt.Sprintf("SUM(CASE %s END)", strings.Join(branches, " "))
 }
 
+// rowFXMoney converts an amount that is already denominated in minor units of
+// the row's own currency. rowFXExpr cannot serve here: it multiplies by
+// dim.unit_cost_minor, which for a published money column would square the cost.
+func (s *InventoryStore) rowFXMoney(amount string) string {
+	if len(s.fxToReporting) == 0 {
+		return amount + "::numeric"
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, currency := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN dim.currency_code = '%s' THEN %s::numeric * %s",
+			currency, amount, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
+}
+
 // rowFXExpr is fxExpr without the SUM: a single row's money, converted.
 //
 // Split rather than parameterised because the two shapes are used in different
@@ -401,7 +418,18 @@ func (s *InventoryStore) Read(
 	case "/api/v1/inventory/ageing":
 		return s.tableSlice(ctx, query, "inventory_ageing",
 			"market_id, location_id, sku_id, age_bucket, on_hand_units, "+
-				"action, markdown_pct, residual_only",
+				"action, markdown_pct, residual_only, "+
+				// The reference prints "Markdown 12% + transfer", not the engine's
+				// own `markdown_candidate`. The depth is the policy's, read from
+				// the row rather than written in here, so a market that markes
+				// down at a different rate says so.
+				`CASE action
+					WHEN 'markdown_candidate' THEN
+						'Markdown ' || round(markdown_pct * 100)::text ||
+						'% + transfer'
+					WHEN 'watch' THEN 'Watch cover'
+					WHEN 'hold' THEN 'Hold'
+				END AS action_label`,
 			rankByAge)
 	case "/api/v1/inventory/transfers":
 		return s.tableSlice(ctx, query, "replenishment_transfers",
@@ -423,7 +451,12 @@ func (s *InventoryStore) Read(
 			rankByExposure)
 	case "/api/v1/inventory/stock-health":
 		return s.tableSlice(ctx, query, "inventory_stock_health",
-			"market_id, location_id, sku_id, health_class, cover_days, reason_code",
+			// reason_code must be qualified: the row projection joins
+			// inventory_demand_at_risk for the lost-sales side of exposure, and it
+			// carries a reason_code too. Unqualified, pgx rejects the statement and
+			// the page fails closed -- correct, but invisible until it is opened.
+			"market_id, location_id, sku_id, health_class, cover_days, "+
+				"inventory_stock_health.reason_code",
 			rankByHealth)
 	case "/api/v1/replenishment/planner", "/api/v1/replenishment/orders":
 		return s.tableSlice(ctx, query, "replenishment_recommendations",
@@ -526,8 +559,14 @@ func (s *InventoryStore) tableSlice(
 			source += extra.join
 			// %[1]s is the row's money expression, converted with this store's
 			// approved reporting FX rather than a rate written into the literal.
-			selected += strings.ReplaceAll(
+			// %[2]s converts an amount that is ALREADY money -- the demand-at-risk
+			// value is published in minor units, so it must not be multiplied by
+			// unit cost a second time.
+			projected := strings.ReplaceAll(
 				extra.columns, "%[1]s", s.rowFXExpr("position.on_hand_units"),
+			)
+			selected += strings.ReplaceAll(
+				projected, "%[2]s", s.rowFXMoney("risk.risk_value_minor"),
 			)
 		}
 	}
@@ -690,11 +729,19 @@ var (
 			"market_id, location_id, sku_id",
 		criterion: "the largest financial exposure to expiry and waste",
 	}
+	// Health class FIRST made page one a single class: 174 stock-outs outrank
+	// everything, so every row read "stockout / High / Replenish immediately" and
+	// the column might as well have been a caption. The reference leads its own
+	// Stock Health table with the largest exposure -- and its top row is an
+	// Overstock, not a stock-out -- so capital at risk leads here too, with class
+	// and cover as the tiebreaks. Money first also mixes the classes, which is
+	// what makes the column worth reading.
 	rankByHealth = inventoryRanking{
-		orderBy: `CASE health_class WHEN 'stockout' THEN 0 WHEN 'understock' THEN 1
+		orderBy: `exposure_minor DESC NULLS LAST,
+			CASE health_class WHEN 'stockout' THEN 0 WHEN 'understock' THEN 1
 			WHEN 'dead' THEN 2 WHEN 'overstock' THEN 3 ELSE 4 END,
 			cover_days ASC NULLS FIRST, market_id, location_id, sku_id`,
-		criterion: "the least healthy cells first, then the thinnest cover",
+		criterion: "the largest capital at risk, then the least healthy cells",
 	}
 	rankByRecommendation = inventoryRanking{
 		orderBy:   "recommended_units DESC, market_id, destination_location_id, sku_id",
@@ -829,10 +876,7 @@ var groupedCards = map[string][]groupedCard{
 				CASE WHEN SUM(dim.trailing_daily_units) > 0
 					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
 				END AS days_of_supply,
-				CASE WHEN SUM(dim.trailing_daily_units) > 0
-	THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
-END AS days_of_supply,
-AVG(health.cover_days) AS cover_days,
+				AVG(health.cover_days) AS cover_days,
 				CASE WHEN COUNT(*) > 0 THEN
 					COUNT(*) FILTER (WHERE health.health_class = 'overstock')::numeric
 					/ COUNT(*) END AS overstock_pct,
@@ -840,28 +884,42 @@ AVG(health.cover_days) AS cover_days,
 					COUNT(*) FILTER (WHERE health.health_class IN
 						('understock', 'stockout'))::numeric
 					/ COUNT(*) END AS understock_pct,
-				-- The reference badges a location Low/Medium/High. Derived from
-				-- the health engine's own classes, not from a threshold invented
-				-- here: any stock-out is High, thin cover is Medium, else Low.
+				-- The reference badges a location Low/Medium/High, from the health
+				-- engine's own classes and from which condition DOMINATES the group
+				-- rather than merely appears in it.
+				--
+				-- Presence was the wrong test. These groups hold hundreds of cells, so
+				-- "any stock-out is High" put High on every row and printed one value
+				-- down the whole column, hiding the spread the column exists to show.
+				-- 'dead' is deliberately NOT in the excess bucket. 2,514 of 4,737 cells
+				-- are dead, which is structural rather than a signal, and folding it in
+				-- made excess swamp shortage in every single group -- collapsing the
+				-- column again, just onto a different constant. Dead stock is what the
+				-- Ageing card reports; this column is about over versus under.
 				CASE
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
-						THEN 'High'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
-						THEN 'Medium'
-					ELSE 'Low'
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) = 0 THEN 'Low'
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock'))
+						>= COUNT(*) FILTER (WHERE health.health_class = 'overstock') THEN 'High'
+					ELSE 'Medium'
 				END AS stockout_risk,
-				-- The reference's own action vocabulary for this card:
-				-- Maintain, Rebalance, Replenish, Transfer + markdown.
+				-- The reference's own action vocabulary for this card: Maintain,
+				-- Rebalance, Replenish, Transfer + markdown. A group clearly dominated
+				-- by one side gets that side's action; only a genuinely balanced group
+				-- gets both. Testing presence of both made every row read
+				-- "Transfer + markdown".
 				CASE
 					WHEN COUNT(*) FILTER (WHERE health.health_class IN
-						('stockout', 'understock')) > 0
-						AND COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
-						THEN 'Transfer + markdown'
+						('stockout', 'understock')) = 0
+						AND COUNT(*) FILTER (WHERE health.health_class = 'overstock') = 0 THEN 'Maintain'
 					WHEN COUNT(*) FILTER (WHERE health.health_class IN
-						('stockout', 'understock')) > 0 THEN 'Replenish'
-					WHEN COUNT(*) FILTER (WHERE health.health_class IN
-						('overstock', 'dead')) > 0 THEN 'Rebalance'
-					ELSE 'Maintain'
+						('stockout', 'understock'))
+						> 2 * COUNT(*) FILTER (WHERE health.health_class = 'overstock') THEN 'Replenish'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock')
+						> 2 * COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) THEN 'Rebalance'
+					ELSE 'Transfer + markdown'
 				END AS priority_action,
 				COUNT(*) AS cells,
 				COUNT(dim.unit_cost_minor) AS costed_cells,
@@ -876,6 +934,8 @@ AVG(health.cover_days) AS cover_days,
 			name: "categories",
 			source: "retail_serving.inventory_positions " + costJoin + `
 				LEFT JOIN retail_serving.inventory_stock_health AS health
+				USING (inventory_version_id, market_id, location_id, sku_id)
+				LEFT JOIN retail_serving.inventory_expiry_waste AS waste
 				USING (inventory_version_id, market_id, location_id, sku_id)`,
 			groupBy: "dim.category, dim.category_label",
 			columns: `SUM(on_hand_units) AS on_hand_units,
@@ -884,26 +944,57 @@ AVG(health.cover_days) AS cover_days,
 				CASE WHEN SUM(dim.trailing_daily_units) > 0
 					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
 				END AS days_of_supply,
-				CASE WHEN SUM(dim.trailing_daily_units) > 0
-	THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
-END AS days_of_supply,
-AVG(health.cover_days) AS cover_days,
+				AVG(health.cover_days) AS cover_days,
+				-- Risk and action, paired exactly as the reference pairs them: Healthy
+				-- with Protect availability, Watch with Target transfers, Mixed with
+				-- Replenish top sellers, Expiry Risk with Promote near expiry.
+				--
+				-- Two things were wrong. Expiry Risk was keyed off health_class
+				-- 'stockout', which is its opposite -- a cell with nothing on the shelf
+				-- cannot have stock about to expire -- and it was keyed off PRESENCE, so
+				-- one stock-out cell in a hundred-cell category tripped the first
+				-- branch. Between them, every category read "Expiry Risk / Promote near
+				-- expiry" no matter what it held.
+				--
+				-- Expiry now comes from the expiry artifact, which is what measures it,
+				-- and each branch tests which condition DOMINATES the category rather
+				-- than whether it occurs at all.
 				CASE
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+					WHEN COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0) >= COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock'))
+						AND COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0)
+							>= COUNT(*) FILTER (WHERE health.health_class = 'overstock')
+						AND COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0) > 0
 						THEN 'Expiry Risk'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock'))
+						>= COUNT(*) FILTER (WHERE health.health_class = 'overstock')
+						AND COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) > 0
 						THEN 'Watch'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
-						THEN 'Mixed'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0 THEN 'Mixed'
 					ELSE 'Healthy'
 				END AS risk_class,
 				CASE
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+					WHEN COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0) >= COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock'))
+						AND COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0)
+							>= COUNT(*) FILTER (WHERE health.health_class = 'overstock')
+						AND COUNT(*) FILTER (WHERE waste.expiring_units > 0
+						OR waste.expired_units > 0) > 0
 						THEN 'Promote near expiry'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock'))
+						>= COUNT(*) FILTER (WHERE health.health_class = 'overstock')
+						AND COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) > 0
 						THEN 'Target transfers'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
-						THEN 'Replenish top sellers'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0 THEN 'Replenish top sellers'
 					ELSE 'Protect availability'
 				END AS risk_action,
 				COUNT(*) AS cells,
@@ -1023,11 +1114,26 @@ var rowExtraJoins = map[string]struct {
 				FROM retail_serving.inventory_ageing
 				GROUP BY inventory_version_id, market_id, location_id, sku_id
 			) AS ageing
+			USING (inventory_version_id, market_id, location_id, sku_id)
+			LEFT JOIN retail_serving.inventory_demand_at_risk AS risk
 			USING (inventory_version_id, market_id, location_id, sku_id)`,
 		columns: `, position.on_hand_units,
-			-- Capital exposed on this row: what is held, at accepted cost, in the
-			-- reporting currency.
-			%[1]s AS exposure_minor,
+			-- What it costs to leave this row alone, which is not the same measure
+			-- on both sides of the problem. The reference makes the distinction
+			-- explicit: its overstock row shows the value held (Rs 18.2L) and its
+			-- understock row shows "Rs 3.2L lost sales".
+			--
+			-- On-hand value alone put every shortage row at zero, so ranking by
+			-- money swept all 174 stock-outs off page one -- monotony in the other
+			-- direction. A shortage is exposed by the demand it cannot serve, which
+			-- is what inventory_demand_at_risk publishes. Where that interval was
+			-- withheld there is no substitute, so the row falls back to what is held
+			-- and reads zero rather than estimating.
+			CASE
+				WHEN health_class IN ('stockout', 'understock')
+					AND risk.risk_value_minor IS NOT NULL THEN %[2]s
+				ELSE %[1]s
+			END AS exposure_minor,
 			CASE ageing.age_bucket
 				WHEN '0-30' THEN '0-30 days'
 				WHEN '30-60' THEN '31-60 days'

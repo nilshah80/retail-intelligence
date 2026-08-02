@@ -533,7 +533,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
          unavailableReason: "AGEING_VALUE_NOT_PUBLISHED"},
         {header: "Sell-through", field: null,
          unavailableReason: "SELL_THROUGH_NOT_PUBLISHED"},
-        {header: "Recommended Action", field: "action"},
+        // `action` is the engine's own code -- `markdown_candidate`. The read
+        // model composes the reference's sentence, markdown depth included.
+        {header: "Recommended Action", field: "actionLabel"},
         {header: "Priority", field: "residualOnly", badge: true}
       ]}
     ]
