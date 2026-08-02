@@ -52,7 +52,10 @@ func mountInventoryRoutes(app *aarv.App, store *readmodel.InventoryStore) {
 				Category: c.Query("category"),
 				Search:   c.Query("search"),
 				Offset:   c.QueryInt("offset", 0),
-				Limit:    c.QueryInt("limit", 100),
+				// One default, in the read model. Repeating a literal here meant
+				// the transport quietly overrode the page size the projections
+				// declare, so raising it there changed nothing.
+				Limit: c.QueryInt("limit", readmodel.DefaultInventoryPageSize),
 			})
 			if err != nil {
 				reason := readmodel.InventoryReadErrorReason(err)
