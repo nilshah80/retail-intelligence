@@ -908,8 +908,9 @@ def command_pipeline(args: argparse.Namespace) -> int:
     decision_as_of = args.decision_as_of
 
     try:
+        landing = None
         if "land" in stages:
-            _pipeline_step(
+            landing = _pipeline_step(
                 "land",
                 [
                     str(ingestion), "-m", "retail_ingestion.cli", "land",
@@ -919,10 +920,25 @@ def command_pipeline(args: argparse.Namespace) -> int:
                 ],
             )
 
-        snapshots = sorted(
-            (REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots").glob("*")
-        )
-        snapshot = args.snapshot_root or (snapshots[-1] if snapshots else None)
+        # The snapshot LAND just wrote, taken from its own output -- not the last
+        # entry of a sorted glob over content-hash directory names.
+        #
+        # That glob is an alphabetical tie-break over hashes, which is to say it
+        # is arbitrary. It cost a full 50-minute regeneration: `land` wrote
+        # d43fd302..., the glob's last entry was f75e1490..., and the pipeline
+        # ingested an unrelated quarter-long scenario whose extract window Gate A
+        # then correctly refused. The gate did its job; the selection was wrong.
+        snapshot = args.snapshot_root
+        if snapshot is None and landing:
+            root = landing.get("snapshotRoot")
+            if root:
+                snapshot = Path(root)
+        if snapshot is None:
+            snapshots = sorted(
+                (REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots").glob("*"),
+                key=lambda path: path.stat().st_mtime,
+            )
+            snapshot = snapshots[-1] if snapshots else None
         if snapshot is None and any(
             stage in stages for stage in ("ingest", "finalize")
         ):
