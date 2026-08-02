@@ -119,10 +119,35 @@ def _measure_serving(version_id: str, run_id: str) -> dict[str, Any]:
 
 
 def _selection() -> dict[str, Any]:
+    """The CURRENT active selection for the capability this record is about.
+
+    Currency is derived from the supersedes chain, not read from the `state`
+    field, and the capability is named rather than taken first. Taking the first
+    record whose state reads "active" in filename order is the arbitrary
+    tie-break decision #90 exists to remove: the directory holds every lifecycle
+    record ever written, three capabilities are active at once, and a superseded
+    record still says "active" in its own lifecycle -- it is superseded by
+    something else pointing at it, which only the chain knows.
+
+    That is not hypothetical. With three chains live it picked a stale record and
+    refused to build, reporting that the selection named a different publication
+    than the forecast serves, when in fact it had read the wrong selection.
+    """
+
+    sys.path.insert(0, str(REPO_ROOT / "ingestion" / "src"))
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from build_publication_selection import current_records  # noqa: PLC0415
+    from retail_ingestion.readiness.selection import scope_key  # noqa: PLC0415
+
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(SELECTION_ROOT.glob("*.json"))
+    ]
     active = None
-    for path in sorted(SELECTION_ROOT.glob("*.json")):
-        record = json.loads(path.read_text(encoding="utf-8"))
-        if (record.get("lifecycle") or {}).get("state") == "active":
+    for record in current_records(records):
+        if (record.get("lifecycle") or {}).get("state") != "active":
+            continue
+        if scope_key(record)[2] == "demand_forecast_non_pit":
             active = record
             break
     if active is None:

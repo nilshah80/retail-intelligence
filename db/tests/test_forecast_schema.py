@@ -34,6 +34,7 @@ def test_forecast_serving_schema_integration() -> None:
         "inventory_demand_at_risk",
         "inventory_ageing",
         "inventory_expiry_waste",
+        "inventory_sku_dimension",
         "inventory_valuation",
         "replenishment_recommendations",
         "replenishment_safety_stock",
@@ -51,7 +52,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0010_inventory_serving",)
+            assert cursor.fetchone() == ("0013_sku_dimension_names",)
             cursor.execute(
                 """
                 SELECT table_name

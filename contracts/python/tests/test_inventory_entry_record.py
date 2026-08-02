@@ -109,10 +109,33 @@ def test_the_withheld_and_evaluated_populations_are_recorded_separately() -> Non
 
 
 def test_the_authority_ledger_chain_is_recorded_without_a_null_predecessor() -> None:
+    """The chain is per activation SCOPE, and every null root is disclosed.
+
+    Asserting a non-null predecessor globally was wrong once a scope changed: a
+    publication re-pin mints a new scope by construction, and the first event in
+    a scope has nothing in that scope to follow. The closure-record test carries
+    the full per-scope walk; what matters here is that every null root is
+    RECORDED rather than edited out, so a reader can see each one and judge it.
+    """
+
     ledger = _record()["authorityLedger"]
-    assert ledger["currentPriorEventId"] is not None
+    roots = set(ledger["nullPredecessorEventIds"])
     # Event 7's incident stays disclosed rather than being edited out.
-    assert 7 in ledger["nullPredecessorEventIds"]
+    assert 7 in roots
+    # This record summarises the ledger and does not carry the event list, so the
+    # per-scope walk lives in test_closure_record where the events do. What is
+    # checkable here is that the current authority is itself accounted for: it
+    # either continues a chain or is disclosed as a root, never neither.
+    current = ledger["currentEventId"]
+    if ledger["currentPriorEventId"] is None:
+        assert current in roots, (
+            f"event {current} is the current authority with no predecessor and is "
+            "not disclosed as a null root"
+        )
+    else:
+        assert current not in roots, (
+            f"event {current} records a predecessor and is also listed as a root"
+        )
 
 
 def test_an_identity_without_retained_bytes_is_named() -> None:

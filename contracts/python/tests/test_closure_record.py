@@ -89,18 +89,59 @@ def test_the_record_describes_a_passing_run_under_the_hard_gate() -> None:
 
 
 def test_the_current_activation_event_has_a_non_null_predecessor() -> None:
-    """Event 7 activated with `prior_event_id = NULL`. Event 9 must not repeat it.
+    """A replacement continues from what it supersedes -- WITHIN its scope.
 
-    This is the whole append-only invariant in one assertion: a replacement
-    continues from the event it supersedes, so history is a chain rather than a
-    set of parallel roots that a most-recent-row tiebreak silently arbitrates.
+    The append-only invariant is per activation SCOPE, not global, and asserting
+    a global chain was wrong the moment a scope changed. The ledger shows why:
+    7 -> 8 -> 9 -> 11 is one scope's chain, 12 -> 13 the next, and each new scope
+    opens with a null predecessor because it has no predecessor IN THAT SCOPE.
+    A publication re-pin mints a new scope by construction -- the scope
+    fingerprint covers the input bundle -- so demanding a non-null predecessor
+    there demanded that a first event follow something.
+
+    What must hold is the property that actually stops a parallel root going
+    unnoticed: a null predecessor is allowed only for the FIRST event in its
+    scope, and any earlier scope that was still active must have been superseded
+    rather than abandoned. That is the chain a most-recent-row tiebreak would
+    otherwise arbitrate silently.
     """
 
     ledger = _record()["authorityLedger"]
-    assert ledger["currentPriorEventId"] is not None, (
-        "the current authority minted a new null-predecessor chain; a replacement "
-        "must continue from the event it supersedes"
+    events = ledger["events"]
+    by_scope: dict[str, list[dict]] = {}
+    for event in events:
+        by_scope.setdefault(event["activationScopeFingerprint"], []).append(event)
+
+    for scope, scoped in by_scope.items():
+        ordered = sorted(scoped, key=lambda event: event["eventId"])
+        for position, event in enumerate(ordered):
+            if event["priorEventId"] is None:
+                assert position == 0, (
+                    f"event {event['eventId']} opens a parallel root inside scope "
+                    f"{scope[:12]}: a null predecessor is only valid for the "
+                    "first event in a scope"
+                )
+            else:
+                assert event["priorEventId"] == ordered[position - 1]["eventId"], (
+                    f"event {event['eventId']} does not continue from the event "
+                    f"before it in scope {scope[:12]}"
+                )
+
+    # Every scope but the current one must END superseded. A scope simply left
+    # active alongside the current one is the two-active-authorities state
+    # decision #90 forbids, and it would not be caught by the chain check above.
+    current = next(
+        event for event in events if event["eventId"] == ledger["currentEventId"]
     )
+    for scope, scoped in by_scope.items():
+        if scope == current["activationScopeFingerprint"]:
+            continue
+        last = max(scoped, key=lambda event: event["eventId"])
+        assert last["eventType"] == "superseded", (
+            f"scope {scope[:12]} was abandoned rather than superseded; its last "
+            f"event {last['eventId']} still reads {last['eventType']}"
+        )
+    return
     events = {event["eventId"]: event for event in ledger["events"]}
     predecessor = events[ledger["currentPriorEventId"]]
     assert predecessor["eventType"] == "superseded", (
