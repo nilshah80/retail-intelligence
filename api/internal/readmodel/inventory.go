@@ -24,7 +24,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0011_inventory_sku_dimension"
+	InventoryMigrationRevision = "0012_sku_dimension_trailing"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -680,6 +680,13 @@ var ageingBucketCard = groupedCard{
 SUM(on_hand_units) AS on_hand_units,
 %[1]s AS value_minor,
 COUNT(*) FILTER (WHERE action = 'markdown_candidate') AS markdown_cells,
+-- Sell-through over the trailing quarter: units moved against units moved
+-- plus units still held. The window is named in the column note rather than
+-- left implicit, because a sell-through with no window is not a number.
+CASE WHEN SUM(dim.trailing_daily_units) * 91 + SUM(on_hand_units) > 0
+	THEN (SUM(dim.trailing_daily_units) * 91)
+		/ (SUM(dim.trailing_daily_units) * 91 + SUM(on_hand_units))
+END AS sell_through_pct,
 -- The action escalates with AGE, which is what the reference's ladder
 -- shows: monitor, optimise, transfer, clear. Testing the markdown
 -- candidate count first made every bucket read "Markdown / clearance",
@@ -716,7 +723,13 @@ var groupedCards = map[string][]groupedCard{
 				CASE WHEN SUM(on_hand_units) > 0
 					THEN SUM(atp_units)::numeric / SUM(on_hand_units) END
 					AS availability_pct,
-				AVG(health.cover_days) AS cover_days,
+				CASE WHEN SUM(dim.trailing_daily_units) > 0
+					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
+				END AS days_of_supply,
+				CASE WHEN SUM(dim.trailing_daily_units) > 0
+	THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
+END AS days_of_supply,
+AVG(health.cover_days) AS cover_days,
 				CASE WHEN COUNT(*) > 0 THEN
 					COUNT(*) FILTER (WHERE health.health_class = 'overstock')::numeric
 					/ COUNT(*) END AS overstock_pct,
@@ -757,7 +770,13 @@ var groupedCards = map[string][]groupedCard{
 			columns: `SUM(on_hand_units) AS on_hand_units,
 				%[1]s AS value_minor,
 				SUM(atp_units) AS atp_units,
-				AVG(health.cover_days) AS cover_days,
+				CASE WHEN SUM(dim.trailing_daily_units) > 0
+					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
+				END AS days_of_supply,
+				CASE WHEN SUM(dim.trailing_daily_units) > 0
+	THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
+END AS days_of_supply,
+AVG(health.cover_days) AS cover_days,
 				CASE
 					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
 						THEN 'Expiry Risk'
@@ -1133,7 +1152,12 @@ var inventoryAggregates = map[string]map[string]string{
 // count here until migration 0011 published a cost to multiply by.
 var moneyAggregates = map[string]map[string]string{
 	"inventory_positions": {
-		"onHandValueMinor":    "on_hand_units",
+		"onHandValueMinor": "on_hand_units",
+		// The reference reads "Inventory at Risk / Rs 8.7 Cr / 17.9% exposure"
+		// and notes its own scope: overstock, ageing, expiry. So it is the VALUE
+		// of the cells the health engine did not class healthy -- a cell count
+		// under a money caption was answering a different question.
+		"atRiskValueMinor":    "on_hand_units",
 		"atpValueMinor":       "atp_units",
 		"inTransitValueMinor": "in_transit_units",
 		"reservedValueMinor":  "reserved_units",
@@ -1161,6 +1185,8 @@ var aggregateSource = map[string]string{
 	// counts here, because the positions projection carries no cost.
 	"inventory_positions": `retail_serving.inventory_positions
 		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+		USING (inventory_version_id, market_id, location_id, sku_id)
+		LEFT JOIN retail_serving.inventory_stock_health AS health
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
 
 	"replenishment_safety_stock": `retail_serving.replenishment_safety_stock
@@ -1217,7 +1243,20 @@ func (s *InventoryStore) aggregate(
 		merged["costedCells"] = "COUNT(dim.unit_cost_minor)"
 		merged["currencyCount"] = "COUNT(DISTINCT dim.currency_code)"
 		merged["categories"] = "COUNT(DISTINCT dim.category)"
+		// Days of supply and stock turn are the same fact twice -- cover is
+		// on-hand over daily demand, turn is a year divided by cover -- and both
+		// were withheld only for want of a published trailing demand.
+		merged["daysOfSupply"] = "CASE WHEN SUM(dim.trailing_daily_units) > 0 " +
+			"THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units) END"
+		merged["stockTurn"] = "CASE WHEN SUM(on_hand_units) > 0 " +
+			"THEN (SUM(dim.trailing_daily_units) * 365.0) / SUM(on_hand_units) END"
 		if table == "inventory_positions" {
+			// The reference's own note scopes this tile: "Overstock, ageing,
+			// expiry". Named classes rather than "not healthy", which would also
+			// sweep in understock and stock-out -- those are lost-sales risk, a
+			// different exposure from capital tied up in stock that will not move.
+			merged["atRiskValueMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE health.health_class IN ('overstock', 'dead'))"
 			merged["storeValueMinor"] = s.fxExpr("on_hand_units") +
 				" FILTER (WHERE location_kind = 'store')"
 			merged["dcValueMinor"] = s.fxExpr("on_hand_units") +

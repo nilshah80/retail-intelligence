@@ -99,6 +99,19 @@ function ratioPercentage(value: number | null | undefined, signed = false) {
   return percentage(value === null || value === undefined ? value : value * 100, signed);
 }
 
+/**
+ * Rupees in the reference's own notation: crore, then lakh. Minor units in,
+ * market-local out. The read model has already converted to the reporting
+ * currency, so nothing is converted here.
+ */
+function money(minor: number | null | undefined): string | null {
+  if (minor === null || minor === undefined) return null;
+  const major = minor / 100;
+  if (major >= 1e7) return `\u20B9${(major / 1e7).toFixed(2)} Cr`;
+  if (major >= 1e5) return `\u20B9${(major / 1e5).toFixed(2)}L`;
+  return `\u20B9${major.toLocaleString("en-IN", {maximumFractionDigits: 0})}`;
+}
+
 function storeLabel(name: string, city: string) {
   return name.toLocaleLowerCase().includes(city.toLocaleLowerCase())
     ? name
@@ -749,8 +762,14 @@ function StoreView({
                 <td><strong>{storeLabel(store.name, store.city)}</strong></td>
                 <td>{percentage(store.accuracy)}</td>
                 <td>{ratioPercentage(store.bias, true)}</td>
-                <td>{unavailable("Demand risk belongs to Phase 4")}</td>
-                <td>{unavailable("Stock-out risk belongs to Phase 4")}</td>
+                <td>{money(store.demandAtRiskMinor)
+                  ?? unavailable("No costed risk row for this store")}</td>
+                <td>{store.stockoutRisk
+                  ? <span className={`badge ${
+                      store.stockoutRisk === "High" ? "b-red"
+                        : store.stockoutRisk === "Medium" ? "b-amber" : "b-green"
+                    }`}>{store.stockoutRisk}</span>
+                  : unavailable("No health row for this store")}</td>
                 <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
                 <td>{unavailable("No priority-action business rule is frozen")}</td>
               </tr>
@@ -1030,7 +1049,17 @@ export function DemandForecast({
           <span className="delta unavailable">Delta: Not available</span>
           <p>Target range: ±5% · {metricScopeLabel}</p>
         </div>
-        <div className="kpi"><small>Demand at Risk</small><div className="value unavailable">Not available</div><p>Available in Phase 4</p></div>
+        <div className="kpi">
+          <small>Demand at Risk</small>
+          <div className="value">
+            {money(summary?.demandAtRiskMinor)
+              ?? <span className="unavailable">Not available</span>}
+          </div>
+          <span className="delta down">
+            {summary?.demandAtRiskCells?.toLocaleString("en-US") ?? "0"} SKU-store combinations
+          </span>
+          <p>Potential lost-sales exposure · Phase 4 inventory measure</p>
+        </div>
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
         <div className="kpi">
           <small>Forecast Value Add</small>

@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0011_inventory_sku_dimension"
+	ForecastMigrationRevision = "0012_sku_dimension_trailing"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -660,8 +660,32 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// "Demand at Risk" is a reference KPI on this page and a Phase 4 measure.
+	// Summed across locations here because the tile is the enterprise figure;
+	// the per-store split rides on the Store View.
+	risks := s.demandAtRisk(ctx)
+	var riskMinor int64
+	var riskUnits float64
+	var riskCells int64
+	var riskLocations int
+	for _, entry := range risks {
+		if entry.valueMinor != nil {
+			riskMinor += *entry.valueMinor
+		}
+		if entry.units != nil {
+			riskUnits += *entry.units
+		}
+		riskCells += entry.cells
+		if entry.cells > 0 {
+			riskLocations++
+		}
+	}
 	payload := s.envelope("retail-forecast-summary/v1")
 	payload["items"] = []map[string]any{{
+		"demandAtRiskMinor":         riskMinor,
+		"demandAtRiskUnits":         riskUnits,
+		"demandAtRiskCells":         riskCells,
+		"demandAtRiskLocations":     riskLocations,
 		"accuracy":                  accuracy,
 		"bias":                      bias,
 		"p90Coverage":               p90Coverage,
@@ -1929,6 +1953,7 @@ func (s *ForecastStore) stores(
 		return nil, err
 	}
 	defer rows.Close()
+	risks := s.demandAtRisk(ctx)
 	items := []map[string]any{}
 	for rows.Next() {
 		var (
@@ -1943,12 +1968,23 @@ func (s *ForecastStore) stores(
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"storeId": storeID, "marketId": marketID, "name": name,
 			"city": city, "region": region, "timezone": timezone,
 			"currencyCode": currency, "format": format, "active": active,
 			"accuracy": accuracy, "bias": bias, "p90Coverage": coverage,
-		})
+		}
+		// The reference's Store View carries Demand at Risk and Stock-out Risk
+		// beside accuracy. Both are Phase 4 inventory measures, joined by
+		// location id -- a store's forecast identity and its inventory identity
+		// are the same node.
+		if entry, present := risks[storeID]; present {
+			item["demandAtRiskMinor"] = entry.valueMinor
+			item["demandAtRiskUnits"] = entry.units
+			item["demandAtRiskCells"] = entry.cells
+			item["stockoutRisk"] = entry.stockoutRisk
+		}
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1956,6 +1992,75 @@ func (s *ForecastStore) stores(
 	payload := s.envelope("retail-forecast-stores/v1")
 	payload["items"] = items
 	return payload, nil
+}
+
+// demandAtRisk reads the Phase 4 inventory projections the forecast screen has
+// always needed and never had.
+//
+// "Demand at Risk" is a forecast-page KPI in the reference and a per-store
+// column in its Store View, but the quantity is an INVENTORY measure -- forecast
+// demand the position cannot serve. Before Phase 4 nothing computed it, so the
+// screen withheld it. It is computed now, so withholding it would be reporting a
+// gap that has closed.
+//
+// Scoped to the active inventory version, and silently absent rather than fatal
+// when no inventory bundle is active: the forecast screen is a Phase 3 surface
+// and must not start failing because a Phase 4 activation is missing.
+type locationRisk struct {
+	valueMinor   *int64
+	units        *float64
+	cells        int64
+	stockoutRisk string
+}
+
+func (s *ForecastStore) demandAtRisk(ctx context.Context) map[string]locationRisk {
+	rows, err := s.pool.Query(ctx, `
+		WITH active AS (
+			SELECT inventory_version_id FROM retail_serving.active_inventory_versions
+		),
+		risk AS (
+			SELECT location_id,
+			       SUM(risk_value_minor) AS value_minor,
+			       SUM(risk_units) AS units,
+			       COUNT(*) FILTER (WHERE interval_available) AS cells
+			FROM retail_serving.inventory_demand_at_risk
+			WHERE inventory_version_id = (SELECT inventory_version_id FROM active)
+			GROUP BY location_id
+		),
+		health AS (
+			SELECT location_id,
+			       COUNT(*) FILTER (WHERE health_class = 'stockout') AS stockouts,
+			       COUNT(*) FILTER (WHERE health_class = 'understock') AS understocks
+			FROM retail_serving.inventory_stock_health
+			WHERE inventory_version_id = (SELECT inventory_version_id FROM active)
+			GROUP BY location_id
+		)
+		SELECT COALESCE(risk.location_id, health.location_id),
+		       risk.value_minor, risk.units, COALESCE(risk.cells, 0),
+		       CASE
+		           WHEN COALESCE(health.stockouts, 0) > 0 THEN 'High'
+		           WHEN COALESCE(health.understocks, 0) > 0 THEN 'Medium'
+		           ELSE 'Low'
+		       END
+		FROM risk FULL OUTER JOIN health USING (location_id)
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	byLocation := map[string]locationRisk{}
+	for rows.Next() {
+		var location, risk string
+		var entry locationRisk
+		if err := rows.Scan(
+			&location, &entry.valueMinor, &entry.units, &entry.cells, &risk,
+		); err != nil {
+			return byLocation
+		}
+		entry.stockoutRisk = risk
+		byLocation[location] = entry
+	}
+	return byLocation
 }
 
 func (s *ForecastStore) drivers(

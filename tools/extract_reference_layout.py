@@ -182,6 +182,13 @@ def _register_cards(cards: list[dict[str, Any]], html: str, layout: str) -> None
         heading = _strip_tags(heading_match.group(1)) if heading_match else None
         link_match = re.search(r'<span class="link">(.*?)</span>', card, re.S)
         link = _strip_tags(link_match.group(1)) if link_match else None
+        # A link carrying a DIGIT is a sample figure, not a label. "12 open" and
+        # "5 records" are counts of the reference's own illustrative rows, and
+        # extracting them puts a hard-coded number on a live screen -- the exact
+        # leak this extractor exists to prevent. Labels like "Enterprise view",
+        # "By value" and "Top exceptions" carry no digit and are kept.
+        if link and any(character.isdigit() for character in link):
+            link = None
         entry: dict[str, Any] = {"heading": heading, "link": link, "layout": layout}
 
         if 'class="donut' in card:

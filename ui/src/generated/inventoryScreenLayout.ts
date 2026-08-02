@@ -36,7 +36,7 @@ export const REFERENCE_SCREENS: readonly ReferenceScreen[] = [
     cards: [
       {kind: "donut", heading: "Inventory by Health", link: "Enterprise view", layout: "grid-3", columns: [], labels: ["Healthy", "At Risk", "Overstock", "Out of Stock"]},
       {kind: "breakdown", heading: "Inventory Position", link: null, layout: "grid-3", columns: [], labels: ["Store inventory", "Warehouse inventory", "In transit", "Reserved stock", "Damaged / blocked"]},
-      {kind: "alerts", heading: "Immediate Decisions", link: "12 open", layout: "grid-3", columns: [], labels: ["Transfer excess stock", "Approve ageing-stock markdown", "Accelerate replenishment"]},
+      {kind: "alerts", heading: "Immediate Decisions", link: null, layout: "grid-3", columns: [], labels: ["Transfer excess stock", "Approve ageing-stock markdown", "Accelerate replenishment"]},
       {kind: "rows", heading: "Ageing Inventory", link: "By value", layout: "grid-2", columns: ["Age Bucket", "SKUs", "Inventory Value", "Sell-through", "Recommended Action"], labels: []},
       {kind: "rows", heading: "Inventory Risk by Category", link: null, layout: "grid-2", columns: ["Category", "Value", "Days of Supply", "Risk", "Action"], labels: []},
       {kind: "rows", heading: "Location-Level Inventory Performance", link: "Top exceptions", layout: "full", columns: ["Location", "Type", "Inventory Value", "Availability", "Days of Supply", "Stock-out Risk", "Overstock", "Priority Action"], labels: []},

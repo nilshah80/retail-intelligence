@@ -176,6 +176,7 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "unit_cost_minor",
         "cost_method",
         "currency_code",
+        "trailing_daily_units",
     ),
     "inventory_valuation": (
         "market_id",

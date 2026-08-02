@@ -185,6 +185,31 @@ def _frames() -> dict[str, pd.DataFrame]:
                 }
             ]
         ),
+        # The dimension every screen reads category and money through (P4-11).
+        "inventory_sku_dimension": stack(
+            lambda market: [
+                {
+                    "market_id": market,
+                    "location_id": f"{market}-store-1",
+                    "sku_id": f"{market}-sku-1",
+                    "category": "grocery",
+                    "unit_cost_minor": 1250,
+                    "cost_method": "store_wac",
+                    "currency_code": "INR",
+                    "trailing_daily_units": 4.5,
+                },
+                {
+                    "market_id": market,
+                    "location_id": f"{market}-dc-1",
+                    "sku_id": f"{market}-sku-1",
+                    "category": "grocery",
+                    "unit_cost_minor": 1180,
+                    "cost_method": "WAC",
+                    "currency_code": "INR",
+                    "trailing_daily_units": 9.0,
+                },
+            ]
+        ),
         "inventory_valuation": stack(
             lambda market: [
                 {

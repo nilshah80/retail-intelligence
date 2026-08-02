@@ -51,7 +51,7 @@ interface KpiSpec {
   readonly caption: string;
   /** Field in the endpoint's SQL summary, or null when nothing measures it. */
   readonly field: string | null;
-  readonly format: "units" | "money" | "count" | "percent" | "days";
+  readonly format: "units" | "money" | "count" | "percent" | "days" | "turns";
   /** A second summary field forming the denominator of a percentage. */
   readonly of?: string;
   /** The basis of the number, shown beneath it. Never decorative. */
@@ -65,7 +65,8 @@ interface ColumnSpec {
   /** Header, matching the reference's `<th>` exactly. */
   readonly header: string;
   readonly field?: string | null;
-  readonly format?: "units" | "money" | "count" | "percent" | "days" | "text";
+  readonly format?:
+    | "units" | "money" | "count" | "percent" | "days" | "turns" | "text";
   /** Renders a colour-coded badge from the field's value. */
   readonly badge?: boolean;
   /** Interval-derived: withheld together when `intervalAvailable` is false. */
@@ -292,6 +293,8 @@ function formatValue(
       return `${(numeric * 100).toFixed(1)}%`;
     case "days":
       return `${numeric.toFixed(1)} days`;
+    case "turns":
+      return `${numeric.toFixed(1)}x`;
     case "units":
     case "count":
     default:
@@ -322,12 +325,16 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        of: "onHandValueMinor", note: "After committed, reserved and damaged"},
       {caption: "Inventory in Transit", field: "inTransitValueMinor",
        format: "money", note: "Received against a declared lane"},
-      {caption: "Inventory at Risk", field: "healthAtRiskCells",
-       format: "count", of: "healthCells",
-       note: "Buffer too thin to serve demand, or stock that has stopped moving"},
-      {caption: "Stock Turn", field: null, format: "count",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs an accepted candidate-versus-incumbent comparison"}
+      // Rupees and a share of on-hand value, as the reference shows it. The
+      // scope is the reference's own note: everything the health engine did not
+      // class healthy -- overstock, ageing, expiry.
+      {caption: "Inventory at Risk", field: "atRiskValueMinor", format: "money",
+       of: "onHandValueMinor",
+       note: "Overstock, ageing and expiry, valued at accepted unit cost"},
+      // Turn is a year over days of supply, and days of supply is on-hand over
+      // daily demand. Both became computable once trailing demand was published.
+      {caption: "Stock Turn", field: "stockTurn", format: "turns",
+       note: "Trailing demand over units on hand, annualised"}
     ],
     breakdown: [
       // "Inventory Position" -- rupees and a share, exactly as the reference.
@@ -360,13 +367,13 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Age Bucket", field: "ageBucket"},
         {header: "SKUs", field: "skus", format: "count"},
         {header: "Inventory Value", field: "valueMinor", format: "money"},
-        {header: "Sell-through", field: null},
-        {header: "Recommended Action", field: "markdownCells", format: "count"}
+        {header: "Sell-through", field: "sellThroughPct", format: "percent"},
+        {header: "Recommended Action", field: "recommendedAction"}
       ]},
       {heading: "Inventory Risk by Category", card: "categories", columns: [
         {header: "Category", field: "category"},
         {header: "Value", field: "valueMinor", format: "money"},
-        {header: "Days of Supply", field: null},
+        {header: "Days of Supply", field: "daysOfSupply", format: "days"},
         {header: "Risk", field: "riskClass", badge: true},
         {header: "Action", field: "riskAction"}
       ]},
@@ -376,7 +383,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Type", field: "locationKind", badge: true},
         {header: "Inventory Value", field: "valueMinor", format: "money"},
         {header: "Availability", field: "availabilityPct", format: "percent"},
-        {header: "Days of Supply", field: "coverDays", format: "days"},
+        {header: "Days of Supply", field: "daysOfSupply", format: "days"},
         {header: "Stock-out Risk", field: "stockoutRisk", badge: true},
         {header: "Overstock", field: "overstockPct", format: "percent"},
         {header: "Priority Action", field: "priorityAction"}
@@ -1348,12 +1355,22 @@ function AlertsCard({
   const summary = slice.summary;
   const currency = sliceCurrency(slice);
   const icons = ["!", "₹", "↗", "•"];
+  // The reference's "12 open" is a count of its own illustrative alerts. The
+  // extractor now drops any link carrying a digit, and the live count is how
+  // many of this card's decisions actually have something in scope.
+  const open = labels.filter((label) => {
+    const spec = rows.find((row) => row.label === label);
+    const value = spec?.field ? asNumber(summary?.[spec.field]) : null;
+    return value !== null && value > 0;
+  }).length;
   return (
     <div className="card">
       {heading && (
         <div className="card-head">
           <h3>{heading}</h3>
-          {link && <span className="link-button" aria-hidden="true">{link}</span>}
+          <span className="link-button" aria-hidden="true">
+            {link ?? `${open} open`}
+          </span>
         </div>
       )}
       {labels.map((label, index) => {

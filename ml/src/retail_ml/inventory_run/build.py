@@ -1455,10 +1455,54 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
     )
 
 
+def _node_demand(
+    emitted: pd.DataFrame,
+    trailing: Mapping[tuple[str, str, str], Decimal],
+) -> dict[tuple[str, str, str], Decimal]:
+    """Trailing daily demand for EVERY node, not just the ones that sell.
+
+    `trailing` is built from `sales`, which keys on store, so a DC has no row --
+    correctly, because a DC has no sales of its own. But "no sales" is not "no
+    demand": a DC's demand is the demand of the stores it supplies, and treating
+    the absence as zero told the health engine that 2,190 DC cells were dead
+    stock with no movement. That put 99.8 per cent of inventory VALUE into
+    "Inventory at Risk", which is not a finding, it is a missing join.
+
+    Derived per market x SKU across store nodes and attributed to every non-store
+    node in the market. Coarser than the lane-resolved derivation `load_forecast`
+    uses for DC forecasting, and deliberately so: this drives health
+    classification and a days-of-supply display, not an order quantity, so it
+    must not silently inherit a replenishment decision.
+    """
+
+    store_nodes = {
+        (str(row["market_id"]), str(row["location_id"]))
+        for row in (record._asdict() for record in emitted.itertuples(index=False))
+        if str(row.get("location_kind")) == "store"
+    }
+    by_market_sku: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
+    for (market, location, sku), rate in trailing.items():
+        if (market, location) in store_nodes:
+            by_market_sku[(market, sku)] += rate
+
+    effective = dict(trailing)
+    for record in emitted.itertuples(index=False):
+        row = record._asdict()
+        market = str(row["market_id"])
+        location = str(row["location_id"])
+        sku = str(row["sku_id"])
+        key = (market, location, sku)
+        if key in effective or str(row.get("location_kind")) == "store":
+            continue
+        effective[key] = by_market_sku.get((market, sku), Decimal(0))
+    return effective
+
+
 def _build_sku_dimension(
     emitted: pd.DataFrame,
     *,
     unit_costs: Mapping[tuple[str, str, str], tuple[int | None, str | None]],
+    trailing: Mapping[tuple[str, str, str], Decimal],
     currency_by_market: Mapping[str, str],
 ) -> pd.DataFrame:
     """The dimension every screen needed and none of them had.
@@ -1479,6 +1523,17 @@ def _build_sku_dimension(
     withholds on, and a borrowed cost from another node is never substituted.
     """
 
+    # A DC has no sales of its own, so `trailing` carries no row for one -- and
+    # days of supply at a warehouse would be permanently undefined, which is what
+    # the Location-Level card showed on every DC row. A DC's demand is the demand
+    # of the stores it supplies, which is the same derivation `load_forecast`
+    # already uses for DC forecasting: rank-1 supplied stores, additively.
+    #
+    # Summed per market x SKU across store nodes and attributed to every non-store
+    # node in that market. Coarser than the lane-resolved version the forecast
+    # uses, and deliberately so: this figure drives a days-of-supply DISPLAY, not
+    # a replenishment quantity, and a display must not silently inherit an
+    # ordering decision.
     rows: list[dict[str, Any]] = []
     for record in emitted.itertuples(index=False):
         row = record._asdict()
@@ -1495,6 +1550,16 @@ def _build_sku_dimension(
                 "unit_cost_minor": cost,
                 "cost_method": method,
                 "currency_code": currency_by_market.get(market),
+                # Trailing average DAILY demand for the cell -- the grain the loader
+                # produces. Published because
+                # four different screens are arithmetic on it and none could do
+                # the arithmetic: days of supply is on-hand over daily demand,
+                # sell-through is demand over demand-plus-stock, and stock turn
+                # is 365 over days of supply. The build has computed this for the
+                # replenishment engine all along and dropped it.
+                "trailing_daily_units": trailing.get(
+                    (market, location, sku), Decimal(0)
+                ),
             }
         )
     frame = pd.DataFrame(rows, columns=list(ARTIFACT_COLUMNS["inventory_sku_dimension"]))
@@ -1502,6 +1567,7 @@ def _build_sku_dimension(
     # float64, and 58410 then serialises as "58410.0", which PostgreSQL rejects
     # for a bigint at COPY time rather than at publish time.
     frame["unit_cost_minor"] = frame["unit_cost_minor"].astype("Int64")
+    frame["trailing_daily_units"] = frame["trailing_daily_units"].astype(float)
     return frame.drop_duplicates(subset=["market_id", "location_id", "sku_id"])
 
 
@@ -1518,7 +1584,7 @@ def build_artifacts(
     """
 
     emitted = _emitted_positions(inputs)
-    trailing = _index_trailing(inputs)
+    trailing = _node_demand(emitted, _index_trailing(inputs))
     forecasts = _index_forecast(inputs)
     unit_costs = _index_unit_costs(inputs)
 
@@ -1615,6 +1681,7 @@ def build_artifacts(
         "inventory_sku_dimension": _build_sku_dimension(
             emitted,
             unit_costs=unit_costs,
+            trailing=trailing,
             currency_by_market=inputs.currency_by_market,
         ),
         "inventory_positions": positions,

@@ -175,6 +175,12 @@ export const forecastSummarySchema = z.object({
     qualityCounts: z.record(z.string(), z.number().int()),
     forecastCoveragePct: nullableNumber,
     backtestCoveragePct: nullableNumber,
+    // Phase 4 measures the forecast screen has always asked for: forecast
+    // demand the inventory position cannot serve.
+    demandAtRiskMinor: z.number().optional(),
+    demandAtRiskUnits: z.number().optional(),
+    demandAtRiskCells: z.number().int().optional(),
+    demandAtRiskLocations: z.number().int().optional(),
     categories: z.array(z.string())
   }))
 });
@@ -230,7 +236,11 @@ export const forecastStoresSchema = z.object({
     active: z.boolean(),
     accuracy: nullableNumber,
     bias: nullableNumber,
-    p90Coverage: nullableNumber
+    p90Coverage: nullableNumber,
+    demandAtRiskMinor: z.number().nullish(),
+    demandAtRiskUnits: z.number().nullish(),
+    demandAtRiskCells: z.number().int().nullish(),
+    stockoutRisk: z.string().nullish()
   }))
 });
 
