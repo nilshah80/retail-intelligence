@@ -1996,6 +1996,36 @@ def generate(
                     source_system="businessCentral",
                     dataset="storeWasteEvents",
                 )
+                writer.write_dataset(
+                    f"{company_dir}/store_stockout_events.csv",
+                    (
+                        {
+                            "eventId": event["eventKey"],
+                            "sku": event["sku"],
+                            "locationCode": stores[event["storeKey"]][
+                                "businessCentralLocationCode"
+                            ],
+                            "channelId": event["channelId"],
+                            "eventDate": event["eventDate"],
+                            "demandUnits": event["demandUnits"],
+                            "servedFromStoreUnits": event["servedFromStoreUnits"],
+                            "shortfallUnits": event["shortfallUnits"],
+                            # Which node covered the part the shelf could not. The
+                            # sale is real and already in `sales`; this names where
+                            # it actually came from so a shelf-level reconstruction
+                            # does not charge it to the store.
+                            "servedFromLocationCode": warehouses[
+                                event["servedFromSupplyNode"]
+                            ]["businessCentralLocationCode"],
+                            "observedAt": event["observedAt"],
+                        }
+                        for event in simulation["storeStockoutEvents"]
+                        if stores.get(event["storeKey"], {}).get("legalEntityId")
+                        == company["legalEntityId"]
+                    ),
+                    source_system="businessCentral",
+                    dataset="storeStockoutEvents",
+                )
             if config["operations"]["features"]["supplyChain"]:
                 company_location_codes = {
                     warehouses[warehouse_id]["businessCentralLocationCode"]
