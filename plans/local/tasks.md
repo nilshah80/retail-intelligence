@@ -1473,11 +1473,16 @@ computed from the ten-year publication and the live forecast, and every absent
 value carries a governed reason. These are real limitations to close before
 production.
 
-1. **Replay fidelity.** The remaining 8.0 / 3.2 units-per-cell gap is unexplained.
-   Two inputs the replay does not yet read would both move it: returns crediting
-   stock back to a node, and inventory adjustments. Until the oracle reproduces, no
-   replay-backed comparison of candidate against incumbent may be presented as
-   validated.
+1. ~~**Replay fidelity.**~~ **Closed at P4-10.** The gap was a missing input, not
+   an unexplained residual. `store_waste_events` reached staging and never reached
+   canonical, so the replay reconstructed store stock without the store echelon's
+   write-offs — 317,056 units in india-west against 140,787 at its DCs. Measured
+   over 39 periods: 0.558 units per cell ignoring waste, 0.061 crediting it,
+   against the tolerance frozen at 0.5. The tolerance did not move.
+   The two inputs guessed at here were both measured and both wrong: crediting
+   returns makes it *worse* (1.062 — the source's snapshots never credit a
+   physical return back to on-hand), and there are no store-outbound transfers to
+   read, because every `from_location_id` in the source is a DC.
 2. **Store unit cost.** 6 of 2,552 store cells have no cost-carrying receipt and
    are excluded with `ABC_UNIT_COST_UNAVAILABLE` rather than inheriting DC cost.
 3. **DC interval basis.** A DC's demand is the additive P50 of its rank-1-supplied
