@@ -399,8 +399,11 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Store Inventory Value", field: "valuationStoreValueMinor",
        format: "money",
        note: "Gross value of stock held at store locations"},
-      {caption: "On-Shelf Availability", field: "atpUnits", format: "units",
-       of: "onHandUnits", note: "Available to promise share"},
+      // In-stock rate over the assorted range, not ATP over on-hand: the latter
+      // is 1 by construction at a store and read 100% for every store.
+      {caption: "On-Shelf Availability", field: "inStockAssortedCells",
+       format: "percent", of: "assortedCells",
+       note: "Assorted SKUs available to sell"},
       {caption: "Stores at Risk", field: "healthAtRiskStores", format: "count",
        of: "healthStores",
        note: "Stores holding at least one over- or understocked cell"},

@@ -1206,7 +1206,14 @@ var inventoryAggregates = map[string]map[string]string{
 		// rendering "Not available" over a measure the projection can compute
 		// tells a retailer the platform cannot see negative inventory when in
 		// fact it can see there is none.
-		"negativeCells":     "COUNT(*) FILTER (WHERE on_hand_units < 0)",
+		"negativeCells": "COUNT(*) FILTER (WHERE on_hand_units < 0)",
+		// On-shelf availability, the same in-stock rate the heatmap shows per
+		// store: of the cells this node is meant to carry, how many can be sold.
+		// The KPI tile was ATP over on-hand, which is 1 by construction at a
+		// store, so it read exactly 100% however the stores were actually doing.
+		"assortedCells": "COUNT(*) FILTER (WHERE assortment_active)",
+		"inStockAssortedCells": "COUNT(*) FILTER " +
+			"(WHERE assortment_active AND atp_units > 0)",
 		"zeroCells":         "COUNT(*) FILTER (WHERE on_hand_units = 0)",
 		"cells":             "COUNT(*)",
 		"residualOnlyCells": "COUNT(*) FILTER (WHERE residual_only)",
