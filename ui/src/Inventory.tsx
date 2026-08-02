@@ -130,15 +130,16 @@ const WITHHELD = "Manual judgment required";
  */
 export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   REPLAY_UNAVAILABLE: {
-    // Rewritten at P4-10 because the old text became untrue. The replay DOES
-    // reconstruct observed stock now -- 0.390 units per cell in india-west and
-    // 0.198 in us-new-york against a tolerance frozen at 0.5 -- so the
-    // comparison ran. What it could not do is clear two gates that are already
-    // at zero: the frozen rule requires strictly fewer stockouts and strictly
-    // fewer lost units than the incumbent, a tie fails, and both sides sit at
-    // zero. Saying "cannot reconstruct" would now understate the platform.
-    why: "the candidate policy matched the incumbent on stock-outs and lost units rather than beating it, and the acceptance rule frozen before scoring treats a tie as a failure",
-    when: "when a candidate strictly improves on the incumbent; the replay itself now reproduces observed stock inside its frozen tolerance, so the comparison is running"
+    // The publisher distinguishes two causes -- REPLAY_ORACLE_DID_NOT_REPRODUCE
+    // and REPLAY_NO_CANDIDATE_IMPROVEMENT -- but that code rides on the
+    // capability in the run manifest and does not reach the slice, whose
+    // dataMode is pinned to "live". So this text has to hold for both, and the
+    // previous wording did not: it asserted the replay reproduces, which is true
+    // of the loose source data and false once the network is tight enough for
+    // stores to run short. Naming the weaker of the two conditions keeps it true
+    // either way rather than claiming a reproduction that may not hold.
+    why: "the weekly replay has not published an accepted policy comparison for this bundle: either the reconstruction did not reproduce observed stock inside its frozen tolerance, or it did and no candidate strictly beat the incumbent, which the acceptance rule frozen before scoring treats as a failure",
+    when: "when the reconstruction reproduces observed stock and a candidate strictly improves on the incumbent"
   },
   NRV_UNAVAILABLE: {
     why: "net realizable value is a forward selling price net of disposal cost, and the platform holds acquisition cost rather than an expected recovery price",
@@ -229,7 +230,12 @@ const REASON_TEXT: Record<string, string> = {
   DEAD_STOCK_DEASSORTED: "de-assorted, so cover is not meaningful",
   NO_TRAILING_DEMAND_OBSERVED: "no trailing demand observed for this cell",
   UNIT_COST_UNAVAILABLE: "no accepted unit cost for every on-hand SKU in this group",
-  NRV_UNAVAILABLE: "net realizable value needs an approved markdown policy"
+  NRV_UNAVAILABLE: "net realizable value needs an approved markdown policy",
+  // Not a withheld interval -- the forecast was there and the order solver still
+  // refused, because the supplier's minimum and the cover cap cannot both hold.
+  // The engine refuses rather than silently overriding one of them.
+  MOQ_EXCEEDS_MAX_COVER:
+    "the supplier's minimum order exceeds the cover cap, so no quantity satisfies both policies"
 };
 
 /** Badge colour by value, matching the reference's b-green/amber/red/blue/gray. */

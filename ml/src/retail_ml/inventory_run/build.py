@@ -1167,6 +1167,10 @@ def _replenishment_plan(
         position_units = int(row["position_units"])
         daily = float(trailing.get(key, Decimal(0)))
         recommended: int | None
+        # A solver refusal is not a withheld interval, so it cannot borrow the
+        # interval's reason column semantics -- but it still owes the screen a
+        # reason, or the cell renders bare.
+        refusal: str | None = None
         if position_units > point:
             # Above the reorder point there is nothing to order. Recommending the
             # gap to the order-up-to level anyway is what turns a periodic review
@@ -1184,6 +1188,7 @@ def _replenishment_plan(
                 )
             except OrderConstraintError as error:
                 recommended = None
+                refusal = error.reason_code
                 exceptions.append(
                     {
                         "market_id": market,
@@ -1192,7 +1197,7 @@ def _replenishment_plan(
                         "channel_id": None,
                         "exception_class": "order_constraint_conflict",
                         "severity": "warning",
-                        "reason_code": None,
+                        "reason_code": error.reason_code,
                         "evidence": f"{error.reason_code}: {error}",
                     }
                 )
@@ -1218,9 +1223,10 @@ def _replenishment_plan(
                 "reorder_point_units": float(point),
                 "order_up_to_units": float(level),
                 # The interval WAS available; a null recommendation here means the
-                # constraint solver refused, and the exception above says why.
+                # constraint solver refused, and `refusal` says why. 0010's gate on
+                # this table is one-directional precisely to admit that state.
                 "interval_available": True,
-                "reason_code": None,
+                "reason_code": refusal,
                 "erp_status": ERP_STATUS,
             }
         )
@@ -1348,12 +1354,26 @@ def _build_transfers(
                     transit_days=int(lane["transit_days"]),
                 )
             )
-    accepted = recommend_transfers(
-        candidates,
-        source_atp=atp_by_key,
-        source_residual_cover_units=residual_cover,
-        target_headroom_units=headroom,
-    )
+    # Per market, because the optimizer refuses a mixed set and is right to: a
+    # transfer lane is declared within a market, and ranking an INR benefit
+    # against a USD one would order candidates by exchange rate. The engine has
+    # always guarded this; the caller only ever passed one market's worth by
+    # accident, because the previous replenishment policy left so little
+    # imbalance that only two candidates existed in the whole network. Tightening
+    # stock produced candidates in both markets and the guard fired.
+    by_market: dict[str, list[TransferCandidate]] = defaultdict(list)
+    for candidate in candidates:
+        by_market[candidate.market_id].append(candidate)
+    accepted: list[Any] = []
+    for market in sorted(by_market):
+        accepted.extend(
+            recommend_transfers(
+                by_market[market],
+                source_atp=atp_by_key,
+                source_residual_cover_units=residual_cover,
+                target_headroom_units=headroom,
+            )
+        )
     return pd.DataFrame(
         accepted, columns=list(ARTIFACT_COLUMNS["replenishment_transfers"])
     )

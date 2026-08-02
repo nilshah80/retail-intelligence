@@ -551,6 +551,87 @@ def test_an_available_interval_carrying_a_reason_is_refused(tmp_path: Path) -> N
         _publish(tmp_path, frames=frames)
 
 
+def test_the_replay_reason_names_which_stage_withheld_it() -> None:
+    """r3..r8 all published REPLAY_ORACLE_DID_NOT_REPRODUCE while their oracle had
+    in fact reproduced -- one constant stood in for two unrelated causes, so the
+    served reason was false on every bundle that ever activated."""
+
+    from retail_ml.inventory_publish.run_artifacts import _replay_reason_code
+
+    assert _replay_reason_code(acceptance_passed=True, oracle={"passed": True}) is None
+    # Oracle reproduced, candidate did not strictly beat the incumbent. A governed
+    # P4-D13 outcome, not a broken mechanism.
+    assert (
+        _replay_reason_code(acceptance_passed=False, oracle={"passed": True})
+        == "REPLAY_NO_CANDIDATE_IMPROVEMENT"
+    )
+    # Oracle failed, so the comparison never earned the right to run.
+    assert (
+        _replay_reason_code(acceptance_passed=False, oracle={"passed": False})
+        == "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+    )
+    # No oracle at all cannot claim to have reproduced.
+    assert (
+        _replay_reason_code(acceptance_passed=False, oracle=None)
+        == "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+    )
+
+
+def test_a_reasoned_solver_refusal_publishes(tmp_path: Path) -> None:
+    """0010 gates recommendations one-directionally -- `interval_available OR
+    recommended_units IS NULL` -- while at-risk and safety stock use `=`. A
+    recommended quantity is the output of a constrained solve that can refuse on
+    its own terms with the interval perfectly intact, and that third state is
+    legitimate. Applying the bidirectional rule here rejected rows the schema
+    accepts."""
+
+    frames = _frames()
+    recommendations = frames["replenishment_recommendations"]
+    available = recommendations.index[recommendations["interval_available"]][0]
+    recommendations.loc[available, "recommended_units"] = None
+    recommendations.loc[available, "reason_code"] = "MOQ_EXCEEDS_MAX_COVER"
+    manifest = _publish(tmp_path, frames=frames)
+    assert manifest is not None
+
+
+def test_a_solver_refusal_with_no_reason_is_refused(tmp_path: Path) -> None:
+    """The refusal is allowed; an unexplained one is not. Without a reason the
+    screen prints an empty cell with nothing to account for it."""
+
+    frames = _frames()
+    recommendations = frames["replenishment_recommendations"]
+    available = recommendations.index[recommendations["interval_available"]][0]
+    recommendations.loc[available, "recommended_units"] = None
+    with pytest.raises(InventoryPublicationError, match="absent without a reason"):
+        _publish(tmp_path, frames=frames)
+
+
+def test_an_ungoverned_solver_reason_is_refused(tmp_path: Path) -> None:
+    frames = _frames()
+    recommendations = frames["replenishment_recommendations"]
+    available = recommendations.index[recommendations["interval_available"]][0]
+    recommendations.loc[available, "recommended_units"] = None
+    recommendations.loc[available, "reason_code"] = "SOLVER_GAVE_UP"
+    with pytest.raises(InventoryPublicationError, match="ungoverned solver"):
+        _publish(tmp_path, frames=frames)
+
+
+def test_safety_stock_still_obliges_a_value_when_its_interval_is_available(
+    tmp_path: Path,
+) -> None:
+    """The relaxation is scoped to recommendations. Safety stock keeps `=`, so a
+    missing value on an available interval stays a publication error."""
+
+    frames = _frames()
+    safety = frames["replenishment_safety_stock"]
+    available = safety.index[safety["interval_available"]][0]
+    safety.loc[available, "safety_stock_units"] = None
+    with pytest.raises(
+        InventoryPublicationError, match="interval_available disagrees"
+    ):
+        _publish(tmp_path, frames=frames)
+
+
 def test_an_absent_value_with_no_named_reason_is_refused(tmp_path: Path) -> None:
     frames = _frames()
     frames["inventory_stock_health"].loc[1, "reason_code"] = None

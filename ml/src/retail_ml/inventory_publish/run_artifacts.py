@@ -18,12 +18,13 @@ rule, not as a constraint name from a COPY four steps later.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 import pandas as pd
 
@@ -85,6 +86,19 @@ GOVERNED_REASONS: Final[frozenset[str]] = frozenset(
         # interval, and `nodeSafetyStockBasis:
         # accepted_aggregate_residual_variability` is not in the forecast artifact.
         "NODE_INTERVAL_BASIS_UNAVAILABLE",
+    }
+)
+
+#: Reasons a constrained solve refused on its own terms, with the interval intact.
+#: Kept apart from GOVERNED_REASONS because these do not answer "why is there no
+#: interval" -- they answer "why, given one, is there no order". A screen prints
+#: either, so both must be named somewhere rather than arriving as free text.
+SOLVER_REASONS: Final[frozenset[str]] = frozenset(
+    {
+        # The supplier's minimum order is larger than the max-cover headroom, so
+        # ordering at all would breach the cover cap. The engine refuses rather
+        # than silently violating one of the two constraints.
+        "MOQ_EXCEEDS_MAX_COVER",
     }
 )
 
@@ -303,22 +317,52 @@ ARTIFACT_GRAIN: Final[dict[str, tuple[str, ...]]] = {
     "inventory_replay_metrics": ("market_id", "metric", "cohort"),
 }
 
-#: The interval truth table, mirroring 0010. `gate` is the column whose presence
-#: `interval_available` must equal; `withheld_null` are every further column that
-#: must be absent when the interval is. Both directions are checked, so a run can
-#: neither publish an interval-derived number it did not earn nor hide one it did.
-INTERVAL_GATED: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
-    "inventory_demand_at_risk": (
+class IntervalGate(NamedTuple):
+    """One table's interval truth table, mirroring its CHECK in 0010."""
+
+    #: The column whose presence the flag governs.
+    gate: str
+    #: Every further column that must be absent when the interval is.
+    withheld_null: tuple[str, ...]
+    #: Whether an available interval also *obliges* a value. 0010 says this
+    #: differs per table, and the difference is load-bearing -- see below.
+    obliges_value: bool
+
+
+#: The interval truth table, mirroring 0010. The withheld direction is universal:
+#: no run may publish a number derived from an interval it did not earn. The
+#: available direction is not, and 0010 is deliberate about which tables oblige a
+#: value:
+#:
+#:     inventory_demand_at_risk       = (risk_units IS NOT NULL)
+#:     replenishment_safety_stock     = (safety_stock_units IS NOT NULL)
+#:     replenishment_recommendations  OR recommended_units IS NULL
+#:
+#: (each prefixed by `interval_available` in 0010)
+#:
+#: At-risk units and safety stock are closed-form functions of the interval: given
+#: one, the other follows, so absence can only mean the interval was withheld. A
+#: recommended quantity is not -- it is the output of a constrained solve that can
+#: refuse on its own terms (no supply ATP, a cap below the minimum order). That
+#: refusal is a third state, and the exceptions artifact carries its reason. This
+#: file previously applied the bidirectional rule to all three and so rejected the
+#: very rows 0010 accepts, which is how a legitimate solver refusal on two rows
+#: presented as a decision #92 violation.
+INTERVAL_GATED: Final[dict[str, IntervalGate]] = {
+    "inventory_demand_at_risk": IntervalGate(
         "risk_units",
         ("risk_value_minor", "currency_code"),
+        obliges_value=True,
     ),
-    "replenishment_safety_stock": (
+    "replenishment_safety_stock": IntervalGate(
         "safety_stock_units",
         ("service_level",),
+        obliges_value=True,
     ),
-    "replenishment_recommendations": (
+    "replenishment_recommendations": IntervalGate(
         "recommended_units",
         ("reorder_point_units", "order_up_to_units"),
+        obliges_value=False,
     ),
 }
 
@@ -360,6 +404,25 @@ class InventoryRunPublication:
     row_counts: dict[str, int]
 
 
+def _replay_reason_code(
+    *, acceptance_passed: bool, oracle: Mapping[str, Any] | None
+) -> str | None:
+    """Name which stage actually withheld the replay capability.
+
+    P4-D13 runs the oracle first: the mechanism must reconstruct observed stock
+    before any policy comparison is allowed to mean anything. So there are two
+    distinct unavailable states, and a screen that conflates them misinforms --
+    "the replay does not reproduce" and "the replay reproduces but no candidate
+    strictly won" call for completely different reading.
+    """
+
+    if acceptance_passed:
+        return None
+    if oracle is not None and bool(oracle.get("passed")):
+        return "REPLAY_NO_CANDIDATE_IMPROVEMENT"
+    return "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise InventoryPublicationError(message)
@@ -396,15 +459,44 @@ def _validate_artifact(name: str, frame: pd.DataFrame, *, markets: list[str]) ->
     )
 
     if name in INTERVAL_GATED:
-        gate, withheld_null = INTERVAL_GATED[name]
+        gate, withheld_null, obliges_value = INTERVAL_GATED[name]
         available = frame["interval_available"].astype(bool)
         gate_present = frame[gate].notna()
+        # The withheld direction, always: a value present without the interval
+        # that earned it is fabricated.
+        fabricated = gate_present & ~available
         _require(
-            bool((available == gate_present).all()),
+            not bool(fabricated.any()),
             f"{name}: interval_available disagrees with {gate} on "
-            f"{int((available != gate_present).sum())} rows. Decision #92 makes "
-            "the flag and the value one fact.",
+            f"{int(fabricated.sum())} rows -- a value present without the interval "
+            "that earned it. Decision #92 makes the flag and the value one fact.",
         )
+        unearned = available & ~gate_present
+        if obliges_value:
+            # And the available direction, where 0010 asks for it.
+            _require(
+                not bool(unearned.any()),
+                f"{name}: interval_available disagrees with {gate} on "
+                f"{int(unearned.sum())} rows -- {gate} is a closed-form function "
+                "of the interval, so it cannot be absent when the interval is not.",
+            )
+        else:
+            # Where 0010 does not, the absence is a solver refusal and still owes
+            # a named reason -- otherwise the screen renders an empty cell with
+            # nothing to explain it, which is the bare-unavailable defect.
+            refusals = frame.loc[unearned, "reason_code"].dropna().astype(str)
+            _require(
+                len(refusals) == int(unearned.sum()),
+                f"{name}: {gate} is absent without a reason on "
+                f"{int(unearned.sum()) - len(refusals)} rows whose interval was "
+                "available; a refusal a screen cannot explain renders bare",
+            )
+            ungoverned_refusals = sorted(set(refusals) - SOLVER_REASONS)
+            _require(
+                not ungoverned_refusals,
+                f"{name}: ungoverned solver reasons {ungoverned_refusals}; only "
+                f"{sorted(SOLVER_REASONS)} may explain a refused order",
+            )
         withheld = ~available
         for column in withheld_null:
             _require(
@@ -423,9 +515,16 @@ def _validate_artifact(name: str, frame: pd.DataFrame, *, markets: list[str]) ->
             f"{name}: ungoverned interval reasons {ungoverned}; only "
             f"{sorted(GOVERNED_REASONS)} are contractual",
         )
+        # An available interval may not borrow a withholding reason. The one
+        # exception is the solver refusal governed above, and only on the rows it
+        # actually explains: a reason sitting beside a published quantity explains
+        # nothing and contradicts itself.
+        excused = ~available if obliges_value else unearned
+        stray = frame.loc[available & ~excused, "reason_code"].notna()
         _require(
-            bool(frame.loc[available, "reason_code"].isna().all()),
-            f"{name}: an available interval carries a withholding reason",
+            not bool(stray.any()),
+            f"{name}: an available interval carries a withholding reason on "
+            f"{int(stray.sum())} rows",
         )
 
     if name in REASON_PAIRED:
@@ -688,10 +787,14 @@ def publish_inventory_run(
         REPLAY_CAPABILITY: {
             "available": bool(acceptance_passed),
             "artifacts": ["inventory_replay_metrics"],
-            "reasonCode": (
-                None
-                if acceptance_passed
-                else "REPLAY_ORACLE_DID_NOT_REPRODUCE"
+            # Two different things withhold this capability and they are not
+            # interchangeable. Publishing one constant for both told every reader
+            # of r3..r8 that the oracle had not reproduced when it had, and the
+            # real cause was a candidate that did not strictly beat the incumbent
+            # -- a governed outcome under P4-D13, not a broken mechanism.
+            "reasonCode": _replay_reason_code(
+                acceptance_passed=bool(acceptance_passed),
+                oracle=replay.get("oracle"),
             ),
             # The measured delta travels with the unavailability so the claim is
             # auditable rather than asserted.
