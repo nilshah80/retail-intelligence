@@ -4,7 +4,12 @@ import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {cleanup, render, screen, within} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {InventoryPage, inventoryScreens, type InventoryPageId} from "./Inventory";
+import {
+  AVAILABILITY,
+  InventoryPage,
+  inventoryScreens,
+  type InventoryPageId
+} from "./Inventory";
 import {
   INVENTORY_CONTRACT_SET_ID,
   INVENTORY_SCREEN_CONTRACTS
@@ -346,6 +351,36 @@ describe("inventory & replenishment destinations", () => {
       ok: true, json: async () => partialPayload
     }));
   }
+
+  it("gives every withheld element a cause and a condition", () => {
+    // "Not available" on its own tells a retailer nothing, and the first
+    // question in a demo is always whether the gap is permanent. A reason code
+    // with no entry here renders the bare words, which is the failure mode this
+    // guards -- PO_VALUE_NOT_PROJECTED was doing exactly that.
+    const used = new Set<string>();
+    for (const id of PAGE_IDS) {
+      const screen = inventoryScreens[id];
+      for (const kpi of screen.kpis) {
+        if (kpi.unavailableReason) used.add(kpi.unavailableReason);
+      }
+      for (const row of screen.breakdown ?? []) {
+        if (row.unavailableReason) used.add(row.unavailableReason);
+      }
+    }
+    expect(used.size).toBeGreaterThan(0);
+    for (const code of used) {
+      expect(AVAILABILITY, `${code} is withheld with no cause or condition`)
+        .toHaveProperty(code);
+      expect(AVAILABILITY[code].why.trim()).not.toBe("");
+      expect(AVAILABILITY[code].when.trim()).not.toBe("");
+    }
+    // And nothing stale: an entry nobody reaches is a claim about the platform
+    // that no screen makes.
+    for (const code of Object.keys(AVAILABILITY)) {
+      expect(used, `${code} is declared but no element withholds on it`)
+        .toContain(code);
+    }
+  });
 
   // -- the page is a shortlist, and says so ------------------------------------
 

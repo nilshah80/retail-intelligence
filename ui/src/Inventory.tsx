@@ -108,14 +108,26 @@ const WITHHELD = "Manual judgment required";
  * element carries one: "Not available" on its own tells a retailer nothing, and
  * the first question in a demo is always whether the gap is permanent.
  */
-const AVAILABILITY: Record<string, {why: string; when: string}> = {
+export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   REPLAY_UNAVAILABLE: {
     why: "the weekly replay does not yet reconstruct observed stock closely enough to compare policies against it",
     when: "when replay reconstruction reaches the accuracy threshold frozen before scoring"
   },
   NRV_UNAVAILABLE: {
-    why: "net realizable value and its provisions need an approved markdown and pricing-floor policy",
-    when: "when that policy is approved; the platform will not estimate a finance figure without one"
+    why: "net realizable value is a forward selling price net of disposal cost, and the platform holds acquisition cost rather than an expected recovery price",
+    when: "when a pricing-floor policy supplies the recovery price; a finance figure is not estimated without one"
+  },
+  PROVISION_NEEDS_SKU_COST: {
+    // Deliberately specific. The markdown policy IS approved and IS applied --
+    // the ageing engine marks 2,128 candidate cells at 10 per cent -- so a
+    // generic "needs a policy" would be wrong, and would send a finance reader
+    // looking for an approval that already exists.
+    why: "the markdown is applied per SKU while inventory is valued per category, so the provision cannot be costed without spreading a category's value across its SKUs",
+    when: "when valuation is published at SKU grain; a spread provision would be an estimate presented as a ledger figure"
+  },
+  PO_VALUE_NOT_PROJECTED: {
+    why: "no purchase order exists yet -- these are recommendations, and an order carries a value only once it is raised against agreed terms",
+    when: "when recommendations are converted to purchase orders"
   },
   DOCK_TO_STOCK_NOT_INSTRUMENTED: {
     why: "the source records receipts but not putaway completion",
@@ -130,16 +142,12 @@ const AVAILABILITY: Record<string, {why: string; when: string}> = {
     when: "when a second window is retained to compare against"
   },
   ORDER_VALUE_NEEDS_COSTED_LINES: {
-    why: "a recommendation carries units, not a costed order line",
-    when: "when order lines are priced at creation"
+    why: "a recommendation carries units, and pricing it needs a cost at SKU grain that the category-level valuation cannot supply",
+    when: "when order lines are priced at creation against supplier terms"
   },
   BUDGET_NOT_APPLIED: {
     why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
     when: "when the budget cap is enforced in the replenishment engine"
-  },
-  UNIT_COST_UNAVAILABLE: {
-    why: "at least one on-hand SKU in this group has no accepted unit cost, and another node's cost is never borrowed",
-    when: "when the missing receipts carry a cost"
   }
 };
 
@@ -470,10 +478,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        unavailableReason: "NRV_UNAVAILABLE",
        note: "Needs an approved markdown policy"},
       {caption: "Markdown Provision", field: null, format: "money",
-       unavailableReason: "NRV_UNAVAILABLE",
+       unavailableReason: "PROVISION_NEEDS_SKU_COST",
        note: "Needs an approved markdown policy"},
       {caption: "Obsolescence Provision", field: null, format: "money",
-       unavailableReason: "NRV_UNAVAILABLE",
+       unavailableReason: "PROVISION_NEEDS_SKU_COST",
        note: "Needs an approved markdown policy"},
       {caption: "Inventory Variance", field: "wmsVarianceUnits", format: "units",
        note: "Absolute ERP-versus-WMS discrepancy"}
