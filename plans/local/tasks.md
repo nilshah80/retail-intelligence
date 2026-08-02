@@ -1408,19 +1408,30 @@ identity; source pin `a92f0254…`, publication `7d6946ef…`.
       conservation asserted.
 - [~] Inventory-replay simulator + acceptance; demand-at-risk.
       Demand-at-risk is complete: 4,741 rows, 1,017 assessed, 3,724 disclosed.
-      The replay, cohorts, named incumbent, oracle and independent acceptance are
-      all built and have RUN on 52 weeks × 2 markets. The reconstruction does not
-      reach the tolerance frozen before scoring, so
-      `inventory_replenishment_replay` publishes as UNAVAILABLE with its
-      measurement on record while the twelve current-state artifacts serve
-      normally. Measured mean absolute delta per cell against a frozen 0.5:
-      india-west 13.840 → **8.035**, us-new-york 7.938 → **3.194**, after four
-      driver defects were fixed in the order found (online demand counted as a
-      store draw; the oracle replaying the candidate policy on top of observed
-      arrivals; a per-cell tolerance applied to a market total; the Thursday state
-      snapshot compared directly to a Monday-to-Monday close instead of bridged 73
-      hours per `replayClock`). The tolerance has never been widened —
-      P4-D13 `postResultThresholdWeakening: forbidden`.
+      **The replay reproduces as of P4-10.** Both markets clear the tolerance
+      frozen before scoring — india-west 0.390 units per cell, us-new-york 0.198,
+      against 0.5 — so the mechanism is validated and the policy comparison ran
+      for the first time. Two defects had to be fixed together, and each looked
+      like a regression alone:
+      * `store_waste_events` reached staging and never reached canonical, so the
+        reconstruction had no store write-offs at all;
+      * the opening state was taken from the preceding Thursday snapshot and used
+        raw as a Monday opening, without the 73-hour bridge P4-D5's `replayClock`
+        requires and that the observed series already had. Every arrival in this
+        source lands Friday 23:00, so three days early meant one whole delivery
+        short — a constant −15,804 offset in period one still reading −12,058
+        fifty periods later.
+      Measured: 8.076 with neither fix, 10.894 with waste alone, 13.032 with the
+      bridge alone, **0.390 with both**. The tolerance never moved.
+      The capability is still `[~]` and still publishes UNAVAILABLE, but for a
+      different and much better reason: the candidate matched the incumbent
+      rather than beating it. Scored gates —
+      `stockoutPeriods` 0 vs 0 and `lostUnits` 0 vs 0 both tie and a tie fails;
+      `fillRate` equal, passes; `meanInventoryUnits` 65,356 vs 117,226, passes.
+      The candidate holds **44% less inventory at identical service**. Nothing can
+      be strictly fewer than zero stock-outs, so those two gates are unreachable
+      against this incumbent — a property of the frozen rule, left alone, because
+      weakening a threshold after seeing the result is what P4-D13 forbids.
 - [x] Freeze reviewed parity/data matrices for the original Inventory Overview and its Store
       Inventory, Warehouse Inventory, Inventory Ageing, Stock Transfers, Inventory Valuation and
       Expiry & Waste submenu pages, plus Replenishment Planner and its Suggested Orders, Supplier
@@ -1512,16 +1523,24 @@ computed from the ten-year publication and the live forecast, and every absent
 value carries a governed reason. These are real limitations to close before
 production.
 
-1. ~~**Replay fidelity.**~~ **Closed at P4-10.** The gap was a missing input, not
-   an unexplained residual. `store_waste_events` reached staging and never reached
-   canonical, so the replay reconstructed store stock without the store echelon's
-   write-offs — 317,056 units in india-west against 140,787 at its DCs. Measured
-   over 39 periods: 0.558 units per cell ignoring waste, 0.061 crediting it,
-   against the tolerance frozen at 0.5. The tolerance did not move.
-   The two inputs guessed at here were both measured and both wrong: crediting
-   returns makes it *worse* (1.062 — the source's snapshots never credit a
-   physical return back to on-hand), and there are no store-outbound transfers to
-   read, because every `from_location_id` in the source is a DC.
+1. ~~**Replay fidelity.**~~ **Closed at P4-10.** The gap was two missing pieces of
+   the same 73-hour clock, not an unexplained residual. `store_waste_events`
+   reached staging and never reached canonical (317,056 units in india-west
+   against 140,787 at its DCs), and the opening state was never bridged from its
+   Thursday snapshot to the Monday the period opens. Measured per cell against
+   the tolerance frozen at 0.5: 8.076 with neither fix, 10.894 with waste alone,
+   13.032 with the bridge alone, **0.390 with both** — and 0.198 in us-new-york.
+   The tolerance never moved.
+   The two candidates guessed at here were both measured and both wrong:
+   crediting returns makes it *worse* (1.062 — the source's snapshots never
+   credit a physical return back to on-hand), and there are no store-outbound
+   transfers to read, because every `from_location_id` in the source is a DC.
+   What remains is not fidelity: the candidate policy ties the incumbent at zero
+   stock-outs and zero lost units, and the frozen rule fails a tie. It holds 44%
+   less inventory at identical fill rate. Beating an incumbent that is already at
+   zero needs either a harder incumbent or a gate that can express "same service,
+   less capital" — a policy decision, not an engineering one, and not one to take
+   after seeing the result.
 2. **Store unit cost.** 6 of 2,552 store cells have no cost-carrying receipt and
    are excluded with `ABC_UNIT_COST_UNAVAILABLE` rather than inheriting DC cost.
 3. **DC interval basis.** A DC's demand is the additive P50 of its rank-1-supplied

@@ -288,6 +288,25 @@ def command_test(args: argparse.Namespace) -> int:
     return 0
 
 
+def _committed_pin_publication() -> str | None:
+    """The publication fingerprint `contracts/ml/expected-pin.json` names.
+
+    Read rather than cached: the pin moves when a publication is re-derived, and
+    a stale copy here would reintroduce the arbitrary tiebreak it exists to
+    remove.
+    """
+
+    try:
+        pin = json.loads(
+            (REPO_ROOT / "contracts" / "ml" / "expected-pin.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    return (pin.get("publication") or {}).get("semanticFingerprint")
+
+
 def _discover_forecast_run() -> tuple[Path, str]:
     """Return the newest decision-#82 governed run and its lifecycle status.
 
@@ -349,6 +368,18 @@ def _discover_forecast_run() -> tuple[Path, str]:
         if acceptance.get("schemaVersion") != ACCEPTANCE_SCHEMA_GENERATION:
             continue
         if acceptance.get("candidateClass") != model_policy["candidateClass"]:
+            continue
+        # And it must be pinned to the publication the repository currently pins.
+        # Two bundles refit on different publications share a decisionAsOf, so the
+        # newest-wins tiebreak fell through to the directory name -- which picked
+        # `forecast_run_tenyear` over `forecast_run_r2` on nothing but the letter
+        # "t", and failed the gate on a bundle that cannot serve. Same intent as
+        # every filter above: only offer candidates the current verifier accepts.
+        input_bundle = manifest.get("inputBundle") or {}
+        published = input_bundle.get("publicationSemanticFingerprint") or (
+            input_bundle.get("publication") or {}
+        ).get("semanticFingerprint")
+        if published != _committed_pin_publication():
             continue
         entry = (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
         if manifest.get("lifecycleStatus") == "accepted":
