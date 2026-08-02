@@ -42,7 +42,7 @@ SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
 #: The publication P4-3 pinned. Named rather than discovered: there is no
 #: newest-wins here either, and a caller changing the pin should have to say so.
-RUN = "run-5bf9580d18d67e36-r2"
+RUN = "run-ae5fcbcb9b8abb34"
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
 #: joins the list at P4-3 because the Phase 4 bundle consumes it, and a pin that

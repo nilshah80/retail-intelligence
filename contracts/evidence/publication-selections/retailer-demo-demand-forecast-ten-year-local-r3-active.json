@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-02T12:00:00Z",
+    "reason": "Adopted as the active demand-forecast source authority. The forecast is refit on this publication, so the selection over run-5bf9580d18d67e36-r2 is superseded in the same change."
+  },
+  "lifecycle": {
+    "reasonCode": "PHASE_4_TIGHTENED_REPLENISHMENT",
+    "recordId": "rec_cbaac5ebb5f937fa",
+    "state": "active",
+    "supersedes": "rec_b93aa35900f92725"
+  },
+  "publication": {
+    "duckdbSha256": "3aaadc4487b5b07292fd62d298933e4d166033995af0fa2a7f2a0fab17108136",
+    "gateASemanticFingerprint": "8acece3a3199fdb10a92647fa7896e6ac2dfc0606bc21af026b5d2d84209c86d",
+    "gateBSemanticFingerprint": "2ae31be12eebbf9267b2856ddf8e01382fa69214b016b785e10b7575c14a769c",
+    "logicalPath": "ingestion/data/curated/run-ae5fcbcb9b8abb34",
+    "objectCount": 1532,
+    "publicationSemanticFingerprint": "0198aa1eb0d96526bdd692a0353bed45bd7c03179ba1e1b66b69b63d7a5530a9",
+    "sourceSnapshotId": "d43fd302aa3b07fa3b0933cf503ae54fd42902270efde9386b57ca6b7c83cde3"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "2ae31be12eebbf9267b2856ddf8e01382fa69214b016b785e10b7575c14a769c"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_4d87b62ab87b8ada"
+}

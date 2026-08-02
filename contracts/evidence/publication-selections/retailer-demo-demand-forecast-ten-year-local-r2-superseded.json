@@ -1,22 +1,22 @@
 {
   "approval": {
     "actor": "nilay.shah",
-    "approvedAt": "2026-08-01T20:15:00Z",
-    "reason": "Superseded by selection sel_eff2e427b7decd38 over publication run-5bf9580d18d67e36-r2. The publication this record selects carries DC write-offs only, which leaves the evidence incomplete at the store echelon. Scope: demand_forecast_non_pit."
+    "approvedAt": "2026-08-02T00:00:00Z",
+    "reason": "Superseded by selection sel_4d87b62ab87b8ada over publication run-ae5fcbcb9b8abb34. The publication this record selects was generated with a replenishment policy that never ran out of stock. Scope: demand_forecast_non_pit."
   },
   "lifecycle": {
-    "reasonCode": "PHASE_4_STORE_WASTE_REINGEST",
-    "recordId": "rec_4d27f66e81ffe99b",
+    "reasonCode": "PHASE_4_TIGHTENED_REPLENISHMENT",
+    "recordId": "rec_1035ee3c331798b2",
     "state": "superseded",
-    "supersedes": "rec_b4972b87a1bf4965"
+    "supersedes": "rec_784da55a1dfd0908"
   },
   "publication": {
-    "duckdbSha256": "cb75fe72920d47c82dd8458bacc05d774c99dce4b1c4da51d9403eec0d020637",
+    "duckdbSha256": "716c8cb2f81ddc7ee06695905476002da2c024051b8a090fc427391c18965a1e",
     "gateASemanticFingerprint": "38e6ce74128b77c3eac099ba0b30e62867a3ea267af13f7de14e731882080b58",
     "gateBSemanticFingerprint": "6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67",
-    "logicalPath": "ingestion/data/curated/run-5bf9580d18d67e36",
-    "objectCount": 1549,
-    "publicationSemanticFingerprint": "7d6946eff7862a4214d677af52fa73dd191858c05eaa0360a76382af90029d74",
+    "logicalPath": "ingestion/data/curated/run-5bf9580d18d67e36-r2",
+    "objectCount": 1598,
+    "publicationSemanticFingerprint": "5e7bc174f1b2b82aaf3cfd8d8dfc60382cca77d107049811e8fd3eadfe6cbc93",
     "sourceSnapshotId": "a92f025475f24949178526341c2c2176468620e7762d08a78925d8eaebfe98d2"
   },
   "readiness": {
@@ -31,5 +31,5 @@
     "retailerId": "retailer-demo",
     "tenantId": "tenant-demo"
   },
-  "selectionId": "sel_f95ca0db797b5704"
+  "selectionId": "sel_eff2e427b7decd38"
 }

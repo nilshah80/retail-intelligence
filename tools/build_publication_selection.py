@@ -91,6 +91,15 @@ PHASE_4_APPROVED_AT = "2026-08-01T20:15:00Z"
 PHASE_4R2_RUN = "run-5bf9580d18d67e36-r2"
 PHASE_4R2_APPROVED_AT = "2026-08-02T00:00:00Z"
 
+#: A regenerated source run, not a re-ingest of the same one. The store
+#: replenishment policy was tightened at P4-12 -- seven days of cover against a
+#: seven-day review cycle, one unit of safety stock, two days of lane transit --
+#: because the previous policy replenished faster than any store could sell and
+#: no store ever ran out. Every availability measure saturated, so the screens
+#: had nothing to report and the product had nothing to demonstrate.
+PHASE_4R3_RUN = "run-ae5fcbcb9b8abb34"
+PHASE_4R3_APPROVED_AT = "2026-08-02T12:00:00Z"
+
 
 def _scope(capability: str) -> dict[str, str]:
     return {
@@ -463,18 +472,27 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         ),
     )
 
-    def _supersede(active, replacement, capability):
+    def _supersede(active, replacement, capability, run=None, because=None):
         record = transition(
             active,
             "superseded",
             actor=ACTOR,
             reason=(
                 f"Superseded by selection {replacement['selectionId']} over "
-                "publication run-5bf9580d18d67e36-r2. The publication this "
-                "record selects carries DC write-offs only, which leaves the "
-                f"{capability} evidence incomplete at the store echelon."
+                f"publication {run or 'run-5bf9580d18d67e36-r2'}. "
+                + (
+                    because
+                    or "The publication this record selects carries DC write-offs "
+                    "only, which leaves the evidence incomplete at the store "
+                    "echelon."
+                )
+                + f" Scope: {capability}."
             ),
-            reason_code="PHASE_4_STORE_WASTE_REINGEST",
+            reason_code=(
+                "PHASE_4_TIGHTENED_REPLENISHMENT"
+                if run
+                else "PHASE_4_STORE_WASTE_REINGEST"
+            ),
         )
         validate_selection(record)
         return record
@@ -489,6 +507,72 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
     replay_superseded = _supersede(
         replay_chain[2], r2_replay_chain[2], "inventory_replenishment_replay"
     )
+
+    # -- P4-12: the regenerated run with a tightened replenishment policy -------
+    r3_reason = (
+        "Regenerated source run. The store replenishment policy replenished to 14 "
+        "days of cover plus 3 units of safety stock, reviewed weekly, with one day "
+        "of transit -- faster than any store could sell, so no store ever ran out. "
+        "Zero-stock cells were 0.48 per cent and the in-stock rate 99.08, which "
+        "left every availability and fill-rate measure saturated. At seven days of "
+        "cover, one unit of safety stock and two days of transit the same "
+        "simulation produces 9.39 per cent zero-stock cells and an 82.67 per cent "
+        "in-stock rate, inside the range the approved reference shows."
+    )
+    r3_chains = {
+        capability: build_chain(
+            run=PHASE_4R3_RUN,
+            capability=capability,
+            approved_at=PHASE_4R3_APPROVED_AT,
+            reason_code="PHASE_4_TIGHTENED_REPLENISHMENT",
+            candidate_reason=r3_reason,
+            approved_reason=approved,
+            active_reason=active,
+        )
+        for capability, approved, active in (
+            (
+                "demand_forecast_non_pit",
+                "Gate A, Gate B, the capability mask, the object count and the "
+                "curated DuckDB hash independently reverified against retained "
+                "evidence for run-ae5fcbcb9b8abb34.",
+                "Adopted as the active demand-forecast source authority. The "
+                "forecast is refit on this publication, so the selection over "
+                "run-5bf9580d18d67e36-r2 is superseded in the same change.",
+            ),
+            (
+                "inventory_replenishment_current_snapshot",
+                "Gate B reports the capability available with no missing "
+                "entities, reverified against the retained mask.",
+                "Adopted as the active source authority for the current-state "
+                "half of the bundle.",
+            ),
+            (
+                "inventory_replenishment_replay",
+                "The replay capability's five reason codes are all absent in the "
+                "retained Gate B mask, reverified rather than read from the "
+                "pipeline result.",
+                "Adopted as the active source authority for the replay half. The "
+                "tightened policy changes what the replay reconstructs: less "
+                "stock sitting means less expiry, so the write-off term shrinks "
+                "from 317,056 units to 26,672 and the oracle is re-measured "
+                "against the same frozen tolerance rather than a relaxed one.",
+            ),
+        )
+    }
+
+    r3_superseded = {
+        capability: _supersede(
+            chain[2], r3_chains[capability][2], capability,
+            "run-ae5fcbcb9b8abb34",
+            "The publication this record selects was generated with a "
+            "replenishment policy that never ran out of stock.",
+        )
+        for capability, chain in (
+            ("demand_forecast_non_pit", r2_forecast_chain),
+            ("inventory_replenishment_current_snapshot", r2_current_chain),
+            ("inventory_replenishment_replay", r2_replay_chain),
+        )
+    }
 
     # A real chain gets a real supersession. The Phase 3 selection was governed,
     # unlike the pre-Phase-3 pin disclosed above, so it transitions rather than
@@ -524,6 +608,8 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *r2_forecast_chain,
         *r2_current_chain,
         *r2_replay_chain,
+        *r3_superseded.values(),
+        *(record for chain in r3_chains.values() for record in chain),
     ]
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
@@ -568,6 +654,23 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         (f"{replay_prefix}-r2-candidate.json", r2_replay_chain[0]),
         (f"{replay_prefix}-r2-approved.json", r2_replay_chain[1]),
         (f"{replay_prefix}-r2-active.json", r2_replay_chain[2]),
+        (f"{forecast_prefix}-r2-superseded.json",
+         r3_superseded["demand_forecast_non_pit"]),
+        (f"{current_prefix}-r2-superseded.json",
+         r3_superseded["inventory_replenishment_current_snapshot"]),
+        (f"{replay_prefix}-r2-superseded.json",
+         r3_superseded["inventory_replenishment_replay"]),
+        *(
+            (f"{prefix}-r3-{state}.json", record)
+            for prefix, capability in (
+                (forecast_prefix, "demand_forecast_non_pit"),
+                (current_prefix, "inventory_replenishment_current_snapshot"),
+                (replay_prefix, "inventory_replenishment_replay"),
+            )
+            for state, record in zip(
+                ("candidate", "approved", "active"), r3_chains[capability]
+            )
+        ),
     ]
 
 
