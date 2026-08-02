@@ -401,14 +401,28 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Gross value of stock held at store locations"},
       {caption: "On-Shelf Availability", field: "atpUnits", format: "units",
        of: "onHandUnits", note: "Available to promise share"},
-      {caption: "Stores at Risk", field: "healthAtRiskLocations", format: "count",
-       of: "healthLocations",
-       note: "Locations holding at least one understocked or stocked-out cell"},
-      {caption: "Transfer Opportunity", field: "transferUnits", format: "units",
-       note: "Units the optimizer would move between locations"},
+      {caption: "Stores at Risk", field: "healthAtRiskStores", format: "count",
+       of: "healthStores",
+       note: "Stores holding at least one over- or understocked cell"},
+      {caption: "Transfer Opportunity", field: "transferTransferValueMinor",
+       format: "money",
+       note: "Value of the stock the optimizer would move between locations"},
       {caption: "Lost Sales Exposure", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
+    ],
+    // The heatmap is one row per STORE, not per SKU: Availability, DoS,
+    // Overstock and Understock are all shares of a store's own cells, and the
+    // Action is what to do about that store.
+    grouped: [
+      {heading: "Store Inventory Heatmap", card: "locations", columns: [
+        {header: "Store", field: "locationName"},
+        {header: "Availability", field: "availabilityPct", format: "percent"},
+        {header: "DoS", field: "daysOfSupply", format: "days"},
+        {header: "Overstock", field: "overstockPct", format: "percent"},
+        {header: "Understock", field: "understockPct", format: "percent"},
+        {header: "Action", field: "priorityAction"}
+      ]}
     ],
     breakdown: [
       // "Store Exception Summary" -- an aggregation card, not a row table. An
@@ -423,16 +437,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {label: "Negative inventory", field: "negativeCells", format: "count"},
       {label: "Transfer candidates", field: "transferRows", format: "count"}
     ],
-    tables: [
-      {heading: "Store Inventory Heatmap", columns: [
-        {header: "Store", field: "locationName"},
-        {header: "Availability", field: "atpUnits", format: "units"},
-        {header: "DoS", field: null},
-        {header: "Overstock", field: "onHandUnits", format: "units"},
-        {header: "Understock", field: "committedUnits", format: "units"},
-        {header: "Action", field: "residualOnly", badge: true}
-      ]}
-    ]
+    tables: []
   },
   warehouseInventory: {
     title: "Warehouse Inventory",
@@ -479,8 +484,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Units in residual-only cells"},
       {caption: "Markdown Opportunity", field: "markdownCells", format: "count",
        note: "Cells the action ladder marks for markdown"},
-      {caption: "Transfer Opportunity", field: "transferUnits", format: "units",
-       note: "Units the optimizer would move between locations"}
+      {caption: "Transfer Opportunity", field: "transferTransferValueMinor",
+       format: "money",
+       note: "Value of the stock the optimizer would move between locations"}
     ],
     tables: [
       {heading: null, columns: [
@@ -502,7 +508,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Open Transfer Requests", field: "rows", format: "count",
        note: "Recommendations over declared alternate lanes"},
-      {caption: "Transfer Value", field: "expectedBenefitMinor", format: "money",
+      // Value is units at cost. Expected BENEFIT is the projected recovery, and
+      // the reference shows them as different columns and different KPIs.
+      {caption: "Transfer Value", field: "transferValueMinor", format: "money",
        note: "Market-local cost value of the units moved"},
       {caption: "Expected Lost-Sales Recovery", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
@@ -520,7 +528,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "To Location", field: "toLocationId"},
         {header: "Available Qty", field: "units", format: "units"},
         {header: "Suggested Qty", field: "units", format: "units"},
-        {header: "Value", field: "expectedBenefitMinor", format: "money"},
+        {header: "Value", field: "transferValueMinor", format: "money"},
         {header: "Expected Benefit", field: "expectedBenefitMinor", format: "money"},
         {header: "Status", field: "laneId", badge: true}
       ]}
@@ -1071,14 +1079,6 @@ function DataCard({
               : `${rows.length}`}
           </span>
         </div>
-      )}
-      {slice.ranking && slice.pagination
-        && slice.pagination.total > rows.length && (
-        <p className="kpi-note" data-testid="ranking-note">
-          Ranked by {slice.ranking}. The tiles above are aggregated in SQL over
-          all {slice.pagination.total.toLocaleString("en-US")} rows in scope, not
-          over this page.
-        </p>
       )}
       <div className="table-scroll">
         <table className="table" data-card-kind="rows">

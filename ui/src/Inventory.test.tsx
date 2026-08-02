@@ -217,8 +217,8 @@ describe("inventory & replenishment destinations", () => {
         {
           marketId: "india-west",
           locationId: "india-west:mumbai-bandra",
-          locationName: "Mumbai Bandra",
-          locationType: "Store",
+          locationName: "Mumbai Distribution Centre",
+          locationType: "Warehouse",
           productName: "Test Product",
           categoryLabel: "Grocery",
           skuId: "sku-1",
@@ -232,14 +232,17 @@ describe("inventory & replenishment destinations", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true, json: async () => payload
     }));
-    renderPage("storeInventory");
+    // Warehouse Inventory, not Store Inventory: the reference's store page has
+    // exactly one rows card and it is the per-STORE heatmap, which is grouped.
+    renderPage("warehouseInventory");
 
     const table = await findRowsTable();
     expect(within(table).getByText("42")).toBeInTheDocument();
     // The NAME, not the identifier. Every reference table names a node --
     // "Phoenix Market City, Mumbai", "West DC, Ahmedabad" -- and shipping
     // "india-west:mumbai-bandra" put a database key in front of a buyer.
-    expect(within(table).getByText("Mumbai Bandra")).toBeInTheDocument();
+    expect(within(table).getByText("Mumbai Distribution Centre"))
+      .toBeInTheDocument();
     expect(within(table).queryByText("india-west:mumbai-bandra"))
       .not.toBeInTheDocument();
     // A false boolean renders as "No", never as a blank that reads like absence.
@@ -421,10 +424,10 @@ describe("inventory & replenishment destinations", () => {
 
   // -- the page is a shortlist, and says so ------------------------------------
 
-  it("names the ranking whenever the page is a cut of a larger set", async () => {
-    // A twenty-row table over 4,741 rows is only honest if the reader knows what
-    // the twenty are the top of. Without this the same table could be the worst
-    // offenders or the first twenty SKU codes alphabetically.
+  it("discloses that a page is a cut of a larger set", async () => {
+    // Three of 4,741 must not read as the whole set. The count in the card head
+    // is the disclosure -- a prose note explaining the ranking was an addition
+    // the reference does not have, and the reference is the layout.
     const payload = {
       ...partialPayload,
       pagination: {offset: 0, limit: 20, total: 4741},
@@ -436,34 +439,13 @@ describe("inventory & replenishment destinations", () => {
     renderPage("safetyStock");
 
     await findRowsTable();
-    const note = await screen.findByTestId("ranking-note");
-    expect(note).toHaveTextContent(
-      "Ranked by class A first, then the largest safety buffer"
-    );
-    // And it must say the tiles are NOT this page, or a reader will assume the
-    // KPI above the table is the sum of the rows beneath it.
-    expect(note).toHaveTextContent("4,741 rows in scope, not over this page");
     expect(
       await screen.findByText((text) => text.trim() === "Top 3 of 4,741")
     ).toBeInTheDocument();
-  });
-
-  it("claims no ranking when the page already holds every scoped row", async () => {
-    // Three of three is the whole set. Telling a reader it is "ranked by" a
-    // criterion implies rows were left out when none were.
-    const payload = {
-      ...partialPayload,
-      pagination: {offset: 0, limit: 20, total: 3},
-      ranking: "class A first, then the largest safety buffer"
-    };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true, json: async () => payload
-    }));
-    renderPage("safetyStock");
-
-    await findRowsTable();
+    // No invented prose block.
     expect(screen.queryByTestId("ranking-note")).not.toBeInTheDocument();
   });
+
 
   it("renders a withheld interval as manual judgment, never zero", async () => {
     stubPartial();

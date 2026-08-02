@@ -134,6 +134,25 @@ func (s *InventoryStore) rowFXExpr(units string) string {
 	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
 }
 
+// namesFXExpr is the row-grain money expression against the NAMES lookup alias.
+//
+// A third variant only because the cost sits behind a different alias here --
+// `names` rather than `dim` -- and a shared helper would have to be told which,
+// which is the same parameter spelled less clearly.
+func (s *InventoryStore) namesFXExpr(units string) string {
+	if len(s.fxToReporting) == 0 {
+		return fmt.Sprintf("%s::numeric * names.unit_cost_minor", units)
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, currency := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN names.names_currency = '%s' THEN %s::numeric * names.unit_cost_minor * %s",
+			currency, units, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
+}
+
 func sortedKeys(values map[string]string) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -523,15 +542,22 @@ func (s *InventoryStore) tableSlice(
 		// rather than a wrong number.
 		source += fmt.Sprintf(`
 			LEFT JOIN (
-				SELECT DISTINCT inventory_version_id AS names_version,
+				SELECT inventory_version_id AS names_version,
 				       market_id AS names_market, %[1]s AS names_key,
-				       product_name, category_label
+				       MAX(product_name) AS product_name,
+				       MAX(category_label) AS category_label,
+				       MAX(unit_cost_minor) AS unit_cost_minor,
+				       MAX(currency_code) AS names_currency
 				FROM retail_serving.inventory_sku_dimension
+				GROUP BY inventory_version_id, market_id, %[1]s
 			) AS names
 			ON names.names_version = %[2]s.inventory_version_id
 			AND names.names_market = %[2]s.market_id
 			AND names.names_key = %[3]s`, key, table, lookup.on)
-		selected += lookup.columns
+		// %[1]s is the row's money expression under this store's approved FX.
+		selected += strings.ReplaceAll(
+			lookup.columns, "%[1]s", s.namesFXExpr("units"),
+		)
 	}
 	statement := fmt.Sprintf(
 		`SELECT COUNT(*) OVER(), %s FROM %s
@@ -613,7 +639,7 @@ func (s *InventoryStore) tableSlice(
 	if cards := groupedCards[table]; len(cards) > 0 {
 		rendered := make(map[string]any, len(cards))
 		for _, card := range cards {
-			grouped, err := s.groupedCard(ctx, card, filters)
+			grouped, err := s.groupedCard(ctx, card, filters, extraClauses)
 			if err != nil {
 				return nil, err
 			}
@@ -789,10 +815,17 @@ var groupedCards = map[string][]groupedCard{
 				SUM(on_hand_units) AS on_hand_units,
 				%[1]s AS value_minor,
 				SUM(atp_units) AS atp_units,
-				-- Availability is served units over held units, per location.
-				CASE WHEN SUM(on_hand_units) > 0
-					THEN SUM(atp_units)::numeric / SUM(on_hand_units) END
-					AS availability_pct,
+				-- On-shelf availability is an IN-STOCK RATE: of the SKUs this
+				-- node is meant to carry, how many are actually available to
+				-- sell. It is not ATP over on-hand -- that ratio is
+				-- definitionally 1 at a store, because the source records no
+				-- committed or reserved units there, which is why every store
+				-- reported exactly 100%.
+				CASE WHEN COUNT(*) FILTER (WHERE assortment_active) > 0
+					THEN COUNT(*) FILTER (
+						WHERE assortment_active AND atp_units > 0
+					)::numeric / COUNT(*) FILTER (WHERE assortment_active)
+				END AS availability_pct,
 				CASE WHEN SUM(dim.trailing_daily_units) > 0
 					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
 				END AS days_of_supply,
@@ -803,6 +836,10 @@ AVG(health.cover_days) AS cover_days,
 				CASE WHEN COUNT(*) > 0 THEN
 					COUNT(*) FILTER (WHERE health.health_class = 'overstock')::numeric
 					/ COUNT(*) END AS overstock_pct,
+				CASE WHEN COUNT(*) > 0 THEN
+					COUNT(*) FILTER (WHERE health.health_class IN
+						('understock', 'stockout'))::numeric
+					/ COUNT(*) END AS understock_pct,
 				-- The reference badges a location Low/Medium/High. Derived from
 				-- the health engine's own classes, not from a threshold invented
 				-- here: any stock-out is High, thin cover is Medium, else Low.
@@ -813,13 +850,17 @@ AVG(health.cover_days) AS cover_days,
 						THEN 'Medium'
 					ELSE 'Low'
 				END AS stockout_risk,
+				-- The reference's own action vocabulary for this card:
+				-- Maintain, Rebalance, Replenish, Transfer + markdown.
 				CASE
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
-						THEN 'Replenish immediately'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) > 0
+						AND COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
 						THEN 'Transfer + markdown'
-					WHEN COUNT(*) FILTER (WHERE health.health_class = 'dead') > 0
-						THEN 'Review ageing stock'
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('stockout', 'understock')) > 0 THEN 'Replenish'
+					WHEN COUNT(*) FILTER (WHERE health.health_class IN
+						('overstock', 'dead')) > 0 THEN 'Rebalance'
 					ELSE 'Maintain'
 				END AS priority_action,
 				COUNT(*) AS cells,
@@ -1019,8 +1060,10 @@ var rowNameLookup = map[string]struct {
 	columns string
 }{
 	"replenishment_transfers": {
-		on:      "replenishment_transfers.sku_id",
-		columns: ", names.product_name, names.category_label",
+		on: "replenishment_transfers.sku_id",
+		// The row's own value: units at cost, converted. Distinct from
+		// expected_benefit_minor, which the reference shows in its own column.
+		columns: ", names.product_name, names.category_label, %[1]s AS transfer_value_minor",
 	},
 	"replenishment_recommendations": {
 		on:      "replenishment_recommendations.sku_id",
@@ -1188,7 +1231,16 @@ var inventoryAggregates = map[string]map[string]string{
 		// per-SKU risk rows would report 3,698 stores in a two-store market.
 		"atRiskLocations": "COUNT(DISTINCT location_id) FILTER " +
 			"(WHERE health_class IN ('understock', 'stockout'))",
-		"locations":             "COUNT(DISTINCT location_id)",
+		"locations": "COUNT(DISTINCT location_id)",
+		// Store-scoped counts, for the pages that show stores. A page titled
+		// Store Inventory must not report a warehouse among its stores at risk.
+		"atRiskStores": "COUNT(DISTINCT location_id) FILTER (WHERE " +
+			"dim.location_kind = 'store' AND " +
+			"health_class IN ('understock', 'stockout', 'overstock'))",
+		"stores": "COUNT(DISTINCT location_id) FILTER " +
+			"(WHERE dim.location_kind = 'store')",
+		"warehouses": "COUNT(DISTINCT location_id) FILTER " +
+			"(WHERE dim.location_kind IN ('dc', '3pl'))",
 		"coverUnavailableCells": "COUNT(*) FILTER (WHERE cover_days IS NULL)",
 		"meanCoverDays":         "AVG(cover_days)",
 	},
@@ -1287,6 +1339,7 @@ var inventoryAggregates = map[string]map[string]string{
 	},
 	"replenishment_transfers": {
 		"rows":                 "COUNT(*)",
+		"costedRows":           "COUNT(dim.unit_cost_minor)",
 		"units":                "COALESCE(SUM(units), 0)",
 		"expectedBenefitMinor": "COALESCE(SUM(expected_benefit_minor), 0)",
 		"lanes":                "COUNT(DISTINCT lane_id)",
@@ -1329,6 +1382,13 @@ var inventoryAggregates = map[string]map[string]string{
 // Every one of these renders as rupees in the reference and rendered a unit
 // count here until migration 0011 published a cost to multiply by.
 var moneyAggregates = map[string]map[string]string{
+	// The reference shows "Transfer Value" and "Expected Benefit" as DIFFERENT
+	// columns and different KPIs. Value is units at cost; benefit is the
+	// lost-sales recovery the optimizer projects. Mapping the caption "Transfer
+	// Value" onto expected_benefit_minor answered the wrong question.
+	"replenishment_transfers": {
+		"transferValueMinor": "units",
+	},
 	"inventory_positions": {
 		"onHandValueMinor": "on_hand_units",
 		// The reference reads "Inventory at Risk / Rs 8.7 Cr / 17.9% exposure"
@@ -1367,6 +1427,22 @@ var aggregateSource = map[string]string{
 		LEFT JOIN retail_serving.inventory_stock_health AS health
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
 
+	// A transfer's value is its units at cost. The dimension is per node and a
+	// transfer spans two, so the cost is taken per market x SKU -- the same
+	// figure whichever end of the lane it is read from.
+	"replenishment_transfers": `retail_serving.replenishment_transfers
+		LEFT JOIN (
+			SELECT DISTINCT inventory_version_id AS cost_version,
+			       market_id AS cost_market, sku_id AS cost_sku,
+			       MAX(unit_cost_minor) AS unit_cost_minor,
+			       MAX(currency_code) AS currency_code
+			FROM retail_serving.inventory_sku_dimension
+			GROUP BY inventory_version_id, market_id, sku_id
+		) AS dim
+		ON dim.cost_version = replenishment_transfers.inventory_version_id
+		AND dim.cost_market = replenishment_transfers.market_id
+		AND dim.cost_sku = replenishment_transfers.sku_id`,
+
 	"replenishment_safety_stock": `retail_serving.replenishment_safety_stock
 		LEFT JOIN retail_serving.inventory_positions AS position
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
@@ -1388,6 +1464,13 @@ var aggregateSource = map[string]string{
 		     = replenishment_recommendations.inventory_version_id
 		AND supply.supply_node
 		     = replenishment_recommendations.supply_location_id`,
+
+	// Stock health carries no echelon, so a store-scoped page could not ask for
+	// "Stores at Risk" and got every node instead -- eight on a page showing
+	// four. The dimension carries the kind.
+	"inventory_stock_health": `retail_serving.inventory_stock_health
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+		USING (inventory_version_id, market_id, location_id, sku_id)`,
 
 	"inventory_valuation_by_kind": `retail_serving.inventory_valuation
 		JOIN (SELECT DISTINCT inventory_version_id, market_id, location_id,
@@ -1420,14 +1503,18 @@ func (s *InventoryStore) aggregate(
 		}
 		merged["costedCells"] = "COUNT(dim.unit_cost_minor)"
 		merged["currencyCount"] = "COUNT(DISTINCT dim.currency_code)"
-		merged["categories"] = "COUNT(DISTINCT dim.category)"
-		// Days of supply and stock turn are the same fact twice -- cover is
-		// on-hand over daily demand, turn is a year divided by cover -- and both
-		// were withheld only for want of a published trailing demand.
-		merged["daysOfSupply"] = "CASE WHEN SUM(dim.trailing_daily_units) > 0 " +
-			"THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units) END"
-		merged["stockTurn"] = "CASE WHEN SUM(on_hand_units) > 0 " +
-			"THEN (SUM(dim.trailing_daily_units) * 365.0) / SUM(on_hand_units) END"
+		// Position-only. A transfers or safety-stock join carries the cost but
+		// neither on_hand_units nor a category, so adding these unconditionally
+		// asked the database for columns that are not in scope.
+		if table == "inventory_positions" {
+			merged["categories"] = "COUNT(DISTINCT dim.category)"
+			// Days of supply and stock turn are the same fact twice: cover is
+			// on-hand over daily demand, turn is a year divided by cover.
+			merged["daysOfSupply"] = "CASE WHEN SUM(dim.trailing_daily_units) > 0 " +
+				"THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units) END"
+			merged["stockTurn"] = "CASE WHEN SUM(on_hand_units) > 0 " +
+				"THEN (SUM(dim.trailing_daily_units) * 365.0) / SUM(on_hand_units) END"
+		}
 		if table == "inventory_positions" {
 			// The reference's own note scopes this tile: "Overstock, ageing,
 			// expiry". Named classes rather than "not healthy", which would also
@@ -1483,6 +1570,7 @@ func (s *InventoryStore) aggregate(
 // dropped with its argument rather than failing the request.
 func (s *InventoryStore) groupedCard(
 	ctx context.Context, card groupedCard, filters []inventoryFilter,
+	static []string,
 ) ([]map[string]any, error) {
 	base := card.source
 	if index := strings.IndexAny(base, " \n\t"); index > 0 {
@@ -1495,6 +1583,16 @@ func (s *InventoryStore) groupedCard(
 	joinsDimension := strings.Contains(card.source, "inventory_sku_dimension")
 	clauses := []string{"inventory_version_id = $1"}
 	args := []any{s.inventoryVersionID}
+	// The route's own restriction, so Store Inventory's heatmap is stores and
+	// Warehouse Inventory's table is warehouses. A card that ignored this showed
+	// every node under a heading that named one echelon.
+	for _, clause := range static {
+		if strings.Contains(clause, "location_kind") &&
+			!strings.Contains(card.source, "inventory_positions") {
+			continue
+		}
+		clauses = append(clauses, clause)
+	}
 	for _, filter := range filters {
 		column := filter.column
 		switch {
