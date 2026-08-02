@@ -71,6 +71,13 @@ interface ColumnSpec {
   readonly badge?: boolean;
   /** Interval-derived: withheld together when `intervalAvailable` is false. */
   readonly gated?: boolean;
+  /**
+   * Why this column has no value, keyed into REASON_TEXT. Required reading for
+   * any column the reference shows and the platform cannot fill: without it the
+   * cell renders the bare words with an empty tooltip, which is the single thing
+   * a demo reader asks about first. Five pages were shipping 20 bare cells each.
+   */
+  readonly unavailableReason?: string;
 }
 
 interface TableSpec {
@@ -215,7 +222,7 @@ function availabilityNote(reason: string | undefined): string | null {
 }
 
 /** Reasons a value is absent, in the words a retailer needs, not a code. */
-const REASON_TEXT: Record<string, string> = {
+export const REASON_TEXT: Record<string, string> = {
   COLD_START_INTERVAL_UNCALIBRATED:
     "the forecast interval is calibrated through horizon 4 and this row's protection period reaches further",
   SUPPLY_ROUTE_UNRESOLVED:
@@ -235,7 +242,24 @@ const REASON_TEXT: Record<string, string> = {
   // refused, because the supplier's minimum and the cover cap cannot both hold.
   // The engine refuses rather than silently overriding one of them.
   MOQ_EXCEEDS_MAX_COVER:
-    "the supplier's minimum order exceeds the cover cap, so no quantity satisfies both policies"
+    "the supplier's minimum order exceeds the cover cap, so no quantity satisfies both policies",
+  // Column-level absences. Each names what the active bundle does or does not
+  // publish -- checked against ARTIFACT_COLUMNS rather than guessed, because a
+  // plausible-sounding wrong reason is worse than none.
+  NO_RECEIPT_DATE_TO_AGE:
+    "this cell's on-hand carries no recorded receipt date, and an age is published only for stock the source recorded arriving",
+  AGEING_VALUE_NOT_PUBLISHED:
+    "the ageing artifact publishes units per age bucket and no costed value, so a value here would be computed off-contract",
+  SELL_THROUGH_NOT_PUBLISHED:
+    "sell-through needs units sold over units received in the same window, and neither the ageing nor the waste artifact publishes a receipt base",
+  WAREHOUSE_CAPACITY_NOT_PUBLISHED:
+    "the position artifact publishes on-hand and its buckets but no storage capacity, so utilisation has no denominator",
+  FILL_RATE_NEEDS_REPLAY:
+    "fill rate is served units over demanded units per period, which only the weekly replay produces, and the replay capability is not available on this bundle",
+  WASTE_ACTION_NOT_PUBLISHED:
+    "the waste artifact publishes exposure and units, not a disposition, so no recommended action is carried",
+  PROVISION_NEEDS_SKU_COST:
+    "the markdown is applied per SKU while inventory is valued per category, so the provision cannot be costed without spreading a category's value across its SKUs"
 };
 
 /** Badge colour by value, matching the reference's b-green/amber/red/blue/gray. */
@@ -470,8 +494,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {heading: null, columns: [
         {header: "Warehouse", field: "locationName"},
         {header: "Inventory Value", field: "onHandUnits", format: "units"},
-        {header: "Capacity Utilization", field: null},
-        {header: "Fill Rate", field: null},
+        {header: "Capacity Utilization", field: null,
+         unavailableReason: "WAREHOUSE_CAPACITY_NOT_PUBLISHED"},
+        {header: "Fill Rate", field: null,
+         unavailableReason: "FILL_RATE_NEEDS_REPLAY"},
         {header: "Blocked Stock", field: "damagedUnits", format: "units"},
         {header: "Delayed Receipts", field: "onOrderUnits", format: "units"},
         {header: "Action", field: "residualOnly", badge: true}
@@ -503,8 +529,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Category", field: "categoryLabel"},
         {header: "Age", field: "ageBucket"},
         {header: "Units", field: "onHandUnits", format: "units"},
-        {header: "Value", field: null},
-        {header: "Sell-through", field: null},
+        {header: "Value", field: null,
+         unavailableReason: "AGEING_VALUE_NOT_PUBLISHED"},
+        {header: "Sell-through", field: null,
+         unavailableReason: "SELL_THROUGH_NOT_PUBLISHED"},
         {header: "Recommended Action", field: "action"},
         {header: "Priority", field: "residualOnly", badge: true}
       ]}
@@ -575,8 +603,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {heading: "Valuation by Category", columns: [
         {header: "Category", field: "categoryLabel"},
         {header: "Gross Value", field: "grossValueMinor", format: "money"},
-        {header: "NRV", field: null},
-        {header: "Provision", field: null},
+        {header: "NRV", field: null, unavailableReason: "NRV_UNAVAILABLE"},
+        {header: "Provision", field: null,
+         unavailableReason: "PROVISION_NEEDS_SKU_COST"},
         {header: "Variance", field: "wmsVarianceUnits", format: "units"}
       ]}
     ]
@@ -605,8 +634,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Expiry Window", field: "expiringUnits", format: "units"},
         {header: "Units", field: "expiredUnits", format: "units"},
         {header: "Value", field: "exposureMinor", format: "money"},
-        {header: "Sell-through", field: null},
-        {header: "Recommended Action", field: null},
+        {header: "Sell-through", field: null,
+         unavailableReason: "SELL_THROUGH_NOT_PUBLISHED"},
+        {header: "Recommended Action", field: null,
+         unavailableReason: "WASTE_ACTION_NOT_PUBLISHED"},
         {header: "Priority", field: "wasteUnits", format: "units"}
       ]}
     ]
@@ -621,7 +652,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "SKU", field: "productName"},
         {header: "Store", field: "locationName"},
         {header: "Days of Supply", field: "coverDays", format: "days"},
-        {header: "Ageing", field: "ageingBand"},
+        {header: "Ageing", field: "ageingBand",
+         unavailableReason: "NO_RECEIPT_DATE_TO_AGE"},
         {header: "Health", field: "healthClass", badge: true},
         {header: "Financial Exposure", field: "exposureMinor", format: "money"},
         {header: "Recommended Action", field: "recommendedAction"},
@@ -1030,11 +1062,7 @@ function Cell({
     // The reference has a column here and the platform has no measure for it.
     // Rendering the header with a governed cell is the approved element-level
     // behaviour; dropping the column would silently change the approved layout.
-    return (
-      <td className="cell-unavailable" data-unavailable="true">
-        {UNAVAILABLE}
-      </td>
-    );
+    return <UnavailableCell reason={column.unavailableReason} />;
   }
   if (column.gated && isWithheld(row)) {
     const reason = reasonOf(row);
@@ -1060,13 +1088,33 @@ function Cell({
   }
   const rendered = formatValue(value, column.format, currency);
   if (rendered === UNAVAILABLE) {
-    return (
-      <td className="cell-unavailable" data-unavailable="true">
-        {UNAVAILABLE}
-      </td>
-    );
+    // The column has a field and this row's value is absent. Not the same thing
+    // as a column with no measure at all, but it owes the reader a reason just
+    // the same -- Stock Health's Ageing is null on precisely the stock-out rows,
+    // which have no receipt to age from.
+    return <UnavailableCell reason={column.unavailableReason} />;
   }
   return <td>{rendered}</td>;
+}
+
+/**
+ * One governed empty cell. Carries the reason as both a tooltip and an attribute
+ * so a reader can hover it and a test can assert on it.
+ */
+function UnavailableCell({reason}: {reason?: string}) {
+  return (
+    <td
+      className="cell-unavailable"
+      data-unavailable="true"
+      data-reason-code={reason || undefined}
+      title={
+        (reason && REASON_TEXT[reason]) ??
+        "This value is not published by the active bundle."
+      }
+    >
+      {UNAVAILABLE}
+    </td>
+  );
 }
 
 function DataCard({

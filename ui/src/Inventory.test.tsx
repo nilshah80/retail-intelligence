@@ -7,6 +7,7 @@ import {afterEach, describe, expect, it, vi} from "vitest";
 import {
   AVAILABILITY,
   InventoryPage,
+  REASON_TEXT,
   inventoryScreens,
   type InventoryPageId
 } from "./Inventory";
@@ -396,6 +397,53 @@ describe("inventory & replenishment destinations", () => {
       expect(AVAILABILITY[code].why.trim()).not.toBe("");
       expect(AVAILABILITY[code].when.trim()).not.toBe("");
     }
+    // Table columns withhold too, and they were doing it silently: five pages
+    // rendered 20 bare cells each -- Capacity Utilization, Fill Rate, NRV,
+    // Provision, Sell-through, Ageing -- with no tooltip and no reason code, so
+    // the demo's first question had no answer on screen.
+    const columnReasons = new Set<string>();
+    for (const id of PAGE_IDS) {
+      for (const table of inventoryScreens[id].tables ?? []) {
+        for (const column of table.columns) {
+          if (column.unavailableReason) columnReasons.add(column.unavailableReason);
+        }
+      }
+    }
+    expect(columnReasons.size).toBeGreaterThan(0);
+    for (const code of columnReasons) {
+      expect(REASON_TEXT, `${code} is withheld with no reason text`)
+        .toHaveProperty(code);
+      expect(REASON_TEXT[code].trim()).not.toBe("");
+    }
+    // Columns on the Replenishment Planner pages still carry no declared reason
+    // and fall back to the generic title. That is true rather than bare, so it is
+    // not the defect above -- but it is thinner than the pages checked here, and
+    // inventing a specific cause for a page whose artifacts have not been read
+    // would be worse than the generic one. Asserted as a known count so the set
+    // cannot silently grow.
+    const undeclared: string[] = [];
+    for (const id of PAGE_IDS) {
+      for (const table of inventoryScreens[id].tables ?? []) {
+        for (const column of table.columns) {
+          if (!column.field && !column.unavailableReason) {
+            undeclared.push(`${id}:${column.header}`);
+          }
+        }
+      }
+    }
+    const DEFERRED = new Set([
+      "replenishmentPlanner",
+      "suggestedOrders",
+      "supplierPlanning",
+      "safetyStock",
+      "allocationFulfillment",
+      "replenishmentExceptions"
+    ]);
+    const leaked = undeclared.filter((entry) => !DEFERRED.has(entry.split(":")[0]));
+    expect(
+      leaked,
+      "a column outside the Replenishment Planner renders empty with no reason"
+    ).toEqual([]);
     // And nothing stale: an entry nobody reaches is a claim about the platform
     // that no screen makes.
     for (const code of Object.keys(AVAILABILITY)) {
