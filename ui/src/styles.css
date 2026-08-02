@@ -1054,3 +1054,13 @@ tr[data-partial="true"] {
   font-style: italic;
   letter-spacing: -.1px;
 }
+
+/* Rows inside the horizon window the Forecast Accuracy tile pools. Tinted so the
+   tile's single figure and the table's per-horizon rows are visibly the same
+   arithmetic rather than two numbers that look like they disagree. */
+.table tr.in-window > td {
+  background: rgba(43, 108, 224, 0.06);
+}
+.table tfoot td {
+  border-top: 2px solid var(--line, #e3e8f0);
+}

@@ -217,6 +217,10 @@ describe("inventory & replenishment destinations", () => {
         {
           marketId: "india-west",
           locationId: "india-west:mumbai-bandra",
+          locationName: "Mumbai Bandra",
+          locationType: "Store",
+          productName: "Test Product",
+          categoryLabel: "Grocery",
           skuId: "sku-1",
           onHandUnits: 42,
           atpUnits: 40,
@@ -232,7 +236,12 @@ describe("inventory & replenishment destinations", () => {
 
     const table = await findRowsTable();
     expect(within(table).getByText("42")).toBeInTheDocument();
-    expect(within(table).getByText("india-west:mumbai-bandra")).toBeInTheDocument();
+    // The NAME, not the identifier. Every reference table names a node --
+    // "Phoenix Market City, Mumbai", "West DC, Ahmedabad" -- and shipping
+    // "india-west:mumbai-bandra" put a database key in front of a buyer.
+    expect(within(table).getByText("Mumbai Bandra")).toBeInTheDocument();
+    expect(within(table).queryByText("india-west:mumbai-bandra"))
+      .not.toBeInTheDocument();
     // A false boolean renders as "No", never as a blank that reads like absence.
     expect(within(table).getByText("No")).toBeInTheDocument();
   });
@@ -254,8 +263,13 @@ describe("inventory & replenishment destinations", () => {
       // reason. Zero would invert the meaning.
       items: [{
         marketId: "india-west", locationId: "dc", skuId: "sku-9",
+        locationName: "Test Distribution Centre", productName: "Test Product",
         healthClass: "dead", coverDays: null,
-        reasonCode: "DEAD_STOCK_DEASSORTED"
+        reasonCode: "DEAD_STOCK_DEASSORTED",
+        // Ageing and exposure resolve from the ageing and positions projections
+        // now; the recommended action is a phrase derived from the health class.
+        ageingBand: null, exposureMinor: null,
+        recommendedAction: "Review for clearance", priority: "Medium"
       }],
       pagination: {offset: 0, limit: 100, total: 1}
     };
@@ -270,11 +284,16 @@ describe("inventory & replenishment destinations", () => {
     // genuinely absent cover. Every one renders the governed treatment, and the
     // column keeps its header rather than being dropped from the approved layout.
     const governed = within(table).getAllByText("Not available");
-    expect(governed.length).toBeGreaterThanOrEqual(3);
+    expect(governed.length).toBeGreaterThanOrEqual(2);
     for (const cell of governed) {
       expect(cell).toHaveAttribute("data-unavailable", "true");
     }
-    expect(within(table).getByText("DEAD_STOCK_DEASSORTED")).toBeInTheDocument();
+    // The action is a PHRASE a planner can act on. "DEAD_STOCK_DEASSORTED" is
+    // the engine's reason for withholding cover, not a recommended action, and
+    // putting it in that column shipped an enum to a buyer.
+    expect(within(table).getByText("Review for clearance")).toBeInTheDocument();
+    expect(within(table).queryByText("DEAD_STOCK_DEASSORTED"))
+      .not.toBeInTheDocument();
     // Never a zero standing in for an absent value.
     expect(within(table).queryByText("0")).not.toBeInTheDocument();
   });

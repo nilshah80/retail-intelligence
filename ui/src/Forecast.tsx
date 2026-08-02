@@ -583,11 +583,18 @@ function Overview({
   data,
   healthGrain,
   granularity,
+  horizonWeeks,
+  windowMetrics,
   setModal
 }: {
   data: ReturnType<typeof useForecastData>;
   healthGrain: ForecastHealthGrain;
   granularity: string;
+  /** The selected window, so the health table can mark the rows the tile pools. */
+  horizonWeeks: number;
+  /** The pooled figure the Forecast Accuracy tile shows, passed rather than
+   *  recomputed: two derivations of one number is how they come to disagree. */
+  windowMetrics: {accuracy: number | null; bias: number | null};
   setModal: (modal: Modal) => void;
 }) {
   const summary = data.summary!.items[0];
@@ -667,7 +674,12 @@ function Overview({
               </thead>
               <tbody>
                 {horizonRows.map((row) => (
-                  <tr key={row.checkpoint} data-horizon={row.checkpoint}>
+                  <tr
+                    key={row.checkpoint}
+                    data-horizon={row.checkpoint}
+                    data-in-window={row.checkpoint <= horizonWeeks}
+                    className={row.checkpoint <= horizonWeeks ? "in-window" : undefined}
+                  >
                     <td>{row.checkpoint === 1 ? "1 week" : `${row.checkpoint} weeks`}</td>
                     <td>{percentage(row.accuracy)}</td>
                     <td>{ratioPercentage(row.bias, true)}</td>
@@ -678,6 +690,26 @@ function Overview({
                   </tr>
                 ))}
               </tbody>
+              {/* The KPI tile above shows ONE number for the selected window and
+                  this table shows one per horizon, which reads as a
+                  contradiction until you can see they are the same arithmetic.
+                  They are: the tile pools the window rather than averaging it --
+                  sum the absolute errors, sum the actuals, divide once -- so it
+                  lands inside the range of the rows it pools and equals this
+                  footer exactly. Shown rather than explained in a tooltip,
+                  because the question the footer answers is "does the tile agree
+                  with the table". */}
+              <tfoot>
+                <tr data-testid="horizon-window-total">
+                  <td><strong>h1&ndash;h{horizonWeeks} pooled</strong></td>
+                  <td><strong>{percentage(windowMetrics.accuracy)}</strong></td>
+                  <td><strong>{percentage(windowMetrics.bias, true)}</strong></td>
+                  <td colSpan={2} className="muted">
+                    Volume-weighted across the highlighted rows &mdash; the figure
+                    the Forecast Accuracy tile shows
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </Card>
@@ -1058,7 +1090,7 @@ export function DemandForecast({
           <span className="delta down">
             {summary?.demandAtRiskCells?.toLocaleString("en-US") ?? "0"} SKU-store combinations
           </span>
-          <p>Potential lost-sales exposure · Phase 4 inventory measure</p>
+          <p>Potential lost-sales exposure</p>
         </div>
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
         <div className="kpi">
@@ -1087,7 +1119,16 @@ export function DemandForecast({
         ))}
       </div>
       <section className="forecast-panel" role="tabpanel">
-        {tab === "Overview" && <Overview data={data} healthGrain={healthGrain} granularity={granularity} setModal={setModal} />}
+        {tab === "Overview" && (
+          <Overview
+            data={data}
+            healthGrain={healthGrain}
+            granularity={granularity}
+            horizonWeeks={horizonWeeks}
+            windowMetrics={scopedMetrics}
+            setModal={setModal}
+          />
+        )}
         {tab === "Store View" && <StoreView data={data} setModal={setModal} />}
         {tab === "SKU View" && <SkuView data={data} />}
         {tab === "Demand Drivers" && <DriversView data={data} />}

@@ -24,7 +24,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0012_sku_dimension_trailing"
+	InventoryMigrationRevision = "0013_sku_dimension_names"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -112,6 +112,26 @@ func (s *InventoryStore) fxExpr(units string) string {
 		))
 	}
 	return fmt.Sprintf("SUM(CASE %s END)", strings.Join(branches, " "))
+}
+
+// rowFXExpr is fxExpr without the SUM: a single row's money, converted.
+//
+// Split rather than parameterised because the two shapes are used in different
+// clauses -- one inside an aggregate, one in a row projection -- and a function
+// returning "SUM(...)" for a per-row column produced a grouping error rather
+// than a wrong number, which at least failed loudly.
+func (s *InventoryStore) rowFXExpr(units string) string {
+	if len(s.fxToReporting) == 0 {
+		return fmt.Sprintf("%s::numeric * dim.unit_cost_minor", units)
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, currency := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN dim.currency_code = '%s' THEN %s::numeric * dim.unit_cost_minor * %s",
+			currency, units, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
 }
 
 func sortedKeys(values map[string]string) []string {
@@ -339,26 +359,26 @@ func (s *InventoryStore) Read(
 		return s.versions(), nil
 	case "/api/v1/inventory/overview":
 		return s.tableSlice(ctx, query, "inventory_positions",
-			"market_id, location_id, location_kind, sku_id, on_hand_units, "+
+			"market_id, location_id, inventory_positions.location_kind, sku_id, on_hand_units, "+
 				"committed_units, reserved_units, damaged_units, on_order_units, "+
 				"in_transit_units, atp_units, assortment_active, residual_only",
 			rankByPosition)
 	case "/api/v1/inventory/stores":
 		return s.tableSlice(ctx, query, "inventory_positions",
-			"market_id, location_id, location_kind, sku_id, on_hand_units, "+
+			"market_id, location_id, inventory_positions.location_kind, sku_id, on_hand_units, "+
 				"atp_units, in_transit_units, assortment_active, residual_only",
 			rankByPosition,
-			"location_kind = 'store'")
+			"inventory_positions.location_kind = 'store'")
 	case "/api/v1/inventory/warehouses":
 		return s.tableSlice(ctx, query, "inventory_positions",
 			// residual_only drives the reference's Action column. It was absent
 			// from this route's projection alone, so every warehouse row showed
 			// a blank action while the same column filled on every other screen.
-			"market_id, location_id, location_kind, sku_id, on_hand_units, "+
+			"market_id, location_id, inventory_positions.location_kind, sku_id, on_hand_units, "+
 				"committed_units, damaged_units, atp_units, on_order_units, "+
 				"residual_only",
 			rankByPosition,
-			"location_kind IN ('dc', '3pl')")
+			"inventory_positions.location_kind IN ('dc', '3pl')")
 	case "/api/v1/inventory/ageing":
 		return s.tableSlice(ctx, query, "inventory_ageing",
 			"market_id, location_id, sku_id, age_bucket, on_hand_units, "+
@@ -366,18 +386,21 @@ func (s *InventoryStore) Read(
 			rankByAge)
 	case "/api/v1/inventory/transfers":
 		return s.tableSlice(ctx, query, "replenishment_transfers",
-			"market_id, lane_id, from_location_id, to_location_id, sku_id, "+
-				"units, expected_benefit_minor, currency_code, transit_days",
+			"replenishment_transfers.market_id, lane_id, from_location_id, "+
+				"to_location_id, replenishment_transfers.sku_id, units, "+
+				"expected_benefit_minor, currency_code, transit_days",
 			rankByBenefit)
 	case "/api/v1/inventory/valuation":
 		return s.tableSlice(ctx, query, "inventory_valuation",
-			"market_id, location_id, category, gross_value_minor, "+
+			"inventory_valuation.market_id, location_id, "+
+				"inventory_valuation.category, gross_value_minor, "+
 				"currency_code, cost_method, cost_reason_code, wms_variance_units",
 			rankByValue)
 	case "/api/v1/inventory/expiry-waste":
 		return s.tableSlice(ctx, query, "inventory_expiry_waste",
 			"market_id, location_id, sku_id, expiring_units, expired_units, "+
-				"waste_units, exposure_minor, currency_code",
+				"waste_units, exposure_minor, "+
+				"inventory_expiry_waste.currency_code",
 			rankByExposure)
 	case "/api/v1/inventory/stock-health":
 		return s.tableSlice(ctx, query, "inventory_stock_health",
@@ -385,7 +408,8 @@ func (s *InventoryStore) Read(
 			rankByHealth)
 	case "/api/v1/replenishment/planner", "/api/v1/replenishment/orders":
 		return s.tableSlice(ctx, query, "replenishment_recommendations",
-			"market_id, destination_location_id, supply_location_id, sku_id, "+
+			"replenishment_recommendations.market_id, destination_location_id, "+
+				"supply_location_id, replenishment_recommendations.sku_id, "+
 				"recommended_units, reorder_point_units, order_up_to_units, "+
 				"interval_available, reason_code, erp_status",
 			rankByRecommendation)
@@ -406,7 +430,8 @@ func (s *InventoryStore) Read(
 			rankByShortfall)
 	case "/api/v1/replenishment/exceptions":
 		return s.tableSlice(ctx, query, "replenishment_exceptions",
-			"market_id, location_id, sku_id, channel_id, exception_class, "+
+			"replenishment_exceptions.market_id, location_id, "+
+				"replenishment_exceptions.sku_id, channel_id, exception_class, "+
 				"severity, reason_code, evidence",
 			rankBySeverity)
 	}
@@ -471,10 +496,47 @@ func (s *InventoryStore) tableSlice(
 	}
 	clauses, args := s.scope(table, filters, extraClauses)
 	args = append(args, query.Limit, query.Offset)
+	source := "retail_serving." + table
+	selected := columns
+	if rowDisplayTables[table] {
+		source += `
+			LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+			USING (inventory_version_id, market_id, location_id, sku_id)`
+		selected += rowDisplayColumns
+		if extra, present := rowExtraJoins[table]; present {
+			source += extra.join
+			// %[1]s is the row's money expression, converted with this store's
+			// approved reporting FX rather than a rate written into the literal.
+			selected += strings.ReplaceAll(
+				extra.columns, "%[1]s", s.rowFXExpr("position.on_hand_units"),
+			)
+		}
+	}
+	if lookup, present := rowNameLookup[table]; present {
+		key := "sku_id"
+		if table == "inventory_valuation" {
+			key = "category"
+		}
+		// Every column the subquery exposes is aliased away from the projection's
+		// own names. Exposing `inventory_version_id` or `market_id` unaliased
+		// made the outer WHERE clause ambiguous, which is a 503 on the route
+		// rather than a wrong number.
+		source += fmt.Sprintf(`
+			LEFT JOIN (
+				SELECT DISTINCT inventory_version_id AS names_version,
+				       market_id AS names_market, %[1]s AS names_key,
+				       product_name, category_label
+				FROM retail_serving.inventory_sku_dimension
+			) AS names
+			ON names.names_version = %[2]s.inventory_version_id
+			AND names.names_market = %[2]s.market_id
+			AND names.names_key = %[3]s`, key, table, lookup.on)
+		selected += lookup.columns
+	}
 	statement := fmt.Sprintf(
-		`SELECT COUNT(*) OVER(), %s FROM retail_serving.%s
+		`SELECT COUNT(*) OVER(), %s FROM %s
 		 WHERE %s ORDER BY %s LIMIT $%d OFFSET $%d`,
-		columns, table, strings.Join(clauses, " AND "), ranking.orderBy,
+		selected, source, strings.Join(clauses, " AND "), ranking.orderBy,
 		len(args)-1, len(args),
 	)
 	rows, err := s.pool.Query(ctx, statement, args...)
@@ -715,8 +777,16 @@ var groupedCards = map[string][]groupedCard{
 			source: "retail_serving.inventory_positions " + costJoin + `
 				LEFT JOIN retail_serving.inventory_stock_health AS health
 				USING (inventory_version_id, market_id, location_id, sku_id)`,
-			groupBy: "market_id, location_id, location_kind",
-			columns: `SUM(on_hand_units) AS on_hand_units,
+			groupBy: "market_id, location_id, inventory_positions.location_kind, dim.location_name",
+			columns: `-- The reference's Type column reads "Store" and "Warehouse";
+				-- "dc" is the source's word for the echelon, not the screen's.
+				CASE inventory_positions.location_kind
+					WHEN 'store' THEN 'Store'
+					WHEN 'dc' THEN 'Warehouse'
+					WHEN '3pl' THEN 'Warehouse (3PL)'
+					ELSE initcap(inventory_positions.location_kind)
+				END AS location_type,
+				SUM(on_hand_units) AS on_hand_units,
 				%[1]s AS value_minor,
 				SUM(atp_units) AS atp_units,
 				-- Availability is served units over held units, per location.
@@ -766,7 +836,7 @@ AVG(health.cover_days) AS cover_days,
 			source: "retail_serving.inventory_positions " + costJoin + `
 				LEFT JOIN retail_serving.inventory_stock_health AS health
 				USING (inventory_version_id, market_id, location_id, sku_id)`,
-			groupBy: "dim.category",
+			groupBy: "dim.category, dim.category_label",
 			columns: `SUM(on_hand_units) AS on_hand_units,
 				%[1]s AS value_minor,
 				SUM(atp_units) AS atp_units,
@@ -873,6 +943,112 @@ AVG(health.cover_days) AS cover_days,
 	},
 }
 
+// Row pages that print a NAME rather than an identifier.
+//
+// Listed rather than inferred: every one of these is keyed
+// (market_id, location_id, sku_id), which is exactly the dimension's grain, so
+// the join is a USING and the shared columns merge instead of colliding. The
+// replenishment projections key on destination_location_id and are not in this
+// set -- they need an aliased ON, which is a different change.
+var rowDisplayTables = map[string]bool{
+	"inventory_positions":        true,
+	"inventory_stock_health":     true,
+	"inventory_ageing":           true,
+	"inventory_expiry_waste":     true,
+	"inventory_demand_at_risk":   true,
+	"replenishment_safety_stock": true,
+	"replenishment_allocations":  true,
+}
+
+// Extra joins a row page needs beyond the display dimension, with the columns
+// they contribute.
+//
+// Stock Health is the case that forced this: the reference's row carries Days of
+// Supply, AGEING, Health, FINANCIAL EXPOSURE, an action and a priority. Health
+// and cover come from the health projection, but ageing lives in the ageing
+// projection and exposure is on-hand times cost -- on-hand being in positions.
+// Three projections, one row, and no way to express that before.
+var rowExtraJoins = map[string]struct {
+	join    string
+	columns string
+}{
+	"inventory_stock_health": {
+		join: `
+			LEFT JOIN retail_serving.inventory_positions AS position
+			USING (inventory_version_id, market_id, location_id, sku_id)
+			LEFT JOIN (
+				SELECT inventory_version_id, market_id, location_id, sku_id,
+				       MIN(age_bucket) AS age_bucket
+				FROM retail_serving.inventory_ageing
+				GROUP BY inventory_version_id, market_id, location_id, sku_id
+			) AS ageing
+			USING (inventory_version_id, market_id, location_id, sku_id)`,
+		columns: `, position.on_hand_units,
+			-- Capital exposed on this row: what is held, at accepted cost, in the
+			-- reporting currency.
+			%[1]s AS exposure_minor,
+			CASE ageing.age_bucket
+				WHEN '0-30' THEN '0-30 days'
+				WHEN '30-60' THEN '31-60 days'
+				WHEN '60-90' THEN '61-90 days'
+				WHEN '90-180' THEN '91-180 days'
+				WHEN '180-plus' THEN '180+ days'
+			END AS ageing_band,
+			CASE health_class
+				WHEN 'stockout' THEN 'High'
+				WHEN 'understock' THEN 'High'
+				WHEN 'overstock' THEN 'Medium'
+				WHEN 'dead' THEN 'Medium'
+				ELSE 'Low'
+			END AS priority,
+			CASE health_class
+				WHEN 'stockout' THEN 'Replenish immediately'
+				WHEN 'understock' THEN 'Replenish immediately'
+				WHEN 'overstock' THEN 'Markdown + transfer'
+				WHEN 'dead' THEN 'Review for clearance'
+				ELSE 'Maintain'
+			END AS recommended_action`,
+	},
+}
+
+// Routes keyed on something other than (market, location, sku) that still print
+// a name. A product's name does not depend on where it sits, so a SKU-only
+// lookup is enough -- and DISTINCT because the dimension has one row per cell.
+var rowNameLookup = map[string]struct {
+	on      string
+	columns string
+}{
+	"replenishment_transfers": {
+		on:      "replenishment_transfers.sku_id",
+		columns: ", names.product_name, names.category_label",
+	},
+	"replenishment_recommendations": {
+		on:      "replenishment_recommendations.sku_id",
+		columns: ", names.product_name, names.category_label",
+	},
+	"replenishment_exceptions": {
+		on:      "replenishment_exceptions.sku_id",
+		columns: ", names.product_name, names.category_label",
+	},
+	"inventory_valuation": {
+		// Valuation has no SKU at all -- it is per category -- so the label is
+		// looked up on the category instead.
+		on:      "inventory_valuation.category",
+		columns: ", names.category_label",
+	},
+}
+
+// : What a row page selects from the dimension. Same expression everywhere so a
+// : product is named the same way on every screen that lists it.
+const rowDisplayColumns = `, dim.product_name, dim.location_name,
+	dim.category_label,
+	CASE dim.location_kind
+		WHEN 'store' THEN 'Store'
+		WHEN 'dc' THEN 'Warehouse'
+		WHEN '3pl' THEN 'Warehouse (3PL)'
+		ELSE initcap(dim.location_kind)
+	END AS location_type`
+
 // A companion projection whose aggregates a dashboard screen also needs.
 type dashboardCompanion struct {
 	table  string
@@ -977,8 +1153,8 @@ var inventoryAggregates = map[string]map[string]string{
 		"onHandUnits":      "COALESCE(SUM(on_hand_units), 0)",
 		"atpUnits":         "COALESCE(SUM(atp_units), 0)",
 		"reservedUnits":    "COALESCE(SUM(reserved_units), 0)",
-		"storeOnHandUnits": "COALESCE(SUM(on_hand_units) FILTER (WHERE location_kind = 'store'), 0)",
-		"dcOnHandUnits":    "COALESCE(SUM(on_hand_units) FILTER (WHERE location_kind = 'dc'), 0)",
+		"storeOnHandUnits": "COALESCE(SUM(on_hand_units) FILTER (WHERE inventory_positions.location_kind = 'store'), 0)",
+		"dcOnHandUnits":    "COALESCE(SUM(on_hand_units) FILTER (WHERE inventory_positions.location_kind = 'dc'), 0)",
 		"inTransitUnits":   "COALESCE(SUM(in_transit_units), 0)",
 		"onOrderUnits":     "COALESCE(SUM(on_order_units), 0)",
 		"committedUnits":   "COALESCE(SUM(committed_units), 0)",
@@ -992,8 +1168,8 @@ var inventoryAggregates = map[string]map[string]string{
 		"cells":             "COUNT(*)",
 		"residualOnlyCells": "COUNT(*) FILTER (WHERE residual_only)",
 		"activeCells":       "COUNT(*) FILTER (WHERE assortment_active)",
-		"storeCells":        "COUNT(*) FILTER (WHERE location_kind = 'store')",
-		"dcCells":           "COUNT(*) FILTER (WHERE location_kind = 'dc')",
+		"storeCells":        "COUNT(*) FILTER (WHERE inventory_positions.location_kind = 'store')",
+		"dcCells":           "COUNT(*) FILTER (WHERE inventory_positions.location_kind = 'dc')",
 	},
 	"inventory_stock_health": {
 		"cells":           "COUNT(*)",
@@ -1050,10 +1226,12 @@ var inventoryAggregates = map[string]map[string]string{
 		"currencyCount": "COUNT(DISTINCT currency_code)",
 	},
 	"inventory_valuation_by_kind": {
+		// `echelon` is this view's own alias for the kind, not the positions
+		// projection: valuation has no location_kind of its own.
 		"storeValueMinor": "COALESCE(SUM(gross_value_minor) FILTER " +
-			"(WHERE location_kind = 'store'), 0)",
+			"(WHERE echelon.location_kind = 'store'), 0)",
 		"dcValueMinor": "COALESCE(SUM(gross_value_minor) FILTER " +
-			"(WHERE location_kind IN ('dc', '3pl')), 0)",
+			"(WHERE echelon.location_kind IN ('dc', '3pl')), 0)",
 		"grossValueMinor":  "COALESCE(SUM(gross_value_minor), 0)",
 		"wmsVarianceUnits": "COALESCE(SUM(wms_variance_units), 0)",
 		"currencyCount":    "COUNT(DISTINCT currency_code)",
@@ -1258,9 +1436,9 @@ func (s *InventoryStore) aggregate(
 			merged["atRiskValueMinor"] = s.fxExpr("on_hand_units") +
 				" FILTER (WHERE health.health_class IN ('overstock', 'dead'))"
 			merged["storeValueMinor"] = s.fxExpr("on_hand_units") +
-				" FILTER (WHERE location_kind = 'store')"
+				" FILTER (WHERE inventory_positions.location_kind = 'store')"
 			merged["dcValueMinor"] = s.fxExpr("on_hand_units") +
-				" FILTER (WHERE location_kind IN ('dc', '3pl'))"
+				" FILTER (WHERE inventory_positions.location_kind IN ('dc', '3pl'))"
 		}
 		expressions = merged
 	}

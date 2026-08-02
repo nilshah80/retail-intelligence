@@ -371,7 +371,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Recommended Action", field: "recommendedAction"}
       ]},
       {heading: "Inventory Risk by Category", card: "categories", columns: [
-        {header: "Category", field: "category"},
+        {header: "Category", field: "categoryLabel"},
         {header: "Value", field: "valueMinor", format: "money"},
         {header: "Days of Supply", field: "daysOfSupply", format: "days"},
         {header: "Risk", field: "riskClass", badge: true},
@@ -379,8 +379,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       ]},
       {heading: "Location-Level Inventory Performance", card: "locations",
        columns: [
-        {header: "Location", field: "locationId"},
-        {header: "Type", field: "locationKind", badge: true},
+        {header: "Location", field: "locationName"},
+        {header: "Type", field: "locationType", badge: true},
         {header: "Inventory Value", field: "valueMinor", format: "money"},
         {header: "Availability", field: "availabilityPct", format: "percent"},
         {header: "Days of Supply", field: "daysOfSupply", format: "days"},
@@ -425,7 +425,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: "Store Inventory Heatmap", columns: [
-        {header: "Store", field: "locationId"},
+        {header: "Store", field: "locationName"},
         {header: "Availability", field: "atpUnits", format: "units"},
         {header: "DoS", field: null},
         {header: "Overstock", field: "onHandUnits", format: "units"},
@@ -454,7 +454,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Warehouse", field: "locationId"},
+        {header: "Warehouse", field: "locationName"},
         {header: "Inventory Value", field: "onHandUnits", format: "units"},
         {header: "Capacity Utilization", field: null},
         {header: "Fill Rate", field: null},
@@ -484,8 +484,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "SKU / Product", field: "skuId"},
-        {header: "Category", field: "locationId"},
+        {header: "SKU / Product", field: "productName"},
+        {header: "Category", field: "categoryLabel"},
         {header: "Age", field: "ageBucket"},
         {header: "Units", field: "onHandUnits", format: "units"},
         {header: "Value", field: null},
@@ -515,7 +515,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "SKU", field: "skuId"},
+        {header: "SKU", field: "productName"},
         {header: "From Location", field: "fromLocationId"},
         {header: "To Location", field: "toLocationId"},
         {header: "Available Qty", field: "units", format: "units"},
@@ -556,7 +556,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: "Valuation by Category", columns: [
-        {header: "Category", field: "category"},
+        {header: "Category", field: "categoryLabel"},
         {header: "Gross Value", field: "grossValueMinor", format: "money"},
         {header: "NRV", field: null},
         {header: "Provision", field: null},
@@ -583,8 +583,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Product", field: "skuId"},
-        {header: "Location", field: "locationId"},
+        {header: "Product", field: "productName"},
+        {header: "Location", field: "locationName"},
         {header: "Expiry Window", field: "expiringUnits", format: "units"},
         {header: "Units", field: "expiredUnits", format: "units"},
         {header: "Value", field: "exposureMinor", format: "money"},
@@ -601,14 +601,14 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [],
     tables: [
       {heading: null, columns: [
-        {header: "SKU", field: "skuId"},
-        {header: "Store", field: "locationId"},
+        {header: "SKU", field: "productName"},
+        {header: "Store", field: "locationName"},
         {header: "Days of Supply", field: "coverDays", format: "days"},
-        {header: "Ageing", field: null},
+        {header: "Ageing", field: "ageingBand"},
         {header: "Health", field: "healthClass", badge: true},
-        {header: "Financial Exposure", field: null},
-        {header: "Recommended Action", field: "reasonCode"},
-        {header: "Priority", field: "healthClass", badge: true}
+        {header: "Financial Exposure", field: "exposureMinor", format: "money"},
+        {header: "Recommended Action", field: "recommendedAction"},
+        {header: "Priority", field: "priority", badge: true}
       ]}
     ]
   },
@@ -676,7 +676,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {heading: "Priority Replenishment Recommendations", columns: [
         {header: "select", field: null},
         {header: "Priority", field: "reasonCode"},
-        {header: "SKU / Product", field: "skuId"},
+        {header: "SKU / Product", field: "productName"},
         {header: "Destination", field: "destinationLocationId"},
         {header: "Current Stock", field: null},
         {header: "Forecast Demand", field: null},
@@ -716,7 +716,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Order", field: "skuId"},
+        {header: "Order", field: "productName"},
         {header: "Type", field: "erpStatus", badge: true},
         {header: "Destination", field: "destinationLocationId"},
         {header: "Source", field: "supplyLocationId"},
@@ -823,7 +823,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Product", field: "skuId"},
+        {header: "Product", field: "productName"},
         {header: "Available Pool", field: "allocatedUnits", format: "units"},
         {header: "Store Demand", field: "requestedUnits", format: "units"},
         {header: "Allocated", field: "allocatedUnits", format: "units"},
@@ -854,7 +854,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     tables: [
       {heading: null, columns: [
         {header: "Exception", field: "exceptionClass"},
-        {header: "Order / SKU", field: "skuId"},
+        {header: "Order / SKU", field: "productName"},
         {header: "Business Impact", field: "evidence"},
         {header: "Owner", field: null},
         {header: "Age", field: null},

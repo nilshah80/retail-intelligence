@@ -94,9 +94,16 @@ def load_positions(
             locations.market_id,
             latest.location_id,
             locations.type AS location_kind,
+            -- Display attributes. The screens name a node "Mumbai Distribution
+            -- Centre", not "india-west:mumbai-dc", and a category "Apparel ·
+            -- Footwear", not "apparel-footwear". Both exist in canonical and
+            -- neither reached a projection, so every table showed an id.
+            locations.name AS location_name,
+            locations.city AS location_city,
             latest.sku_id,
             products.dept_id,
             products.category,
+            products.product_name,
             latest.on_hand_units,
             latest.committed_units,
             latest.reserved_units,

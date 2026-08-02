@@ -89,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         available = set(payload.get("summary") or {})
         for item in payload.get("items", [])[:1]:
             available |= set(item)
+        # Grouped cards are a third place a field can legitimately live -- one
+        # row per category, per location, per bucket. Omitting them here reported
+        # every grouped column as unresolved.
+        for rows in (payload.get("cards") or {}).values():
+            for row in rows[:1]:
+                available |= set(row)
         for field in sorted(set(FIELD.findall(block))):
             checked += 1
             if field not in available:

@@ -35,7 +35,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
 #: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
 #: interval can be stored, and pairs them with an attributable reason.
-MIGRATION_REVISION: Final[str] = "0012_sku_dimension_trailing"
+MIGRATION_REVISION: Final[str] = "0013_sku_dimension_names"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,

@@ -1455,6 +1455,17 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
     )
 
 
+def _label(slug: str) -> str:
+    """A hyphenated source slug as a readable label.
+
+    "apparel-footwear" -> "Apparel - Footwear". The words are the source's own;
+    only the separator and the casing change, so nothing is renamed and no
+    mapping table has to be maintained alongside the taxonomy.
+    """
+
+    return " - ".join(part.capitalize() for part in slug.split("-") if part)
+
+
 def _node_demand(
     emitted: pd.DataFrame,
     trailing: Mapping[tuple[str, str, str], Decimal],
@@ -1547,6 +1558,13 @@ def _build_sku_dimension(
                 "location_id": location,
                 "sku_id": sku,
                 "category": str(row["category"]),
+                # "apparel-footwear" is a slug, not a label. The reference names
+                # its categories "Footwear" and "Apparel"; this is the same
+                # vocabulary the source uses, made readable rather than renamed.
+                "category_label": _label(str(row["category"])),
+                "product_name": str(row.get("product_name") or row["sku_id"]),
+                "location_name": str(row.get("location_name") or row["location_id"]),
+                "location_kind": str(row.get("location_kind") or ""),
                 "unit_cost_minor": cost,
                 "cost_method": method,
                 "currency_code": currency_by_market.get(market),
