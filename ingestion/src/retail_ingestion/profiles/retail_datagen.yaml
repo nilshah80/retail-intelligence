@@ -133,6 +133,14 @@ datasets:
     datasetId: storeWasteEvents
     sourceKeys: [eventId]
     grainFields: [eventId]
+  # Source contract v13: the part of a store sale the shelf could not cover, which
+  # the DC fulfilled. Same classification and lane as the other store-echelon
+  # relations -- it carries no identifiers a customer could be recovered from,
+  # only a location, a SKU and three unit counts.
+  - <<: *staged
+    datasetId: storeStockoutEvents
+    sourceKeys: [eventId]
+    grainFields: [eventId]
   - <<: *staged
     datasetId: inventorySnapshots
     sourceKeys: [locationCode, sku, observedAt]

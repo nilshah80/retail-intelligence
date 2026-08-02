@@ -205,16 +205,25 @@ def load_market_history(
         ).fetchall()
         # The oracle: what the source says was actually on hand at each period
         # close. Compared against, never used to drive, the replay.
+        # Per CELL, not per market total. The observed close is bridged the same
+        # 73 hours as the opening, and the opening has to be per cell because the
+        # replay carries one balance per cell and cannot go negative. Bridging the
+        # observed series at the market total instead clamped once where the
+        # opening clamped per cell per day, so the two sides recovered different
+        # amounts of over-drawn stock and the oracle compared two different
+        # quantities. It showed up as a constant offset -- +117 units every period
+        # in india-west, +1,925 in us-new-york -- surviving even after the flows
+        # themselves balanced exactly.
         observed_rows = connection.execute(
             """
-            SELECT stock.snapshot_date, SUM(stock.on_hand_units) AS units
+            SELECT stock.snapshot_date, stock.location_id, stock.sku_id,
+                   stock.on_hand_units AS units
             FROM stock_snapshots AS stock
             JOIN locations ON locations.location_id = stock.location_id
             WHERE locations.market_id = ?
               AND locations.type = 'store'
               AND stock.snapshot_date BETWEEN ? AND ?
               AND stock.known_as_of <= ?
-            GROUP BY 1
             """,
             [market_id, window_start, window_end, window_end],
         ).fetchall()
@@ -341,27 +350,32 @@ def load_market_history(
         daily_waste[day] += int(units)
         cell_waste[day][(str(sku), str(store))] += int(units)
 
-    snapshot_by_day: dict[date, int] = {
-        _as_day(day): int(units) for day, units in observed_rows
-    }
+    snapshot_cells: dict[date, dict[tuple[str, str], int]] = defaultdict(dict)
+    for day, store, sku, units in observed_rows:
+        snapshot_cells[_as_day(day)][(str(sku), str(store))] = int(units)
     observed: dict[datetime, int] = {}
     for origin in origins:
         period_open = period_for(origin)
         # The Thursday inside this period, and the three bridge days after it.
         thursday = origin + timedelta(days=3)
-        snapshot = snapshot_by_day.get(thursday)
-        if snapshot is None:
+        cells_at_thursday = snapshot_cells.get(thursday)
+        if not cells_at_thursday:
             # No state evidence for this period. Skipped rather than guessed: an
             # interpolated snapshot is exactly what `interpolationFromWeeklyState:
             # forbidden` rules out.
             continue
-        bridged = snapshot
+        # Identical arithmetic to the opening bridge below, cell by cell, so the
+        # two sides of the comparison mean the same thing.
+        bridged_cells = dict(cells_at_thursday)
         for offset in (4, 5, 6):
             bridge_day = origin + timedelta(days=offset)
-            bridged += daily_arrivals.get(bridge_day, 0)
-            bridged -= daily_demand.get(bridge_day, 0)
-            bridged -= daily_waste.get(bridge_day, 0)
-        observed[period_open] = max(0, bridged)
+            for cell, units in cell_arrivals.get(bridge_day, {}).items():
+                bridged_cells[cell] = bridged_cells.get(cell, 0) + units
+            for cell, units in cell_demand.get(bridge_day, {}).items():
+                bridged_cells[cell] = max(0, bridged_cells.get(cell, 0) - units)
+            for cell, units in cell_waste.get(bridge_day, {}).items():
+                bridged_cells[cell] = max(0, bridged_cells.get(cell, 0) - units)
+        observed[period_open] = sum(bridged_cells.values())
 
     # Bridge the OPENING the same 73 hours, per cell. The observed series got
     # this and the opening did not, which is the whole of the offset the oracle
