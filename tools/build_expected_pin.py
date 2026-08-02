@@ -42,7 +42,14 @@ SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
 #: The publication P4-3 pinned. Named rather than discovered: there is no
 #: newest-wins here either, and a caller changing the pin should have to say so.
-RUN = "run-ae5fcbcb9b8abb34"
+#:
+#: Moved to run-b847177c11ac724d at P4-12c. This constant is the ONLY thing the ML
+#: chain consults to find its curated root -- `features` takes no source argument
+#: at all -- so advancing the publication-selection records without advancing this
+#: leaves every ML stage silently reading the previous publication while
+#: `--source-root` is ignored. That cost a full features-and-backtest run: the
+#: feature manifest recorded sourceSnapshotId d43fd302 when the intent was 0634b079.
+RUN = "run-b847177c11ac724d"
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
 #: joins the list at P4-3 because the Phase 4 bundle consumes it, and a pin that

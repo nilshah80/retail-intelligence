@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-03T00:00:00Z",
+    "reason": "Regenerated source run. `store_stockout_events` has been computed every run since source contract v13 and written by none of them: the store echelon serves what it can and the DC covers the rest, so `sales` records the whole sale while the shelf drops only by servedFromStoreUnits, and nothing published the difference. Any shelf-level reconstruction therefore charged the DC's share to the store. On the tightened network that is 123,894 units of india-west drift over 52 weeks and the replay oracle measured 11.05 units per cell against a frozen 0.5. This run also corrects store transfer receipts, which carried the major-unit base cost in a field named unitCostMinor, so every store cost was a hundredth of the truth."
+  },
+  "lifecycle": {
+    "reasonCode": "PHASE_4_STORE_SHORTFALL_PUBLISHED",
+    "recordId": "rec_3fc7f778726bd4ef",
+    "state": "candidate",
+    "supersedes": null
+  },
+  "publication": {
+    "duckdbSha256": "c624c201884353769d143996f672fbed4b9f8cba97651d2e1ce418b494cc12bb",
+    "gateASemanticFingerprint": "34943ce8c8a181c05315534943704672d67a29d90e243feebdb8dca895363e27",
+    "gateBSemanticFingerprint": "9c545e1afe7a5661f934a4faac03e090ca4d0716f6144af6d12bf2d5f9416c20",
+    "logicalPath": "ingestion/data/curated/run-b847177c11ac724d",
+    "objectCount": 1577,
+    "publicationSemanticFingerprint": "e160d12a2b41b0c6dfdc37932a67618d6c99cd6aadccea99c1248c1c013f01de",
+    "sourceSnapshotId": "0634b07949b495d2bc2de1598f7ca14d324150252a0e9b50704ff984704a25bd"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "9c545e1afe7a5661f934a4faac03e090ca4d0716f6144af6d12bf2d5f9416c20"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_12c897d6d60c9e6b"
+}

@@ -100,6 +100,12 @@ PHASE_4R2_APPROVED_AT = "2026-08-02T00:00:00Z"
 PHASE_4R3_RUN = "run-ae5fcbcb9b8abb34"
 PHASE_4R3_APPROVED_AT = "2026-08-02T12:00:00Z"
 
+#: P4-12c. The run that finally publishes `store_stockout_events`, plus the store
+#: unit-cost correction. Both are source-side, so they need a new publication and
+#: a new pin rather than a rebuild on the old one.
+PHASE_4R4_RUN = "run-b847177c11ac724d"
+PHASE_4R4_APPROVED_AT = "2026-08-03T00:00:00Z"
+
 
 def _scope(capability: str) -> dict[str, str]:
     return {
@@ -560,6 +566,86 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         )
     }
 
+    # -- P4-12c: the run that publishes the store shortfall ---------------------
+    r4_reason = (
+        "Regenerated source run. `store_stockout_events` has been computed every "
+        "run since source contract v13 and written by none of them: the store "
+        "echelon serves what it can and the DC covers the rest, so `sales` records "
+        "the whole sale while the shelf drops only by servedFromStoreUnits, and "
+        "nothing published the difference. Any shelf-level reconstruction "
+        "therefore charged the DC's share to the store. On the tightened network "
+        "that is 123,894 units of india-west drift over 52 weeks and the replay "
+        "oracle measured 11.05 units per cell against a frozen 0.5. This run also "
+        "corrects store transfer receipts, which carried the major-unit base cost "
+        "in a field named unitCostMinor, so every store cost was a hundredth of "
+        "the truth."
+    )
+    r4_chains = {
+        capability: build_chain(
+            run=PHASE_4R4_RUN,
+            capability=capability,
+            approved_at=PHASE_4R4_APPROVED_AT,
+            reason_code="PHASE_4_STORE_SHORTFALL_PUBLISHED",
+            candidate_reason=r4_reason,
+            approved_reason=approved,
+            active_reason=active,
+        )
+        for capability, approved, active in (
+            (
+                "demand_forecast_non_pit",
+                "Gate A, Gate B, the capability mask, the object count and the "
+                "curated DuckDB hash independently reverified against retained "
+                "evidence for run-b847177c11ac724d. Gate A rule A13 refused the "
+                "first attempt until the new relation carried an explicit "
+                "classification, which is the check working rather than an "
+                "obstacle.",
+                "Adopted as the active demand-forecast source authority. Sales are "
+                "unchanged by both corrections -- publishing an already-computed "
+                "relation and rescaling a cost column move no sale -- so the "
+                "forecast is refit on this publication and lands numerically where "
+                "it did, with its lineage now naming the run it was actually fit "
+                "on.",
+            ),
+            (
+                "inventory_replenishment_current_snapshot",
+                "Gate B reports the capability available with no missing "
+                "entities, reverified against the retained mask.",
+                "Adopted as the active source authority for the current-state "
+                "half. Store unit costs are correct here for the first time, so "
+                "store inventory value, cost-weighted ABC and every store service "
+                "level stop being understated a hundredfold.",
+            ),
+            (
+                "inventory_replenishment_replay",
+                "The replay capability's five reason codes are all absent in the "
+                "retained Gate B mask, reverified rather than read from the "
+                "pipeline result.",
+                "Adopted as the active source authority for the replay half. With "
+                "the shortfall published the mass balance closes -- the replay's "
+                "own clamp stops firing entirely, 102,533 lost units to zero in "
+                "india-west -- and the oracle reproduces at 0.132 and 0.338 units "
+                "per cell against the same frozen 0.5 tolerance, never a relaxed "
+                "one.",
+            ),
+        )
+    }
+
+    r4_superseded = {
+        capability: _supersede(
+            r3_chains[capability][2], r4_chains[capability][2], capability,
+            "run-ae5fcbcb9b8abb34",
+            "The publication this record selects does not carry "
+            "store_stockout_events, so the part of a store sale the shelf could "
+            "not cover is unknowable from it and no shelf-level reconstruction "
+            "can balance.",
+        )
+        for capability in (
+            "demand_forecast_non_pit",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        )
+    }
+
     r3_superseded = {
         capability: _supersede(
             chain[2], r3_chains[capability][2], capability,
@@ -669,6 +755,23 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
             )
             for state, record in zip(
                 ("candidate", "approved", "active"), r3_chains[capability]
+            )
+        ),
+        (f"{forecast_prefix}-r3-superseded.json",
+         r4_superseded["demand_forecast_non_pit"]),
+        (f"{current_prefix}-r3-superseded.json",
+         r4_superseded["inventory_replenishment_current_snapshot"]),
+        (f"{replay_prefix}-r3-superseded.json",
+         r4_superseded["inventory_replenishment_replay"]),
+        *(
+            (f"{prefix}-r4-{state}.json", record)
+            for prefix, capability in (
+                (forecast_prefix, "demand_forecast_non_pit"),
+                (current_prefix, "inventory_replenishment_current_snapshot"),
+                (replay_prefix, "inventory_replenishment_replay"),
+            )
+            for state, record in zip(
+                ("candidate", "approved", "active"), r4_chains[capability]
             )
         ),
     ]
