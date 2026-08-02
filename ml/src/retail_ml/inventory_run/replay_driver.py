@@ -122,6 +122,10 @@ def load_market_history(
     _require(weeks >= 2, "a replay needs at least two periods to compare anything")
     window_start = origins[0]
     window_end = origins[-1] + timedelta(days=6)
+    # The opening snapshot is the Thursday BEFORE the first period, and the same
+    # 73-hour bridge the observed series gets has to be applied to it. Flows are
+    # therefore loaded from that Thursday, not from the Monday.
+    flow_start = window_start - timedelta(days=3)  # the Friday after the snapshot
 
     connection = connect(curated_root)
     try:
@@ -146,7 +150,7 @@ def load_market_history(
               AND sales.known_as_of <= ?
             GROUP BY 1, 2, 3
             """,
-            [market_id, window_start, window_end, window_end],
+            [market_id, flow_start, window_end, window_end],
         ).fetchall()
         # Kept explicit rather than folded into the aggregate above: the replay
         # buckets by market-local ISO week in Python, so daily rows are the grain
@@ -164,7 +168,7 @@ def load_market_history(
               AND transfers.known_as_of <= ?
             GROUP BY 1, 2, 3
             """,
-            [market_id, window_start, window_end, window_end],
+            [market_id, flow_start, window_end, window_end],
         ).fetchall()
         # The third flow. Store expiry is the larger write-off stream and it is
         # what the reconstruction was missing: without it the replay's closing
@@ -183,7 +187,7 @@ def load_market_history(
               AND waste.known_as_of <= ?
             GROUP BY 1, 2, 3
             """,
-            [market_id, window_start, window_end, window_end],
+            [market_id, flow_start, window_end, window_end],
         ).fetchall()
         opening_rows = connection.execute(
             """
@@ -258,15 +262,33 @@ def load_market_history(
     # So the observed close of period N is derived: the Thursday snapshot inside N,
     # plus Friday-to-Sunday arrivals, less Friday-to-Sunday demand. Thursday's own
     # movements are already inside a 23:00 snapshot, so the bridge starts Friday.
+    # Both grains: the market total bridges the observed close, and the per-cell
+    # map bridges the opening state, which has to move cell by cell because the
+    # replay carries one balance per cell.
     daily_demand: dict[date, int] = defaultdict(int)
-    for _store, _sku, day, units in demand_rows:
-        daily_demand[_as_day(day)] += int(units)
+    cell_demand: dict[date, dict[tuple[str, str], int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for store, sku, day, units in demand_rows:
+        day = _as_day(day)
+        daily_demand[day] += int(units)
+        cell_demand[day][(str(sku), str(store))] += int(units)
     daily_arrivals: dict[date, int] = defaultdict(int)
-    for _store, _sku, day, units in arrival_rows:
-        daily_arrivals[_as_day(day)] += int(units)
+    cell_arrivals: dict[date, dict[tuple[str, str], int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for store, sku, day, units in arrival_rows:
+        day = _as_day(day)
+        daily_arrivals[day] += int(units)
+        cell_arrivals[day][(str(sku), str(store))] += int(units)
     daily_waste: dict[date, int] = defaultdict(int)
-    for _store, _sku, day, units in waste_rows:
-        daily_waste[_as_day(day)] += int(units)
+    cell_waste: dict[date, dict[tuple[str, str], int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for store, sku, day, units in waste_rows:
+        day = _as_day(day)
+        daily_waste[day] += int(units)
+        cell_waste[day][(str(sku), str(store))] += int(units)
 
     snapshot_by_day: dict[date, int] = {
         _as_day(day): int(units) for day, units in observed_rows
@@ -290,10 +312,35 @@ def load_market_history(
             bridged -= daily_waste.get(bridge_day, 0)
         observed[period_open] = max(0, bridged)
 
-    opening = {
+    # Bridge the OPENING the same 73 hours, per cell. The observed series got
+    # this and the opening did not, which is the whole of the offset the oracle
+    # was reporting: `opening_rows` takes the newest snapshot at or before the
+    # first Monday, and that snapshot is the preceding THURSDAY. Used raw it
+    # states the network's position three days early -- and since every arrival
+    # in this source lands Friday 23:00, "three days early" means one entire
+    # weekly delivery has not happened yet.
+    #
+    # The effect is an offset, not a drift, which is what made it readable: the
+    # replay opened 43,932 against a first-period observed close of 56,507 and
+    # then tracked in parallel, -15,804 in the first period and still -12,058
+    # fifty periods later. That is one delivery less three days of demand, held
+    # constant, exactly as a mis-anchored opening behaves.
+    opening: dict[tuple[str, str], int] = {
         (str(sku), str(store)): int(units)
         for store, sku, units in opening_rows
     }
+    # Friday, Saturday, Sunday. `flow_start` IS the Friday -- the Thursday
+    # snapshot is at window_start - 4 and its own movements are already inside a
+    # 23:00 reading, so the bridge starts the next day and stops before the
+    # Monday, whose demand belongs to the first replayed period.
+    for day_offset in range(3):
+        bridge_day = flow_start + timedelta(days=day_offset)
+        for cell, units in cell_arrivals.get(bridge_day, {}).items():
+            opening[cell] = opening.get(cell, 0) + units
+        for cell, units in cell_demand.get(bridge_day, {}).items():
+            opening[cell] = max(0, opening.get(cell, 0) - units)
+        for cell, units in cell_waste.get(bridge_day, {}).items():
+            opening[cell] = max(0, opening.get(cell, 0) - units)
     return MarketHistory(
         market_id=market_id,
         timezone=timezone,
