@@ -507,10 +507,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Needs an approved markdown policy"},
       {caption: "Markdown Provision", field: null, format: "money",
        unavailableReason: "PROVISION_NEEDS_SKU_COST",
-       note: "Needs an approved markdown policy"},
+       note: "2,128 cells are marked for markdown; costing them needs SKU-grain value"},
       {caption: "Obsolescence Provision", field: null, format: "money",
        unavailableReason: "PROVISION_NEEDS_SKU_COST",
-       note: "Needs an approved markdown policy"},
+       note: "Residual-only cells are identified; costing them needs SKU-grain value"},
       {caption: "Inventory Variance", field: "wmsVarianceUnits", format: "units",
        note: "Absolute ERP-versus-WMS discrepancy"}
     ],
@@ -586,8 +586,12 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Suggested orders under lane, term, capacity and budget guards",
     endpoint: "/api/v1/replenishment/planner",
     kpis: [
+      // Units, under a caption the reference words as "Value". Withholding a
+      // figure the platform can compute would be worse than labelling it, so
+      // the note says plainly which one this is.
       {caption: "Suggested Replenishment Value", field: "recommendedUnits",
-       format: "units", note: "Units across cells with a computed level"},
+       format: "units",
+       note: "Units, not money -- a recommendation carries no costed line"},
       {caption: "Revenue Protected", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"},
