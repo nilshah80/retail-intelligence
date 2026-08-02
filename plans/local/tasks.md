@@ -1372,10 +1372,17 @@ changing datagen merely to manufacture greener metrics.
 Status legend: `[x]` complete and running on the ten-year pin; `[~]` built and
 running with a disclosed limitation, named inline; `[ ]` outstanding.
 
-Live as of this phase: bundle `ir_b10bb797108e80a7` / `iv_b10bb797108e80a7`
-verified, materialized and active; forecast `fr_5f6fa2015d80eee5` /
-`fv_ba2791b4273e3b4f`; all 15 API routes 200 with envelopes bound to the active
-identity; source pin `a92f0254…`, publication `7d6946ef…`.
+Live as of P4-10: bundle `ir_a4c304fd6e8e7f18` / `iv_a4c304fd6e8e7f18`
+verified, materialized and active; forecast `fr_90c168fad5cd9c0b` /
+`fv_403c5e5fca3fb227`; all 15 API routes 200 with envelopes bound to the active
+identity; source pin `a92f0254…`, publication `5e7bc174…` (run
+`run-5bf9580d18d67e36-r2`, the same snapshot re-ingested once the store
+echelon's write-offs were landed).
+
+Every table serves a ranked top 20 with its criterion stated and the scoped
+total beside it. 34 of 105 screen elements withhold, each naming a cause and a
+condition; 14 of those are the replay, which now reproduces but whose candidate
+tied its incumbent rather than beat it.
 
 - [x] Reorder / safety-stock (quantile-spread × service level).
       4,741 safety-stock and recommendation rows; 1,017 carry computed levels. The
