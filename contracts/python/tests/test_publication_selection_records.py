@@ -226,23 +226,54 @@ def test_the_current_record_for_a_live_scope_is_active_not_superseded() -> None:
 def test_a_superseded_record_names_its_replacement_in_its_approval_reason() -> None:
     """`additionalProperties: false` leaves no field for a forward pointer, and
     anything outside IDENTITY_EXCLUDES would change what was selected. The audit
-    reason is the one place it can live, so it must actually be used."""
+    reason is the one place it can live, so it must actually be used.
 
-    live_ids = {
-        record["selectionId"]
-        for record in _current()
-        if record["lifecycle"]["state"] == "active"
-    }
+    Each record names its IMMEDIATE replacement, not the eventual head. Asserting
+    it names an active selection held only while every chain was two records
+    long; the moment a scope was selected a third time the middle record was
+    correctly pointing at a record that had itself been superseded. Following the
+    pointers is the actual requirement -- every chain must terminate in something
+    active, with no cycle and no dangling name.
+    """
+
+    # One entry per selection, in its CURRENT state. `_selections()` returns
+    # every lifecycle record, so a selection appears three or four times --
+    # keying on selectionId there resolves a chain to whichever of candidate,
+    # approved, active or superseded happened to be read last.
+    by_id = {record["selectionId"]: record for record in _current()}
     superseded = [
         record
-        for record in _selections()
+        for record in _current()
         if record["lifecycle"]["state"] == "superseded"
     ]
     for record in superseded:
-        reason = record["approval"]["reason"]
-        assert any(selection_id in reason for selection_id in live_ids), (
-            f"superseded selection {record['selectionId']} does not name the "
-            f"active selection that replaced it: {reason!r}"
+        seen: set[str] = {record["selectionId"]}
+        walker = record
+        while walker["lifecycle"]["state"] == "superseded":
+            reason = walker["approval"]["reason"]
+            named = [
+                selection_id
+                for selection_id in by_id
+                if selection_id != walker["selectionId"] and selection_id in reason
+            ]
+            assert named, (
+                f"superseded selection {walker['selectionId']} names no "
+                f"replacement in its approval reason: {reason!r}"
+            )
+            assert len(named) == 1, (
+                f"superseded selection {walker['selectionId']} names more than "
+                f"one replacement, so the chain forks: {named}"
+            )
+            assert named[0] not in seen, (
+                f"supersession chain from {record['selectionId']} cycles at "
+                f"{named[0]}"
+            )
+            seen.add(named[0])
+            walker = by_id[named[0]]
+        assert walker["lifecycle"]["state"] == "active", (
+            f"the chain from superseded selection {record['selectionId']} ends "
+            f"at {walker['selectionId']}, which is "
+            f"{walker['lifecycle']['state']} rather than active"
         )
 
 
