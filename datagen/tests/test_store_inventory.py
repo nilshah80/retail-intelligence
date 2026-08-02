@@ -24,7 +24,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from retail_datagen.store_inventory import StoreEchelon  # noqa: E402
+from retail_datagen.store_inventory import (  # noqa: E402
+    StoreEchelon,
+    _minor_units,
+)
 
 START = date(2026, 1, 5)  # a Monday
 END = date(2026, 6, 29)
@@ -280,6 +283,42 @@ class ShortfallTests(unittest.TestCase):
         served, shortfall = echelon.sell(START, "bandra", "sku-1", 5)
         self.assertEqual(served, 0)
         self.assertEqual(shortfall, 5)
+
+
+class UnitCostTests(unittest.TestCase):
+    """`unitCostMinor` must be minor units, because that is what reads it.
+
+    The Business Central adapter casts this field straight to
+    `unit_cost_minor`, canonical keeps it, and store WAC is built from these
+    receipts. Writing the major-unit `_baseCost` here made every store cost a
+    hundredth of the truth -- stores averaged Rs 50 a unit against Rs 7,639 for
+    the same SKUs at the DCs -- which flowed into store inventory value,
+    cost-weighted ABC and every store service level.
+    """
+
+    def test_a_dispatched_order_carries_cost_in_minor_units(self) -> None:
+        echelon = _echelon([_variant("sku-1")])
+        for day_offset in range(7):
+            echelon.sell(START + timedelta(days=day_offset), "bandra", "sku-1", 5)
+        order = next(iter(echelon.review(START + timedelta(days=7))))
+        # _baseCost is 4500 MAJOR units, so 450000 minor at two decimal places.
+        self.assertEqual(order["unitCostMinor"], 450000)
+
+    def test_a_fractional_base_cost_survives_the_conversion(self) -> None:
+        variant = _variant("sku-1")
+        variant["_baseCost"] = Decimal("2204.88")
+        echelon = _echelon([variant])
+        for day_offset in range(7):
+            echelon.sell(START + timedelta(days=day_offset), "bandra", "sku-1", 5)
+        order = next(iter(echelon.review(START + timedelta(days=7))))
+        self.assertEqual(order["unitCostMinor"], 220488)
+
+    def test_an_undeclared_currency_raises_rather_than_assuming_two_decimals(
+        self,
+    ) -> None:
+        with self.assertRaises(ValueError) as caught:
+            _minor_units(Decimal("1"), "JPY")
+        self.assertIn("JPY", str(caught.exception))
 
 
 class ExpiryTests(unittest.TestCase):

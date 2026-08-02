@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
@@ -380,7 +380,10 @@ class StoreEchelon:
                     "quantity": quantity,
                     "orderDate": day.isoformat(),
                     "expectedReceiptDate": receipt_day.isoformat(),
-                    "unitCostMinor": int(variant.get("_baseCost", 0) or 0),
+                    "unitCostMinor": _minor_units(
+                        variant.get("_baseCost") or Decimal(0),
+                        self.markets[market_id]["currencyCode"],
+                    ),
                     "currencyCode": self.markets[market_id]["currencyCode"],
                     "observedAt": _iso_at(day, self.markets[market_id]["timezone"]),
                 }
@@ -476,6 +479,39 @@ class StoreEchelon:
                 {store_id for (store_id, _), cell in self.cells.items() if cell.on_hand}
             ),
         }
+
+
+#: Minor-unit exponent per currency. Only the currencies this generator can
+#: actually emit are listed, and an unlisted one raises rather than defaulting:
+#: assuming two decimals is what produced the bug this table exists to prevent,
+#: and a zero-decimal currency like JPY would be inflated a hundredfold by the
+#: same silent assumption. `retail_contracts.money_sql` owns the authoritative
+#: table, but datagen deliberately does not depend on the contracts package.
+_MINOR_EXPONENT: dict[str, int] = {"INR": 2, "USD": 2}
+
+
+def _minor_units(amount: Decimal, currency: str) -> int:
+    """Convert a major-unit money amount to whole minor units.
+
+    `_baseCost` is a MAJOR-unit decimal -- every other consumer runs it through
+    `_money()`, which formats rupees. This event's field is `unitCostMinor`, and
+    the Business Central adapter casts it straight to `unit_cost_minor`, so
+    writing the major figure made every store receipt cost a hundredth of the
+    truth. Store WAC is built from these receipts, so store inventory value,
+    cost-weighted ABC and every store service level inherited the error: stores
+    averaged Rs 50 a unit against Rs 7,639 for the same SKUs at the DCs.
+    """
+
+    exponent = _MINOR_EXPONENT.get(currency)
+    if exponent is None:
+        raise ValueError(
+            f"no minor-unit exponent declared for {currency!r}; add it to "
+            "_MINOR_EXPONENT rather than assuming two decimal places"
+        )
+    # Catalog packs hand this over as a Decimal; a config may hand over an int.
+    # Coerced through str so a float can never introduce binary error into money.
+    scaled = Decimal(str(amount)) * (10**exponent)
+    return int(scaled.to_integral_value(rounding=ROUND_HALF_EVEN))
 
 
 def _iso_at(day: date, timezone: str) -> str:
