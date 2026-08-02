@@ -1518,10 +1518,17 @@ tied its incumbent rather than beat it.
       screens preserve the original HTML and render live market/location-scoped outputs.
       The screen half is met: all fourteen destinations render the reference
       structure with live market/location-scoped values from the active bundle, and
-      the reference is machine-checked rather than eyeballed. The replay/holdout half
-      is disclosed rather than passing — see the `[~]` replay note — so the checkpoint
-      is demoable but not fully exited. Human sign-off and cross-OS evidence remain
-      outstanding by acceptance.
+      the reference is machine-checked rather than eyeballed, every table is a
+      ranked top 20 that states its criterion, and every withheld element names a
+      cause and a condition.
+      The replay half now RUNS: the oracle reproduces in both markets (0.390 and
+      0.198 per cell against a tolerance frozen at 0.5) and both cohorts are
+      scored, sixteen gate rows across calibration and holdout. What does not pass
+      is the holdout verdict itself — the candidate ties the incumbent at zero
+      stock-outs and zero lost units, and the frozen rule fails a tie, while
+      holding 44% less inventory at identical fill rate. So the checkpoint is
+      demoable and the mechanism is validated; the policy claim is not made.
+      Human sign-off and cross-OS evidence remain outstanding by acceptance.
 
 ### Phase 4 production readiness — disclosed, not solved
 
