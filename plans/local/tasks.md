@@ -1451,6 +1451,45 @@ identity; source pin `a92f0254…`, publication `7d6946ef…`.
       column the platform cannot measure renders the governed unavailable treatment
       with a reason and KEEPS its header, because dropping it would silently change
       the approved layout.
+- [x] **P4-10 · Serve what the projections can already answer, and rank what is served.**
+      A sweep of the fourteen screens for elements reading "Not available" over data
+      the platform holds. 34 of 105 elements now withhold, down from 68, and every
+      one of the 34 names a cause and a condition — 14 of them the replay.
+      What was actually wrong, in order of how much it hid:
+      * **Three cards had no spec at all.** A breakdown card resolves reference
+        labels against the screen's spec; a label with no spec falls through to the
+        bare words with nowhere to hang a reason. 24 labels across Inventory
+        Valuation, Replenishment Planner and Safety Stock were in that state. Most
+        turned out measurable — order mix by supply echelon, ERP failures, forecast
+        coverage, supplier capacity, service-level target, cost-missing and
+        negative-value rows are one aggregate each.
+      * **Aggregates nobody had written.** Ageing's 60+/90+ are cumulative bucket
+        sums; transit and capacity are means; stores-at-risk is a distinct-location
+        count; below/excess safety stock is the buffer joined to the position
+        holding it. Ageing went from two withheld tiles to zero.
+      * **Money captions over unit counts.** "Store Inventory Value" read 81,921
+        units; it reads ₹23.95L now, from a valuation companion joined to the
+        positions projection for its echelon.
+      * **A share captioned against the wrong base.** "Stores at Risk 4 / 50.0% of
+        on-hand" is four of eight locations. The denominator names itself now.
+      Four defects surfaced on the way, each invisible until opened: the transport
+      passed a literal page size so the read model's default was dead code; an
+      echelon join used `ON` and left `inventory_version_id` ambiguous, putting the
+      Replenishment Planner behind a governed 503; companion aggregates dropped a
+      filter's clause but kept its argument, which pgx rejects; and the warehouse
+      route never selected `residual_only`, so its Action cell was blank on every
+      row. All four are now covered — 37 Go subtests run every aggregate, every
+      companion and all fourteen route orderings against the live schema, and
+      `tools/check_screen_fields.py` proves all 139 named fields resolve.
+- [x] **P4-10 · Cap every table at a ranked top 20.**
+      Each route declares a materiality order and states it on screen: stockouts
+      first on Stock Health, largest recommended order on the Planner, oldest stock
+      on Ageing, deepest shortfall on Allocation. Every order ends in the projection
+      key so a tie cannot move a row between pages. The scoped total stays in
+      `pagination.total` and the tiles stay SQL aggregates over the whole active
+      version, so twenty rows can never read as the whole set. Before this, all
+      fourteen routes ordered by market/location/SKU — which put whichever SKU sorts
+      first at the top of a stockout list.
 - [ ] Require screenshot/DOM/data parity and human review for each Inventory/Replenishment page
       before it is included in Demo 4; one accepted page cannot be used as evidence for the other
       navigation destinations.
