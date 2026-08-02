@@ -347,6 +347,52 @@ describe("inventory & replenishment destinations", () => {
     }));
   }
 
+  // -- the page is a shortlist, and says so ------------------------------------
+
+  it("names the ranking whenever the page is a cut of a larger set", async () => {
+    // A twenty-row table over 4,741 rows is only honest if the reader knows what
+    // the twenty are the top of. Without this the same table could be the worst
+    // offenders or the first twenty SKU codes alphabetically.
+    const payload = {
+      ...partialPayload,
+      pagination: {offset: 0, limit: 20, total: 4741},
+      ranking: "class A first, then the largest safety buffer"
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => payload
+    }));
+    renderPage("safetyStock");
+
+    await findRowsTable();
+    const note = await screen.findByTestId("ranking-note");
+    expect(note).toHaveTextContent(
+      "Ranked by class A first, then the largest safety buffer"
+    );
+    // And it must say the tiles are NOT this page, or a reader will assume the
+    // KPI above the table is the sum of the rows beneath it.
+    expect(note).toHaveTextContent("4,741 rows in scope, not over this page");
+    expect(
+      await screen.findByText((text) => text.trim() === "Top 3 of 4,741")
+    ).toBeInTheDocument();
+  });
+
+  it("claims no ranking when the page already holds every scoped row", async () => {
+    // Three of three is the whole set. Telling a reader it is "ranked by" a
+    // criterion implies rows were left out when none were.
+    const payload = {
+      ...partialPayload,
+      pagination: {offset: 0, limit: 20, total: 3},
+      ranking: "class A first, then the largest safety buffer"
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => payload
+    }));
+    renderPage("safetyStock");
+
+    await findRowsTable();
+    expect(screen.queryByTestId("ranking-note")).not.toBeInTheDocument();
+  });
+
   it("renders a withheld interval as manual judgment, never zero", async () => {
     stubPartial();
     renderPage("safetyStock");

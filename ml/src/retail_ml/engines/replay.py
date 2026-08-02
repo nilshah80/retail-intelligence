@@ -56,6 +56,10 @@ class PeriodResult:
     stockout_cells: int
     ordered_units: int
     received_units: int
+    #: Units written off in the period -- expiry and damage. Scored separately
+    #: from demand: a write-off consumes stock but was never served, so folding
+    #: it into `served_units` would flatter the fill rate.
+    wasted_units: int = 0
 
     @property
     def fill_rate(self) -> Decimal:
@@ -112,6 +116,7 @@ def replay_market(
     opening_state: Mapping[tuple[str, str], int],
     demand_by_period: Mapping[datetime, Mapping[tuple[str, str], int]],
     arrivals_by_period: Mapping[datetime, Mapping[tuple[str, str], int]],
+    waste_by_period: Mapping[datetime, Mapping[tuple[str, str], int]] | None = None,
     lead_time_weeks: int = 1,
 ) -> ReplayResult:
     """Run one market through its ISO-Monday periods under one policy.
@@ -119,6 +124,11 @@ def replay_market(
     `opening_state` is derived by the caller from the preceding Thursday
     snapshot plus its bridge -- this function does not invent an opening, because
     the bridge is where the evidence lives.
+
+    `waste_by_period` is the third flow in the identity, alongside arrivals and
+    demand. Omitting it does not make a replay conservative, it makes it wrong in
+    one direction: reconstructed stock only ever rises above what was observed,
+    by exactly the units the source wrote off.
     """
 
     if lead_time_weeks < 1:
@@ -170,6 +180,20 @@ def replay_market(
             if served < units:
                 stockout_cells += 1
 
+        # 5b. Write off expiry and damage against what demand left behind.
+        # Sell-then-expire, not expire-then-sell: the source's store echelon
+        # expires stock at end of day, so writing off first would remove units
+        # that were still sellable and understate served demand.
+        wasted_total = 0
+        for key, units in sorted((waste_by_period or {}).get(period_open, {}).items()):
+            units = int(units)
+            if units <= 0:
+                continue
+            cell = cells.setdefault(key, CellState())
+            written_off = min(cell.on_hand, units)
+            cell.on_hand -= written_off
+            wasted_total += written_off
+
         # 6-7. Create candidate orders AFTER demand realization, and schedule
         # them under the frozen weekly arrival rule.
         ordered = 0
@@ -211,6 +235,7 @@ def replay_market(
                 stockout_cells=stockout_cells,
                 ordered_units=ordered,
                 received_units=received,
+                wasted_units=wasted_total,
             )
         )
     return result

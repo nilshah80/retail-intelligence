@@ -13,23 +13,23 @@
     "evidenceSha256": "b43d0bf545f5fcca33dd926250972cffd9e8508ccb083b7c496dfb345c41b292"
   },
   "publication": {
-    "semanticFingerprint": "7d6946eff7862a4214d677af52fa73dd191858c05eaa0360a76382af90029d74",
+    "semanticFingerprint": "5e7bc174f1b2b82aaf3cfd8d8dfc60382cca77d107049811e8fd3eadfe6cbc93",
     "gateBSemanticFingerprint": "6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67",
-    "evidenceSha256": "343cee549c8671bf53db6821b1b8d53c10fd7a376c321cf99ab5b3ded31a3e23",
-    "objectCount": 1549,
+    "evidenceSha256": "eba023fa3edd243f23a4180c4f1a41bd4d39f59f87dd73a9bc19caad924d2f16",
+    "objectCount": 1598,
     "duckdb": {
-      "bytes": 1445212160,
+      "bytes": 1444163584,
       "path": "retail_v2.duckdb",
-      "sha256": "cb75fe72920d47c82dd8458bacc05d774c99dce4b1c4da51d9403eec0d020637"
+      "sha256": "716c8cb2f81ddc7ee06695905476002da2c024051b8a090fc427391c18965a1e"
     }
   },
   "retention": {
     "schemaVersion": "retail-ingestion-retained-evidence/v1",
-    "publicationFingerprint": "7d6946eff7862a4214d677af52fa73dd191858c05eaa0360a76382af90029d74",
+    "publicationFingerprint": "5e7bc174f1b2b82aaf3cfd8d8dfc60382cca77d107049811e8fd3eadfe6cbc93",
     "files": {
       "gate-a.json": "701aac2a7c7736d24290801bb0ed3926b8cff4345efa386ea3f40cd53b6da5d8",
       "gate-b.json": "b43d0bf545f5fcca33dd926250972cffd9e8508ccb083b7c496dfb345c41b292",
-      "publication-manifest.json": "343cee549c8671bf53db6821b1b8d53c10fd7a376c321cf99ab5b3ded31a3e23"
+      "publication-manifest.json": "eba023fa3edd243f23a4180c4f1a41bd4d39f59f87dd73a9bc19caad924d2f16"
     }
   },
   "requiredCapabilities": [

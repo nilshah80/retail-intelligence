@@ -78,6 +78,7 @@ class MarketHistory:
     opening_state: dict[tuple[str, str], int]
     demand_by_period: dict[datetime, dict[tuple[str, str], int]]
     arrivals_by_period: dict[datetime, dict[tuple[str, str], int]]
+    waste_by_period: dict[datetime, dict[tuple[str, str], int]]
     observed_closing_units: dict[datetime, int]
     cells: list[tuple[str, str]]
 
@@ -165,6 +166,25 @@ def load_market_history(
             """,
             [market_id, window_start, window_end, window_end],
         ).fetchall()
+        # The third flow. Store expiry is the larger write-off stream and it is
+        # what the reconstruction was missing: without it the replay's closing
+        # stock rose ~589 units/week above every observed snapshot in india-west,
+        # one-signed in every period, which is 0.56 units/cell against a frozen
+        # tolerance of 0.5. Crediting it brings the same measure to 0.061.
+        waste_rows = connection.execute(
+            """
+            SELECT waste.location_id, waste.sku_id, waste.event_date,
+                   SUM(waste.units) AS units
+            FROM waste_events AS waste
+            JOIN locations ON locations.location_id = waste.location_id
+            WHERE locations.market_id = ?
+              AND locations.type = 'store'
+              AND waste.event_date BETWEEN ? AND ?
+              AND waste.known_as_of <= ?
+            GROUP BY 1, 2, 3
+            """,
+            [market_id, window_start, window_end, window_end],
+        ).fetchall()
         opening_rows = connection.execute(
             """
             SELECT DISTINCT ON (stock.location_id, stock.sku_id)
@@ -216,6 +236,11 @@ def load_market_history(
     )
     for store, sku, day, units in arrival_rows:
         arrivals[period_for(day)][(str(sku), str(store))] += int(units)
+    waste: dict[datetime, dict[tuple[str, str], int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for store, sku, day, units in waste_rows:
+        waste[period_for(day)][(str(sku), str(store))] += int(units)
 
     # Bridge the Thursday snapshot to the period close (P4-D5 / policy v2's
     # `replayClock`). This is the correction that mattered most.
@@ -239,6 +264,9 @@ def load_market_history(
     daily_arrivals: dict[date, int] = defaultdict(int)
     for _store, _sku, day, units in arrival_rows:
         daily_arrivals[_as_day(day)] += int(units)
+    daily_waste: dict[date, int] = defaultdict(int)
+    for _store, _sku, day, units in waste_rows:
+        daily_waste[_as_day(day)] += int(units)
 
     snapshot_by_day: dict[date, int] = {
         _as_day(day): int(units) for day, units in observed_rows
@@ -259,6 +287,7 @@ def load_market_history(
             bridge_day = origin + timedelta(days=offset)
             bridged += daily_arrivals.get(bridge_day, 0)
             bridged -= daily_demand.get(bridge_day, 0)
+            bridged -= daily_waste.get(bridge_day, 0)
         observed[period_open] = max(0, bridged)
 
     opening = {
@@ -276,6 +305,7 @@ def load_market_history(
         arrivals_by_period={
             period: dict(cells) for period, cells in arrivals.items()
         },
+        waste_by_period={period: dict(cells) for period, cells in waste.items()},
         observed_closing_units=observed,
         cells=sorted(opening),
     )
@@ -383,6 +413,7 @@ def run_replay(
                 opening_state=scoped.opening_state,
                 demand_by_period=scoped.demand_by_period,
                 arrivals_by_period=scoped.arrivals_by_period,
+                waste_by_period=scoped.waste_by_period,
             )
             incumbent_run = replay_market(
                 policy_id=INCUMBENT_POLICY_ID,
@@ -395,6 +426,7 @@ def run_replay(
                 opening_state=scoped.opening_state,
                 demand_by_period=scoped.demand_by_period,
                 arrivals_by_period=scoped.arrivals_by_period,
+                waste_by_period=scoped.waste_by_period,
             )
             candidate.periods.extend(candidate_run.periods)
             incumbent.periods.extend(incumbent_run.periods)
@@ -502,6 +534,7 @@ def _market_oracle(histories: Sequence[MarketHistory]) -> dict[str, Any]:
             opening_state=history.opening_state,
             demand_by_period=history.demand_by_period,
             arrivals_by_period=history.arrivals_by_period,
+            waste_by_period=history.waste_by_period,
         )
         # Scale the per-cell tolerance to the total grain the engine compares at.
         cells = max(1, len(history.cells))
@@ -560,6 +593,12 @@ def _scope(history: MarketHistory, cells: Sequence[tuple[str, str]]) -> MarketHi
                 key: units for key, units in by_cell.items() if key in wanted
             }
             for period, by_cell in history.arrivals_by_period.items()
+        },
+        waste_by_period={
+            period: {
+                key: units for key, units in by_cell.items() if key in wanted
+            }
+            for period, by_cell in history.waste_by_period.items()
         },
         observed_closing_units=dict(history.observed_closing_units),
         cells=sorted(wanted),

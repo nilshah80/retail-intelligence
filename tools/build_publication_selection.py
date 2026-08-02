@@ -84,6 +84,13 @@ PHASE_3_APPROVED_AT = "2026-08-01T00:00:00Z"
 PHASE_4_RUN = "run-5bf9580d18d67e36"
 PHASE_4_APPROVED_AT = "2026-08-01T20:15:00Z"
 
+#: The same source snapshot, re-ingested at P4-10 after the adapter began landing
+#: the store echelon's write-offs. Same raw evidence, different canonical content,
+#: therefore a different publication and a different selection -- the identity of
+#: a selection follows the publication fingerprint, not the snapshot behind it.
+PHASE_4R2_RUN = "run-5bf9580d18d67e36-r2"
+PHASE_4R2_APPROVED_AT = "2026-08-02T00:00:00Z"
+
 
 def _scope(capability: str) -> dict[str, str]:
     return {
@@ -384,6 +391,105 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         ),
     )
 
+    # -- P4-10: the same snapshot re-ingested with store waste ----------------
+    #
+    # `raw_business_central.store_waste_events` reached staging from the first
+    # landing and never reached canonical, so `waste_events` held DC write-offs
+    # only. The weekly replay reconstructs store stock from opening, arrivals and
+    # demand, and with a whole flow missing its closing balance ran ~589 units per
+    # week above every observed snapshot -- 0.56 units per cell against a
+    # tolerance frozen at 0.5, failing in every period and in one direction.
+    #
+    # These three chains select the corrected publication for the same three
+    # capabilities. Nothing about the tolerance moved; the evidence did.
+    r2_reason = (
+        "Re-ingested from source snapshot a92f0254 after the Business Central "
+        "adapter began landing store_waste_events into the waste_event role. "
+        "The store echelon's expiry write-offs are 317,056 units in india-west "
+        "against 140,787 at its DCs, so their absence was the larger half of the "
+        "write-off evidence, not a rounding difference."
+    )
+    r2_forecast_chain = build_chain(
+        run=PHASE_4R2_RUN,
+        capability="demand_forecast_non_pit",
+        approved_at=PHASE_4R2_APPROVED_AT,
+        reason_code="PHASE_4_STORE_WASTE_REINGEST",
+        candidate_reason=r2_reason,
+        approved_reason=(
+            "Gate A, Gate B, the capability mask, the object count and the "
+            "curated DuckDB hash independently reverified against retained "
+            "evidence for run-5bf9580d18d67e36-r2."
+        ),
+        active_reason=(
+            "Adopted as the active demand-forecast source authority. The forecast "
+            "is refit on this publication, so the selection over "
+            "run-5bf9580d18d67e36 is superseded in the same change."
+        ),
+    )
+    r2_current_chain = build_chain(
+        run=PHASE_4R2_RUN,
+        capability="inventory_replenishment_current_snapshot",
+        approved_at=PHASE_4R2_APPROVED_AT,
+        reason_code="PHASE_4_STORE_WASTE_REINGEST",
+        candidate_reason=r2_reason,
+        approved_reason=(
+            "Gate B reports the capability available with no missing entities, "
+            "reverified here against the retained mask rather than the pipeline "
+            "result."
+        ),
+        active_reason=(
+            "Adopted as the active source authority for the current-state half of "
+            "the bundle. The current-state artifacts do not consume the replay, "
+            "so this selection would have stood either way; it moves because the "
+            "bundle is one activation unit and must name one publication."
+        ),
+    )
+    r2_replay_chain = build_chain(
+        run=PHASE_4R2_RUN,
+        capability="inventory_replenishment_replay",
+        approved_at=PHASE_4R2_APPROVED_AT,
+        reason_code="PHASE_4_STORE_WASTE_REINGEST",
+        candidate_reason=r2_reason,
+        approved_reason=(
+            "The replay capability's five reason codes are all absent in the "
+            "retained Gate B mask, reverified here rather than read from the "
+            "pipeline result."
+        ),
+        active_reason=(
+            "Adopted as the active source authority for the replay half. This is "
+            "the capability the missing write-offs were suppressing: the same "
+            "mechanism against the same frozen tolerance reconstructs observed "
+            "closing stock once the third flow is present."
+        ),
+    )
+
+    def _supersede(active, replacement, capability):
+        record = transition(
+            active,
+            "superseded",
+            actor=ACTOR,
+            reason=(
+                f"Superseded by selection {replacement['selectionId']} over "
+                "publication run-5bf9580d18d67e36-r2. The publication this "
+                "record selects carries DC write-offs only, which leaves the "
+                f"{capability} evidence incomplete at the store echelon."
+            ),
+            reason_code="PHASE_4_STORE_WASTE_REINGEST",
+        )
+        validate_selection(record)
+        return record
+
+    forecast_superseded = _supersede(
+        forecast_chain[2], r2_forecast_chain[2], "demand_forecast_non_pit"
+    )
+    current_superseded = _supersede(
+        current_chain[2], r2_current_chain[2],
+        "inventory_replenishment_current_snapshot",
+    )
+    replay_superseded = _supersede(
+        replay_chain[2], r2_replay_chain[2], "inventory_replenishment_replay"
+    )
+
     # A real chain gets a real supersession. The Phase 3 selection was governed,
     # unlike the pre-Phase-3 pin disclosed above, so it transitions rather than
     # being disclosed away -- and `approval.reason` names its replacement, which
@@ -412,6 +518,12 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *forecast_chain,
         *current_chain,
         *replay_chain,
+        forecast_superseded,
+        current_superseded,
+        replay_superseded,
+        *r2_forecast_chain,
+        *r2_current_chain,
+        *r2_replay_chain,
     ]
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
@@ -444,6 +556,18 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         (f"{replay_prefix}-candidate.json", replay_chain[0]),
         (f"{replay_prefix}-approved.json", replay_chain[1]),
         (f"{replay_prefix}-active.json", replay_chain[2]),
+        (f"{forecast_prefix}-superseded.json", forecast_superseded),
+        (f"{current_prefix}-superseded.json", current_superseded),
+        (f"{replay_prefix}-superseded.json", replay_superseded),
+        (f"{forecast_prefix}-r2-candidate.json", r2_forecast_chain[0]),
+        (f"{forecast_prefix}-r2-approved.json", r2_forecast_chain[1]),
+        (f"{forecast_prefix}-r2-active.json", r2_forecast_chain[2]),
+        (f"{current_prefix}-r2-candidate.json", r2_current_chain[0]),
+        (f"{current_prefix}-r2-approved.json", r2_current_chain[1]),
+        (f"{current_prefix}-r2-active.json", r2_current_chain[2]),
+        (f"{replay_prefix}-r2-candidate.json", r2_replay_chain[0]),
+        (f"{replay_prefix}-r2-approved.json", r2_replay_chain[1]),
+        (f"{replay_prefix}-r2-active.json", r2_replay_chain[2]),
     ]
 
 

@@ -457,7 +457,12 @@ export const inventorySliceSchema = z.object({
     offset: z.number().int(),
     limit: z.number().int(),
     total: z.number().int()
-  }).optional()
+  }).optional(),
+  // How the route decided which rows made the page, in the words the screen
+  // shows. A capped table is only honest if the reader knows what it is capped
+  // to: "20 of 4,741" alone does not say whether those twenty are the worst
+  // offenders or the first twenty SKU codes alphabetically.
+  ranking: z.string().optional()
 });
 
 export type InventorySlice = z.infer<typeof inventorySliceSchema>;

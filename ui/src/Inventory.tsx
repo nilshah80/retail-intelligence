@@ -113,30 +113,6 @@ const AVAILABILITY: Record<string, {why: string; when: string}> = {
     why: "the weekly replay does not yet reconstruct observed stock closely enough to compare policies against it",
     when: "when replay reconstruction reaches the accuracy threshold frozen before scoring"
   },
-  RISK_ON_ANOTHER_MEASURE: {
-    why: "risk is measured per SKU and store rather than as one enterprise figure",
-    when: "now, on Stock Health and Expiry & Waste"
-  },
-  TRANSFER_ON_ANOTHER_MEASURE: {
-    why: "transfer opportunity is measured per lane",
-    when: "now, on Stock Transfers"
-  },
-  POSITION_COMPARISON_ON_ANOTHER_MEASURE: {
-    why: "the comparison of position against buffer is made per cell",
-    when: "now, on Replenishment Planner"
-  },
-  BUCKET_SPLIT_ON_TABLE: {
-    why: "ageing is held per bucket rather than as one cumulative total",
-    when: "now, in the table below"
-  },
-  CAPACITY_SPLIT_ON_TABLE: {
-    why: "capacity is confirmed per supplier",
-    when: "now, in the table below"
-  },
-  TRANSIT_SPLIT_ON_TABLE: {
-    why: "transit time is a property of each declared lane",
-    when: "now, in the table below"
-  },
   NRV_UNAVAILABLE: {
     why: "net realizable value and its provisions need an approved markdown and pricing-floor policy",
     when: "when that policy is approved; the platform will not estimate a finance figure without one"
@@ -160,10 +136,6 @@ const AVAILABILITY: Record<string, {why: string; when: string}> = {
   BUDGET_NOT_APPLIED: {
     why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
     when: "when the budget cap is enforced in the replenishment engine"
-  },
-  ERP_SHADOW_ONLY: {
-    why: "ERP transmission is shadow-only and no send path exists",
-    when: "when ERP integration is enabled; until then there are no failures to report"
   },
   UNIT_COST_UNAVAILABLE: {
     why: "at least one on-hand SKU in this group has no accepted unit cost, and another node's cost is never borrowed",
@@ -286,9 +258,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        of: "onHandUnits", note: "After committed, reserved and damaged"},
       {caption: "Inventory in Transit", field: "inTransitUnits", format: "units",
        note: "Received against a declared lane"},
-      {caption: "Inventory at Risk", field: "healthUnderstockCells",
-       format: "count",
-       note: "Cells the health engine classes understocked or stocked out"},
+      {caption: "Inventory at Risk", field: "healthAtRiskCells",
+       format: "count", of: "healthCells",
+       note: "Buffer too thin to serve demand, or stock that has stopped moving"},
       {caption: "Stock Turn", field: null, format: "count",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
@@ -311,7 +283,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       // projection's class counts under a `health` prefix. "At Risk" is the
       // reference's word for the understocked and dead classes together.
       {label: "Healthy", field: "healthHealthyCells", format: "count"},
-      {label: "At Risk", field: "healthDeadCells", format: "count"},
+      {label: "At Risk", field: "healthAtRiskCells", format: "count"},
       {label: "Overstock", field: "healthOverstockCells", format: "count"},
       {label: "Out of Stock", field: "healthStockoutCells", format: "count"},
       // "Immediate Decisions".
@@ -357,16 +329,16 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Store-level availability, overstock, understock and transfer opportunities",
     endpoint: "/api/v1/inventory/stores",
     kpis: [
-      {caption: "Store Inventory Value", field: "onHandUnits", format: "units",
+      {caption: "Store Inventory Value", field: "valuationStoreValueMinor",
+       format: "money",
        note: "Store-grain units on hand"},
       {caption: "On-Shelf Availability", field: "atpUnits", format: "units",
        of: "onHandUnits", note: "Available to promise share"},
-      {caption: "Stores at Risk", field: null, format: "count",
-       unavailableReason: "RISK_ON_ANOTHER_MEASURE",
+      {caption: "Stores at Risk", field: "healthAtRiskLocations", format: "count",
+       of: "healthLocations",
        note: "Measured on Stock Health"},
-      {caption: "Transfer Opportunity", field: null, format: "units",
-       unavailableReason: "TRANSFER_ON_ANOTHER_MEASURE",
-       note: "Measured on Stock Transfers"},
+      {caption: "Transfer Opportunity", field: "transferUnits", format: "units",
+       note: "Units the optimizer would move between locations"},
       {caption: "Lost Sales Exposure", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
@@ -379,10 +351,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        format: "count"},
       {label: "High overstock risk", field: "healthOverstockCells",
        format: "count"},
-      {label: "Display stock mismatch", field: null, format: "count",
-       unavailableReason: "DOCK_TO_STOCK_NOT_INSTRUMENTED"},
-      {label: "Negative inventory", field: "damagedUnits", format: "count"},
-      {label: "Transfer candidates", field: "residualOnlyCells", format: "count"}
+      {label: "Display stock mismatch", field: "valuationWmsVarianceUnits",
+       format: "units"},
+      {label: "Negative inventory", field: "negativeCells", format: "count"},
+      {label: "Transfer candidates", field: "transferRows", format: "count"}
     ],
     tables: [
       {heading: "Store Inventory Heatmap", columns: [
@@ -430,19 +402,18 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Age buckets and the deterministic action ladder",
     endpoint: "/api/v1/inventory/ageing",
     kpis: [
-      {caption: "60+ Day Inventory", field: null, format: "units",
-       unavailableReason: "BUCKET_SPLIT_ON_TABLE",
+      {caption: "60+ Day Inventory", field: "units60Plus", format: "units",
+       of: "onHandUnits",
        note: "Per-bucket units are in the table below"},
-      {caption: "90+ Day Inventory", field: null, format: "units",
-       unavailableReason: "BUCKET_SPLIT_ON_TABLE",
+      {caption: "90+ Day Inventory", field: "units90Plus", format: "units",
+       of: "onHandUnits",
        note: "Per-bucket units are in the table below"},
       {caption: "Dead Stock", field: "residualUnits", format: "units",
        note: "Units in residual-only cells"},
       {caption: "Markdown Opportunity", field: "markdownCells", format: "count",
        note: "Cells the action ladder marks for markdown"},
-      {caption: "Transfer Opportunity", field: null, format: "units",
-       unavailableReason: "TRANSFER_ON_ANOTHER_MEASURE",
-       note: "Measured on Stock Transfers"}
+      {caption: "Transfer Opportunity", field: "transferUnits", format: "units",
+       note: "Units the optimizer would move between locations"}
     ],
     tables: [
       {heading: null, columns: [
@@ -469,8 +440,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Expected Lost-Sales Recovery", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"},
-      {caption: "Average Transfer Time", field: null, format: "days",
-       unavailableReason: "TRANSIT_SPLIT_ON_TABLE",
+      {caption: "Average Transfer Time", field: "meanTransitDays", format: "days",
        note: "Per-lane transit days are in the table below"},
       {caption: "Transfer Acceptance", field: null, format: "percent",
        unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED",
@@ -652,8 +622,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Open PO Value", field: null, format: "money",
        unavailableReason: "PO_VALUE_NOT_PROJECTED",
        note: "Purchase-order value is not in this projection"},
-      {caption: "Capacity Confirmed", field: null, format: "percent",
-       unavailableReason: "CAPACITY_SPLIT_ON_TABLE",
+      {caption: "Capacity Confirmed", field: "meanCapacityConfirmedPct",
+       format: "percent",
        note: "Per-supplier capacity is in the table below"},
       {caption: "On-Time Delivery", field: "meanOtdRate", format: "percent",
        note: "Mean across suppliers in scope"},
@@ -682,11 +652,11 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Units across cells with a computed buffer"},
       {caption: "Policy Coverage", field: "assessedCells", format: "count",
        of: "cells", note: "Cells with an available interval"},
-      {caption: "Below Safety Stock", field: null, format: "count",
-       unavailableReason: "POSITION_COMPARISON_ON_ANOTHER_MEASURE",
+      {caption: "Below Safety Stock", field: "belowSafetyCells", format: "count",
+       of: "comparedCells",
        note: "Compared on Replenishment Planner"},
-      {caption: "Excess Safety Stock", field: null, format: "count",
-       unavailableReason: "POSITION_COMPARISON_ON_ANOTHER_MEASURE",
+      {caption: "Excess Safety Stock", field: "excessSafetyCells", format: "count",
+       of: "comparedCells",
        note: "Compared on Replenishment Planner"},
       {caption: "Projected Service Level", field: null, format: "percent",
        unavailableReason: "REPLAY_UNAVAILABLE",
@@ -750,8 +720,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Market budget ceiling is not yet applied"},
       {caption: "Supplier Exceptions", field: "classes", format: "count",
        note: "Distinct exception classes in scope"},
-      {caption: "ERP Failures", field: null, format: "count",
-       unavailableReason: "ERP_SHADOW_ONLY",
+      {caption: "ERP Failures", field: "orderErpFailures", format: "count",
        note: "No send path exists in this release"}
     ],
     tables: [
@@ -901,15 +870,26 @@ function DataCard({
   const rows = slice.items as Row[];
   return (
     <div className="card">
-      {table.heading && (
+      {(table.heading || slice.pagination) && (
+        // The count is not decoration on the heading -- it is the disclosure
+        // that the table is a cut. A headless card in the reference is still a
+        // capped page, so it carries the count even with no title beside it.
         <div className="card-head">
-          <h3>{table.heading}</h3>
+          {table.heading ? <h3>{table.heading}</h3> : <span />}
           <span className="link-button" aria-hidden="true">
             {slice.pagination
-              ? `${rows.length} of ${slice.pagination.total.toLocaleString("en-US")}`
+              ? `Top ${rows.length} of ${slice.pagination.total.toLocaleString("en-US")}`
               : `${rows.length}`}
           </span>
         </div>
+      )}
+      {slice.ranking && slice.pagination
+        && slice.pagination.total > rows.length && (
+        <p className="kpi-note" data-testid="ranking-note">
+          Ranked by {slice.ranking}. The tiles above are aggregated in SQL over
+          all {slice.pagination.total.toLocaleString("en-US")} rows in scope, not
+          over this page.
+        </p>
       )}
       <div className="table-scroll">
         <table className="table" data-card-kind="rows">

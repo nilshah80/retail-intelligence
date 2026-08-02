@@ -547,6 +547,40 @@ class BusinessCentralAdapter(SourceAdapter):
             FROM raw_business_central.waste_events
             """
         )
+        if "store_waste_events" in v13_relations:
+            # Source contract v13, same posture as store_inventory_snapshots
+            # above: store rows join the SAME staging role as the warehouse rows.
+            # Two waste relations would mean two canonical vocabularies for one
+            # physical event, and the store echelon's write-offs are the larger
+            # stream -- 317,056 units against india-west's 140,787 at the DCs.
+            #
+            # Leaving them out is what made the weekly replay irreconcilable: the
+            # generator expires store stock and emits the event, but nothing
+            # landed it, so reconstructed on-hand rose ~589 units/week above
+            # every observed snapshot. That is the whole of the residual.
+            #
+            # `expiry` is normalised to the warehouse relation's `expired`: one
+            # controlled enum per role, and the two source spellings name the
+            # same cause. `observedAt` is a real 23:00 market-local instant, so
+            # it is better availability evidence than the warehouse rows' date
+            # cast and is used directly.
+            con.execute(
+                """
+                INSERT INTO stage_data.bc_waste_events
+                SELECT
+                    'businessCentral'::VARCHAR,
+                    _source_instance, _market_id,
+                    eventId::VARCHAR, sku::VARCHAR,
+                    locationCode::VARCHAR,
+                    try_cast(eventDate AS DATE),
+                    try_cast(quantity AS BIGINT),
+                    CASE reasonCode WHEN 'expiry' THEN 'expired'
+                                    ELSE reasonCode END::VARCHAR,
+                    try_cast(observedAt AS TIMESTAMPTZ),
+                    'native_posted_available'::VARCHAR
+                FROM raw_business_central.store_waste_events
+                """
+            )
         con.execute(
             """
             CREATE OR REPLACE TABLE stage_data.bc_warehouse_capacity AS
