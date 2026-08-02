@@ -382,6 +382,24 @@ describe("inventory & replenishment destinations", () => {
     }
   });
 
+  it("gives every reference card label a field or a governed reason", () => {
+    // A breakdown/donut/alert label with no spec renders the bare words "Not
+    // available" and an EMPTY note cell -- worse than the KPI case, because
+    // BreakdownCard has nowhere to hang a reason. Safety Stock's four drivers
+    // were doing exactly this.
+    const orphans: string[] = [];
+    for (const id of PAGE_IDS) {
+      const specs = inventoryScreens[id].breakdown ?? [];
+      const declared = new Set(specs.map((row) => row.label));
+      for (const card of REFERENCE_SCREEN_BY_ID[id].cards) {
+        for (const label of card.labels) {
+          if (!declared.has(label)) orphans.push(`${id}: ${label}`);
+        }
+      }
+    }
+    expect(orphans).toEqual([]);
+  });
+
   // -- the page is a shortlist, and says so ------------------------------------
 
   it("names the ranking whenever the page is a cut of a larger set", async () => {

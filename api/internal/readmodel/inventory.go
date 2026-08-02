@@ -594,6 +594,7 @@ var dashboardCompanions = map[string][]dashboardCompanion{
 	},
 	"replenishment_recommendations": {
 		{table: "inventory_valuation", prefix: "valuation"},
+		{table: "replenishment_suppliers", prefix: "supplier"},
 	},
 	"replenishment_safety_stock": {
 		{table: "inventory_valuation", prefix: "valuation"},
@@ -753,11 +754,12 @@ var inventoryAggregates = map[string]map[string]string{
 		"unvaluedRows":     "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
 	},
 	"inventory_valuation": {
-		"rows":             "COUNT(*)",
-		"grossValueMinor":  "COALESCE(SUM(gross_value_minor), 0)",
-		"unvaluedRows":     "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
-		"wmsVarianceUnits": "COALESCE(SUM(wms_variance_units), 0)",
-		"currencyCount":    "COUNT(DISTINCT currency_code)",
+		"negativeValueRows": "COUNT(*) FILTER (WHERE gross_value_minor < 0)",
+		"rows":              "COUNT(*)",
+		"grossValueMinor":   "COALESCE(SUM(gross_value_minor), 0)",
+		"unvaluedRows":      "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
+		"wmsVarianceUnits":  "COALESCE(SUM(wms_variance_units), 0)",
+		"currencyCount":     "COUNT(DISTINCT currency_code)",
 	},
 	"replenishment_recommendations": {
 		"cells":            "COUNT(*)",
@@ -770,6 +772,16 @@ var inventoryAggregates = map[string]map[string]string{
 		// is more useful than withholding the tile.
 		"erpFailures": "COUNT(*) FILTER (WHERE erp_status = 'failed')",
 		"erpShadowed": "COUNT(*) FILTER (WHERE erp_status IS NOT NULL)",
+		// Where a recommended order would be sourced from. The recommendation
+		// carries a supply location; the echelon comes from the positions
+		// projection, so the reference's order-mix card can name the three
+		// routes instead of withholding all of them.
+		"fromSupplier": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND supply.location_kind IS NULL)",
+		"fromWarehouse": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND supply.location_kind IN ('dc', '3pl'))",
+		"fromStore": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND supply.location_kind = 'store')",
 	},
 	"replenishment_safety_stock": {
 		"cells":            "COUNT(*)",
@@ -783,10 +795,11 @@ var inventoryAggregates = map[string]map[string]string{
 			"< replenishment_safety_stock.safety_stock_units)",
 		"excessSafetyCells": "COUNT(*) FILTER (WHERE COALESCE(position.on_hand_units, 0) " +
 			"> replenishment_safety_stock.safety_stock_units * 2)",
-		"comparedCells": "COUNT(*) FILTER (WHERE position.on_hand_units IS NOT NULL)",
-		"classACells":   "COUNT(*) FILTER (WHERE abc_class = 'A')",
-		"classBCells":   "COUNT(*) FILTER (WHERE abc_class = 'B')",
-		"classCCells":   "COUNT(*) FILTER (WHERE abc_class = 'C')",
+		"comparedCells":    "COUNT(*) FILTER (WHERE position.on_hand_units IS NOT NULL)",
+		"meanServiceLevel": "AVG(service_level)",
+		"classACells":      "COUNT(*) FILTER (WHERE abc_class = 'A')",
+		"classBCells":      "COUNT(*) FILTER (WHERE abc_class = 'B')",
+		"classCCells":      "COUNT(*) FILTER (WHERE abc_class = 'C')",
 	},
 	"replenishment_transfers": {
 		"rows":                 "COUNT(*)",
@@ -848,6 +861,19 @@ var aggregateSource = map[string]string{
 	// "Store Inventory Value" would otherwise be handed the enterprise total.
 	// The echelon comes from the positions projection, reduced to one row per
 	// location first so the join cannot multiply a category's value by its SKUs.
+	// The supply side of a recommendation, so the order mix can be split by
+	// echelon. LEFT, because a supply location absent from the positions
+	// projection is an external supplier rather than a node we hold stock at --
+	// which is exactly the distinction the mix card draws.
+	"replenishment_recommendations": `retail_serving.replenishment_recommendations
+		LEFT JOIN (SELECT DISTINCT inventory_version_id AS supply_version,
+		                  location_id AS supply_node, location_kind
+		           FROM retail_serving.inventory_positions) AS supply
+		ON supply.supply_version
+		     = replenishment_recommendations.inventory_version_id
+		AND supply.supply_node
+		     = replenishment_recommendations.supply_location_id`,
+
 	"inventory_valuation_by_kind": `retail_serving.inventory_valuation
 		JOIN (SELECT DISTINCT inventory_version_id, market_id, location_id,
 		             location_kind

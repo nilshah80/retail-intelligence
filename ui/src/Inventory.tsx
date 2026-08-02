@@ -148,8 +148,36 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   BUDGET_NOT_APPLIED: {
     why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
     when: "when the budget cap is enforced in the replenishment engine"
+  },
+  DRIVER_COMPONENTS_NOT_PUBLISHED: {
+    why: "the safety-stock artifact publishes the buffer the policy produced and the class it was sized under, not the demand and lead-time terms that went into it",
+    when: "when the engine emits its per-cell inputs alongside its output"
+  },
+  MOQ_COMPLIANCE_NOT_SCORED: {
+    why: "minimum-order and pack-size rounding is applied when a quantity is produced, and the recommendation records the rounded result rather than whether rounding bound it",
+    when: "when the engine records the pre-rounding quantity beside the final one"
   }
 };
+
+/**
+ * What a share is a share OF, in the reader's words. Read from the denominator
+ * field rather than assumed, so a ratio can never be captioned against a base
+ * it was not computed over.
+ */
+const SHARE_BASIS: Record<string, string> = {
+  onHandUnits: "of on-hand",
+  healthCells: "of assessed cells",
+  healthLocations: "of locations",
+  comparedCells: "of cells compared",
+  cellsToOrder: "of cells to order",
+  cells: "of cells",
+  requestedUnits: "of requested units",
+  rows: "of rows"
+};
+
+function shareBasis(field: string | undefined): string {
+  return (field && SHARE_BASIS[field]) || "of the scoped total";
+}
 
 function availabilityNote(reason: string | undefined): string | null {
   if (!reason) return null;
@@ -339,12 +367,12 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Store Inventory Value", field: "valuationStoreValueMinor",
        format: "money",
-       note: "Store-grain units on hand"},
+       note: "Gross value of stock held at store locations"},
       {caption: "On-Shelf Availability", field: "atpUnits", format: "units",
        of: "onHandUnits", note: "Available to promise share"},
       {caption: "Stores at Risk", field: "healthAtRiskLocations", format: "count",
        of: "healthLocations",
-       note: "Measured on Stock Health"},
+       note: "Locations holding at least one understocked or stocked-out cell"},
       {caption: "Transfer Opportunity", field: "transferUnits", format: "units",
        note: "Units the optimizer would move between locations"},
       {caption: "Lost Sales Exposure", field: null, format: "money",
@@ -412,10 +440,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "60+ Day Inventory", field: "units60Plus", format: "units",
        of: "onHandUnits",
-       note: "Per-bucket units are in the table below"},
+       note: "Cumulative across the 60-90, 90-180 and 180-plus buckets"},
       {caption: "90+ Day Inventory", field: "units90Plus", format: "units",
        of: "onHandUnits",
-       note: "Per-bucket units are in the table below"},
+       note: "Cumulative across the 90-180 and 180-plus buckets"},
       {caption: "Dead Stock", field: "residualUnits", format: "units",
        note: "Units in residual-only cells"},
       {caption: "Markdown Opportunity", field: "markdownCells", format: "count",
@@ -485,6 +513,15 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Needs an approved markdown policy"},
       {caption: "Inventory Variance", field: "wmsVarianceUnits", format: "units",
        note: "Absolute ERP-versus-WMS discrepancy"}
+    ],
+    breakdown: [
+      // "Financial Control Exceptions".
+      {label: "ERP vs WMS variance", field: "wmsVarianceUnits", format: "units"},
+      {label: "Unposted markdown provision", field: null, format: "money",
+       unavailableReason: "PROVISION_NEEDS_SKU_COST"},
+      {label: "Negative inventory value", field: "negativeValueRows",
+       format: "count", of: "rows"},
+      {label: "Cost missing", field: "unvaluedRows", format: "count", of: "rows"}
     ],
     tables: [
       {heading: "Valuation by Category", columns: [
@@ -562,6 +599,43 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Needs a reproducing weekly replay"},
       {caption: "Exception Orders", field: "withheldCells", format: "count",
        note: "Cells withheld with a governed reason"}
+    ],
+    breakdown: [
+      // Order mix, by where the recommendation would be sourced from.
+      {label: "Supplier purchase orders", field: "fromSupplier",
+       format: "count", of: "cellsToOrder"},
+      {label: "Warehouse transfers", field: "fromWarehouse", format: "count",
+       of: "cellsToOrder"},
+      {label: "Inter-store transfers", field: "fromStore", format: "count",
+       of: "cellsToOrder"},
+      {label: "Expedited orders", field: null, format: "count",
+       unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED"},
+      // Benefit. Every one of these is a candidate-versus-incumbent claim.
+      {label: "Lost-sales reduction", field: null, format: "units",
+       unavailableReason: "REPLAY_UNAVAILABLE"},
+      {label: "Stock-out reduction", field: null, format: "count",
+       unavailableReason: "REPLAY_UNAVAILABLE"},
+      {label: "Inventory turn improvement", field: null, format: "percent",
+       unavailableReason: "REPLAY_UNAVAILABLE"},
+      {label: "Transfer savings", field: null, format: "money",
+       unavailableReason: "REPLAY_UNAVAILABLE"},
+      // Approval queue. Read-only release, so nothing is pending anything.
+      {label: "Pending planner review", field: null, format: "count",
+       unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED"},
+      {label: "Pending supply-chain approval", field: null, format: "count",
+       unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED"},
+      {label: "Pending finance review", field: null, format: "count",
+       unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED"},
+      {label: "ERP transmission failed", field: "erpFailures", format: "count"},
+      // Compliance.
+      {label: "Approved forecast coverage", field: "assessedCells",
+       format: "count", of: "cells"},
+      {label: "MOQ / pack-size compliance", field: null, format: "percent",
+       unavailableReason: "MOQ_COMPLIANCE_NOT_SCORED"},
+      {label: "Orders within budget", field: null, format: "percent",
+       unavailableReason: "BUDGET_NOT_APPLIED"},
+      {label: "Supplier capacity confirmed",
+       field: "supplierMeanCapacityConfirmedPct", format: "percent"}
     ],
     tables: [
       {heading: "Priority Replenishment Recommendations", columns: [
@@ -669,6 +743,17 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Projected Service Level", field: null, format: "percent",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
+    ],
+    breakdown: [
+      // "Safety Stock Drivers". The buffer is published; its terms are not.
+      {label: "Demand variability", field: null, format: "count",
+       unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"},
+      {label: "Lead-time variability", field: null, format: "count",
+       unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"},
+      {label: "Service-level target", field: "meanServiceLevel",
+       format: "percent"},
+      {label: "Promotion / seasonality", field: null, format: "count",
+       unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"}
     ],
     tables: [
       {heading: "Safety Stock Drivers", columns: [
@@ -818,7 +903,12 @@ function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
       <small>{spec.caption}</small>
       <div className="value">{value}</div>
       {share !== null && spec.format !== "percent" && (
-        <span className="delta up">{(share * 100).toFixed(1)}% of on-hand</span>
+        // The denominator names itself. Hardcoding "of on-hand" was right for
+        // the position tiles it was written for and wrong everywhere it spread
+        // to: "Stores at Risk 4 / 50.0% of on-hand" is four of eight LOCATIONS.
+        <span className="delta up">
+          {(share * 100).toFixed(1)}% {shareBasis(spec.of)}
+        </span>
       )}
       {spec.note && <div className="demo-note">{spec.note}</div>}
     </div>
