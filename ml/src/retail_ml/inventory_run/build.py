@@ -1455,6 +1455,56 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
     )
 
 
+def _build_sku_dimension(
+    emitted: pd.DataFrame,
+    *,
+    unit_costs: Mapping[tuple[str, str, str], tuple[int | None, str | None]],
+    currency_by_market: Mapping[str, str],
+) -> pd.DataFrame:
+    """The dimension every screen needed and none of them had.
+
+    Two facts live only in the loader and never reached a projection: a SKU's
+    CATEGORY, and its accepted unit COST. Without the first, "Inventory Risk by
+    Category" had nothing to group by and shipped location ids under a Category
+    header. Without the second, every column the reference denominates in rupees
+    -- Inventory Value, Order Value, Financial Exposure, Transfer Value -- could
+    only render a unit count.
+
+    Published as one dimension rather than as columns on eight fact tables: the
+    grain is the same (market x location x SKU), the read model joins it where it
+    needs it, and a fact table's frozen column contract stays frozen.
+
+    `unit_cost_minor` is null where no accepted cost exists. That is the same
+    ABC_UNIT_COST_UNAVAILABLE population the safety-stock engine already
+    withholds on, and a borrowed cost from another node is never substituted.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for record in emitted.itertuples(index=False):
+        row = record._asdict()
+        market = str(row["market_id"])
+        location = str(row["location_id"])
+        sku = str(row["sku_id"])
+        cost, method = unit_costs.get((market, location, sku), (None, None))
+        rows.append(
+            {
+                "market_id": market,
+                "location_id": location,
+                "sku_id": sku,
+                "category": str(row["category"]),
+                "unit_cost_minor": cost,
+                "cost_method": method,
+                "currency_code": currency_by_market.get(market),
+            }
+        )
+    frame = pd.DataFrame(rows, columns=list(ARTIFACT_COLUMNS["inventory_sku_dimension"]))
+    # Nullable integer, not float. A column of Python ints with one None becomes
+    # float64, and 58410 then serialises as "58410.0", which PostgreSQL rejects
+    # for a bigint at COPY time rather than at publish time.
+    frame["unit_cost_minor"] = frame["unit_cost_minor"].astype("Int64")
+    return frame.drop_duplicates(subset=["market_id", "location_id", "sku_id"])
+
+
 def build_artifacts(
     inputs: InventoryInputs,
     *,
@@ -1562,6 +1612,11 @@ def build_artifacts(
         ).reset_index(drop=True)
 
     artifacts = {
+        "inventory_sku_dimension": _build_sku_dimension(
+            emitted,
+            unit_costs=unit_costs,
+            currency_by_market=inputs.currency_by_market,
+        ),
         "inventory_positions": positions,
         "inventory_stock_health": health,
         "inventory_demand_at_risk": risk,

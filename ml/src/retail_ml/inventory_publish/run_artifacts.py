@@ -98,6 +98,7 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "inventory_demand_at_risk": "retail-inventory-demand-at-risk/v1",
     "inventory_ageing": "retail-inventory-ageing/v1",
     "inventory_expiry_waste": "retail-inventory-expiry-waste/v1",
+    "inventory_sku_dimension": "retail-inventory-sku-dimension/v1",
     "inventory_valuation": "retail-inventory-valuation/v1",
     "replenishment_recommendations": "retail-replenishment-recommendations/v1",
     "replenishment_safety_stock": "retail-replenishment-safety-stock/v1",
@@ -162,6 +163,18 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "expired_units",
         "waste_units",
         "exposure_minor",
+        "currency_code",
+    ),
+    # The dimension the fourteen screens read category and money through. Not a
+    # fact table: one row per market x location x SKU, joined by the read model
+    # wherever a card groups by category or denominates a column in currency.
+    "inventory_sku_dimension": (
+        "market_id",
+        "location_id",
+        "sku_id",
+        "category",
+        "unit_cost_minor",
+        "cost_method",
         "currency_code",
     ),
     "inventory_valuation": (
@@ -249,6 +262,7 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
 #: The grain of each artifact. Duplicates on these columns mean two rows claim the
 #: same cell, and a screen summing them double-counts.
 ARTIFACT_GRAIN: Final[dict[str, tuple[str, ...]]] = {
+    "inventory_sku_dimension": ("market_id", "location_id", "sku_id"),
     "inventory_positions": ("market_id", "location_id", "sku_id"),
     "inventory_stock_health": ("market_id", "location_id", "sku_id"),
     "inventory_demand_at_risk": (

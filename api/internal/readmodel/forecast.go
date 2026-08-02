@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0010_inventory_serving"
+	ForecastMigrationRevision = "0011_inventory_sku_dimension"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"

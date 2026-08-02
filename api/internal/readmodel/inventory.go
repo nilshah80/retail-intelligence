@@ -24,7 +24,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0010_inventory_serving"
+	InventoryMigrationRevision = "0011_inventory_sku_dimension"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
