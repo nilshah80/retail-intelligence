@@ -110,8 +110,15 @@ const WITHHELD = "Manual judgment required";
  */
 export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   REPLAY_UNAVAILABLE: {
-    why: "the weekly replay does not yet reconstruct observed stock closely enough to compare policies against it",
-    when: "when replay reconstruction reaches the accuracy threshold frozen before scoring"
+    // Rewritten at P4-10 because the old text became untrue. The replay DOES
+    // reconstruct observed stock now -- 0.390 units per cell in india-west and
+    // 0.198 in us-new-york against a tolerance frozen at 0.5 -- so the
+    // comparison ran. What it could not do is clear two gates that are already
+    // at zero: the frozen rule requires strictly fewer stockouts and strictly
+    // fewer lost units than the incumbent, a tie fails, and both sides sit at
+    // zero. Saying "cannot reconstruct" would now understate the platform.
+    why: "the candidate policy matched the incumbent on stock-outs and lost units rather than beating it, and the acceptance rule frozen before scoring treats a tie as a failure",
+    when: "when a candidate strictly improves on the incumbent; the replay itself now reproduces observed stock inside its frozen tolerance, so the comparison is running"
   },
   NRV_UNAVAILABLE: {
     why: "net realizable value is a forward selling price net of disposal cost, and the platform holds acquisition cost rather than an expected recovery price",

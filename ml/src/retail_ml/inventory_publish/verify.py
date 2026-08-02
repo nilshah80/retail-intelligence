@@ -346,16 +346,35 @@ def verify_inventory_run(
             bool(replay_capability.get("reasonCode")),
             "an unavailable replay capability must name its reason code",
         )
-        # Deliberately NOT requiring gate rows. Oracle-first means a failed oracle
-        # stops the comparison before any gate is scored, so there are none to
-        # publish; `_validate_replay` above has already required the oracle's own
-        # per-market measurement instead, which is the evidence that exists.
-        oracle = (manifest.get("replay") or {}).get("oracle") or {}
-        _require(
-            oracle.get("passed") is False and bool(oracle.get("perMarket")),
-            "an unavailable replay capability must carry the oracle's per-market "
-            "measurement as its evidence",
-        )
+        # Two ways to be unavailable, and the evidence differs by which one.
+        #
+        # Oracle-first means a FAILED oracle stops the comparison before any gate
+        # is scored, so there are no rows to publish and the oracle's own
+        # per-market measurement is the evidence. But once the reconstruction was
+        # corrected the oracle reproduced and the candidate still lost on its
+        # gates -- a second, entirely legitimate way to be unavailable, whose
+        # evidence is the scored rows themselves.
+        replay = manifest.get("replay") or {}
+        oracle = replay.get("oracle") or {}
+        if oracle.get("passed") is False:
+            _require(
+                bool(oracle.get("perMarket")),
+                "a replay unavailable on its oracle must carry the oracle's "
+                "per-market measurement as its evidence",
+            )
+        else:
+            _require(
+                not failed.empty,
+                "the replay reproduced its oracle, so the capability can only be "
+                "unavailable on a gate the candidate did not pass -- and no "
+                "failing gate row is published to show which",
+            )
+            cohorts = set(gates["cohort"].astype(str))
+            _require(
+                cohorts == {"calibration", "holdout"},
+                f"scored replay gates cover cohorts {sorted(cohorts)}; both must "
+                "be published or the split proves nothing",
+            )
 
     # -- lineage: against external authority, never against self --------------
     input_bundle = manifest.get("inputBundle") or {}

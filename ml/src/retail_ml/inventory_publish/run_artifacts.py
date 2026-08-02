@@ -505,19 +505,38 @@ def _validate_replay(
         )
         return
 
-    _require(
-        replay.get("oracle", {}).get("passed") is False,
-        "the replay capability is declared unavailable, so the oracle record "
-        "must show why it did not reproduce. An unavailable capability with a "
-        "passing oracle is a contradiction.",
+    # An unavailable capability must say WHY, and there are exactly two reasons.
+    # This used to admit only the first, which made the second unpublishable:
+    # once the reconstruction was corrected the oracle reproduced, the candidate
+    # still failed to beat its incumbent, and the run could not be published at
+    # all -- a passing oracle read as a contradiction rather than as progress.
+    oracle_failed = replay.get("oracle", {}).get("passed") is False
+    gates_failed = any(
+        cohort.get("passed") is False
+        for cohort in (replay.get("perCohort") or {}).values()
     )
-    # No gate rows are required here, and requiring them would be incoherent: the
-    # oracle-first rule means a failed oracle stops the comparison BEFORE any gate
-    # is scored, so there is nothing to publish. Demanding rows would force
-    # scoring the gates anyway, which is precisely what oracle-first forbids.
-    #
-    # The evidence for the unavailability is the oracle's own measured record, per
-    # market. That is what has to be there.
+    _require(
+        oracle_failed or gates_failed,
+        "the replay capability is declared unavailable, so either the oracle "
+        "must show it did not reproduce or a cohort must show a gate it did not "
+        "pass. Unavailable with both passing is a contradiction.",
+    )
+    if gates_failed and not oracle_failed:
+        # The oracle reproduced, so the gates WERE scored and their rows are the
+        # evidence. Both cohorts, for the same reason the claimed branch demands
+        # them: one cohort's verdict proves nothing about the split.
+        cohorts = set(metrics["cohort"].astype(str))
+        _require(
+            cohorts == {"calibration", "holdout"},
+            f"the replay reproduced but did not pass its gates, so both cohorts' "
+            f"scored metrics are the evidence for that; found {sorted(cohorts)}",
+        )
+        return
+
+    # Oracle-first: a failed oracle stops the comparison BEFORE any gate is
+    # scored, so there is nothing to publish and demanding rows would force
+    # scoring them anyway -- precisely what oracle-first forbids. The evidence is
+    # the oracle's own measured record, per market.
     per_market = (replay.get("oracle") or {}).get("perMarket") or {}
     _require(
         bool(per_market),
