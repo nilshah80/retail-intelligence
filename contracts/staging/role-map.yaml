@@ -41,7 +41,12 @@ boundaryAllowlist:
         in the same `direct` table every existing role uses. The builder IS the
         boundary where platform spelling terminates, so these four belong here
         and nowhere else; canonical transforms import only the neutral names.
-      occurrences: 65
+        Raised 65 -> 66 at P4-12c for store_shortfall_events, on the same terms:
+        one mapping in the same `direct` table. It publishes the part of a store
+        sale the shelf could not cover, which the DC fulfilled -- without it the
+        weekly replay charges the DC's share to the store and canonical does not
+        balance against itself.
+      occurrences: 66
     - path: ingestion/src/retail_ingestion/mappings/locations.py
       reason: >-
         location crosswalk construction reads `stage_data.shopify_locations` and
@@ -126,6 +131,9 @@ relationRoleMap:
   inbound_status_events:
     provider: bc_inbound_status_events
     role: inbound_status_event
+  store_shortfall_events:
+    provider: bc_store_shortfall_events
+    role: store_shortfall_event
   transfer_orders:  {provider: bc_transfer_orders, role: transfer_order}
   inventory_transfer_events:
     provider: bc_inventory_transfer_events

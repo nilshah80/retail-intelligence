@@ -218,6 +218,39 @@ def load_market_history(
             """,
             [market_id, window_start, window_end, window_end],
         ).fetchall()
+        # The fourth flow, and the one that makes the identity close. A store sale
+        # the shelf could not cover was fulfilled by the DC, so `sales` records the
+        # whole sale while the store's own stock drops only by what it served. Left
+        # out, the reconstruction charges the DC's share to the shelf: india-west
+        # sold 1,365,075 units against 10,918 opening plus 1,244,868 received and
+        # still closed at 12,106, so canonical was 123,894 units away from
+        # balancing against itself and the oracle measured 11.05 units per cell
+        # against a frozen 0.5.
+        #
+        # Guarded on existence rather than assumed: curated roots published before
+        # the source wrote this relation have no such table, and those runs must
+        # still build -- they simply carry no shortfall, which is what they knew.
+        shortfall_rows: list[Any] = []
+        if connection.execute(
+            """
+            SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_name = 'store_shortfall_events'
+            """
+        ).fetchone()[0]:
+            shortfall_rows = connection.execute(
+                """
+                SELECT shortfall.location_id, shortfall.sku_id,
+                       shortfall.event_date, SUM(shortfall.shortfall_units) AS units
+                FROM store_shortfall_events AS shortfall
+                JOIN locations ON locations.location_id = shortfall.location_id
+                WHERE locations.market_id = ?
+                  AND locations.type = 'store'
+                  AND shortfall.event_date BETWEEN ? AND ?
+                  AND shortfall.known_as_of <= ?
+                GROUP BY 1, 2, 3
+                """,
+                [market_id, flow_start, window_end, window_end],
+            ).fetchall()
     finally:
         connection.close()
 
@@ -229,6 +262,24 @@ def load_market_history(
 
     def period_for(day: date) -> datetime:
         return monday_period_bounds(day, timezone)[0]
+
+    # The store cell's demand is what its own shelf served: the sale less the part
+    # the DC covered. Netted here, once, rather than at each of the two places
+    # demand is bucketed -- the period map and the daily bridge -- because a
+    # correction applied in one and forgotten in the other is precisely how the
+    # bridge came to be off by a day the first time.
+    if shortfall_rows:
+        covered_by_dc: dict[tuple[str, str, date], int] = defaultdict(int)
+        for store, sku, day, units in shortfall_rows:
+            covered_by_dc[(str(sku), str(store), _as_day(day))] += int(units)
+        served_rows = []
+        for store, sku, day, units in demand_rows:
+            covered = covered_by_dc.get((str(sku), str(store), _as_day(day)), 0)
+            # Clamped at zero: the two facts are published independently, so a
+            # shortfall larger than the sale would mean the source disagrees with
+            # itself, and negative demand would silently create stock.
+            served_rows.append((store, sku, day, max(0, int(units) - covered)))
+        demand_rows = served_rows
 
     demand: dict[datetime, dict[tuple[str, str], int]] = defaultdict(
         lambda: defaultdict(int)

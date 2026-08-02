@@ -348,6 +348,7 @@ def _create_standardized_views(
         # import ONLY these: the platform spelling stops here.
         "service_lanes": "companion_service_lanes",
         "inbound_status_events": "bc_inbound_status_events",
+        "store_shortfall_events": "bc_store_shortfall_events",
         "inventory_transfer_events": "bc_inventory_transfer_events",
         "supply_terms": "bc_supply_terms",
     }

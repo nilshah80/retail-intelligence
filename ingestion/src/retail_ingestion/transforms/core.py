@@ -1135,6 +1135,60 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             """
         )
 
+    # Source contract v13. The part of a store sale the shelf could not cover.
+    #
+    # `sales` records the whole sale, because the customer WAS served -- from the
+    # DC. The store's own stock drops only by served_units. Nothing published the
+    # difference, so the weekly replay charged the DC's share to the shelf and
+    # canonical stopped balancing against itself by 123,894 units in india-west
+    # once the network was tight enough for stores to actually run short.
+    #
+    # Kept as its own relation rather than folded into a movement: this is the
+    # record of a withdrawal that did NOT occur at this echelon, which no
+    # movement vocabulary can express without lying about where stock went.
+    if "store_shortfall_events" in staged_relations:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.store_shortfall_events AS
+            SELECT
+                s.native_record_id::VARCHAR AS event_id,
+                concat(s.market_id, ':', s.sku_source_key)::VARCHAR AS sku_id,
+                concat(s.market_id, ':', store.canonical_location_key)::VARCHAR
+                    AS location_id,
+                CASE WHEN s.supply_location_source_key IS NULL THEN NULL
+                    ELSE concat(s.market_id, ':', supply.canonical_location_key)
+                END::VARCHAR AS supply_location_id,
+                s.channel_source_key::VARCHAR AS channel_id,
+                s.event_date,
+                s.demand_units::BIGINT AS demand_units,
+                s.served_units::BIGINT AS served_units,
+                s.shortfall_units::BIGINT AS shortfall_units,
+                s.known_as_of,
+                s.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+            FROM stage.stage_data.store_shortfall_events AS s
+            JOIN stage.stage_data.location_crosswalk AS store
+              ON store.source_system = s.source_system
+             AND store.market_id = s.market_id
+             AND store.source_location_key = s.location_source_key
+            LEFT JOIN stage.stage_data.location_crosswalk AS supply
+              ON supply.source_system = s.source_system
+             AND supply.market_id = s.market_id
+             AND supply.source_location_key = s.supply_location_source_key
+            """
+        )
+    else:
+        connection.execute(
+            """
+            CREATE TABLE canonical_data.store_shortfall_events (
+                event_id VARCHAR, sku_id VARCHAR, location_id VARCHAR,
+                supply_location_id VARCHAR, channel_id VARCHAR,
+                event_date DATE, demand_units BIGINT, served_units BIGINT,
+                shortfall_units BIGINT, known_as_of TIMESTAMPTZ,
+                known_as_of_evidence_grade VARCHAR
+            )
+            """
+        )
+
     if "inbound_status_events" in staged_relations:
         connection.execute(
             """
@@ -1370,6 +1424,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         "wms_inventory_comparisons", "supplier_performance",
         "service_lanes", "inbound_shipment_status_events",
         "inventory_transfer_events", "supply_terms",
+        "store_shortfall_events",
     )
 
 

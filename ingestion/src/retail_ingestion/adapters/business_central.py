@@ -581,6 +581,70 @@ class BusinessCentralAdapter(SourceAdapter):
                 FROM raw_business_central.store_waste_events
                 """
             )
+        # Source contract v13. A store sale the shelf could not cover, which the
+        # DC fulfilled instead -- so `sales` records the whole sale while the
+        # store's own stock drops only by servedFromStoreUnits. Nothing published
+        # the difference, and without it a shelf-level reconstruction charges the
+        # DC's share to the store: 123,894 units of india-west drift over 52
+        # weeks on the tightened network, which is the whole of the replay
+        # oracle's residual.
+        #
+        # Its own role rather than a join onto an existing one: this is not a
+        # movement of stock, it is the record of a movement that did NOT happen at
+        # this echelon, and no existing canonical vocabulary carries that.
+        if "store_stockout_events" in v13_relations:
+            con.execute(
+                f"""
+                CREATE OR REPLACE TABLE stage_data.bc_store_shortfall_events AS
+                SELECT
+                    'businessCentral'::VARCHAR AS source_system,
+                    _source_instance AS source_instance,
+                    '{source_schema_version}'::VARCHAR AS source_schema_version,
+                    '{snapshot_id}'::VARCHAR AS source_snapshot_id,
+                    {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
+                    eventId::VARCHAR AS native_record_id,
+                    _market_id AS market_id,
+                    -- observedAt is a real 23:00 market-local instant, strictly
+                    -- after the eventDate it describes, so it is the availability
+                    -- evidence rather than a cast of the date.
+                    try_cast(observedAt AS TIMESTAMPTZ) AS known_as_of,
+                    'native_observed'::VARCHAR AS evidence_grade,
+                    'ERP_ACTUAL'::VARCHAR AS row_provenance,
+                    _raw_object_hash AS raw_object_hash,
+                    '{profile_version}'::VARCHAR AS profile_version,
+                    '{self.adapter_version}'::VARCHAR AS adapter_version,
+                    sku::VARCHAR AS sku_source_key,
+                    locationCode::VARCHAR AS location_source_key,
+                    servedFromLocationCode::VARCHAR
+                        AS supply_location_source_key,
+                    channelId::VARCHAR AS channel_source_key,
+                    try_cast(eventDate AS DATE) AS event_date,
+                    try_cast(demandUnits AS BIGINT) AS demand_units,
+                    try_cast(servedFromStoreUnits AS BIGINT) AS served_units,
+                    try_cast(shortfallUnits AS BIGINT) AS shortfall_units,
+                    _raw_object_path AS raw_object_path
+                FROM raw_business_central.store_stockout_events
+                """
+            )
+        else:
+            con.execute(
+                """
+                CREATE OR REPLACE TABLE stage_data.bc_store_shortfall_events (
+                    source_system VARCHAR, source_instance VARCHAR,
+                    source_schema_version VARCHAR, source_snapshot_id VARCHAR,
+                    native_snapshot_id VARCHAR, native_record_id VARCHAR,
+                    market_id VARCHAR, known_as_of TIMESTAMPTZ,
+                    evidence_grade VARCHAR, row_provenance VARCHAR,
+                    raw_object_hash VARCHAR, profile_version VARCHAR,
+                    adapter_version VARCHAR, sku_source_key VARCHAR,
+                    location_source_key VARCHAR,
+                    supply_location_source_key VARCHAR,
+                    channel_source_key VARCHAR, event_date DATE,
+                    demand_units BIGINT, served_units BIGINT,
+                    shortfall_units BIGINT, raw_object_path VARCHAR
+                )
+                """
+            )
         con.execute(
             """
             CREATE OR REPLACE TABLE stage_data.bc_warehouse_capacity AS
