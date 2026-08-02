@@ -90,6 +90,23 @@ interface BreakdownRow {
   readonly unavailableReason?: string;
 }
 
+/**
+ * A card the reference draws at a grain that is NOT the projection's row grain.
+ *
+ * "Inventory Risk by Category" has one row per category. "Location-Level
+ * Inventory Performance" has one row per LOCATION, as its title says. "Ageing
+ * Inventory" has one row per age bucket with a SKU COUNT in it. Rendering the
+ * projection's rows under those headers put a location id under a Category
+ * header and a SKU under a Location header -- not a layout slip, a different
+ * table. The read model groups them in SQL; `card` names which group to read.
+ */
+interface GroupedSpec {
+  readonly heading: string | null;
+  /** Key in the slice's `cards` map. */
+  readonly card: string;
+  readonly columns: readonly ColumnSpec[];
+}
+
 interface ScreenSpec {
   readonly title: string;
   readonly subtitle: string;
@@ -98,6 +115,8 @@ interface ScreenSpec {
   readonly tables: readonly TableSpec[];
   /** Reference label -> live aggregate, for breakdown, donut and alert cards. */
   readonly breakdown?: readonly BreakdownRow[];
+  /** Grouped cards, consumed in the order the reference's `rows` cards appear. */
+  readonly grouped?: readonly GroupedSpec[];
 }
 
 const UNAVAILABLE = "Not available";
@@ -294,37 +313,35 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     title: "Inventory Overview",
     subtitle: "Enterprise inventory position, risk, working capital and actions",
     endpoint: "/api/v1/inventory/overview",
+    // Every one of these is rupees in the reference. They rendered unit counts
+    // until the SKU dimension published a cost to multiply by.
     kpis: [
-      {caption: "On-Hand Inventory", field: "onHandUnits", format: "units",
-       note: "Units across active and residual cells"},
-      {caption: "Available to Promise", field: "atpUnits", format: "units",
-       of: "onHandUnits", note: "After committed, reserved and damaged"},
-      {caption: "Inventory in Transit", field: "inTransitUnits", format: "units",
-       note: "Received against a declared lane"},
+      {caption: "On-Hand Inventory", field: "onHandValueMinor", format: "money",
+       note: "Accepted unit cost times units on hand"},
+      {caption: "Available to Promise", field: "atpValueMinor", format: "money",
+       of: "onHandValueMinor", note: "After committed, reserved and damaged"},
+      {caption: "Inventory in Transit", field: "inTransitValueMinor",
+       format: "money", note: "Received against a declared lane"},
       {caption: "Inventory at Risk", field: "healthAtRiskCells",
        format: "count", of: "healthCells",
        note: "Buffer too thin to serve demand, or stock that has stopped moving"},
       {caption: "Stock Turn", field: null, format: "count",
        unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"}
+       note: "Needs an accepted candidate-versus-incumbent comparison"}
     ],
     breakdown: [
-      // "Inventory Position" -- the reference's aggregation card.
-      {label: "Store inventory", field: "storeOnHandUnits", format: "units",
-       of: "onHandUnits"},
-      {label: "Warehouse inventory", field: "dcOnHandUnits", format: "units",
-       of: "onHandUnits"},
-      {label: "In transit", field: "inTransitUnits", format: "units",
-       of: "onHandUnits"},
-      {label: "Reserved stock", field: "reservedUnits", format: "units",
-       of: "onHandUnits"},
-      {label: "Damaged / blocked", field: "damagedUnits", format: "units",
-       of: "onHandUnits"},
-      // "Inventory by Health" donut. Health class is projected per cell on Stock
-      // Health, not on the position summary, so these name where they live.
-      // The overview is a dashboard, so the read model merges the stock-health
-      // projection's class counts under a `health` prefix. "At Risk" is the
-      // reference's word for the understocked and dead classes together.
+      // "Inventory Position" -- rupees and a share, exactly as the reference.
+      {label: "Store inventory", field: "storeValueMinor", format: "money",
+       of: "onHandValueMinor"},
+      {label: "Warehouse inventory", field: "dcValueMinor", format: "money",
+       of: "onHandValueMinor"},
+      {label: "In transit", field: "inTransitValueMinor", format: "money",
+       of: "onHandValueMinor"},
+      {label: "Reserved stock", field: "reservedValueMinor", format: "money",
+       of: "onHandValueMinor"},
+      {label: "Damaged / blocked", field: "damagedValueMinor", format: "money",
+       of: "onHandValueMinor"},
+      // "Inventory by Health" donut. Four slices that partition the population.
       {label: "Healthy", field: "healthHealthyCells", format: "count"},
       {label: "At Risk", field: "healthAtRiskCells", format: "count"},
       {label: "Overstock", field: "healthOverstockCells", format: "count"},
@@ -337,35 +354,35 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {label: "Accelerate replenishment", field: "residualOnlyCells",
        format: "count"}
     ],
-    tables: [
-      // Reference order: Ageing Inventory, Inventory Risk by Category, then the
-      // full-width Location-Level table. The position projection cannot fill the
-      // first two, so every column renders its governed cell and keeps its header.
-      {heading: "Ageing Inventory", columns: [
-        {header: "Age Bucket", field: null},
-        {header: "SKUs", field: "skuId"},
-        {header: "Inventory Value", field: "onHandUnits", format: "units"},
+    // The three cards the reference draws at their own grain.
+    grouped: [
+      {heading: "Ageing Inventory", card: "buckets", columns: [
+        {header: "Age Bucket", field: "ageBucket"},
+        {header: "SKUs", field: "skus", format: "count"},
+        {header: "Inventory Value", field: "valueMinor", format: "money"},
         {header: "Sell-through", field: null},
-        {header: "Recommended Action", field: null}
+        {header: "Recommended Action", field: "markdownCells", format: "count"}
       ]},
-      {heading: "Inventory Risk by Category", columns: [
-        {header: "Category", field: "locationId"},
-        {header: "Value", field: "onHandUnits", format: "units"},
+      {heading: "Inventory Risk by Category", card: "categories", columns: [
+        {header: "Category", field: "category"},
+        {header: "Value", field: "valueMinor", format: "money"},
         {header: "Days of Supply", field: null},
-        {header: "Risk", field: "residualOnly", badge: true},
-        {header: "Action", field: null}
+        {header: "Risk", field: "riskClass", badge: true},
+        {header: "Action", field: "riskAction"}
       ]},
-      {heading: "Location-Level Inventory Performance", columns: [
+      {heading: "Location-Level Inventory Performance", card: "locations",
+       columns: [
         {header: "Location", field: "locationId"},
-        {header: "Type", field: "locationKind"},
-        {header: "Inventory Value", field: "onHandUnits", format: "units"},
-        {header: "Availability", field: "atpUnits", format: "units"},
-        {header: "Days of Supply", field: null},
-        {header: "Stock-out Risk", field: "residualOnly", badge: true},
-        {header: "Overstock", field: "committedUnits", format: "units"},
-        {header: "Priority Action", field: null}
+        {header: "Type", field: "locationKind", badge: true},
+        {header: "Inventory Value", field: "valueMinor", format: "money"},
+        {header: "Availability", field: "availabilityPct", format: "percent"},
+        {header: "Days of Supply", field: "coverDays", format: "days"},
+        {header: "Stock-out Risk", field: "stockoutRisk", badge: true},
+        {header: "Overstock", field: "overstockPct", format: "percent"},
+        {header: "Priority Action", field: "priorityAction"}
       ]}
-    ]
+    ],
+    tables: []
   },
   storeInventory: {
     title: "Store Inventory",
@@ -858,12 +875,68 @@ function reasonOf(row: Row): string {
 }
 
 /** The market currency for a slice, or null when it spans more than one. */
+/**
+ * The currency the served rows are actually denominated in.
+ *
+ * Read from the aggregate the read model published, not guessed from the
+ * market list -- `markets` names every market the BUNDLE covers, which is both
+ * of them, while the request is scoped to one. Guessing from that list rendered
+ * a rupee symbol over a figure the database had summed in dollars.
+ */
 function sliceCurrency(slice: InventorySlice): string {
-  return slice.markets.length === 1 && slice.markets[0].startsWith("india")
-    ? "INR"
-    : slice.markets.length === 1
-      ? "USD"
-      : "INR";
+  // The reporting currency the read model already converted every money figure
+  // into, using the publication's approved FX. Not inferred from the market
+  // list: `markets` names every market the BUNDLE covers, which is both of
+  // them, and guessing from it put a rupee symbol over a dollar sum.
+  if (slice.reportingCurrency) return slice.reportingCurrency;
+  const declared = slice.summary?.currencyCode;
+  if (typeof declared === "string" && declared.length === 3) return declared;
+  return "INR";
+}
+
+/** A grouped card: one row per category, per location, per bucket, per segment. */
+function GroupedCard({
+  spec, slice
+}: {spec: GroupedSpec; slice: InventorySlice}) {
+  const currency = sliceCurrency(slice);
+  const rows = (slice.cards?.[spec.card] ?? []) as Row[];
+  return (
+    <div className="card">
+      {spec.heading && (
+        <div className="card-head">
+          <h3>{spec.heading}</h3>
+          <span className="link-button" aria-hidden="true">
+            {`${rows.length} ${rows.length === 1 ? "group" : "groups"}`}
+          </span>
+        </div>
+      )}
+      <div className="table-scroll">
+        <table className="table" data-card-kind="grouped">
+          <thead>
+            <tr>
+              {spec.columns.map((column) => (
+                <th key={column.header}>{column.header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {spec.columns.map((column) => (
+                  <Cell
+                    key={column.header}
+                    column={column}
+                    row={row}
+                    currency={currency}
+                  />
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
@@ -1374,7 +1447,22 @@ function CardBlocks({
             }
             // A `rows` card: take the next declared table spec, so the reference's
             // column order drives what is rendered.
-            const table = screen.tables[rowsIndex++];
+            // A `rows` card is EITHER a grouped card or a row table. The
+            // reference's Inventory Overview is three grouped cards and no row
+            // table at all; consuming both lists in the same order keeps the
+            // reference's card sequence authoritative.
+            const index = rowsIndex++;
+            const grouped = screen.grouped?.[index];
+            if (grouped) {
+              return (
+                <GroupedCard
+                  key={key}
+                  spec={{...grouped, heading: card.heading ?? grouped.heading}}
+                  slice={slice}
+                />
+              );
+            }
+            const table = screen.tables[index - (screen.grouped?.length ?? 0)];
             if (!table) return null;
             return (
               <DataCard

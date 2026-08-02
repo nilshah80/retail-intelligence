@@ -445,6 +445,8 @@ export const inventorySliceSchema = z.object({
   }),
   policyVersion: z.string(),
   markets: z.array(z.string()),
+  // The currency every money figure in the payload is already converted to.
+  reportingCurrency: z.string().optional(),
   items: z.array(z.record(z.string(), z.unknown())),
   // SQL aggregates over every scoped row of the active version, for the KPI
   // tiles. Optional because a projection may declare none, and validated rather
@@ -462,10 +464,24 @@ export const inventorySliceSchema = z.object({
   // shows. A capped table is only honest if the reader knows what it is capped
   // to: "20 of 4,741" alone does not say whether those twenty are the worst
   // offenders or the first twenty SKU codes alphabetically.
-  ranking: z.string().optional()
+  ranking: z.string().optional(),
+  // Cards the reference draws at a grain that is NOT the projection's row grain
+  // -- one row per category, per location, per age bucket, per ABC segment. The
+  // read model groups them in SQL under the page's own scope and returns them
+  // here, so a screen stays one request and its cards cannot disagree with its
+  // table.
+  cards: z.record(
+    z.string(),
+    z.array(z.record(z.string(), z.unknown()))
+  ).optional()
 });
 
 export type InventorySlice = z.infer<typeof inventorySliceSchema>;
 
-export const loadInventorySlice = (endpoint: string) =>
-  get(endpoint, inventorySliceSchema);
+export const loadInventorySlice = (endpoint: string, marketId?: string) =>
+  get(
+    marketId
+      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}marketId=${encodeURIComponent(marketId)}`
+      : endpoint,
+    inventorySliceSchema
+  );

@@ -313,6 +313,38 @@ func (s *Store) FX() map[string]any {
 	}
 }
 
+// ReportingFX is the approved conversion the inventory read model needs to make
+// a cross-currency total legal: reporting currency, and quote-per-base for every
+// currency the publication declares a rate for. Read from the same business
+// controls `/api/v1/fx/rates` serves, so the screens and the aggregates convert
+// with one set of rates rather than two.
+//
+// The newest rate per base wins. A publication carries ten years of daily
+// observations and an inventory position is valued as of now, not as of 2016.
+func (s *Store) ReportingFX() (string, map[string]string) {
+	fx := mapValue(mapValue(s.publication, "businessControls"), "fx")
+	reporting, _ := fx["reportingCurrency"].(string)
+	rates := map[string]string{}
+	newest := map[string]string{}
+	observations, _ := fx["rates"].([]any)
+	for _, entry := range observations {
+		rate, _ := entry.(map[string]any)
+		base, _ := rate["baseCurrency"].(string)
+		quote, _ := rate["quoteCurrency"].(string)
+		value, _ := rate["rate"].(string)
+		asOf, _ := rate["rateDate"].(string)
+		if base == "" || quote != reporting || value == "" {
+			continue
+		}
+		if previous, seen := newest[base]; seen && previous >= asOf {
+			continue
+		}
+		newest[base] = asOf
+		rates[base] = value
+	}
+	return reporting, rates
+}
+
 func (s *Store) Gates() map[string]any {
 	return map[string]any{
 		"schemaVersion": "retail-quality-gates/v1",

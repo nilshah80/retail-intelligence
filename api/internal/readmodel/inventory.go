@@ -67,6 +67,12 @@ func InventoryReadErrorReason(err error) string {
 type InventoryConfig struct {
 	PostgresDSN string
 	DBReadPool  int
+	// Approved reporting FX from the publication's business controls, quote per
+	// unit of base. Policy v2 forbids a nominal sum across currencies, and this
+	// is the approval that lifts it -- without it the store refuses to add INR to
+	// USD and reports money per market instead of one enterprise figure.
+	ReportingCurrency string
+	FXToReporting     map[string]string
 }
 
 type InventoryStore struct {
@@ -81,6 +87,40 @@ type InventoryStore struct {
 	policyVersion       string
 	markets             []string
 	decisionAsOf        time.Time
+	reportingCurrency   string
+	fxToReporting       map[string]string
+}
+
+// fxExpr converts a money expression to the reporting currency inside SQL.
+//
+// In SQL rather than in the browser because the SUM has to be legal before it
+// leaves the database: adding INR minor units to USD minor units and converting
+// the total afterwards is not the same number, and it is the one policy v2
+// names outright.
+//
+// A currency with no approved rate contributes NULL, so an unconvertible market
+// drops out of the total rather than being added at par.
+func (s *InventoryStore) fxExpr(units string) string {
+	if len(s.fxToReporting) == 0 {
+		return fmt.Sprintf("SUM(%s::numeric * dim.unit_cost_minor)", units)
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, currency := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN dim.currency_code = '%s' THEN %s::numeric * dim.unit_cost_minor * %s",
+			currency, units, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("SUM(CASE %s END)", strings.Join(branches, " "))
+}
+
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func unavailableInventory(reasonCode, message string) *InventoryStore {
@@ -111,6 +151,8 @@ func LoadInventory(ctx context.Context, config InventoryConfig) *InventoryStore 
 		maxConns = 4
 	}
 	poolConfig.MaxConns = int32(maxConns)
+	reportingCurrency := config.ReportingCurrency
+	fxToReporting := config.FXToReporting
 	poolConfig.MinConns = 0
 	poolConfig.MaxConnIdleTime = 5 * time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
@@ -163,6 +205,8 @@ func LoadInventory(ctx context.Context, config InventoryConfig) *InventoryStore 
 	}
 	var store InventoryStore
 	store.pool = pool
+	store.reportingCurrency = reportingCurrency
+	store.fxToReporting = fxToReporting
 	if err := pool.QueryRow(
 		ctx,
 		`SELECT inventory_version_id, inventory_run_id,
@@ -384,6 +428,10 @@ func (s *InventoryStore) envelope(schemaVersion string) map[string]any {
 		},
 		"policyVersion": s.policyVersion,
 		"markets":       append([]string(nil), s.markets...),
+		// The currency every money figure in this payload is expressed in, after
+		// conversion. Published so the UI renders the symbol the number actually
+		// carries instead of inferring one from the market list.
+		"reportingCurrency": s.reportingCurrency,
 	}
 }
 
@@ -497,6 +545,20 @@ func (s *InventoryStore) tableSlice(
 		}
 		payload["summary"] = summary
 	}
+	// The grouped cards, at the grains the reference draws them. One request per
+	// screen still: a second browser call could apply a different scope and the
+	// page would disagree with itself.
+	if cards := groupedCards[table]; len(cards) > 0 {
+		rendered := make(map[string]any, len(cards))
+		for _, card := range cards {
+			grouped, err := s.groupedCard(ctx, card, filters)
+			if err != nil {
+				return nil, err
+			}
+			rendered[card.name] = grouped
+		}
+		payload["cards"] = rendered
+	}
 	return payload, nil
 }
 
@@ -572,6 +634,226 @@ var (
 	}
 )
 
+// A card the reference draws at a grain that is NOT the projection's row grain.
+//
+// This is the defect the whole file was shaped around and did not admit: the
+// read model knew one shape -- a page of rows plus a scalar summary -- and six
+// reference cards are GROUP BY tables. "Inventory Risk by Category" has four
+// rows, one per category. "Location-Level Inventory Performance" has one row per
+// LOCATION, as its title says. "Ageing Inventory" has one row per age bucket
+// with a SKU COUNT in it. Served at row grain they showed a location id under a
+// Category header and a SKU id under a Location header, which is not a rounding
+// error in the layout -- it is a different table.
+type groupedCard struct {
+	// Key the UI reads the card by, and the key it appears under in `cards`.
+	name string
+	// FROM, including any join the card's columns need.
+	source string
+	// The GROUP BY, and the leading columns of the projection.
+	groupBy string
+	// Everything after the grouping columns, already aggregated.
+	columns string
+	orderBy string
+	limit   int
+}
+
+// The money join. Every card that reports currency needs a unit cost, and the
+// cost lives one join away in the dimension published by migration 0011.
+//
+// A row whose SKU has no accepted cost contributes NULL, not zero, and SUM skips
+// it -- so an uncosted cell understates a total rather than silently valuing
+// itself at nothing. `costedUnits` is published beside every money figure so a
+// reader can see the coverage the number rests on.
+const costJoin = `LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+	USING (inventory_version_id, market_id, location_id, sku_id)`
+
+// The reference draws Ageing Inventory on the Inventory Overview AND on the
+// Inventory Ageing page. A card names its own source, so one declaration serves
+// both rather than two that can drift.
+var ageingBucketCard = groupedCard{
+	// "Ageing Inventory". Four rows, one per bucket, with a SKU COUNT --
+	// not one row per SKU with the bucket name repeated down a column.
+	name:    "buckets",
+	source:  "retail_serving.inventory_ageing " + costJoin,
+	groupBy: "age_bucket",
+	columns: `COUNT(DISTINCT sku_id) AS skus,
+SUM(on_hand_units) AS on_hand_units,
+%[1]s AS value_minor,
+COUNT(*) FILTER (WHERE action = 'markdown_candidate') AS markdown_cells,
+-- The action escalates with AGE, which is what the reference's ladder
+-- shows: monitor, optimise, transfer, clear. Testing the markdown
+-- candidate count first made every bucket read "Markdown / clearance",
+-- because every bucket contains at least one candidate.
+CASE age_bucket
+	WHEN '0-30' THEN 'Monitor'
+	WHEN '30-60' THEN 'Optimize replenishment'
+	WHEN '60-90' THEN 'Transfer / promote'
+	ELSE 'Markdown / clearance'
+END AS recommended_action,
+MAX(dim.currency_code) AS currency_code`,
+	// Oldest first, and by bucket ORDER not alphabetically: '180-plus'
+	// sorts before '30-60' as text.
+	orderBy: `CASE age_bucket WHEN '0-30' THEN 0 WHEN '30-60' THEN 1
+WHEN '60-90' THEN 2 WHEN '90-180' THEN 3 ELSE 4 END`,
+	limit: 20,
+}
+
+var groupedCards = map[string][]groupedCard{
+	"inventory_positions": {
+		ageingBucketCard,
+		{
+			// "Location-Level Inventory Performance". One row per location, as
+			// the title says. Type, value, availability, cover, risk, overstock.
+			name: "locations",
+			source: "retail_serving.inventory_positions " + costJoin + `
+				LEFT JOIN retail_serving.inventory_stock_health AS health
+				USING (inventory_version_id, market_id, location_id, sku_id)`,
+			groupBy: "market_id, location_id, location_kind",
+			columns: `SUM(on_hand_units) AS on_hand_units,
+				%[1]s AS value_minor,
+				SUM(atp_units) AS atp_units,
+				-- Availability is served units over held units, per location.
+				CASE WHEN SUM(on_hand_units) > 0
+					THEN SUM(atp_units)::numeric / SUM(on_hand_units) END
+					AS availability_pct,
+				AVG(health.cover_days) AS cover_days,
+				CASE WHEN COUNT(*) > 0 THEN
+					COUNT(*) FILTER (WHERE health.health_class = 'overstock')::numeric
+					/ COUNT(*) END AS overstock_pct,
+				-- The reference badges a location Low/Medium/High. Derived from
+				-- the health engine's own classes, not from a threshold invented
+				-- here: any stock-out is High, thin cover is Medium, else Low.
+				CASE
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+						THEN 'High'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
+						THEN 'Medium'
+					ELSE 'Low'
+				END AS stockout_risk,
+				CASE
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+						THEN 'Replenish immediately'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
+						THEN 'Transfer + markdown'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'dead') > 0
+						THEN 'Review ageing stock'
+					ELSE 'Maintain'
+				END AS priority_action,
+				COUNT(*) AS cells,
+				COUNT(dim.unit_cost_minor) AS costed_cells,
+				MAX(dim.currency_code) AS currency_code`,
+			orderBy: "%[1]s DESC NULLS LAST, market_id, location_id",
+			limit:   20,
+		},
+		{
+			// "Inventory Risk by Category". Four rows in the reference, one per
+			// product category -- the thing that had no source at all until the
+			// dimension existed.
+			name: "categories",
+			source: "retail_serving.inventory_positions " + costJoin + `
+				LEFT JOIN retail_serving.inventory_stock_health AS health
+				USING (inventory_version_id, market_id, location_id, sku_id)`,
+			groupBy: "dim.category",
+			columns: `SUM(on_hand_units) AS on_hand_units,
+				%[1]s AS value_minor,
+				SUM(atp_units) AS atp_units,
+				AVG(health.cover_days) AS cover_days,
+				CASE
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+						THEN 'Expiry Risk'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
+						THEN 'Watch'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
+						THEN 'Mixed'
+					ELSE 'Healthy'
+				END AS risk_class,
+				CASE
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'stockout') > 0
+						THEN 'Promote near expiry'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'understock') > 0
+						THEN 'Target transfers'
+					WHEN COUNT(*) FILTER (WHERE health.health_class = 'overstock') > 0
+						THEN 'Replenish top sellers'
+					ELSE 'Protect availability'
+				END AS risk_action,
+				COUNT(*) AS cells,
+				COUNT(dim.unit_cost_minor) AS costed_cells,
+				MAX(dim.currency_code) AS currency_code`,
+			orderBy: "%[1]s DESC NULLS LAST, dim.category",
+			limit:   20,
+		},
+	},
+	"inventory_ageing": {ageingBucketCard},
+	"inventory_valuation": {
+		{
+			// "Valuation by Category" -- already at category grain in the
+			// projection, so this only needs the rollup across locations.
+			name:    "categories",
+			source:  "retail_serving.inventory_valuation",
+			groupBy: "category",
+			columns: `SUM(gross_value_minor) AS value_minor,
+				SUM(wms_variance_units) AS wms_variance_units,
+				COUNT(*) AS rows_in_group,
+				COUNT(*) FILTER (WHERE gross_value_minor IS NULL) AS unvalued_rows,
+				MAX(currency_code) AS currency_code`,
+			orderBy: "SUM(gross_value_minor) DESC NULLS LAST, category",
+			limit:   20,
+		},
+	},
+	"inventory_stock_health": {
+		{
+			// Per-location health, which the store heatmap and the overview's
+			// location card both read for cover days and risk mix.
+			name:    "locations",
+			source:  "retail_serving.inventory_stock_health",
+			groupBy: "market_id, location_id",
+			columns: `AVG(cover_days) AS cover_days,
+				COUNT(*) AS cells,
+				COUNT(*) FILTER (WHERE health_class = 'overstock') AS overstock_cells,
+				COUNT(*) FILTER (WHERE health_class = 'understock') AS understock_cells,
+				COUNT(*) FILTER (WHERE health_class = 'stockout') AS stockout_cells,
+				COUNT(*) FILTER (WHERE health_class = 'dead') AS dead_cells`,
+			orderBy: "market_id, location_id",
+			limit:   50,
+		},
+	},
+	"replenishment_safety_stock": {
+		{
+			// "Policy Segment" is the ABC class -- "A / High Velocity" -- with a
+			// SKU count and a buffer VALUE. Two rows in the reference, not 4,741.
+			name: "segments",
+			source: `retail_serving.replenishment_safety_stock
+				LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+				USING (inventory_version_id, market_id, location_id, sku_id)`,
+			groupBy: "abc_class",
+			columns: `COUNT(DISTINCT sku_id) AS skus,
+				AVG(service_level) AS service_level,
+				SUM(safety_stock_units) AS safety_stock_units,
+				%[2]s AS value_minor,
+				COUNT(*) FILTER (WHERE interval_available) AS assessed_cells,
+				COUNT(*) AS cells,
+				MAX(dim.currency_code) AS currency_code`,
+			orderBy: `CASE abc_class WHEN 'A' THEN 0 WHEN 'B' THEN 1 WHEN 'C' THEN 2
+				ELSE 3 END`,
+			limit: 20,
+		},
+	},
+	"replenishment_recommendations": {
+		{
+			// "Lead-Time Risk" -- per supply source, not per recommendation.
+			name:    "leadTime",
+			source:  `retail_serving.replenishment_recommendations`,
+			groupBy: "market_id, supply_location_id",
+			columns: `COUNT(*) AS cells,
+				COUNT(*) FILTER (WHERE recommended_units > 0) AS orders,
+				SUM(recommended_units) AS recommended_units,
+				COUNT(*) FILTER (WHERE NOT interval_available) AS withheld_cells`,
+			orderBy: "COUNT(*) FILTER (WHERE recommended_units > 0) DESC, market_id, supply_location_id",
+			limit:   20,
+		},
+	},
+}
+
 // A companion projection whose aggregates a dashboard screen also needs.
 type dashboardCompanion struct {
 	table  string
@@ -631,6 +913,7 @@ var filterableColumns = map[string]map[string]bool{
 	"inventory_ageing":              {"market_id": true, "location_id": true, "sku_id": true},
 	"inventory_expiry_waste":        {"market_id": true, "location_id": true, "sku_id": true},
 	"inventory_valuation":           {"market_id": true, "location_id": true, "category": true},
+	"inventory_sku_dimension":       {"market_id": true, "location_id": true, "sku_id": true, "category": true},
 	"inventory_valuation_by_kind":   {"market_id": true, "location_id": true, "category": true},
 	"replenishment_recommendations": {"market_id": true, "sku_id": true},
 	"replenishment_safety_stock":    {"market_id": true, "location_id": true, "sku_id": true},
@@ -842,6 +1125,23 @@ var inventoryAggregates = map[string]map[string]string{
 	},
 }
 
+// moneyAggregates names, per projection, the unit column behind each money
+// figure. The expression itself is built per request by `fxExpr`, because the
+// conversion depends on the approved reporting FX the store was given.
+//
+// Every one of these renders as rupees in the reference and rendered a unit
+// count here until migration 0011 published a cost to multiply by.
+var moneyAggregates = map[string]map[string]string{
+	"inventory_positions": {
+		"onHandValueMinor":    "on_hand_units",
+		"atpValueMinor":       "atp_units",
+		"inTransitValueMinor": "in_transit_units",
+		"reservedValueMinor":  "reserved_units",
+		"damagedValueMinor":   "damaged_units",
+		"onOrderValueMinor":   "on_order_units",
+	},
+}
+
 // aggregateSource overrides the FROM for one projection's aggregate. Only
 // declared where a KPI compares two projections cell for cell: "Below Safety
 // Stock" is a comparison of the buffer against the position holding it, and
@@ -856,6 +1156,13 @@ var inventoryAggregates = map[string]map[string]string{
 // Written as a join rather than a correlated subquery for a measured reason: the
 // subquery form took 778ms per request against this projection, the join 8ms.
 var aggregateSource = map[string]string{
+	// The enterprise money tiles. On-Hand Inventory, Available to Promise and
+	// Inventory in Transit are all rupees in the reference and were all unit
+	// counts here, because the positions projection carries no cost.
+	"inventory_positions": `retail_serving.inventory_positions
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+		USING (inventory_version_id, market_id, location_id, sku_id)`,
+
 	"replenishment_safety_stock": `retail_serving.replenishment_safety_stock
 		LEFT JOIN retail_serving.inventory_positions AS position
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
@@ -897,6 +1204,27 @@ func (s *InventoryStore) aggregate(
 	if !present {
 		return nil, nil
 	}
+	// Money is built here, not in the static map, because the conversion depends
+	// on the approved FX this store was constructed with.
+	if money, wanted := moneyAggregates[table]; wanted {
+		merged := make(map[string]string, len(expressions)+len(money))
+		for name, expression := range expressions {
+			merged[name] = expression
+		}
+		for name, units := range money {
+			merged[name] = s.fxExpr(units)
+		}
+		merged["costedCells"] = "COUNT(dim.unit_cost_minor)"
+		merged["currencyCount"] = "COUNT(DISTINCT dim.currency_code)"
+		merged["categories"] = "COUNT(DISTINCT dim.category)"
+		if table == "inventory_positions" {
+			merged["storeValueMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE location_kind = 'store')"
+			merged["dcValueMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE location_kind IN ('dc', '3pl'))"
+		}
+		expressions = merged
+	}
 	source, joined := aggregateSource[table]
 	if !joined {
 		source = "retail_serving." + table
@@ -929,6 +1257,76 @@ func (s *InventoryStore) aggregate(
 		summary[name] = values[index]
 	}
 	return summary, nil
+}
+
+// groupedCard runs one card's GROUP BY under the request's own scope.
+//
+// Scoped through the same typed filters as the page, so a market filter narrows
+// the cards and the table together. A filter the card's source cannot express is
+// dropped with its argument rather than failing the request.
+func (s *InventoryStore) groupedCard(
+	ctx context.Context, card groupedCard, filters []inventoryFilter,
+) ([]map[string]any, error) {
+	base := card.source
+	if index := strings.IndexAny(base, " \n\t"); index > 0 {
+		base = base[:index]
+	}
+	base = strings.TrimPrefix(base, "retail_serving.")
+	columns := filterableColumns[base]
+	// A card joined to the dimension can be scoped by category even when its own
+	// projection has no such column.
+	joinsDimension := strings.Contains(card.source, "inventory_sku_dimension")
+	clauses := []string{"inventory_version_id = $1"}
+	args := []any{s.inventoryVersionID}
+	for _, filter := range filters {
+		column := filter.column
+		switch {
+		case columns[column]:
+		case joinsDimension && column == "category":
+			column = "dim.category"
+		default:
+			continue
+		}
+		args = append(args, filter.value)
+		clauses = append(clauses, fmt.Sprintf(
+			"%s %s $%d", column, filter.operator, len(args),
+		))
+	}
+	args = append(args, card.limit)
+	// A card's money columns carry %[1]s / %[2]s placeholders so the FX
+	// conversion is applied with this store's approved rates rather than baked
+	// into a literal at package scope.
+	onHandValue := s.fxExpr("on_hand_units")
+	bufferValue := s.fxExpr("safety_stock_units")
+	// Replacement, not Sprintf: a card whose columns carry no placeholder would
+	// otherwise pick up "%!(EXTRA string=...)" and ship it into the SQL.
+	replace := strings.NewReplacer("%[1]s", onHandValue, "%[2]s", bufferValue)
+	cardColumns := replace.Replace(card.columns)
+	cardOrderBy := replace.Replace(card.orderBy)
+	statement := fmt.Sprintf(
+		"SELECT %s, %s FROM %s WHERE %s GROUP BY %s ORDER BY %s LIMIT $%d",
+		card.groupBy, cardColumns, card.source,
+		strings.Join(clauses, " AND "), card.groupBy, cardOrderBy, len(args),
+	)
+	rows, err := s.pool.Query(ctx, statement, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	fields := rows.FieldDescriptions()
+	out := make([]map[string]any, 0, card.limit)
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			return nil, err
+		}
+		row := make(map[string]any, len(fields))
+		for index := range fields {
+			row[snakeToCamel(string(fields[index].Name))] = values[index]
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 func snakeToCamel(name string) string {
