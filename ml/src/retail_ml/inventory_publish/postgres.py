@@ -38,7 +38,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: 0010 adds the inventory serving surface. Materializing against 0009 would load
 #: evidence into tables that do not exist; against a later head, into tables whose
 #: constraints this writer has not been checked against.
-MIGRATION_REVISION: Final[str] = "0013_sku_dimension_names"
+MIGRATION_REVISION: Final[str] = "0014_warehouse_capacity"
 
 
 class InventoryServingError(RuntimeError):

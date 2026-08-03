@@ -271,6 +271,12 @@ def _inputs(**overrides: Any) -> InventoryInputs:
              "sku_id": "sku-1", "requested_units": 10},
         ]
     )
+    warehouse_capacity = pd.DataFrame(
+        [
+            {"market_id": MARKET, "location_id": DC, "capacity_units": 750_000,
+             "snapshot_date": AS_OF},
+        ]
+    )
     fields: dict[str, Any] = {
         "as_of": AS_OF,
         "positions": positions,
@@ -283,6 +289,7 @@ def _inputs(**overrides: Any) -> InventoryInputs:
         "lanes": [dict(lane) for lane in LANES],
         "supply_terms": [dict(term) for term in SUPPLY_TERMS],
         "suppliers": suppliers,
+        "warehouse_capacity": warehouse_capacity,
         "channel_demand": channel_demand,
         "policy": POLICIES,
         "currency_by_market": CURRENCIES,

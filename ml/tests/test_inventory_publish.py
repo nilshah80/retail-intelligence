@@ -7,7 +7,7 @@ refuse is a gate nobody has tested -- only a comment.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Callable
@@ -367,6 +367,19 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "meanInventoryUnits",
                 )
                 for cohort in ("calibration", "holdout")
+            ]
+        ),
+        # One row per warehouse, not per snapshot date: the run publishes the
+        # latest ceiling its origin admits, and the grain check rejects a second
+        # row for the same node.
+        "inventory_warehouse_capacity": stack(
+            lambda market: [
+                {
+                    "market_id": market,
+                    "location_id": f"{market}-dc-1",
+                    "capacity_units": 750_000,
+                    "snapshot_date": date(2026, 7, 28),
+                }
             ]
         ),
     }

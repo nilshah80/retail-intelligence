@@ -113,6 +113,7 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "inventory_ageing": "retail-inventory-ageing/v1",
     "inventory_expiry_waste": "retail-inventory-expiry-waste/v1",
     "inventory_sku_dimension": "retail-inventory-sku-dimension/v1",
+    "inventory_warehouse_capacity": "retail-inventory-warehouse-capacity/v1",
     "inventory_valuation": "retail-inventory-valuation/v1",
     "replenishment_recommendations": "retail-replenishment-recommendations/v1",
     "replenishment_safety_stock": "retail-replenishment-safety-stock/v1",
@@ -276,6 +277,17 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "incumbent_value",
         "passed",
     ),
+    # The storage ceiling per warehouse, which utilisation has no denominator
+    # without. `used_units` is deliberately not carried: the source's used figure
+    # IS the on-hand the position artifact already publishes -- identical to the
+    # unit at both India DCs -- and a second copy of it could disagree with the
+    # holding the same screen values beside it.
+    "inventory_warehouse_capacity": (
+        "market_id",
+        "location_id",
+        "capacity_units",
+        "snapshot_date",
+    ),
 }
 
 #: The grain of each artifact. Duplicates on these columns mean two rows claim the
@@ -315,6 +327,7 @@ ARTIFACT_GRAIN: Final[dict[str, tuple[str, ...]]] = {
         "exception_class",
     ),
     "inventory_replay_metrics": ("market_id", "metric", "cohort"),
+    "inventory_warehouse_capacity": ("market_id", "location_id"),
 }
 
 class IntervalGate(NamedTuple):

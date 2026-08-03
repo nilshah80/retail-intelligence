@@ -203,7 +203,7 @@ describe("inventory & replenishment destinations", () => {
 
   it("renders live rows bound to the served envelope when a bundle is active", async () => {
     const payload = {
-      schemaVersion: "retail-inventory-positions/v1",
+      schemaVersion: "retail-inventory-expiry-waste/v1",
       dataMode: "live",
       inventoryRunId: "ir_0123456789abcdef",
       inventoryVersionId: "iv_0123456789abcdef",
@@ -219,13 +219,14 @@ describe("inventory & replenishment destinations", () => {
           marketId: "india-west",
           locationId: "india-west:mumbai-bandra",
           locationName: "Mumbai Distribution Centre",
-          locationType: "Warehouse",
           productName: "Test Product",
-          categoryLabel: "Grocery",
           skuId: "sku-1",
-          onHandUnits: 42,
-          atpUnits: 40,
-          residualOnly: false
+          expiringUnits: 37,
+          expiredUnits: 42,
+          wasteUnits: 42,
+          expiryWindow: "Expired",
+          wastePriority: "High",
+          valueMinor: 123456
         }
       ],
       pagination: {offset: 0, limit: 100, total: 1}
@@ -233,12 +234,19 @@ describe("inventory & replenishment destinations", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true, json: async () => payload
     }));
-    // Warehouse Inventory, not Store Inventory: the reference's store page has
-    // exactly one rows card and it is the per-STORE heatmap, which is grouped.
-    renderPage("warehouseInventory");
+    // Expiry & Waste, because it is a rows page that names a LOCATION. Warehouse
+    // Inventory used to be this test's subject and is no longer a rows page at
+    // all: the reference draws it as three warehouses, so it is now a grouped
+    // card, and Store Inventory's only rows card is likewise the per-STORE
+    // heatmap.
+    renderPage("expiryWaste");
 
     const table = await findRowsTable();
-    expect(within(table).getByText("42")).toBeInTheDocument();
+    // The EXPIRING count, which is what the Units column binds: the page is about
+    // stock still sellable, its headline tile totals the near-expiry holding, and
+    // the Value beside this column is that same holding at cost. Probed with a
+    // distinctive number so it cannot pass on some other cell's digits.
+    expect(within(table).getByText("37")).toBeInTheDocument();
     // The NAME, not the identifier. Every reference table names a node --
     // "Phoenix Market City, Mumbai", "West DC, Ahmedabad" -- and shipping
     // "india-west:mumbai-bandra" put a database key in front of a buyer.
@@ -246,8 +254,6 @@ describe("inventory & replenishment destinations", () => {
       .toBeInTheDocument();
     expect(within(table).queryByText("india-west:mumbai-bandra"))
       .not.toBeInTheDocument();
-    // A false boolean renders as "No", never as a blank that reads like absence.
-    expect(within(table).getByText("No")).toBeInTheDocument();
   });
 
   it("renders a null cell as Not available rather than blank or zero", async () => {

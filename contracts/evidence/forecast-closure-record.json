@@ -12,25 +12,25 @@
     },
     "passed": true,
     "perCohortCoverage": {
-      "cold_start": 0.8603351955307262,
+      "cold_start": 0.8991239207719655,
       "established_history": 0.9046994243312472
     },
     "schemaVersion": "retail-forecast-acceptance/v5"
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_90c168fad5cd9c0b",
-    "forecastVersionId": "fv_403c5e5fca3fb227",
+    "forecastRunId": "fr_a08dfd164b77ac34",
+    "forecastVersionId": "fv_b0a75559c2a1fb40",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "4b34169b57fc050b5e5bfc395a2545fd448e0f78f58c55cd618dc69d3fd6da44"
+    "runSemanticFingerprint": "a95cd7e6d2f483a24f75ac155126adc9f9c2d825a33425f9507aa6654d79fc52"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "c85e38b884ed1e013f732fd1ab0cd51915f7f20b08da4a0f1f7561ff9512bc50",
-    "forecast_acceptance.json": "cc03472ad568aa4ed2aedaf87eebb96cb40cf49951b1403bcc60b0b0d507aa64"
+    "forecast-run-manifest.json": "0b93e89f92509a0fd58729e1ddc8bcb57525ec87795c29e903de7a09b42c63bf",
+    "forecast_acceptance.json": "fbbe3b93b00be57171f0ce7e4b57122f9b8ffca2cb65c1be4434103909e8dd4e"
   },
   "authorityLedger": {
-    "currentEventId": 14,
-    "currentPriorEventId": null,
+    "currentEventId": 23,
+    "currentPriorEventId": 22,
     "events": [
       {
         "activationScopeFingerprint": "04c9019b638a138dbdb55839bcdf7eff7e95d108acabb4cb17f85accc6b3d8ee",
@@ -141,6 +141,86 @@
         "priorEventId": null,
         "recordedAt": "2026-08-02 07:15:59.496705+00",
         "versionId": "fv_403c5e5fca3fb227"
+      },
+      {
+        "activationScopeFingerprint": "0a2ddf98c5509272150003869879c2666bb5ebf76ca1ea408d98565a082ff930",
+        "actor": "nilayshah",
+        "eventId": 15,
+        "eventType": "superseded",
+        "forecastRunId": "fr_90c168fad5cd9c0b",
+        "priorEventId": 14,
+        "recordedAt": "2026-08-02 14:54:55.072953+00",
+        "versionId": "fv_403c5e5fca3fb227"
+      },
+      {
+        "activationScopeFingerprint": "8cb68a56813f774d7c27d90eafa4db3de38544bd2e22956cb8b2cb96bf83ac23",
+        "actor": "nilayshah",
+        "eventId": 16,
+        "eventType": "active",
+        "forecastRunId": "fr_3232ac28a6065541",
+        "priorEventId": null,
+        "recordedAt": "2026-08-02 14:54:55.072953+00",
+        "versionId": "fv_77b645e52357264d"
+      },
+      {
+        "activationScopeFingerprint": "8cb68a56813f774d7c27d90eafa4db3de38544bd2e22956cb8b2cb96bf83ac23",
+        "actor": "nilayshah",
+        "eventId": 18,
+        "eventType": "superseded",
+        "forecastRunId": "fr_3232ac28a6065541",
+        "priorEventId": 16,
+        "recordedAt": "2026-08-02 20:52:31.496585+00",
+        "versionId": "fv_77b645e52357264d"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 19,
+        "eventType": "active",
+        "forecastRunId": "fr_2f4483c0bc9df184",
+        "priorEventId": null,
+        "recordedAt": "2026-08-02 20:52:31.496585+00",
+        "versionId": "fv_472a1200b9f106ae"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 20,
+        "eventType": "superseded",
+        "forecastRunId": "fr_2f4483c0bc9df184",
+        "priorEventId": 19,
+        "recordedAt": "2026-08-03 13:04:15.235887+00",
+        "versionId": "fv_472a1200b9f106ae"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 21,
+        "eventType": "active",
+        "forecastRunId": "fr_74151e73fd4227b4",
+        "priorEventId": 20,
+        "recordedAt": "2026-08-03 13:04:15.235887+00",
+        "versionId": "fv_a5e0195b4a29d476"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 22,
+        "eventType": "superseded",
+        "forecastRunId": "fr_74151e73fd4227b4",
+        "priorEventId": 21,
+        "recordedAt": "2026-08-03 14:07:22.68371+00",
+        "versionId": "fv_a5e0195b4a29d476"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 23,
+        "eventType": "active",
+        "forecastRunId": "fr_a08dfd164b77ac34",
+        "priorEventId": 22,
+        "recordedAt": "2026-08-03 14:07:22.68371+00",
+        "versionId": "fv_b0a75559c2a1fb40"
       }
     ],
     "nullPredecessorEventIds": [
@@ -148,16 +228,19 @@
       2,
       7,
       12,
-      14
+      14,
+      16,
+      19
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": [
       3,
       4,
-      10
+      10,
+      17
     ]
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_r2",
+  "bundlePath": "ml/data/artifacts/forecast_run_r4",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -274,10 +357,10 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "38e6ce74128b77c3eac099ba0b30e62867a3ea267af13f7de14e731882080b58",
-    "gateBSemanticFingerprint": "6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67",
-    "publicationSemanticFingerprint": "5e7bc174f1b2b82aaf3cfd8d8dfc60382cca77d107049811e8fd3eadfe6cbc93",
-    "sourceSnapshotId": "a92f025475f24949178526341c2c2176468620e7762d08a78925d8eaebfe98d2"
+    "gateASemanticFingerprint": "34943ce8c8a181c05315534943704672d67a29d90e243feebdb8dca895363e27",
+    "gateBSemanticFingerprint": "9c545e1afe7a5661f934a4faac03e090ca4d0716f6144af6d12bf2d5f9416c20",
+    "publicationSemanticFingerprint": "e160d12a2b41b0c6dfdc37932a67618d6c99cd6aadccea99c1248c1c013f01de",
+    "sourceSnapshotId": "0634b07949b495d2bc2de1598f7ca14d324150252a0e9b50704ff984704a25bd"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
@@ -295,7 +378,7 @@
     "servedRows": 52884,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0010_inventory_serving",
+      "servingMigration": "0013_sku_dimension_names",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -303,51 +386,87 @@
     "withheldShareOfServed": "0.16557"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "0a2ddf98c5509272150003869879c2666bb5ebf76ca1ea408d98565a082ff930",
-    "forecastRunId": "fr_90c168fad5cd9c0b",
-    "forecastVersionId": "fv_403c5e5fca3fb227"
+    "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+    "forecastRunId": "fr_a08dfd164b77ac34",
+    "forecastVersionId": "fv_b0a75559c2a1fb40"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0013_sku_dimension_names",
+  "servingMigration": "0014_warehouse_capacity",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": [
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_final",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_b2ef3d33f398095b",
       "forecastVersionId": "fv_23722eff8e3b8995",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_final2",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_357575f586905b11",
       "forecastVersionId": "fv_3d66e3bd9939430d",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_rebuild",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_90c168fad5cd9c0b",
+      "forecastVersionId": "fv_403c5e5fca3fb227",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_2f4483c0bc9df184",
+      "forecastVersionId": "fv_472a1200b9f106ae",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_3232ac28a6065541",
+      "forecastVersionId": "fv_77b645e52357264d",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_422e1113355eb05b",
       "forecastVersionId": "fv_86cd60c37be7e203",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_tenyear",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_74151e73fd4227b4",
+      "forecastVersionId": "fv_a5e0195b4a29d476",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_5f6fa2015d80eee5",
       "forecastVersionId": "fv_ba2791b4273e3b4f",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,

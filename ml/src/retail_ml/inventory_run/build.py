@@ -149,6 +149,9 @@ class InventoryInputs:
     #: market_id, supplier_id, otd_rate, lead_time_mean_days,
     #: lead_time_std_days, capacity_confirmed_pct -- all on a 0..1 scale
     suppliers: pd.DataFrame
+    #: market_id, location_id, capacity_units, snapshot_date -- one row per
+    #: warehouse, at the latest snapshot the origin admits
+    warehouse_capacity: pd.DataFrame
     #: market_id, location_id, channel_id, sku_id, requested_units
     channel_demand: pd.DataFrame
     #: per-market resolved policy, keyed by market_id
@@ -1475,6 +1478,29 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
     )
 
 
+def _build_warehouse_capacity(inputs: InventoryInputs) -> pd.DataFrame:
+    """Pass the loaded ceiling through at the grain the screen reads it.
+
+    Nothing is derived here on purpose. Utilisation is a ratio of the position
+    holding to this ceiling, and computing it in the artifact would freeze a
+    numerator that the read model scopes per market and location -- the rate
+    belongs where the holding is aggregated, not beside the denominator.
+    """
+
+    rows = [
+        {
+            "market_id": str(record.market_id),
+            "location_id": str(record.location_id),
+            "capacity_units": int(record.capacity_units),
+            "snapshot_date": record.snapshot_date,
+        }
+        for record in inputs.warehouse_capacity.itertuples(index=False)
+    ]
+    return pd.DataFrame(
+        rows, columns=list(ARTIFACT_COLUMNS["inventory_warehouse_capacity"])
+    )
+
+
 def _label(slug: str) -> str:
     """A hyphenated source slug as a readable label.
 
@@ -1735,6 +1761,7 @@ def build_artifacts(
         "replenishment_suppliers": suppliers,
         "replenishment_exceptions": exception_frame,
         "inventory_replay_metrics": replay_metrics,
+        "inventory_warehouse_capacity": _build_warehouse_capacity(inputs),
     }
     for name, frame in artifacts.items():
         artifacts[name] = frame[list(ARTIFACT_COLUMNS[name])].reset_index(drop=True)

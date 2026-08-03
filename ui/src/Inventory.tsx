@@ -149,20 +149,28 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
     when: "when the reconstruction reproduces observed stock and a candidate strictly improves on the incumbent"
   },
   NRV_UNAVAILABLE: {
-    why: "net realizable value is a forward selling price net of disposal cost, and the platform holds acquisition cost rather than an expected recovery price",
-    when: "when a pricing-floor policy supplies the recovery price; a finance figure is not estimated without one"
+    why: "the resolved inventory policy declares valuation.nrvAndProvisions as unavailable_pending_markdown_policy, so net realizable value has no approved basis on this bundle -- and the platform holds acquisition cost rather than the expected recovery price NRV is measured against",
+    when: "when a markdown and NRV policy is approved and resolved into the policy bundle; a ledger figure is not estimated ahead of the approval that governs it"
   },
-  PROVISION_NEEDS_SKU_COST: {
-    // Deliberately specific. The markdown policy IS approved and IS applied --
-    // the ageing engine marks 2,128 candidate cells at 10 per cent -- so a
-    // generic "needs a policy" would be wrong, and would send a finance reader
-    // looking for an approval that already exists.
-    why: "the markdown is applied per SKU while inventory is valued per category, so the provision cannot be costed without spreading a category's value across its SKUs",
-    when: "when valuation is published at SKU grain; a spread provision would be an estimate presented as a ledger figure"
+  // Two distinct absences, not one. The waste artifact's `exposure_minor` is
+  // NULL on every row -- so there is no published figure to show -- AND what
+  // could be recovered from near-expiry stock needs a recovery price the
+  // platform does not hold. Filling it from acquisition cost would answer
+  // "what did this cost us" under a caption asking "what can we get back".
+  RECOVERY_VALUE_NOT_PUBLISHED: {
+    why: "the waste artifact publishes an exposure column that is empty on every row, and a recovery figure needs an expected recovery price rather than the acquisition cost the platform holds",
+    when: "when the waste engine populates exposure, or a pricing-floor policy supplies a recovery price for expiring stock"
   },
-  PO_VALUE_NOT_PROJECTED: {
-    why: "no purchase order exists yet -- these are recommendations, and an order carries a value only once it is raised against agreed terms",
-    when: "when recommendations are converted to purchase orders"
+  // Not a costing gap. The figure is computable and was measured: 1,873 ageing
+  // cells are marked markdown_candidate, 1,749 of them carry a SKU-grain cost,
+  // and the depth is published per row -- Rs 6.49 Cr nominal. What is missing is
+  // the APPROVAL. The earlier text said the markdown policy "IS approved and IS
+  // applied", which inverted the one fact that governs this tile: markdownPct is
+  // the ageing ladder's recommended depth, not an approved provisioning rate,
+  // and the resolved policy withholds provisions explicitly.
+  PROVISION_PENDING_MARKDOWN_POLICY: {
+    why: "the resolved inventory policy declares valuation.nrvAndProvisions as unavailable_pending_markdown_policy -- the ageing ladder's 10 per cent is a recommended markdown depth, not an approved provisioning rate, and a provision posted against an unapproved rate is a ledger figure nobody signed off",
+    when: "when a markdown provisioning rate is approved and resolved into the policy bundle; the underlying cells and their SKU-grain cost are already published, so only the approval is outstanding"
   },
   DOCK_TO_STOCK_NOT_INSTRUMENTED: {
     why: "the source records receipts but not putaway completion",
@@ -176,10 +184,6 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
     why: "only the current trailing window is published",
     when: "when a second window is retained to compare against"
   },
-  ORDER_VALUE_NEEDS_COSTED_LINES: {
-    why: "a recommendation carries units, and pricing it needs a cost at SKU grain that the category-level valuation cannot supply",
-    when: "when order lines are priced at creation against supplier terms"
-  },
   BUDGET_NOT_APPLIED: {
     why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
     when: "when the budget cap is enforced in the replenishment engine"
@@ -188,10 +192,6 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
     why: "the safety-stock artifact publishes the buffer the policy produced and the class it was sized under, not the demand and lead-time terms that went into it",
     when: "when the engine emits its per-cell inputs alongside its output"
   },
-  MOQ_COMPLIANCE_NOT_SCORED: {
-    why: "minimum-order and pack-size rounding is applied when a quantity is produced, and the recommendation records the rounded result rather than whether rounding bound it",
-    when: "when the engine records the pre-rounding quantity beside the final one"
-  }
 };
 
 /**
@@ -205,6 +205,9 @@ const SHARE_BASIS: Record<string, string> = {
   healthLocations: "of locations",
   comparedCells: "of cells compared",
   cellsToOrder: "of cells to order",
+  // The same base reached through the `order` companion prefix, so the Planner's
+  // share reads "of cells to order" rather than falling back to a generic total.
+  moqAttemptedCells: "of orders attempted",
   cells: "of cells",
   requestedUnits: "of requested units",
   rows: "of rows"
@@ -237,7 +240,8 @@ export const REASON_TEXT: Record<string, string> = {
   DEAD_STOCK_DEASSORTED: "de-assorted, so cover is not meaningful",
   NO_TRAILING_DEMAND_OBSERVED: "no trailing demand observed for this cell",
   UNIT_COST_UNAVAILABLE: "no accepted unit cost for every on-hand SKU in this group",
-  NRV_UNAVAILABLE: "net realizable value needs an approved markdown policy",
+  NRV_UNAVAILABLE:
+    "the resolved policy declares NRV and provisions unavailable pending an approved markdown policy, and NRV needs an expected recovery price the platform does not hold",
   // Not a withheld interval -- the forecast was there and the order solver still
   // refused, because the supplier's minimum and the cover cap cannot both hold.
   // The engine refuses rather than silently overriding one of them.
@@ -250,16 +254,12 @@ export const REASON_TEXT: Record<string, string> = {
     "this cell's on-hand carries no recorded receipt date, and an age is published only for stock the source recorded arriving",
   AGEING_VALUE_NOT_PUBLISHED:
     "the ageing artifact publishes units per age bucket and no costed value, so a value here would be computed off-contract",
-  SELL_THROUGH_NOT_PUBLISHED:
-    "sell-through needs units sold over units received in the same window, and neither the ageing nor the waste artifact publishes a receipt base",
-  WAREHOUSE_CAPACITY_NOT_PUBLISHED:
-    "the position artifact publishes on-hand and its buckets but no storage capacity, so utilisation has no denominator",
+  RECOVERY_VALUE_NOT_PUBLISHED:
+    "the waste artifact publishes an exposure column that is empty on every row, and what could be recovered from near-expiry stock needs a recovery price the platform does not hold",
   FILL_RATE_NEEDS_REPLAY:
     "fill rate is served units over demanded units per period, which only the weekly replay produces, and the replay capability is not available on this bundle",
-  WASTE_ACTION_NOT_PUBLISHED:
-    "the waste artifact publishes exposure and units, not a disposition, so no recommended action is carried",
-  PROVISION_NEEDS_SKU_COST:
-    "the markdown is applied per SKU while inventory is valued per category, so the provision cannot be costed without spreading a category's value across its SKUs"
+  PROVISION_PENDING_MARKDOWN_POLICY:
+    "the resolved policy declares NRV and provisions unavailable pending an approved markdown policy; the marked cells and their costs are published, so only the approval is missing"
 };
 
 /** Badge colour by value, matching the reference's b-green/amber/red/blue/gray. */
@@ -484,30 +484,34 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "DC position, utilization, receipts and fill",
     endpoint: "/api/v1/inventory/warehouses",
     kpis: [
-      {caption: "Warehouse Inventory", field: "onHandUnits", format: "units",
+      {caption: "Warehouse Inventory", field: "onHandValueMinor", format: "money",
        note: "DC-grain units on hand"},
-      {caption: "Inbound in Transit", field: "inTransitUnits", format: "units",
+      {caption: "Inbound in Transit", field: "inTransitValueMinor", format: "money",
        note: "Received against a declared lane"},
-      {caption: "Blocked Inventory", field: "damagedUnits", format: "units",
+      {caption: "Blocked Inventory", field: "damagedValueMinor", format: "money",
        note: "Damaged and blocked buckets"},
       {caption: "Dock-to-Stock Time", field: null, format: "days",
        unavailableReason: "DOCK_TO_STOCK_NOT_INSTRUMENTED",
        note: "Needs receipt-to-putaway timestamps"},
-      {caption: "Warehouse Fill Rate", field: null, format: "percent",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"}
+      {caption: "Warehouse Fill Rate", field: "warehouseFillRate", format: "percent",
+       note: "Outbound need fillable from own stock"}
     ],
-    tables: [
-      {heading: null, columns: [
+    // The reference's table is one row per WAREHOUSE -- three of them -- with
+    // money in Inventory Value and Blocked Stock. This was the positions
+    // projection at its own market x location x SKU grain, so a SKU sat under a
+    // Warehouse header and both money columns printed unit counts. Which is why
+    // this screen has no ungrouped table: the warehouse roll-up IS the card.
+    tables: [],
+    grouped: [
+      {heading: null, card: "warehouses", columns: [
         {header: "Warehouse", field: "locationName"},
-        {header: "Inventory Value", field: "onHandUnits", format: "units"},
-        {header: "Capacity Utilization", field: null,
-         unavailableReason: "WAREHOUSE_CAPACITY_NOT_PUBLISHED"},
-        {header: "Fill Rate", field: null,
-         unavailableReason: "FILL_RATE_NEEDS_REPLAY"},
-        {header: "Blocked Stock", field: "damagedUnits", format: "units"},
-        {header: "Delayed Receipts", field: "onOrderUnits", format: "units"},
-        {header: "Action", field: "residualOnly", badge: true}
+        {header: "Inventory Value", field: "valueMinor", format: "money"},
+        {header: "Capacity Utilization", field: "capacityUtilization",
+         format: "percent"},
+        {header: "Fill Rate", field: "fillRate", format: "percent"},
+        {header: "Blocked Stock", field: "blockedValueMinor", format: "money"},
+        {header: "Delayed Receipts", field: "delayedReceipts", format: "count"},
+        {header: "Action", field: "warehouseAction"}
       ]}
     ]
   },
@@ -516,15 +520,17 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Age buckets and the deterministic action ladder",
     endpoint: "/api/v1/inventory/ageing",
     kpis: [
-      {caption: "60+ Day Inventory", field: "units60Plus", format: "units",
-       of: "onHandUnits",
+      // Share of the AGED VALUE, not of the unit count: both tiles are money, and
+      // dividing paise by units rendered "56006431.5% of on-hand" beside them.
+      {caption: "60+ Day Inventory", field: "value60PlusMinor", format: "money",
+       of: "ageingValueMinor",
        note: "Cumulative across the 60-90, 90-180 and 180-plus buckets"},
-      {caption: "90+ Day Inventory", field: "units90Plus", format: "units",
-       of: "onHandUnits",
+      {caption: "90+ Day Inventory", field: "value90PlusMinor", format: "money",
+       of: "ageingValueMinor",
        note: "Cumulative across the 90-180 and 180-plus buckets"},
-      {caption: "Dead Stock", field: "residualUnits", format: "units",
+      {caption: "Dead Stock", field: "deadStockValueMinor", format: "money",
        note: "Units in residual-only cells"},
-      {caption: "Markdown Opportunity", field: "markdownCells", format: "count",
+      {caption: "Markdown Opportunity", field: "markdownValueMinor", format: "money",
        note: "Cells the action ladder marks for markdown"},
       {caption: "Transfer Opportunity", field: "transferTransferValueMinor",
        format: "money",
@@ -536,14 +542,12 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Category", field: "categoryLabel"},
         {header: "Age", field: "ageBucket"},
         {header: "Units", field: "onHandUnits", format: "units"},
-        {header: "Value", field: null,
-         unavailableReason: "AGEING_VALUE_NOT_PUBLISHED"},
-        {header: "Sell-through", field: null,
-         unavailableReason: "SELL_THROUGH_NOT_PUBLISHED"},
+        {header: "Value", field: "valueMinor", format: "money"},
+        {header: "Sell-through", field: "sellThroughPct", format: "percent"},
         // `action` is the engine's own code -- `markdown_candidate`. The read
         // model composes the reference's sentence, markdown depth included.
         {header: "Recommended Action", field: "actionLabel"},
-        {header: "Priority", field: "residualOnly", badge: true}
+        {header: "Priority", field: "ageingPriority", badge: true}
       ]}
     ]
   },
@@ -558,9 +562,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       // the reference shows them as different columns and different KPIs.
       {caption: "Transfer Value", field: "transferValueMinor", format: "money",
        note: "Market-local cost value of the units moved"},
-      {caption: "Expected Lost-Sales Recovery", field: null, format: "money",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"},
+      // The grid's own Expected Benefit column reads this per row, so withholding
+      // the total told a reader the page could not add up what it was showing.
+      {caption: "Expected Lost-Sales Recovery", field: "expectedBenefitMinor",
+       format: "money", note: "Lost-sales recovery the optimizer projects"},
       {caption: "Average Transfer Time", field: "meanTransitDays", format: "days",
        note: "Per-lane transit days are in the table below"},
       {caption: "Transfer Acceptance", field: null, format: "percent",
@@ -570,13 +575,13 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     tables: [
       {heading: null, columns: [
         {header: "SKU", field: "productName"},
-        {header: "From Location", field: "fromLocationId"},
-        {header: "To Location", field: "toLocationId"},
-        {header: "Available Qty", field: "units", format: "units"},
+        {header: "From Location", field: "fromLocationName"},
+        {header: "To Location", field: "toLocationName"},
+        {header: "Available Qty", field: "availableUnits", format: "units"},
         {header: "Suggested Qty", field: "units", format: "units"},
         {header: "Value", field: "transferValueMinor", format: "money"},
         {header: "Expected Benefit", field: "expectedBenefitMinor", format: "money"},
-        {header: "Status", field: "laneId", badge: true}
+        {header: "Status", field: "transferStatus", badge: true}
       ]}
     ]
   },
@@ -591,31 +596,39 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        unavailableReason: "NRV_UNAVAILABLE",
        note: "Needs an approved markdown policy"},
       {caption: "Markdown Provision", field: null, format: "money",
-       unavailableReason: "PROVISION_NEEDS_SKU_COST",
+       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY",
        note: "2,128 cells are marked for markdown; costing them needs SKU-grain value"},
       {caption: "Obsolescence Provision", field: null, format: "money",
-       unavailableReason: "PROVISION_NEEDS_SKU_COST",
+       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY",
        note: "Residual-only cells are identified; costing them needs SKU-grain value"},
-      {caption: "Inventory Variance", field: "wmsVarianceUnits", format: "units",
+      {caption: "Inventory Variance", field: "varianceValueMinor", format: "money",
        note: "Absolute ERP-versus-WMS discrepancy"}
     ],
     breakdown: [
       // "Financial Control Exceptions".
-      {label: "ERP vs WMS variance", field: "wmsVarianceUnits", format: "units"},
+      // Money, as the reference's badge shows it -- Rs 0.18 Cr. The unit count is
+      // the same variance unpriced, and a finance control reads in currency.
+      {label: "ERP vs WMS variance", field: "varianceValueMinor", format: "money"},
       {label: "Unposted markdown provision", field: null, format: "money",
-       unavailableReason: "PROVISION_NEEDS_SKU_COST"},
+       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY"},
       {label: "Negative inventory value", field: "negativeValueRows",
        format: "count", of: "rows"},
       {label: "Cost missing", field: "unvaluedRows", format: "count", of: "rows"}
     ],
-    tables: [
-      {heading: "Valuation by Category", columns: [
+    // One row per CATEGORY, as the heading says and the reference shows -- four
+    // rows, Footwear through Beauty. This read the valuation projection at its
+    // own market x location x category grain, so "Footwear" appeared once per
+    // location down 326 rows and no row was the category total the header
+    // promised. The card the endpoint already serves is that roll-up.
+    tables: [],
+    grouped: [
+      {heading: "Valuation by Category", card: "categories", columns: [
         {header: "Category", field: "categoryLabel"},
-        {header: "Gross Value", field: "grossValueMinor", format: "money"},
+        {header: "Gross Value", field: "valueMinor", format: "money"},
         {header: "NRV", field: null, unavailableReason: "NRV_UNAVAILABLE"},
         {header: "Provision", field: null,
-         unavailableReason: "PROVISION_NEEDS_SKU_COST"},
-        {header: "Variance", field: "wmsVarianceUnits", format: "units"}
+         unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY"},
+        {header: "Variance", field: "varianceValueMinor", format: "money"}
       ]}
     ]
   },
@@ -624,30 +637,36 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Expiry-window exposure and waste actuals",
     endpoint: "/api/v1/inventory/expiry-waste",
     kpis: [
-      {caption: "Near-Expiry Inventory", field: "expiringUnits", format: "units",
+      {caption: "Near-Expiry Inventory", field: "nearExpiryValueMinor", format: "money",
        note: "Units expiring inside the policy window"},
-      {caption: "Waste This Month", field: "wasteUnits", format: "units",
+      {caption: "Waste This Month", field: "wasteValueMinor", format: "money",
        note: "Written off in the trailing window"},
       {caption: "Waste Reduction", field: null, format: "percent",
        unavailableReason: "PRIOR_PERIOD_NOT_COMPARED",
        note: "Needs a prior-period comparison"},
       {caption: "Products at Risk", field: "cells", format: "count",
        note: "Cells with expiry or waste evidence"},
-      {caption: "Recovery Opportunity", field: "exposureMinor", format: "money",
+      // exposure_minor is published NULL on every row of this artifact, so a summed
+      // money aggregate reported a confident Rs 0.00 for something never measured.
+      {caption: "Recovery Opportunity", field: null, format: "money",
+       unavailableReason: "RECOVERY_VALUE_NOT_PUBLISHED",
        note: "Cost value of units expiring in the window"}
     ],
     tables: [
       {heading: null, columns: [
         {header: "Product", field: "productName"},
         {header: "Location", field: "locationName"},
-        {header: "Expiry Window", field: "expiringUnits", format: "units"},
-        {header: "Units", field: "expiredUnits", format: "units"},
-        {header: "Value", field: "exposureMinor", format: "money"},
-        {header: "Sell-through", field: null,
-         unavailableReason: "SELL_THROUGH_NOT_PUBLISHED"},
-        {header: "Recommended Action", field: null,
-         unavailableReason: "WASTE_ACTION_NOT_PUBLISHED"},
-        {header: "Priority", field: "wasteUnits", format: "units"}
+        {header: "Expiry Window", field: "expiryWindow"},
+        // Both columns on the NEAR-EXPIRY basis, which is what the page is about
+        // and what its headline tile totals. Units was the already-expired count
+        // while Value was the expiring holding, so the two disagreed on the same
+        // row; and Value read `exposureMinor`, which the artifact publishes NULL
+        // on every row, so the column was blank on every row.
+        {header: "Units", field: "expiringUnits", format: "units"},
+        {header: "Value", field: "valueMinor", format: "money"},
+        {header: "Sell-through", field: "sellThroughPct", format: "percent"},
+        {header: "Recommended Action", field: "wasteAction"},
+        {header: "Priority", field: "wastePriority", badge: true}
       ]}
     ]
   },
@@ -723,8 +742,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       // Compliance.
       {label: "Approved forecast coverage", field: "assessedCells",
        format: "count", of: "cells"},
-      {label: "MOQ / pack-size compliance", field: null, format: "percent",
-       unavailableReason: "MOQ_COMPLIANCE_NOT_SCORED"},
+      {label: "MOQ / pack-size compliance", field: "moqCompliantCells",
+       format: "count", of: "moqAttemptedCells"},
       {label: "Orders within budget", field: null, format: "percent",
        unavailableReason: "BUDGET_NOT_APPLIED"},
       {label: "Supplier capacity confirmed",
@@ -760,11 +779,11 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Suggested Orders", field: "cellsToOrder", format: "count",
        note: "Cells with a positive recommended quantity"},
-      {caption: "Order Value", field: null, format: "money",
-       unavailableReason: "ORDER_VALUE_NEEDS_COSTED_LINES",
-       note: "Needs a costed order line per cell"},
-      {caption: "High Priority", field: "withheldCells", format: "count",
-       note: "Cells withheld with a governed reason"},
+      {caption: "Order Value", field: "orderValueMinor", format: "money",
+       note: "Recommended units at the destination's accepted cost"},
+      {caption: "High Priority", field: "highPriorityCells", format: "count",
+       of: "cellsToOrder",
+       note: "Ordering into a destination that is stocked out"},
       {caption: "Within Budget", field: null, format: "percent",
        unavailableReason: "BUDGET_NOT_APPLIED",
        note: "Market budget ceiling is not yet applied"},
@@ -794,9 +813,12 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Active Suppliers", field: "suppliers", format: "count",
        note: "Suppliers with performance evidence"},
-      {caption: "Open PO Value", field: null, format: "money",
-       unavailableReason: "PO_VALUE_NOT_PROJECTED",
-       note: "Purchase-order value is not in this projection"},
+      // The SOURCE's open purchase orders, not ours: the position projection's
+      // on_order bucket is inbound the ERP has already raised. The old reason
+      // read this as "no purchase order exists yet", which is true of our own
+      // shadow recommendations and not of the 645 cells with inbound on order.
+      {caption: "Open PO Value", field: "positionOnOrderValueMinor",
+       format: "money", note: "Inbound already on order, at accepted cost"},
       {caption: "Capacity Confirmed", field: "meanCapacityConfirmedPct",
        format: "percent",
        note: "Per-supplier capacity is in the table below"},

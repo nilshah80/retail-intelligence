@@ -519,6 +519,39 @@ def load_suppliers(
     )
 
 
+def load_warehouse_capacity(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """The storage ceiling per warehouse, at the latest snapshot the origin admits.
+
+    The source writes one snapshot per warehouse per week over a decade, so
+    "capacity now" is the most recent row at or before the origin. Loading the
+    whole history would make the grain per-week and any sum over it meaningless.
+
+    `used_units` is not loaded. The source's used figure is the same on-hand the
+    position artifact already publishes -- identical to the unit at both India
+    DCs -- so utilisation divides the holding this screen already values by the
+    ceiling here, and the numerator cannot disagree with the column beside it.
+    """
+
+    return _frame(
+        connection,
+        """
+        SELECT DISTINCT ON (capacity.location_id)
+            locations.market_id,
+            capacity.location_id,
+            capacity.capacity_units,
+            capacity.snapshot_date
+        FROM warehouse_capacity_snapshots AS capacity
+        JOIN locations ON locations.location_id = capacity.location_id
+        WHERE capacity.snapshot_date <= ?
+          AND capacity.known_as_of < ? + INTERVAL 1 DAY
+        ORDER BY capacity.location_id, capacity.snapshot_date DESC
+        """,
+        [as_of, as_of],
+    )
+
+
 def load_forecast(
     forecast_series: pd.DataFrame,
     *,
@@ -697,6 +730,7 @@ def load_inventory_inputs(
             lanes=lanes,
             supply_terms=load_supply_terms(connection, as_of=as_of),
             suppliers=load_suppliers(connection, as_of=as_of),
+            warehouse_capacity=load_warehouse_capacity(connection, as_of=as_of),
             channel_demand=load_channel_demand(connection, as_of=as_of),
             policy={market: policy[market] for market in markets},
             currency_by_market=currency_by_market,

@@ -43,6 +43,8 @@ def test_forecast_serving_schema_integration() -> None:
         "replenishment_suppliers",
         "replenishment_exceptions",
         "inventory_replay_metrics",
+        # Migration 0014: the storage ceiling Capacity Utilization divides by.
+        "inventory_warehouse_capacity",
     }
     with psycopg.connect(dsn) as connection:
         with connection.cursor() as cursor:
@@ -52,7 +54,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0013_sku_dimension_names",)
+            assert cursor.fetchone() == ("0014_warehouse_capacity",)
             cursor.execute(
                 """
                 SELECT table_name

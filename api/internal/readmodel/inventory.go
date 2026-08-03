@@ -24,7 +24,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0013_sku_dimension_names"
+	InventoryMigrationRevision = "0014_warehouse_capacity"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -142,6 +142,24 @@ func (s *InventoryStore) fxMoneySum(amount, currency, filter string) string {
 	return fmt.Sprintf(
 		"COALESCE(SUM(CASE %s END)%s, 0)", strings.Join(branches, " "), filter,
 	)
+}
+
+// rowFXVariance values a unit count at the category-rollup cost. Distinct from
+// rowFXExpr because the cost column is the rollup's, not the per-cell dimension's
+// -- valuation is held per category and has no single SKU to price against.
+func (s *InventoryStore) rowFXVariance(units string) string {
+	if len(s.fxToReporting) == 0 {
+		return fmt.Sprintf("%s::numeric * catcost.category_unit_cost", units)
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, currency := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN catcost.vc_currency = '%s' THEN %s::numeric"+
+				" * catcost.category_unit_cost * %s",
+			currency, units, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
 }
 
 // rowFXMoney converts an amount that is already denominated in minor units of
@@ -478,7 +496,20 @@ func (s *InventoryStore) Read(
 			"market_id, location_id, sku_id, expiring_units, expired_units, "+
 				"waste_units, exposure_minor, "+
 				"inventory_expiry_waste.currency_code",
-			rankByExposure)
+			rankByExposure,
+			// Only cells with something at risk. The artifact carries a row per
+			// cell the expiry engine assessed -- 2,268 of them -- and 2,081 have
+			// nothing expiring, nothing expired and no waste. Unscoped, the grid
+			// filled with rows whose Expiry Window was blank, whose Units and
+			// Value were zero and whose disposition advised acting on nothing,
+			// and "Products at Risk" counted every assessed cell as at risk:
+			// 2,268 against the 148 that actually hold expiring or expired stock.
+			//
+			// The route's clauses scope the summary as well as the rows, so the
+			// tile and the grid under it now count the same population.
+			"(inventory_expiry_waste.expiring_units > 0"+
+				" OR inventory_expiry_waste.expired_units > 0"+
+				" OR inventory_expiry_waste.waste_units > 0)")
 	case "/api/v1/inventory/stock-health":
 		return s.tableSlice(ctx, query, "inventory_stock_health",
 			// reason_code must be qualified: the row projection joins
@@ -585,6 +616,13 @@ func (s *InventoryStore) tableSlice(
 			LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 			USING (inventory_version_id, market_id, location_id, sku_id)`
 		selected += rowDisplayColumns
+	}
+	{
+		// Outside the display-dimension gate on purpose. Transfers key on a lane
+		// and valuation on a category, so neither joins the dimension at
+		// market x location x SKU -- but both still need extra columns, and while
+		// this was nested inside that gate their entries were declared and silently
+		// never applied. Five named fields resolved against nothing.
 		if extra, present := rowExtraJoins[table]; present {
 			source += extra.join
 			// %[1]s is the row's money expression, converted with this store's
@@ -592,11 +630,26 @@ func (s *InventoryStore) tableSlice(
 			// %[2]s converts an amount that is ALREADY money -- the demand-at-risk
 			// value is published in minor units, so it must not be multiplied by
 			// unit cost a second time.
+			//
+			// The unit column is per route, not universal: Stock Health reads it
+			// from the positions table it joins, while ageing and waste value their
+			// OWN quantity. Hard-coding position.on_hand_units here meant any new
+			// route referencing %[1]s emitted SQL naming an alias it never joined.
+			units := rowMoneyUnits[table]
+			if units == "" {
+				units = "position.on_hand_units"
+			}
 			projected := strings.ReplaceAll(
-				extra.columns, "%[1]s", s.rowFXExpr("position.on_hand_units"),
+				extra.columns, "%[1]s", s.rowFXExpr(units),
 			)
-			selected += strings.ReplaceAll(
+			projected = strings.ReplaceAll(
 				projected, "%[2]s", s.rowFXMoney("risk.risk_value_minor"),
+			)
+			// %[3]s values a UNIT variance at a rolled-up category cost: it
+			// multiplies like a quantity, but reads its cost from the rollup rather
+			// than the per-cell dimension, because valuation has no single SKU.
+			selected += strings.ReplaceAll(
+				projected, "%[3]s", s.rowFXVariance("wms_variance_units"),
 			)
 		}
 	}
@@ -832,6 +885,103 @@ type groupedCard struct {
 const costJoin = `LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 	USING (inventory_version_id, market_id, location_id, sku_id)`
 
+// outboundNeedJoin attaches, to each warehouse cell, the units the stores that
+// warehouse supplies need from it for that SKU. The recommendations are rolled
+// up to the supplying node first, so the join lands on the position's own grain
+// -- one row per version x market x location x SKU -- and cannot multiply rows.
+//
+// It is the input to the reference's "Warehouse Fill Rate". Deliberately NOT
+// allocated over requested from replenishment_allocations: every one of those
+// rows sits at a DEMANDING store and names no supply node, so grouping them by
+// supply_location_id attributes four stores' horizon channel demand to a
+// warehouse and reads 2.6 per cent -- an authoritative-looking number answering
+// a different question.
+const outboundNeedJoin = `
+	LEFT JOIN (
+		SELECT rec.inventory_version_id AS need_version,
+		       rec.market_id AS need_market,
+		       rec.supply_location_id AS need_location,
+		       rec.sku_id AS need_sku,
+		       SUM(rec.recommended_units) AS need_units
+		FROM retail_serving.replenishment_recommendations AS rec
+		WHERE rec.supply_location_id IS NOT NULL
+		  AND rec.recommended_units > 0
+		GROUP BY rec.inventory_version_id, rec.market_id,
+		         rec.supply_location_id, rec.sku_id
+	) AS need
+	  ON need.need_version = inventory_positions.inventory_version_id
+	 AND need.need_market = inventory_positions.market_id
+	 AND need.need_location = inventory_positions.location_id
+	 AND need.need_sku = inventory_positions.sku_id`
+
+// capacityJoin attaches a node's storage ceiling. One row per version x market x
+// location, so it cannot multiply the positions it is joined to.
+//
+// The key columns are aliased rather than joined bare. Joined with ON, a second
+// market_id and location_id enter scope, and every clause on this route that
+// names them unqualified -- the group-by, the dc/3pl restriction, the market
+// filter -- becomes ambiguous and the route serves a governed 503.
+const capacityJoin = `
+	LEFT JOIN (
+		SELECT inventory_version_id AS cap_version,
+		       market_id AS cap_market,
+		       location_id AS cap_location,
+		       capacity_units
+		FROM retail_serving.inventory_warehouse_capacity
+	) AS capacity
+	  ON capacity.cap_version = inventory_positions.inventory_version_id
+	 AND capacity.cap_market = inventory_positions.market_id
+	 AND capacity.cap_location = inventory_positions.location_id`
+
+// Utilisation divides the holding this card already values by the published
+// ceiling. The numerator is the card's own SUM, not the source's `used_units`,
+// so the percentage and the Inventory Value beside it rest on one number.
+const capacityUtilizationExpr = `CASE WHEN MAX(capacity.capacity_units) > 0
+	THEN SUM(on_hand_units)::numeric / MAX(capacity.capacity_units)
+END`
+
+// valuationCostJoin prices a valuation row's unit variance. Valuation is held
+// per CATEGORY, so there is no single SKU to price against: the cost is the
+// category's own trailing-demand-weighted mean, falling back to a plain mean
+// where nothing moved.
+//
+// Shared by the row page and the "Valuation by Category" card rather than
+// written twice -- the card's Variance column and the row's are the same figure
+// at two grains, and two copies of it could drift apart.
+const valuationCostJoin = `
+	LEFT JOIN (
+		SELECT inventory_version_id AS vc_version, market_id AS vc_market,
+		       location_id AS vc_location, category AS vc_category,
+		       CASE WHEN SUM(trailing_daily_units) > 0
+		            THEN SUM(unit_cost_minor * trailing_daily_units)
+		                 / SUM(trailing_daily_units)
+		            ELSE AVG(unit_cost_minor) END AS category_unit_cost,
+		       MAX(currency_code) AS vc_currency
+		FROM retail_serving.inventory_sku_dimension
+		GROUP BY inventory_version_id, market_id, location_id, category
+	) AS catcost
+	  ON catcost.vc_version = inventory_valuation.inventory_version_id
+	 AND catcost.vc_market = inventory_valuation.market_id
+	 AND catcost.vc_location = inventory_valuation.location_id
+	 AND catcost.vc_category = inventory_valuation.category`
+
+// A line fill rate: of the units the stores a warehouse supplies need from it,
+// the share it can ship from its own stock. The cap is per SKU line, because
+// surplus of one SKU cannot fill a shortfall of another -- summing both sides
+// first and capping once would report a warehouse as able to fill orders it
+// holds nothing for. Cells with no outbound need contribute nothing to either
+// side rather than counting as filled.
+// The FILTER is load-bearing, not defensive. LEAST ignores its NULL arguments
+// rather than returning NULL, so on a cell with no outbound need
+// LEAST(NULL, on_hand_units) is the whole on-hand: every warehouse cell nobody
+// ordered from added its full holding to the numerator and nothing to the
+// denominator, and the rate read 308% overall and 770% at Newark.
+const fillRateExpr = `CASE WHEN SUM(need.need_units) > 0
+	THEN (SUM(LEAST(need.need_units, COALESCE(on_hand_units, 0)))
+	      FILTER (WHERE need.need_units IS NOT NULL))::numeric
+	     / SUM(need.need_units)
+END`
+
 // The reference draws Ageing Inventory on the Inventory Overview AND on the
 // Inventory Ageing page. A card names its own source, so one declaration serves
 // both rather than two that can drift.
@@ -873,6 +1023,53 @@ WHEN '60-90' THEN 2 WHEN '90-180' THEN 3 ELSE 4 END`,
 var groupedCards = map[string][]groupedCard{
 	"inventory_positions": {
 		ageingBucketCard,
+		{
+			// The reference's Warehouse Inventory table is one row per WAREHOUSE --
+			// three of them, "West DC, Ahmedabad" and friends -- with a money
+			// Inventory Value and a money Blocked Stock. This route was serving the
+			// positions projection at its own market x location x SKU grain, so a
+			// SKU sat under a Warehouse header and every money column showed a unit
+			// count.
+			//
+			// Delayed Receipts is a COUNT in the reference (18, 26), not a quantity:
+			// how many inbound lines are late, which is what a warehouse manager
+			// chases. on_order_units answered "how many units are coming".
+			name: "warehouses",
+			source: "retail_serving.inventory_positions " + costJoin +
+				outboundNeedJoin + capacityJoin,
+			groupBy: "market_id, location_id, dim.location_name",
+			columns: `%[1]s AS value_minor,
+				-- The damaged holding at cost. This valued the whole ON-HAND of any
+				-- cell carrying damage instead: one damaged unit in a cell of 93
+				-- reported 93 units' worth, Rs 52,173 against the true Rs 561, and
+				-- the tile beside it -- correctly damaged units at cost -- disagreed.
+				%[4]s AS blocked_value_minor,
+				SUM(on_hand_units) AS on_hand_units,
+				SUM(damaged_units) AS damaged_units,
+				-- Late inbound LINES, not units. A line with nothing yet received
+				-- against it is the thing the reference counts.
+				COUNT(*) FILTER (WHERE on_order_units > 0
+					AND in_transit_units = 0) AS delayed_receipts,
+				` + fillRateExpr + ` AS fill_rate,
+				` + capacityUtilizationExpr + ` AS capacity_utilization,
+				-- The reference's Action column names what to do about the state
+				-- this row is in, in its own words.
+				CASE
+					WHEN SUM(damaged_units) > 0 THEN 'Release blocked stock'
+					WHEN COUNT(*) FILTER (WHERE on_order_units > 0
+						AND in_transit_units = 0) > 0 THEN 'Expedite receipts'
+					WHEN COUNT(*) FILTER (WHERE residual_only) > 0
+						THEN 'Review residual stock'
+					ELSE 'Maintain'
+				END AS warehouse_action,
+				COUNT(*) AS cells,
+				COUNT(dim.unit_cost_minor) AS costed_cells,
+				MAX(dim.currency_code) AS currency_code`,
+			orderBy: "%[1]s DESC NULLS LAST, market_id, location_id",
+			limit:   20,
+			// No scope field is needed: the card builder applies the route's own
+			// static clauses, and this route already restricts to dc/3pl.
+		},
 		{
 			// "Location-Level Inventory Performance". One row per location, as
 			// the title says. Type, value, availability, cover, risk, overstock.
@@ -1053,10 +1250,16 @@ var groupedCards = map[string][]groupedCard{
 					GROUP BY inventory_version_id, category
 				) AS labels
 				ON labels.label_version = inventory_valuation.inventory_version_id
-				AND labels.label_category = inventory_valuation.category`,
+				AND labels.label_category = inventory_valuation.category` +
+				valuationCostJoin,
 			groupBy: "inventory_valuation.category, labels.category_label",
 			columns: `%[3]s AS value_minor,
 				SUM(wms_variance_units) AS wms_variance_units,
+				-- The reference's Variance column is MONEY -- Rs 0.1 Cr -- and this
+				-- card published only the unit count, so it printed a quantity under
+				-- a rupee header while the Inventory Variance tile above it, reading
+				-- the same variance, showed rupees.
+				COALESCE(SUM(%[5]s), 0) AS variance_value_minor,
 				COUNT(*) AS rows_in_group,
 				COUNT(*) FILTER (WHERE gross_value_minor IS NULL) AS unvalued_rows,
 				MAX(currency_code) AS currency_code`,
@@ -1135,6 +1338,16 @@ var rowDisplayTables = map[string]bool{
 	"replenishment_allocations":  true,
 }
 
+// The unit column each row page values. Absent means the route joins positions
+// and reads on_hand_units from there, which is what Stock Health does.
+var rowMoneyUnits = map[string]string{
+	"inventory_ageing": "inventory_ageing.on_hand_units",
+	// The reference's waste Value column sits beside "Units", and its Units column
+	// is the EXPIRED quantity -- so the money figure is what is at risk now, the
+	// expiring holding, not what has already been written off.
+	"inventory_expiry_waste": "inventory_expiry_waste.expiring_units",
+}
+
 // Extra joins a row page needs beyond the display dimension, with the columns
 // they contribute.
 //
@@ -1147,6 +1360,147 @@ var rowExtraJoins = map[string]struct {
 	join    string
 	columns string
 }{
+	// The reference's ageing row carries a money Value; the projection has units
+	// and the dimension has the cost, so it only ever needed composing. `%[1]s` is
+	// the row money expression under the store's approved FX.
+	"inventory_ageing": {
+		join: "",
+		// The reference's ageing Priority is a WORD -- "High", "Medium" -- ranking
+		// how urgently the row needs working, not a Yes/No on residual status.
+		columns: `, %[1]s AS value_minor,
+			-- Sell-through at row grain: the same trailing-quarter ratio the
+			-- Ageing Inventory card carries one bucket at a time -- units moved
+			-- over units moved plus units still held -- read from this row's own
+			-- trailing demand instead of a SUM over the bucket. A row that moved
+			-- nothing reads 0%, which on an ageing screen is the point.
+			CASE WHEN dim.trailing_daily_units * 91
+			          + inventory_ageing.on_hand_units > 0
+				THEN (dim.trailing_daily_units * 91)
+					/ (dim.trailing_daily_units * 91
+					   + inventory_ageing.on_hand_units)
+			END AS sell_through_pct,
+			CASE
+				WHEN residual_only THEN 'High'
+				WHEN age_bucket = '180-plus' THEN 'High'
+				WHEN age_bucket = '90-180' THEN 'Medium'
+				ELSE 'Low'
+			END AS ageing_priority`,
+	},
+	// Expiry Window in the reference is a DURATION -- "1 day", "21 days" -- not a
+	// unit count, and Priority is a word, not a quantity. Both were bound to unit
+	// columns, so the screen printed 420 under "Expiry Window" and a waste
+	// quantity under "Priority".
+	"inventory_expiry_waste": {
+		// Positions, for the holding sell-through measures against. The waste
+		// artifact carries only the expiring and expired slices of a cell, and a
+		// sell-through against a slice is not the cell's sell-through.
+		join: `
+			LEFT JOIN retail_serving.inventory_positions AS wastepos
+			USING (inventory_version_id, market_id, location_id, sku_id)`,
+		columns: `, %[1]s AS value_minor,
+			-- The same trailing-quarter sell-through the ageing row carries, so the
+			-- two pages cannot disagree about one cell. Withheld, not zeroed, where
+			-- the cell has no position to measure against.
+			CASE WHEN dim.trailing_daily_units * 91
+			          + wastepos.on_hand_units > 0
+				THEN (dim.trailing_daily_units * 91)
+					/ (dim.trailing_daily_units * 91 + wastepos.on_hand_units)
+			END AS sell_through_pct,
+			-- The reference names a disposition per row -- and the artifact
+			-- publishes none, so this column was blank on every row.
+			--
+			-- Keyed on what the row actually publishes: what has already expired can
+			-- only be written off, and what has not is redistributable from a DC in
+			-- the reference's own words for its DC row ("Transfer to high-demand
+			-- stores") but not from the shelf it is already on.
+			--
+			-- Deliberately NOT a graded ladder on quantity. Splitting the
+			-- unexpired rows by at-risk units against trailing demand, or by their
+			-- share of the cell's on-hand, moves 4 to 10 rows of 2,268 at every
+			-- threshold from 10% to 50% and 3 to 30 days -- the near-expiry slice is
+			-- a small part of the holding almost everywhere. Four labels where three
+			-- are near-empty reads as discrimination the evidence cannot support.
+			-- Ordered by what is still actionable. A cell whose stock is already
+			-- written off has nothing to move: reaching the DC branch, it advised
+			-- transferring stock that no longer exists.
+			CASE
+				WHEN inventory_expiry_waste.expired_units > 0
+					THEN 'Write off and record waste'
+				WHEN inventory_expiry_waste.expiring_units = 0
+					THEN 'Review waste cause'
+				WHEN dim.location_kind IN ('dc', '3pl')
+					THEN 'Transfer to high-demand stores'
+				ELSE 'Promote before expiry'
+			END AS waste_action,
+			-- Expiring stock is inside its shelf-life window by definition; the
+			-- window itself is not published per row, so this names which side of
+			-- the boundary the row sits on rather than inventing a day count.
+			--
+			-- The third state is load-bearing: a cell can reach this page on WASTE
+			-- alone, with nothing expiring and nothing expired. Those rows had no
+			-- branch and printed an empty window.
+			CASE
+				WHEN expired_units > 0 THEN 'Expired'
+				WHEN expiring_units > 0 THEN 'Within shelf life'
+				WHEN waste_units > 0 THEN 'Written off'
+			END AS expiry_window,
+			CASE
+				WHEN expired_units > 0 THEN 'High'
+				WHEN expiring_units > 0 THEN 'Medium'
+				ELSE 'Low'
+			END AS waste_priority`,
+	},
+	// The reference's Variance column is MONEY -- Rs 0.1 Cr -- and the projection
+	// publishes a unit variance. Valuing it needs a cost, and valuation is held per
+	// market x location x CATEGORY, so the cost comes from the dimension rolled up
+	// to the same grain: demand-weighted where there is demand, a plain mean
+	// otherwise, so a category with no movement still prices.
+	"inventory_valuation": {
+		join:    valuationCostJoin,
+		columns: `, %[3]s AS variance_value_minor`,
+	},
+	// The reference's transfer row names both ends in words and shows the qty
+	// AVAILABLE at the source beside the qty suggested. Raw location ids and a
+	// single quantity reused for both columns is what shipped.
+	"replenishment_transfers": {
+		join: `
+			LEFT JOIN (
+				SELECT DISTINCT inventory_version_id AS fl_version,
+				       market_id AS fl_market, location_id AS fl_location,
+				       location_name AS from_location_name
+				FROM retail_serving.inventory_sku_dimension
+			) AS fromloc
+			  ON fromloc.fl_version = replenishment_transfers.inventory_version_id
+			 AND fromloc.fl_market = replenishment_transfers.market_id
+			 AND fromloc.fl_location = replenishment_transfers.from_location_id
+			LEFT JOIN (
+				SELECT DISTINCT inventory_version_id AS tl_version,
+				       market_id AS tl_market, location_id AS tl_location,
+				       location_name AS to_location_name
+				FROM retail_serving.inventory_sku_dimension
+			) AS toloc
+			  ON toloc.tl_version = replenishment_transfers.inventory_version_id
+			 AND toloc.tl_market = replenishment_transfers.market_id
+			 AND toloc.tl_location = replenishment_transfers.to_location_id
+			LEFT JOIN (
+				SELECT inventory_version_id AS sp_version,
+				       market_id AS sp_market, location_id AS sp_location,
+				       sku_id AS sp_sku, on_hand_units AS available_units
+				FROM retail_serving.inventory_positions
+			) AS sourcepos
+			  ON sourcepos.sp_version
+			     = replenishment_transfers.inventory_version_id
+			 AND sourcepos.sp_market = replenishment_transfers.market_id
+			 AND sourcepos.sp_location = replenishment_transfers.from_location_id
+			 AND sourcepos.sp_sku = replenishment_transfers.sku_id`,
+		columns: `, fromloc.from_location_name, toloc.to_location_name,
+			sourcepos.available_units,
+			-- P4-D11 makes every recommendation shadow-only, so there is no
+			-- workflow state to report. The reference's Review/Draft is a stage in
+			-- an approval flow this release does not run; saying so is the honest
+			-- answer, and it is a governed reason rather than a blank.
+			'Shadow (not sent)' AS transfer_status`,
+	},
 	"inventory_stock_health": {
 		join: `
 			LEFT JOIN retail_serving.inventory_positions AS position
@@ -1274,6 +1628,10 @@ var dashboardCompanions = map[string][]dashboardCompanion{
 	},
 	"replenishment_suppliers": {
 		{table: "replenishment_recommendations", prefix: "order"},
+		// "Open PO Value" is inbound already on order, which lives in the
+		// position projection's on_order bucket -- the suppliers projection
+		// carries performance and risk, and no quantity at all.
+		{table: "inventory_positions", prefix: "position"},
 	},
 	"replenishment_exceptions": {
 		{table: "replenishment_recommendations", prefix: "order"},
@@ -1369,6 +1727,12 @@ var inventoryAggregates = map[string]map[string]string{
 		"activeCells":       "COUNT(*) FILTER (WHERE assortment_active)",
 		"storeCells":        "COUNT(*) FILTER (WHERE inventory_positions.location_kind = 'store')",
 		"dcCells":           "COUNT(*) FILTER (WHERE inventory_positions.location_kind = 'dc')",
+		// The reference's "Warehouse Fill Rate" tile, the same line fill the
+		// warehouse rows carry. It reads over whatever the route scopes to, so
+		// the warehouse page's dc/3pl restriction and any market filter both
+		// apply -- the tile and the rows under it cannot disagree.
+		"warehouseFillRate": fillRateExpr,
+		"outboundNeedUnits": "COALESCE(SUM(need.need_units), 0)",
 	},
 	"inventory_stock_health": {
 		"cells":           "COUNT(*)",
@@ -1429,7 +1793,10 @@ var inventoryAggregates = map[string]map[string]string{
 		"expiringUnits": "COALESCE(SUM(expiring_units), 0)",
 		"expiredUnits":  "COALESCE(SUM(expired_units), 0)",
 		"wasteUnits":    "COALESCE(SUM(waste_units), 0)",
-		"currencyCount": "COUNT(DISTINCT currency_code)",
+		// Qualified: this aggregate joins the SKU dimension for a unit cost, and
+		// the dimension carries a currency_code of its own. Unqualified, pgx
+		// rejects the statement and the route fails closed.
+		"currencyCount": "COUNT(DISTINCT inventory_expiry_waste.currency_code)",
 	},
 	"inventory_valuation_by_kind": {
 		// `echelon` is this view's own alias for the kind, not the positions
@@ -1439,6 +1806,10 @@ var inventoryAggregates = map[string]map[string]string{
 		"unvaluedRows":     "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
 	},
 	"inventory_valuation": {
+		// varianceValueMinor is built per request from varianceMoneyAggregates.
+		// Written here as a static string, it valued the units at cost and applied
+		// no FX -- so a US row's variance entered the rupee total in dollars, and
+		// the tile read Rs 2.15 Cr under a by-category table summing to Rs 3.20 Cr.
 		"negativeValueRows": "COUNT(*) FILTER (WHERE gross_value_minor < 0)",
 		"rows":              "COUNT(*)",
 		"unvaluedRows":      "COUNT(*) FILTER (WHERE gross_value_minor IS NULL)",
@@ -1451,6 +1822,36 @@ var inventoryAggregates = map[string]map[string]string{
 		"withheldCells":    "COUNT(*) FILTER (WHERE NOT interval_available)",
 		"recommendedUnits": "COALESCE(SUM(recommended_units), 0)",
 		"cellsToOrder":     "COUNT(*) FILTER (WHERE recommended_units > 0)",
+		// MOQ and pack-size compliance, which the reference scores as a share.
+		// The engine's rounding order is apply_moq, apply_pack_multiple, then
+		// apply_caps, and a line whose MOQ cannot be met inside the cover cap is
+		// refused with MOQ_EXCEEDS_MAX_COVER rather than emitted rounded-down. So
+		// a line that ordered at all cleared both rules, and the refusals are the
+		// published complement -- no separate scoring pass is needed.
+		"moqCompliantCells": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND reason_code IS DISTINCT FROM 'MOQ_EXCEEDS_MAX_COVER')",
+		"moqRefusedCells": "COUNT(*) FILTER " +
+			"(WHERE reason_code = 'MOQ_EXCEEDS_MAX_COVER')",
+		// The denominator is lines the solver TRIED to place, not lines it placed.
+		// Against cellsToOrder the share is 720 of 720 and can never be anything
+		// else -- a line that ordered cleared MOQ by construction -- so the tile
+		// would read a permanent 100% and measure nothing. Adding the refusals
+		// back makes it 720 of 722: of the orders the solver wanted, the share
+		// whose minimum and pack size fitted inside the cover cap.
+		"moqAttemptedCells": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"OR reason_code = 'MOQ_EXCEEDS_MAX_COVER')",
+		// The reference's "High Priority" is a subset of the SUGGESTED ORDERS --
+		// 742 of 4,286 -- and this tile was bound to withheldCells, so it read
+		// 3,722 cells the engine declined to recommend at all under a caption a
+		// buyer reads as "urgent orders".
+		//
+		// Stockout at the destination, not stockout-or-understock: an order
+		// exists mostly BECAUSE the cell is understocked, so that wider test
+		// marks 578 of 720 urgent and separates almost nothing. A destination
+		// with nothing available to sell is already losing sales, which is what
+		// makes its order jump the queue.
+		"highPriorityCells": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND desthealth.health_class = 'stockout')",
 		// P4-D11 keeps ERP transmission shadow-only, so there is no send path and
 		// therefore no send failure. The count is real and it is zero; saying so
 		// is more useful than withholding the tile.
@@ -1503,6 +1904,13 @@ var inventoryAggregates = map[string]map[string]string{
 		"allocatedUnits": "COALESCE(SUM(allocated_units), 0)",
 		"shortfallUnits": "COALESCE(SUM(shortfall_units), 0)",
 		"channels":       "COUNT(DISTINCT channel_id)",
+		// No fillRate here, deliberately. Allocated over requested looks like the
+		// reference's "Warehouse Fill Rate" and is not: every one of the 2,065
+		// allocation rows sits at a STORE, and the projection carries no supply
+		// node, so the ratio measures how much STORE demand was allocated, not how
+		// well a warehouse served the orders placed on it. Wired to the tile it
+		// read 2.2 per cent -- an authoritative-looking number answering a
+		// different question.
 	},
 	"replenishment_suppliers": {
 		"suppliers":                "COUNT(*)",
@@ -1536,6 +1944,27 @@ var moneyAggregates = map[string]map[string]string{
 	"replenishment_transfers": {
 		"transferValueMinor": "units",
 	},
+	"inventory_ageing": {
+		// Each bucket's holding at cost. The reference's four ageing tiles are
+		// these, plus a transfer figure from the transfers companion.
+		"ageingValueMinor":    "on_hand_units",
+		"value60PlusMinor":    "on_hand_units",
+		"value90PlusMinor":    "on_hand_units",
+		"deadStockValueMinor": "on_hand_units",
+		"markdownValueMinor":  "on_hand_units",
+	},
+	"inventory_expiry_waste": {
+		"nearExpiryValueMinor": "expiring_units",
+		"wasteValueMinor":      "waste_units",
+	},
+	// The reference's "Order Value" on Suggested Orders, and the same figure under
+	// the `order` prefix on Supplier Planning. It read "Not available" on the
+	// grounds that the lines were not costed -- every one of the 720 lines that
+	// actually orders carries a cost, and `costedCells` is published beside it so
+	// a reader can see that coverage rather than trust it.
+	"replenishment_recommendations": {
+		"orderValueMinor": "recommended_units",
+	},
 	"inventory_positions": {
 		"onHandValueMinor": "on_hand_units",
 		// The reference reads "Inventory at Risk / Rs 8.7 Cr / 17.9% exposure"
@@ -1548,6 +1977,16 @@ var moneyAggregates = map[string]map[string]string{
 		"reservedValueMinor":  "reserved_units",
 		"damagedValueMinor":   "damaged_units",
 		"onOrderValueMinor":   "on_order_units",
+	},
+}
+
+// varianceMoneyAggregates names, per projection, the unit column behind a money
+// figure priced at the CATEGORY rollup cost rather than the per-cell dimension
+// cost. Separate from moneyAggregates because the cost column differs: valuation
+// is held per category and has no single SKU to price against.
+var varianceMoneyAggregates = map[string]map[string]string{
+	"inventory_valuation": {
+		"varianceValueMinor": "wms_variance_units",
 	},
 }
 
@@ -1572,6 +2011,22 @@ var aggregateSource = map[string]string{
 		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 		USING (inventory_version_id, market_id, location_id, sku_id)
 		LEFT JOIN retail_serving.inventory_stock_health AS health
+		USING (inventory_version_id, market_id, location_id, sku_id)` +
+		outboundNeedJoin,
+
+	// The reference's ageing tiles are ALL money -- "60+ Day Inventory Rs 14.1
+	// Cr", not a unit count -- and the ageing projection carries no cost, so it
+	// could only ever report units under a rupee caption. Same grain on both
+	// sides, so the join cannot multiply rows.
+	"inventory_ageing": `retail_serving.inventory_ageing
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+		USING (inventory_version_id, market_id, location_id, sku_id)`,
+
+	// Waste likewise: "Near-Expiry Inventory Rs 0.9 Cr" and "Waste This Month
+	// Rs 0.22 Cr" are money. exposure_minor is published but covers only the
+	// expiring slice, so the waste figure needs units at cost.
+	"inventory_expiry_waste": `retail_serving.inventory_expiry_waste
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
 
 	// A transfer's value is its units at cost. The dimension is per node and a
@@ -1589,6 +2044,10 @@ var aggregateSource = map[string]string{
 		ON dim.cost_version = replenishment_transfers.inventory_version_id
 		AND dim.cost_market = replenishment_transfers.market_id
 		AND dim.cost_sku = replenishment_transfers.sku_id`,
+
+	// The category cost rollup, so the Variance tile can be money. Same subquery
+	// the row projection uses, so tile and table price the variance identically.
+	"inventory_valuation": "retail_serving.inventory_valuation" + valuationCostJoin,
 
 	"replenishment_safety_stock": `retail_serving.replenishment_safety_stock
 		LEFT JOIN retail_serving.inventory_positions AS position
@@ -1610,7 +2069,38 @@ var aggregateSource = map[string]string{
 		ON supply.supply_version
 		     = replenishment_recommendations.inventory_version_id
 		AND supply.supply_node
-		     = replenishment_recommendations.supply_location_id`,
+		     = replenishment_recommendations.supply_location_id
+		-- The cost, so an order can be valued. Keyed on the DESTINATION: the
+		-- units are being bought INTO that node, and P4-D6 forbids pricing a
+		-- store's holding from a DC's cost. Aliased as dim because that is the
+		-- name fxExpr and the costedCells companion both reference.
+		LEFT JOIN (
+			SELECT inventory_version_id AS rc_version, market_id AS rc_market,
+			       location_id AS rc_location, sku_id AS rc_sku,
+			       unit_cost_minor, currency_code
+			FROM retail_serving.inventory_sku_dimension
+		) AS dim
+		ON dim.rc_version = replenishment_recommendations.inventory_version_id
+		AND dim.rc_market = replenishment_recommendations.market_id
+		AND dim.rc_location
+		     = replenishment_recommendations.destination_location_id
+		AND dim.rc_sku = replenishment_recommendations.sku_id
+		-- The DESTINATION's health, for how urgent each order is. Every column
+		-- but health_class is aliased away on purpose: the health projection
+		-- carries a reason_code too, and joined bare it makes the reason_code
+		-- this route already reads for MOQ refusals ambiguous, which fails the
+		-- whole page closed.
+		LEFT JOIN (
+			SELECT inventory_version_id AS hc_version, market_id AS hc_market,
+			       location_id AS hc_location, sku_id AS hc_sku, health_class
+			FROM retail_serving.inventory_stock_health
+		) AS desthealth
+		ON desthealth.hc_version
+		     = replenishment_recommendations.inventory_version_id
+		AND desthealth.hc_market = replenishment_recommendations.market_id
+		AND desthealth.hc_location
+		     = replenishment_recommendations.destination_location_id
+		AND desthealth.hc_sku = replenishment_recommendations.sku_id`,
 
 	// Stock health carries no echelon, so a store-scoped page could not ask for
 	// "Stores at Risk" and got every node instead -- eight on a page showing
@@ -1650,7 +2140,11 @@ var moneyColumnAggregates = map[string]map[string]struct {
 		"grossValueMinor": {"gross_value_minor", "currency_code", ""},
 	},
 	"inventory_expiry_waste": {
-		"exposureMinor": {"exposure_minor", "currency_code", ""},
+		// No exposureMinor entry. exposure_minor is NULL on all 2,268 rows in this
+		// publication, and the COALESCE every money aggregate needs turned that
+		// into a confident "Rs 0.00" on screen -- the bare-unavailable defect
+		// wearing a currency symbol. Omitted so the tile withholds with a reason
+		// instead of asserting a measured zero.
 	},
 	"inventory_demand_at_risk": {
 		"riskValueMinor": {"risk_value_minor", "currency_code", ""},
@@ -1684,6 +2178,18 @@ func (s *InventoryStore) aggregate(
 		for name, column := range columns {
 			converted[name] = s.fxMoneySum(
 				column.amount, column.currency, column.filter,
+			)
+		}
+		expressions = converted
+	}
+	if variance, wanted := varianceMoneyAggregates[table]; wanted {
+		converted := make(map[string]string, len(expressions)+len(variance))
+		for name, expression := range expressions {
+			converted[name] = expression
+		}
+		for name, units := range variance {
+			converted[name] = fmt.Sprintf(
+				"COALESCE(SUM(%s), 0)", s.rowFXVariance(units),
 			)
 		}
 		expressions = converted
@@ -1723,6 +2229,36 @@ func (s *InventoryStore) aggregate(
 				" FILTER (WHERE inventory_positions.location_kind = 'store')"
 			merged["dcValueMinor"] = s.fxExpr("on_hand_units") +
 				" FILTER (WHERE inventory_positions.location_kind IN ('dc', '3pl'))"
+		}
+		if table == "inventory_ageing" {
+			// The reference's ageing tiles are cumulative bands, not the engine's
+			// disjoint buckets: "60+" includes 90+ and 180+, which is how a
+			// merchandiser reads it. Reporting only the 60-90 slice under a "60+"
+			// caption would understate the exposure it exists to flag.
+			merged["value60PlusMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE age_bucket IN ('60-90', '90-180', '180-plus'))"
+			merged["value90PlusMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE age_bucket IN ('90-180', '180-plus'))"
+			// Dead stock is the de-assorted holding, which is what residual_only
+			// marks -- not simply the oldest bucket.
+			merged["deadStockValueMinor"] = s.fxExpr("on_hand_units") +
+				" FILTER (WHERE residual_only)"
+			// The markdown OPPORTUNITY is the provision the markdown would cost --
+			// holding times the proposed depth -- not the whole holding that
+			// qualifies. The reference puts it at Rs 1.8 Cr against Rs 14.1 Cr of
+			// 60-plus stock, a ratio that only makes sense as a percentage of value
+			// rather than the value itself, and the artifact carries the depth
+			// (markdown_pct, 0.10 here) to multiply by.
+			merged["markdownValueMinor"] = s.fxExpr(
+				"(on_hand_units * markdown_pct)",
+			) + " FILTER (WHERE action = 'markdown_candidate')"
+		}
+		if table == "inventory_expiry_waste" {
+			// "Near-Expiry Inventory" is stock still sellable but inside its expiry
+			// window; "Waste This Month" is what was already written off. Two
+			// different columns, and the reference gives each its own tile.
+			merged["nearExpiryValueMinor"] = s.fxExpr("expiring_units")
+			merged["wasteValueMinor"] = s.fxExpr("waste_units")
 		}
 		expressions = merged
 	}
@@ -1816,8 +2352,16 @@ func (s *InventoryStore) groupedCard(
 	valuedAmount := s.fxMoneySum("gross_value_minor", "currency_code", "")
 	// Replacement, not Sprintf: a card whose columns carry no placeholder would
 	// otherwise pick up "%!(EXTRA string=...)" and ship it into the SQL.
+	// %[4]s values the DAMAGED holding. Distinct from %[1]s because a blocked
+	// figure filtered on damage but valued on-hand overstates by the whole cell.
+	damagedValue := s.fxExpr("damaged_units")
+	// %[5]s is a PER-ROW variance at the category rollup cost, so a card using it
+	// must wrap it in its own SUM. %[3]s already aggregates; the two are not
+	// interchangeable.
+	varianceValue := s.rowFXVariance("wms_variance_units")
 	replace := strings.NewReplacer(
 		"%[1]s", onHandValue, "%[2]s", bufferValue, "%[3]s", valuedAmount,
+		"%[4]s", damagedValue, "%[5]s", varianceValue,
 	)
 	cardColumns := replace.Replace(card.columns)
 	cardOrderBy := replace.Replace(card.orderBy)
