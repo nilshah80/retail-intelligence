@@ -598,24 +598,56 @@ function Overview({
   setModal: (modal: Modal) => void;
 }) {
   const summary = data.summary!.items[0];
+  // `forecast` is the P50 -- a MEDIAN. This demand is heavily right-skewed (mean
+  // 27.68 against median 6.00), so summing medians against realised totals lands
+  // below them by construction, and a two-bar chart reads as a forecast that is
+  // always wrong in one direction. It is not: P(actual <= P50) is 52.8 per cent,
+  // which is what a median should do. Carrying the P90 turns the forecast into
+  // the RANGE it actually is, so the week is read as covered or not covered
+  // rather than over or under.
   const chartData = granularity === "Monthly"
     ? Object.values(data.actuals!.items.reduce<Record<string, {
       week: string;
       forecast: number;
+      forecastP90: number;
       actual: number;
+      bandBase: number;
+      bandSpan: number;
     }>>((months, item) => {
       const month = item.targetWeekStart.slice(0, 7);
-      const existing = months[month] ?? {week: month, forecast: 0, actual: 0};
+      const existing = months[month]
+        ?? {week: month, forecast: 0, forecastP90: 0, actual: 0,
+            bandBase: 0, bandSpan: 0};
       existing.forecast += item.forecast;
+      existing.forecastP90 += item.forecastP90 ?? item.forecast;
       existing.actual += item.actual;
+      existing.bandBase = existing.forecast;
+      existing.bandSpan = Math.max(0, existing.forecastP90 - existing.forecast);
       months[month] = existing;
       return months;
     }, {}))
-    : data.actuals!.items.map((item) => ({
-      week: shortDate(item.targetWeekStart),
-      forecast: item.forecast,
-      actual: item.actual
-    }));
+    : data.actuals!.items.map((item) => {
+      const p90 = item.forecastP90 ?? item.forecast;
+      return {
+        week: shortDate(item.targetWeekStart),
+        forecast: item.forecast,
+        forecastP90: p90,
+        actual: item.actual,
+        // The band is drawn as two stacked segments: an invisible base up to P50,
+        // then a visible span from P50 to P90. Recharts has no floating-bar type,
+        // and a stack is the only way to start a bar off the axis.
+        bandBase: item.forecast,
+        bandSpan: Math.max(0, p90 - item.forecast)
+      };
+    });
+  // P50 is a MEDIAN, so it sits below the realised total whenever demand is
+  // right-skewed -- which it heavily is here (mean 27.68, median 6.00). Read on
+  // its own, the forecast bar looks permanently short. What actually matters is
+  // whether the week landed inside the published interval, so the card says so
+  // rather than leaving a reader to infer it from two bars that cannot show it.
+  const coveredWeeks = chartData.filter(
+    (row) => row.actual >= row.forecast && row.actual <= row.forecastP90
+  ).length;
   // Decision #80: exactly four exact-horizon rows in reference order, always
   // rendered. The operational horizon selector changes future scope, not which
   // diagnostic rows exist, so it must not filter this table.
@@ -649,7 +681,14 @@ function Overview({
   return (
     <>
       <div className="grid-2">
-        <Card title="Forecast vs Actual" link={`Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"}`}>
+        <Card
+          title="Forecast vs Actual"
+          link={
+            `Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"} · ` +
+            `actual inside the P50–P90 forecast range in ` +
+            `${coveredWeeks} of ${chartData.length}`
+          }
+        >
           <div className="chart-box" aria-label="Forecast versus actual chart">
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={chartData} margin={{top: 12, right: 8, bottom: 4, left: 0}}>
@@ -660,8 +699,47 @@ function Overview({
                 } />
                 <Tooltip formatter={(value) => count(Number(value))} />
                 <Legend />
-                <Bar dataKey="forecast" name="Forecast" fill="#2f80ed" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="actual" name="Actual" fill="#1fbf75" radius={[4, 4, 0, 0]} />
+                {/*
+                  The forecast column is stacked: solid blue to P50, then a light
+                  blue segment carrying the rest of the way to P90. So the whole
+                  column IS the forecast range, and the question a reader asks --
+                  did the week land inside it -- is answered by whether the green
+                  Actual bar's top falls within the column's height.
+
+                  Actual carries its own stackId rather than none, so every Bar is
+                  on the same layout path; a lone unstacked bar beside a stacked
+                  pair rendered Actual as an empty `inactive-bar`.
+
+                  isAnimationActive={false} on all three is required, not styling.
+                  Verified by A/B on this exact chart under Recharts 3.10 / React
+                  19: with animation left on, all three stacked groups render eight
+                  wrappers each containing an EMPTY `recharts-inactive-bar` and the
+                  chart draws no columns at all; with it off, all 24 shapes appear.
+                  Unstacked bars animate fine, so it is the combination that fails.
+                */}
+                <Bar
+                  dataKey="forecast"
+                  stackId="forecast"
+                  name="Forecast (P50)"
+                  fill="#2f80ed"
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="bandSpan"
+                  stackId="forecast"
+                  name="P50 → P90 range"
+                  fill="#9dc3f7"
+                  radius={[4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="actual"
+                  stackId="actual"
+                  name="Actual"
+                  fill="#1fbf75"
+                  radius={[4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

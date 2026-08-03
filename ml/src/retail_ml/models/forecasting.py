@@ -29,6 +29,10 @@ from retail_ml.models.backtest import (
 )
 from retail_ml.models.baselines import attach_baselines, metric_for_column
 from retail_ml.models.cohorts import attach_cold_start_baseline
+from retail_ml.models.bias_correction import (
+    COVERAGE_MODEL_FILENAME,
+    remediate_coverage,
+)
 from retail_ml.models.cold_start_blend import (
     BLEND_MODEL_FILENAME,
     remediate_cold_start,
@@ -377,6 +381,13 @@ def run_backtest(
             # artifacts carry the blend rather than a post-hoc adjustment.
             with telemetry.measure("cold_start_remediation"):
                 evaluation, blend_model = remediate_cold_start(evaluation)
+            # Candidate C2, after C5 and on C5's own cohort. Decision #58 puts P90
+            # coverage in an 85-95 per cent band; cold start was measured at 80.6
+            # while the pooled figure sat inside the band at 89.1, so a quarter of
+            # volume was served too narrow an interval and the aggregate hid it.
+            # P90-only, so section 2.4's display-cell accuracy cannot move.
+            with telemetry.measure("coverage_remediation"):
+                evaluation, coverage_model = remediate_coverage(evaluation)
             with telemetry.measure("acceptance"):
                 acceptance = evaluate_acceptance(
                     evaluation,
@@ -405,9 +416,31 @@ def run_backtest(
                 acceptance["passed"] = False
                 acceptance["diagnosticOnly"] = True
                 acceptance["reasonCode"] = "INCOMPLETE_BACKTEST_SCHEDULE"
+            acceptance["coverageRemediation"] = {
+                "candidateId": coverage_model["candidateId"],
+                "decisionIds": coverage_model["decisionIds"],
+                "correctionTarget": coverage_model["correctionTarget"],
+                "scopedToCohort": coverage_model["scopedToCohort"],
+                "targetCoverage": coverage_model["targetCoverage"],
+                "coverageBand": coverage_model["coverageBand"],
+                "parentMultiplier": coverage_model["parentMultiplier"],
+                "cellsUsingFallback": coverage_model["cellsUsingFallback"],
+                "fitOrigins": coverage_model["fitOrigins"],
+                "confirmationOriginsHeldOut": coverage_model[
+                    "confirmationOriginsHeldOut"
+                ],
+                "notAnAccuracyImprovement": coverage_model[
+                    "notAnAccuracyImprovement"
+                ],
+            }
             blend_path = staging / BLEND_MODEL_FILENAME
             blend_path.write_text(
                 json.dumps(blend_model, indent=2, sort_keys=True, default=str),
+                encoding="utf-8",
+            )
+            coverage_path = staging / COVERAGE_MODEL_FILENAME
+            coverage_path.write_text(
+                json.dumps(coverage_model, indent=2, sort_keys=True, default=str),
                 encoding="utf-8",
             )
             eval_path = staging / "forecast_eval_predictions.parquet"

@@ -115,6 +115,7 @@ def _command_score_current(args: argparse.Namespace) -> int:
         ),
         runtime_profile=resolve_ml_runtime_profile(args.execution_profile),
         blend_model_path=args.blend_model,
+        coverage_model_path=args.coverage_model,
     )
     print(json.dumps(asdict(stats), indent=2, sort_keys=True))
     return 0
@@ -362,6 +363,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "decision #84 cold_start_blend_model.json from the accepted backtest. "
             "Required to serve the estimator the acceptance gate scored."
+        ),
+    )
+    score_current.add_argument(
+        "--coverage-model",
+        type=Path,
+        default=None,
+        help=(
+            "candidate C2 coverage_calibration_model.json from the accepted "
+            "backtest. Restores cold-start P90 coverage to the decision #58 band."
         ),
     )
     score_current.add_argument(

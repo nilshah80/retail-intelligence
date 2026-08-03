@@ -248,7 +248,83 @@ def apply_quantile_calibration(
     return result
 
 
+
+#: The frozen C2 model, written by the backtest and replayed at scoring time.
+COVERAGE_MODEL_FILENAME: Final[str] = "coverage_calibration_model.json"
+
+
+def remediate_coverage(
+    frame: pd.DataFrame,
+    *,
+    development_origins: int = 8,
+    only_cohort: str = "cold_start",
+    cohort_column: str = "cohort",
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Fit and apply C2 to one cohort, restoring the rest byte-for-byte.
+
+    The defect this repairs is a stated contract being missed, not a demo blemish.
+    Decision #58 puts P90 coverage in an 85-95 per cent band. Measured on the
+    published eval, the network is inside it at 89.1 per cent -- but split by
+    cohort, `established_history` sits at 90.5 and `cold_start` at 80.6, so nearly
+    a quarter of volume is served an interval narrower than the band allows. A
+    pooled figure hid it.
+
+    Scoped to cold start, and P90-only, for governance reasons rather than taste:
+    decision #86 section 2.4 compares display-cell ACCURACY, which is computed
+    from P50, so a P90-only correction cannot regress it; and section 2.3's
+    byte-identity rule covers rows outside C5's target, which this never touches.
+    That is the arrangement C1 could not reach -- C1 had to move P50 on the same
+    rows C5 owned, and one gate or the other refused every ordering.
+
+    Deliberately NOT a bias correction. sum(P50) sits 5 per cent below sum(actual)
+    because P50 is a MEDIAN and the demand is heavily right-skewed -- mean 27.68
+    against median 6.00, skew 8.44 -- so a well-calibrated median must sum low.
+    P(actual <= P50) is 52.8 per cent, which is a median doing its job. PP3-B4
+    already tested inflating P50: it eliminated the bias and WORSENED WAPE,
+    because WAPE is a median-optimal loss. Widening the interval is the honest
+    repair; raising the point forecast is not.
+    """
+
+    from retail_ml.models.confidence import forecast_confidence
+
+    if cohort_column not in frame.columns:
+        raise CandidateError(
+            f"C2 requires a {cohort_column!r} column to scope to {only_cohort!r}"
+        )
+    target = frame[cohort_column].astype(str) == only_cohort
+    if not bool(target.any()):
+        raise CandidateError(f"no {only_cohort!r} rows to calibrate")
+
+    roles = split_origins(frame, development=development_origins)
+    model = fit_quantile_calibration(frame[target], roles)
+    before_p90 = pd.to_numeric(frame["yhat_p90"], errors="coerce")
+    applied = apply_quantile_calibration(frame, model)
+    # Restored from the original column so untouched rows are byte-identical, not
+    # merely close.
+    applied.loc[~target, "yhat_p90"] = before_p90[~target]
+    # Decision #12: confidence is derived from the P50-P90 spread, so moving P90
+    # without recomputing it leaves the two inconsistent. That is what the
+    # publisher refused the first C5 bundle for.
+    if "confidence" in applied.columns:
+        applied["confidence"] = forecast_confidence(
+            applied["yhat_p50"], applied["yhat_p90"]
+        )
+    model = {
+        **model,
+        "decisionIds": ["#58", "#12"],
+        "correctionTarget": "yhat_p90",
+        "scopedToCohort": only_cohort,
+        "confirmationOriginsHeldOut": [str(v) for v in roles.confirmation],
+        "notAnAccuracyImprovement": (
+            "C2 widens an interval that was narrower than decision #58 allows. It "
+            "does not move the point forecast and is not an accuracy claim."
+        ),
+    }
+    return applied, model
+
+
 __all__ = [
+    "COVERAGE_MODEL_FILENAME",
     "C1_ID",
     "C2_ID",
     "COVERAGE_MAX",
@@ -264,5 +340,6 @@ __all__ = [
     "apply_quantile_calibration",
     "fit_bias_correction",
     "fit_quantile_calibration",
+    "remediate_coverage",
     "split_origins",
 ]

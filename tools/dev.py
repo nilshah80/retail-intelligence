@@ -1027,6 +1027,9 @@ def command_pipeline(args: argparse.Namespace) -> int:
             blend = backtest / "cold_start_blend_model.json"
             if blend.is_file():
                 command.extend(["--blend-model", str(blend)])
+            coverage = backtest / "coverage_calibration_model.json"
+            if coverage.is_file():
+                command.extend(["--coverage-model", str(coverage)])
             _pipeline_step("score-current", command)
 
         if "classify" in stages:

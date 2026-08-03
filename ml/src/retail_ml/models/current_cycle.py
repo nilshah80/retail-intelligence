@@ -23,7 +23,13 @@ from retail_ml.models.dataset import (
     load_current_horizon,
     load_training_horizon,
 )
-from retail_ml.models.cold_start_blend import BLEND_MODEL_FILENAME, apply_frozen_blend
+from retail_ml.models.bias_correction import apply_quantile_calibration
+from retail_ml.models.cold_start_blend import (
+    BLEND_MODEL_FILENAME,
+    COHORT_COLUMN,
+    apply_frozen_blend,
+)
+from retail_ml.models.confidence import forecast_confidence
 from retail_ml.models.forecasting import (
     _history,
     _partial_history,
@@ -236,6 +242,7 @@ def run_current_cycle(
     decision_as_of: datetime,
     runtime_profile: MLRuntimeProfile,
     blend_model_path: str | Path | None = None,
+    coverage_model_path: str | Path | None = None,
 ) -> CurrentCycleStats:
     """Fit at the decision origin and atomically emit future-only predictions."""
 
@@ -325,6 +332,25 @@ def run_current_cycle(
                     history,
                     _partial_history(feature_path, origin),
                 )
+        # C2 after C5, matching the order the gate scored. Replayed from frozen
+        # multipliers, never refitted: one origin cannot re-derive a coverage
+        # quantile, and a refit would be a different estimator from the certified
+        # one.
+        if coverage_model_path is not None:
+            with telemetry.measure("coverage_remediation"):
+                coverage_model = json.loads(
+                    Path(coverage_model_path).read_text(encoding="utf-8")
+                )
+                cohort = coverage_model.get("scopedToCohort")
+                before_p90 = pd.to_numeric(scored["yhat_p90"], errors="coerce")
+                scored = apply_quantile_calibration(scored, coverage_model)
+                if cohort is not None and COHORT_COLUMN in scored.columns:
+                    outside = scored[COHORT_COLUMN].astype(str) != cohort
+                    scored.loc[outside, "yhat_p90"] = before_p90[outside]
+                if "confidence" in scored.columns:
+                    scored["confidence"] = forecast_confidence(
+                        scored["yhat_p50"], scored["yhat_p90"]
+                    )
         training_rows = sum(result[2] for result in results)
         calibration_records = [
             record for result in results for record in result[1]

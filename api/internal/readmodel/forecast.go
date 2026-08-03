@@ -1457,6 +1457,7 @@ func (s *ForecastStore) weeklyActuals(
 					evaluation.target_week_start,
 					evaluation.horizon,
 					evaluation.yhat_p50,
+					evaluation.yhat_p90,
 					evaluation.actual_units
 				FROM retail_serving.forecast_eval_predictions AS evaluation%s
 				WHERE %s
@@ -1469,6 +1470,7 @@ func (s *ForecastStore) weeklyActuals(
 			SELECT
 				scoped.target_week_start,
 				SUM(scoped.yhat_p50),
+				SUM(scoped.yhat_p90),
 				SUM(scoped.actual_units)
 			FROM scoped
 			JOIN freshest
@@ -1491,13 +1493,23 @@ func (s *ForecastStore) weeklyActuals(
 	items := []map[string]any{}
 	for rows.Next() {
 		var targetWeek time.Time
-		var forecast, actual float64
-		if err := rows.Scan(&targetWeek, &forecast, &actual); err != nil {
+		var forecast, forecastP90, actual float64
+		if err := rows.Scan(
+			&targetWeek, &forecast, &forecastP90, &actual,
+		); err != nil {
 			return nil, err
 		}
+		// P90 alongside P50 because the two answer different questions and the
+		// chart needs both to be honest. `forecast` is a MEDIAN, and this demand is
+		// heavily right-skewed -- mean 27.68 against median 6.00 -- so summing
+		// medians against realised totals must land low. It reads as a forecast
+		// that is always wrong in one direction when in fact P(actual <= P50) is
+		// 52.8 per cent, which is a median doing its job. Serving the interval lets
+		// the screen show the actual falling INSIDE it rather than above a point.
 		items = append(items, map[string]any{
 			"targetWeekStart": targetWeek.Format("2006-01-02"),
 			"forecast":        forecast,
+			"forecastP90":     forecastP90,
 			"actual":          actual,
 		})
 	}

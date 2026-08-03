@@ -191,6 +191,9 @@ export const forecastActualsSchema = z.object({
   items: z.array(z.object({
     targetWeekStart: z.string(),
     forecast: z.number(),
+    // The P90. Optional so a bundle published before the read model served it
+    // still validates rather than blanking the chart.
+    forecastP90: z.number().optional(),
     actual: z.number()
   }))
 });

@@ -60,6 +60,26 @@ def _rows(
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
+#: Why the evidence gate reads `known_as_of < as_of + INTERVAL 1 DAY` rather than
+#: `<= as_of`.
+#:
+#: `as_of` is a DATE and `known_as_of` is a tz-aware instant, so `<=` coerces the
+#: date to midnight and silently drops everything knowable during the as-of day
+#: itself. The boundary stock snapshot is stamped 23:00 market-local, so the most
+#: recent state evidence in the publication was invisible at its own date and only
+#: appeared a day later -- which is why Inventory in Transit read zero while the
+#: snapshot held 35,987 units.
+#:
+#: Moving the as-of forward instead was not an option: assortment_calendar records
+#: end `active_to = 2026-07-28`, so an as-of past that leaves zero assorted cells
+#: and classes every cell residual. The two requirements were one day apart and
+#: mutually exclusive; treating the as-of as through-end-of-day satisfies both.
+#:
+#: This widens only what is READABLE at a given decision date. It does not touch
+#: the stored instants, so Gate B B05's `known_as_of >= statusEffectiveAt` is
+#: unaffected -- no row can be admitted before the event it describes.
+
+
 def load_positions(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> pd.DataFrame:
@@ -87,7 +107,7 @@ def load_positions(
                 stock.atp_units
             FROM stock_snapshots AS stock
             WHERE stock.snapshot_date <= ?
-              AND stock.known_as_of <= ?
+              AND stock.known_as_of < ? + INTERVAL 1 DAY
             ORDER BY stock.sku_id, stock.location_id, stock.snapshot_date DESC
         )
         SELECT
@@ -121,7 +141,7 @@ def load_positions(
             FROM assortment_calendar
             WHERE active_from <= ?
               AND (active_to IS NULL OR active_to >= ?)
-              AND known_as_of <= ?
+              AND known_as_of < ? + INTERVAL 1 DAY
         ) AS assortment
           ON assortment.sku_id = latest.sku_id
          AND assortment.store_id = latest.location_id
@@ -179,7 +199,7 @@ def load_trailing_demand(
         FROM sales
         JOIN locations ON locations.location_id = sales.store_id
         WHERE sales.date BETWEEN ? AND ?
-          AND sales.known_as_of <= ?
+          AND sales.known_as_of < ? + INTERVAL 1 DAY
         GROUP BY 1, 2, 3
         """,
         [float(TRAILING_DAYS), start, as_of, as_of],
@@ -204,7 +224,7 @@ def load_batches(
         FROM inventory_batches AS batches
         JOIN locations ON locations.location_id = batches.location_id
         WHERE batches.receipt_date <= ?
-          AND batches.known_as_of <= ?
+          AND batches.known_as_of < ? + INTERVAL 1 DAY
           AND batches.batch_qty > 0
         """,
         [as_of, as_of],
@@ -233,7 +253,7 @@ def load_waste(connection: duckdb.DuckDBPyConnection, *, as_of: date) -> pd.Data
         FROM waste_events AS waste
         JOIN locations ON locations.location_id = waste.location_id
         WHERE waste.event_date BETWEEN ? AND ?
-          AND waste.known_as_of <= ?
+          AND waste.known_as_of < ? + INTERVAL 1 DAY
         GROUP BY 1, 2, 3
         """,
         [start, as_of, as_of],
@@ -279,7 +299,7 @@ def load_unit_costs(
         FROM inventory_cost AS cost
         JOIN locations ON locations.location_id = cost.location_id
         WHERE cost.as_of_date <= ?
-          AND cost.known_as_of <= ?
+          AND cost.known_as_of < ? + INTERVAL 1 DAY
         ORDER BY cost.sku_id, cost.location_id, cost.as_of_date DESC
         """,
         [as_of, as_of],
@@ -298,7 +318,7 @@ def load_unit_costs(
         JOIN locations ON locations.location_id = transfers.to_location_id
         WHERE transfers.status = 'received'
           AND CAST(transfers.status_effective_at AS DATE) <= ?
-          AND transfers.known_as_of <= ?
+          AND transfers.known_as_of < ? + INTERVAL 1 DAY
           AND transfers.unit_cost_minor IS NOT NULL
         GROUP BY 1, 2, 3, 4, 5
         """,
@@ -360,7 +380,7 @@ def load_wms_variance(
             SELECT DISTINCT ON (sku_id, location_id)
                 sku_id, location_id, difference_units
             FROM wms_inventory_comparisons
-            WHERE snapshot_date <= ? AND known_as_of <= ?
+            WHERE snapshot_date <= ? AND known_as_of < ? + INTERVAL 1 DAY
             ORDER BY sku_id, location_id, snapshot_date DESC
         )
         SELECT
@@ -398,7 +418,7 @@ def load_channel_demand(
         FROM sales
         JOIN locations ON locations.location_id = sales.store_id
         WHERE sales.date BETWEEN ? AND ?
-          AND sales.known_as_of <= ?
+          AND sales.known_as_of < ? + INTERVAL 1 DAY
         GROUP BY 1, 2, 3, 4
         HAVING SUM(sales.units) > 0
         """,
@@ -416,7 +436,7 @@ def load_lanes(
                supply_location_id, priority_rank, transit_days,
                effective_from, effective_to
         FROM service_lanes
-        WHERE known_as_of <= ?
+        WHERE known_as_of < ? + INTERVAL 1 DAY
         """,
         [as_of],
     )
@@ -439,7 +459,7 @@ def load_supply_terms(
                merch_scope_id, effective_from, effective_to, lead_time_days,
                lead_time_std_days, moq, pack_qty
         FROM supply_terms
-        WHERE known_as_of <= ?
+        WHERE known_as_of < ? + INTERVAL 1 DAY
           AND origin_id IS NOT NULL
           AND effective_from <= ?
         """,
@@ -478,7 +498,7 @@ def load_suppliers(
                 CAST(capacity_confirmed_pct AS DOUBLE) / 100.0
                     AS capacity_confirmed_pct
             FROM supplier_performance
-            WHERE CAST(period AS DATE) <= ? AND known_as_of <= ?
+            WHERE CAST(period AS DATE) <= ? AND known_as_of < ? + INTERVAL 1 DAY
             ORDER BY supplier_id, CAST(period AS DATE) DESC
         )
         SELECT DISTINCT ON (performance.supplier_id)
@@ -704,7 +724,7 @@ def lane_coverage_pct(
                 SELECT transfers.from_location_id, transfers.to_location_id
                 FROM inventory_transfer_events AS transfers
                 WHERE CAST(transfers.status_effective_at AS DATE) BETWEEN ? AND ?
-                  AND transfers.known_as_of <= ?
+                  AND transfers.known_as_of < ? + INTERVAL 1 DAY
             )
             SELECT
                 count(*) AS total,

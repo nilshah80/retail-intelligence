@@ -76,7 +76,16 @@ class MarketHistory:
     timezone: str
     origins: list[date]
     opening_state: dict[tuple[str, str], int]
+    #: What the SHELF served: the sale less the part the DC covered. The oracle
+    #: reconstructs actual shelf movement, so this is the series it must use.
     demand_by_period: dict[datetime, dict[tuple[str, str], int]]
+    #: What customers actually ASKED FOR, shortfall included. The policy
+    #: comparison must use this: its whole question is whether a policy would have
+    #: covered demand the shelf could not, and served demand cannot answer it --
+    #: fed served demand no policy can ever stock out, so stockoutPeriods and
+    #: lostUnits are structurally zero for candidate and incumbent alike and the
+    #: acceptance gate has nothing to discriminate on.
+    true_demand_by_period: dict[datetime, dict[tuple[str, str], int]]
     arrivals_by_period: dict[datetime, dict[tuple[str, str], int]]
     waste_by_period: dict[datetime, dict[tuple[str, str], int]]
     observed_closing_units: dict[datetime, int]
@@ -147,7 +156,7 @@ def load_market_history(
             WHERE locations.market_id = ?
               AND channels.type = 'store'
               AND sales.date BETWEEN ? AND ?
-              AND sales.known_as_of <= ?
+              AND sales.known_as_of < ? + INTERVAL 1 DAY
             GROUP BY 1, 2, 3
             """,
             [market_id, flow_start, window_end, window_end],
@@ -165,7 +174,7 @@ def load_market_history(
             WHERE locations.market_id = ?
               AND transfers.status = 'received'
               AND CAST(transfers.status_effective_at AS DATE) BETWEEN ? AND ?
-              AND transfers.known_as_of <= ?
+              AND transfers.known_as_of < ? + INTERVAL 1 DAY
             GROUP BY 1, 2, 3
             """,
             [market_id, flow_start, window_end, window_end],
@@ -184,7 +193,7 @@ def load_market_history(
             WHERE locations.market_id = ?
               AND locations.type = 'store'
               AND waste.event_date BETWEEN ? AND ?
-              AND waste.known_as_of <= ?
+              AND waste.known_as_of < ? + INTERVAL 1 DAY
             GROUP BY 1, 2, 3
             """,
             [market_id, flow_start, window_end, window_end],
@@ -198,7 +207,7 @@ def load_market_history(
             WHERE locations.market_id = ?
               AND locations.type = 'store'
               AND stock.snapshot_date <= ?
-              AND stock.known_as_of <= ?
+              AND stock.known_as_of < ? + INTERVAL 1 DAY
             ORDER BY stock.location_id, stock.sku_id, stock.snapshot_date DESC
             """,
             [market_id, window_start, window_start],
@@ -223,7 +232,7 @@ def load_market_history(
             WHERE locations.market_id = ?
               AND locations.type = 'store'
               AND stock.snapshot_date BETWEEN ? AND ?
-              AND stock.known_as_of <= ?
+              AND stock.known_as_of < ? + INTERVAL 1 DAY
             """,
             [market_id, window_start, window_end, window_end],
         ).fetchall()
@@ -255,7 +264,7 @@ def load_market_history(
                 WHERE locations.market_id = ?
                   AND locations.type = 'store'
                   AND shortfall.event_date BETWEEN ? AND ?
-                  AND shortfall.known_as_of <= ?
+                  AND shortfall.known_as_of < ? + INTERVAL 1 DAY
                 GROUP BY 1, 2, 3
                 """,
                 [market_id, flow_start, window_end, window_end],
@@ -277,6 +286,7 @@ def load_market_history(
     # demand is bucketed -- the period map and the daily bridge -- because a
     # correction applied in one and forgotten in the other is precisely how the
     # bridge came to be off by a day the first time.
+    true_demand_rows = demand_rows
     if shortfall_rows:
         covered_by_dc: dict[tuple[str, str, date], int] = defaultdict(int)
         for store, sku, day, units in shortfall_rows:
@@ -295,6 +305,11 @@ def load_market_history(
     )
     for store, sku, day, units in demand_rows:
         demand[period_for(day)][(str(sku), str(store))] += int(units)
+    true_demand: dict[datetime, dict[tuple[str, str], int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    for store, sku, day, units in true_demand_rows:
+        true_demand[period_for(day)][(str(sku), str(store))] += int(units)
     arrivals: dict[datetime, dict[tuple[str, str], int]] = defaultdict(
         lambda: defaultdict(int)
     )
@@ -414,6 +429,9 @@ def load_market_history(
         demand_by_period={
             period: dict(cells) for period, cells in demand.items()
         },
+        true_demand_by_period={
+            period: dict(cells) for period, cells in true_demand.items()
+        },
         arrivals_by_period={
             period: dict(cells) for period, cells in arrivals.items()
         },
@@ -513,6 +531,14 @@ def run_replay(
                 continue
             markets.append(history.market_id)
             scoped = _scope(history, cells)
+            # TRUE demand for both policies, not the shelf-served series the
+            # oracle uses. The comparison asks whether a policy would have covered
+            # what the shelf could not; served demand cannot answer that, because
+            # by construction it is exactly what got served. Both metrics that
+            # decide this gate -- stockoutPeriods and lostUnits -- were zero on
+            # both sides for that reason, so the candidate's real advantage (half
+            # the inventory at the same fill rate) could never clear a rule that
+            # fails a tie.
             candidate_run = replay_market(
                 policy_id=CANDIDATE_POLICY_ID,
                 policy=candidate_policy(
@@ -523,7 +549,7 @@ def run_replay(
                 timezone=history.timezone,
                 origins=history.origins,
                 opening_state=scoped.opening_state,
-                demand_by_period=scoped.demand_by_period,
+                demand_by_period=scoped.true_demand_by_period,
                 arrivals_by_period=scoped.arrivals_by_period,
                 waste_by_period=scoped.waste_by_period,
             )
@@ -536,7 +562,7 @@ def run_replay(
                 timezone=history.timezone,
                 origins=history.origins,
                 opening_state=scoped.opening_state,
-                demand_by_period=scoped.demand_by_period,
+                demand_by_period=scoped.true_demand_by_period,
                 arrivals_by_period=scoped.arrivals_by_period,
                 waste_by_period=scoped.waste_by_period,
             )
@@ -699,6 +725,12 @@ def _scope(history: MarketHistory, cells: Sequence[tuple[str, str]]) -> MarketHi
                 key: units for key, units in by_cell.items() if key in wanted
             }
             for period, by_cell in history.demand_by_period.items()
+        },
+        true_demand_by_period={
+            period: {
+                key: units for key, units in by_cell.items() if key in wanted
+            }
+            for period, by_cell in history.true_demand_by_period.items()
         },
         arrivals_by_period={
             period: {

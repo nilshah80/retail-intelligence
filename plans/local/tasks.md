@@ -1754,3 +1754,42 @@ production.
       validate against its own measured bands and now asserts at import; and the pipeline
       orchestration had no tests, now nine.
 
+- [ ] **The forecast's negative bias is a COLD-START problem, not a broad one, and C1 cannot
+      reach it.** P4-12b wired candidate C1 (`models/bias_correction.py`) into the backtest and
+      the serving path; it passes every gate and is live in `fr_74151e73fd4227b4`. It does not
+      fix "Forecast vs Actual", and measuring why overturned the premise the task was written on.
+
+      The -5.4 per cent aggregate bias is not spread across the forecast. Split by cohort on
+      the published eval:
+
+          cold_start           102,388 rows   22.5% of actual volume   bias -18.35%
+          established_history  605,904 rows   77.5% of actual volume   bias  -1.21%
+
+      C1 may only touch `established_history`. Decision #86 section 2.3 requires C5's untargeted
+      rows to stay byte-identical to the champion it captured, and section 2.4 forbids any
+      display-cell regression past rounding. Both refuse a C1 that composes with C5 on the same
+      rows -- section 2.3 when C1 runs second (p50Identical=False), section 2.4 when it runs
+      first (h26 96.496 -> 96.205, still above its 78.0 target but a regression all the same).
+      Disjoint populations is the only arrangement that satisfies both.
+
+      Fitted on the population it is allowed to correct, C1 honestly reports that almost no
+      correction is needed there: parentFactor 1.00461, factors 0.962 to 1.058, 52 cells, zero
+      shrinkage. The 1.0778 factor from the first attempt was an artifact of fitting across
+      cold_start -- a cohort C1 must not correct -- so that number should not be quoted as C1's
+      effect.
+
+      So the bars stay under the actuals because 22.5 per cent of volume is forecast 18 per cent
+      low by the estimator C5 produces, and C1 is forbidden from touching it. The real work is
+      one of:
+        (a) correct the bias INSIDE C5, so its blended cold-start output is not 18 per cent low.
+            C5 was accepted for cold-start non-inferiority, not for calibration, so this is a
+            change to C5's objective and needs its own candidate and gate.
+        (b) admit a cold-start-scoped bias candidate that supersedes C5 rather than composing
+            with it, so section 2.3's untargeted-row rule has one owner per cohort.
+      (a) is the smaller change; (b) is the cleaner contract.
+
+      Whether to keep C1 as it stands is a judgement call. It is correct, gated and live, and it
+      improves 77.5 per cent of volume by 0.46 per cent -- real but marginal against roughly 190
+      lines across five files. Reverting it touches only `models/bias_correction.py`,
+      `models/forecasting.py`, `models/current_cycle.py`, `cli.py` and `tools/dev.py`; the P4-12c
+      as-of and true-demand fixes live in `inventory_run/` and are unaffected.
