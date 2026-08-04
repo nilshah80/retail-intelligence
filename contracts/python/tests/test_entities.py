@@ -23,10 +23,10 @@ def test_entire_contract_tree_validates() -> None:
     # entity or role appearing without a deliberate contract change is the thing
     # this test exists to catch.
     assert validate_contract_tree() == {
-        "entities": 57,
+        "entities": 58,
         "tiers": 3,
         "stagingEnvelopes": 6,
-        "stagingV2Roles": 39,
+        "stagingV2Roles": 40,
         "jsonSchemas": 5,
         "openApiContracts": 1,
         "guardrailVectors": 4,

@@ -599,6 +599,15 @@ def build_supply_extensions(
                         "marketCode": market_id,
                         "currencyCode": markets[market_id]["currencyCode"],
                         "blocked": "false",
+                        # Every other emitted entity stamps when the source
+                        # observed it; the vendor master did not, so a downstream
+                        # staging table had no honest known_as_of to gate on and
+                        # the dimension could not be landed at all.
+                        "observedAt": _bc_iso(
+                            date.fromisoformat(config["time"]["startDate"]),
+                            8,
+                            markets[market_id]["timezone"],
+                        ),
                     }
                 )
             term_identity = (

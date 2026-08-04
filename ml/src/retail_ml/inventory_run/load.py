@@ -527,6 +527,8 @@ def load_suppliers(
         SELECT DISTINCT ON (performance.supplier_id)
             locations.market_id,
             performance.supplier_id,
+            suppliers.supplier_name,
+            suppliers.currency_code,
             performance.otd_rate,
             performance.lead_time_mean_days,
             performance.lead_time_std_days,
@@ -539,9 +541,70 @@ def load_suppliers(
         JOIN locations
           ON locations.location_id = terms.destination_location_id
         LEFT JOIN scoped ON scoped.origin_id = performance.supplier_id
+        -- The vendor master. Every screen that shows a supplier printed its UUID
+        -- because this dimension landed and was never staged into canonical.
+        LEFT JOIN suppliers ON suppliers.supplier_id = performance.supplier_id
         ORDER BY performance.supplier_id, locations.market_id
         """,
         [as_of, as_of, as_of, as_of],
+    )
+
+
+def load_open_purchase_orders(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Inbound still on order per supplier and cell, at the origin.
+
+    "Open PO Value" is what a supplier owes the network. It is published per
+    LOCATION and SKU rather than per supplier alone because the value has to be
+    struck at the accepted unit cost for the receiving cell -- P4-D6 ranks those
+    sources and the builder already holds the result, so aggregating to the
+    supplier here would throw away the key the cost is keyed by.
+
+    The latest status per shipment wins: a shipment appears once per lifecycle
+    transition, and counting the rows would count one order three times.
+    """
+
+    return _frame(
+        connection,
+        """
+        -- The two tables sit at DIFFERENT grains, and joining them before resolving
+        -- the status conflates them. The lifecycle is per SHIPMENT -- 104,460
+        -- shipments, one row per transition -- while the quantity is per shipment
+        -- LINE, because one shipment carries several SKUs: 197,368 lines over those
+        -- same 104,460 shipments. `JOIN ... USING (shipment_id)` therefore pairs
+        -- every transition with every line (591,717 rows), and collapsing that with
+        -- DISTINCT ON (shipment_id) keeps ONE arbitrary line per shipment and drops
+        -- the others. So the status is resolved on its own table first, and only
+        -- then applied to the lines.
+        WITH visible_status AS (
+            SELECT DISTINCT ON (shipment_id) shipment_id, status
+            FROM inbound_shipment_status_events
+            WHERE known_as_of < ? + INTERVAL 1 DAY
+              AND CAST(status_effective_at AS DATE) <= ?
+            ORDER BY shipment_id, status_effective_at DESC
+        )
+        SELECT
+            locations.market_id,
+            lines.supplier_id,
+            lines.to_location AS location_id,
+            lines.sku_id,
+            SUM(lines.qty) AS open_units
+        FROM visible_status
+        -- Every column below is qualified deliberately: these two relations share
+        -- nine column names, so an unqualified reference is either ambiguous or,
+        -- worse, silently resolves to the wrong grain's value.
+        JOIN inbound_shipments AS lines
+          ON lines.shipment_id = visible_status.shipment_id
+        JOIN locations ON locations.location_id = lines.to_location
+        -- The line has its own visibility: a line not yet known at the origin is
+        -- not on order at the origin, whatever its shipment's status says.
+        WHERE lines.known_as_of < ? + INTERVAL 1 DAY
+          AND visible_status.status <> 'received'
+          AND lines.supplier_id IS NOT NULL
+        GROUP BY 1, 2, 3, 4
+        """,
+        [as_of, as_of, as_of],
     )
 
 
@@ -826,6 +889,9 @@ def load_inventory_inputs(
             suppliers=load_suppliers(connection, as_of=as_of),
             warehouse_capacity=load_warehouse_capacity(connection, as_of=as_of),
             inbound_summary=load_inbound_summary(connection, as_of=as_of),
+            open_purchase_orders=load_open_purchase_orders(
+                connection, as_of=as_of
+            ),
             channel_demand=load_channel_demand(connection, as_of=as_of),
             policy={market: policy[market] for market in markets},
             currency_by_market=currency_by_market,

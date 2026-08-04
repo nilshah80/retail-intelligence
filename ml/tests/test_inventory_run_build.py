@@ -297,6 +297,11 @@ def _inputs(**overrides: Any) -> InventoryInputs:
         "suppliers": suppliers,
         "warehouse_capacity": warehouse_capacity,
         "inbound_summary": inbound_summary,
+        "open_purchase_orders": pd.DataFrame(
+            columns=[
+                "market_id", "supplier_id", "location_id", "sku_id", "open_units",
+            ]
+        ),
         "channel_demand": channel_demand,
         "policy": POLICIES,
         "currency_by_market": CURRENCIES,

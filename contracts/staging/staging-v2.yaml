@@ -580,6 +580,19 @@ roles:
     providerResolution: cross_validate
     crossValidates: inventory
 
+  # The vendor master. `supplier_performance` below is keyed by the same
+  # `supplier_source_key` and carries reliability without identity, so a screen
+  # naming a supplier could only print its hash. This role carries the name.
+  vendors:
+    version: v2
+    group: inventory
+    purpose: supplier identity as the source declares it
+    grain: supplier
+    key: [source_instance, supplier_source_key]
+    requiredFields: [supplier_source_key, display_name]
+    optionalFields: [supplier_number, brand_name, currency_code]
+    providerResolution: exclusive
+
   supplier_performance:
     version: v2
     group: inventory

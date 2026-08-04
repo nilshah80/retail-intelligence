@@ -265,6 +265,13 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "category",
         "category_label",
         "scope_count",
+        # The vendor master's own name, and what this supplier still owes the
+        # network. Both screens showed a UUID and a blank because the dimension
+        # landed and was never staged, and no inbound row named its vendor.
+        "supplier_name",
+        "open_po_units",
+        "open_po_value_minor",
+        "currency_code",
         "otd_rate",
         "lead_time_mean_days",
         "lead_time_std_days",

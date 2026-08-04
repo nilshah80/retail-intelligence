@@ -24,6 +24,47 @@ from retail_ingestion.readiness.selection import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = REPO_ROOT / "contracts/onboarding/publication-selection.schema.json"
 HEX = "a" * 64
+SELECTIONS = REPO_ROOT / "contracts/evidence/publication-selections"
+
+
+def _current_publication_path() -> Path:
+    """The curated root the committed ledger currently selects.
+
+    These tests used to name `run-c5eb1506ecd4c550` literally, which bound them to
+    one run's bytes existing on disk. A from-scratch rebuild publishes a different
+    run id and deletes the old curated tree, so four tests failed on a run that no
+    longer exists -- a rebuild breaking tests that have nothing to do with the
+    change being made.
+
+    Currency is DERIVED the same way the ledger derives it: a record is current when
+    nothing supersedes its recordId. That is decision #90's rule, not a sorted glob
+    over filenames -- and this module's own guard forbids the resolver from globbing,
+    so the test should not model one either.
+    """
+
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(SELECTIONS.glob("*.json"))
+    ]
+    superseded = {
+        record.get("supersededByRecordId")
+        for record in records
+        if record.get("supersededByRecordId")
+    } | {
+        (record.get("lifecycle") or {}).get("supersedes")
+        for record in records
+        if (record.get("lifecycle") or {}).get("supersedes")
+    }
+    for record in records:
+        lifecycle = record.get("lifecycle") or {}
+        if lifecycle.get("state") != "active":
+            continue
+        if lifecycle.get("recordId") in superseded:
+            continue
+        logical = (record.get("publication") or {}).get("logicalPath")
+        if logical:
+            return REPO_ROOT / logical
+    raise AssertionError("no current active selection names a publication")
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +89,7 @@ def _selection(**overrides) -> dict:
             "gateASemanticFingerprint": "b" * 64,
             "gateBSemanticFingerprint": "c" * 64,
             "publicationSemanticFingerprint": "d" * 64,
-            "logicalPath": "ingestion/data/curated/run-c5eb1506ecd4c550",
+            "logicalPath": str(_current_publication_path().relative_to(REPO_ROOT)),
             "objectCount": 1509,
         },
         "readiness": {
@@ -258,10 +299,7 @@ def test_selection_verifies_against_the_real_publication_manifest() -> None:
     """The demo pin remains expressible as a selection."""
 
     manifest = json.loads(
-        (
-            REPO_ROOT
-            / "ingestion/data/curated/run-c5eb1506ecd4c550/publication-manifest.json"
-        ).read_text(encoding="utf-8")
+        (_current_publication_path() / "publication-manifest.json").read_text(encoding="utf-8")
     )
     selection = _selection(
         publication={
@@ -287,10 +325,7 @@ def test_selection_verifies_against_the_real_publication_manifest() -> None:
 
 def test_object_count_drift_fails_closed() -> None:
     manifest = json.loads(
-        (
-            REPO_ROOT
-            / "ingestion/data/curated/run-c5eb1506ecd4c550/publication-manifest.json"
-        ).read_text(encoding="utf-8")
+        (_current_publication_path() / "publication-manifest.json").read_text(encoding="utf-8")
     )
     selection = _selection(
         publication={

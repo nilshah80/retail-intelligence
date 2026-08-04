@@ -313,6 +313,11 @@ class BusinessCentralAdapter(SourceAdapter):
                 s.shipmentId::VARCHAR AS shipment_id,
                 l.sku::VARCHAR AS sku_source_key,
                 NULL::VARCHAR AS from_location_source_key,
+                -- The vendor that ordered it. A supplier is not a LOCATION, so it
+                -- travels in its own column rather than being forced through the
+                -- location crosswalk: from_location stays null because an external
+                -- supplier has no canonical node.
+                po.vendorId::VARCHAR AS supplier_source_key,
                 s.warehouseId::VARCHAR AS to_location_source_key,
                 CASE WHEN lower(s.status) = 'received'
                     THEN try_cast(l.receivedQuantity AS BIGINT)
@@ -334,6 +339,9 @@ class BusinessCentralAdapter(SourceAdapter):
             JOIN raw_business_central.purchase_order_lines AS l
               ON l.documentId = s.purchaseOrderId
              AND l._source_instance = s._source_instance
+            LEFT JOIN raw_business_central.purchase_orders AS po
+              ON po.id = s.purchaseOrderId
+             AND po._source_instance = s._source_instance
             """
         )
         # Source contract v13. These three relations exist only when the source
@@ -690,6 +698,22 @@ class BusinessCentralAdapter(SourceAdapter):
         )
         con.execute(
             """
+            CREATE OR REPLACE TABLE stage_data.bc_vendors AS
+            SELECT
+                'businessCentral'::VARCHAR AS source_system,
+                _source_instance AS source_instance, _market_id AS market_id,
+                id::VARCHAR AS supplier_source_key,
+                displayName::VARCHAR AS display_name,
+                number::VARCHAR AS supplier_number,
+                brandName::VARCHAR AS brand_name,
+                currencyCode::VARCHAR AS currency_code,
+                try_cast(observedAt AS TIMESTAMPTZ) AS known_as_of,
+                'native_observed'::VARCHAR AS evidence_grade
+            FROM raw_business_central.vendors
+            """
+        )
+        con.execute(
+            """
             CREATE OR REPLACE TABLE stage_data.bc_supplier_performance AS
             SELECT
                 'businessCentral'::VARCHAR AS source_system,
@@ -728,6 +752,7 @@ class BusinessCentralAdapter(SourceAdapter):
             "stage_data.bc_warehouse_capacity",
             "stage_data.bc_wms_comparisons",
             "stage_data.bc_supplier_performance",
+            "stage_data.bc_vendors",
         )
 
 

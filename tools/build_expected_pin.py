@@ -40,15 +40,19 @@ from build_publication_selection import current_records  # noqa: E402
 PIN_PATH = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
 SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
-#: The publication P4-3 pinned. Named rather than discovered: there is no
-#: newest-wins here either, and a caller changing the pin should have to say so.
+#: The currently pinned publication. Named rather than discovered: there is no
+#: newest-wins here, and a caller changing the pin should have to say so.
 #:
-#: Moved to run-b847177c11ac724d at P4-12c. This constant is the ONLY thing the ML
-#: chain consults to find its curated root -- `features` takes no source argument
-#: at all -- so advancing the publication-selection records without advancing this
-#: leaves every ML stage silently reading the previous publication while
-#: `--source-root` is ignored. That cost a full features-and-backtest run: the
-#: feature manifest recorded sourceSnapshotId d43fd302 when the intent was 0634b079.
+#: This value is the ONLY thing the ML chain consults to find its curated root --
+#: `features` takes no source argument at all -- so advancing the
+#: publication-selection records without advancing this leaves every ML stage
+#: silently reading the previous publication while `--source-root` is ignored. That
+#: cost a full features-and-backtest run: the feature manifest recorded
+#: sourceSnapshotId d43fd302 when the intent was 0634b079.
+#:
+#: Pass `--run` to move it. The constant remains the record of what is pinned NOW,
+#: so `--check` stays reproducible from the file alone, but advancing the pin no
+#: longer requires editing source -- which is how the mistake above happened.
 RUN = "run-b847177c11ac724d"
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
@@ -95,9 +99,9 @@ def _active_selections() -> dict[str, dict[str, Any]]:
     return active
 
 
-def build_pin() -> dict[str, Any]:
-    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / RUN
-    curated = REPO_ROOT / "ingestion" / "data" / "curated" / RUN
+def build_pin(run: str = RUN) -> dict[str, Any]:
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    curated = REPO_ROOT / "ingestion" / "data" / "curated" / run
     for path in (
         evidence / "gate-a.json",
         evidence / "gate-b.json",
@@ -201,6 +205,17 @@ def build_pin() -> dict[str, Any]:
     }
 
 
+def _promoted_runs() -> list[str]:
+    """Run ids that have retained publication evidence, oldest path order."""
+
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence"
+    return sorted(
+        path.name
+        for path in evidence.glob("run-*")
+        if (path / "publication-manifest.json").is_file()
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -208,9 +223,57 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="verify the committed pin matches a fresh derivation",
     )
+    parser.add_argument(
+        "--run",
+        default=None,
+        help=(
+            "publication run id to pin, e.g. run-0123456789abcdef. Defaults to "
+            "the committed pin's own run so --check needs no argument. Decision "
+            "#89 makes moving the pin a governed act: state the run explicitly "
+            "rather than letting a newest-wins glob choose it."
+        ),
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="list run ids that have retained publication evidence, and exit",
+    )
     args = parser.parse_args(argv)
 
-    pin = build_pin()
+    if args.list:
+        available = _promoted_runs()
+        print(f"currently pinned: {RUN}")
+        if available:
+            for run in available:
+                print(f"  retained evidence: {run}")
+        else:
+            print("  no run has retained publication evidence")
+        return 0
+
+    run = args.run or RUN
+    if args.check and args.run and args.run != RUN:
+        print(
+            f"--check verifies the committed pin, which names {RUN}; "
+            f"--run {args.run} would verify a different derivation",
+            file=sys.stderr,
+        )
+        return 2
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    if not (evidence / "publication-manifest.json").is_file():
+        available = _promoted_runs()
+        print(
+            f"{run}: no retained publication evidence at "
+            f"{evidence.relative_to(REPO_ROOT)}. "
+            + (
+                "Runs with retained evidence: " + ", ".join(available)
+                if available
+                else "No run has retained evidence; publish one first."
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
+    pin = build_pin(run=run)
     if args.check:
         if not PIN_PATH.is_file():
             print("contracts/ml/expected-pin.json is absent", file=sys.stderr)
@@ -225,9 +288,12 @@ def main(argv: list[str] | None = None) -> int:
         print("expected-pin.json matches its derivation")
         return 0
 
-    PIN_PATH.write_text(
-        json.dumps(pin, indent=2) + "\n", encoding="utf-8", newline="\n"
-    )
+    # Written through an explicit binary write rather than `write_text(newline=...)`:
+    # that keyword is 3.10+, and this tool is reachable from an orchestrator running
+    # whichever `python3` is on PATH -- which on macOS is still 3.9. The point of the
+    # keyword was to keep the file LF on every platform, and encoding the bytes here
+    # does that unconditionally.
+    PIN_PATH.write_bytes((json.dumps(pin, indent=2) + "\n").encode("utf-8"))
     print(
         f"wrote {PIN_PATH.relative_to(REPO_ROOT)}\n"
         f"  snapshot:    {pin['sourceSnapshotId']}\n"

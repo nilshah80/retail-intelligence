@@ -278,8 +278,6 @@ export const REASON_TEXT: Record<string, string> = {
     "the waste artifact publishes an exposure column that is empty on every row, and what could be recovered from near-expiry stock needs a recovery price the platform does not hold",
   SERVICE_IMPACT_NEEDS_REPLAY:
     "a service-level delta is the difference between two policies measured over the same weeks, which only the weekly replay produces",
-  PO_VALUE_NOT_PER_SUPPLIER:
-    "inbound already on order is published per location and SKU, not per supplier, so a supplier's share cannot be attributed without a purchase-order line",
   INCUMBENT_BUFFER_NOT_PUBLISHED:
     "the engine publishes the buffer it recommends; the buffer currently in force belongs to the incumbent policy and is not carried, so there is nothing to compare it against",
   EXCEPTION_OWNER_NOT_PUBLISHED:
@@ -907,12 +905,15 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Supplier", field: "supplierId"},
+        // The vendor master's own name. This printed a UUID because the
+        // dimension landed and was never staged into canonical.
+        {header: "Supplier", field: "supplierName"},
         // The scope this supplier serves. 239 of 280 serve more than one, so the
         // row also carries scopeCount and the cell is not read as exclusive.
         {header: "Category", field: "categoryLabel"},
-        {header: "Open PO Value", field: null,
-         unavailableReason: "PO_VALUE_NOT_PER_SUPPLIER"},
+        // Inbound still on order from this supplier, at the accepted cost for the
+        // receiving cell. It was withheld because no inbound row named its vendor.
+        {header: "Open PO Value", field: "openPoValueMinor", format: "money"},
         {header: "Capacity", field: "capacityConfirmedPct", format: "percent"},
         {header: "Lead Time", field: "leadTimeMeanDays", format: "days"},
         {header: "OTD", field: "otdRate", format: "percent"},

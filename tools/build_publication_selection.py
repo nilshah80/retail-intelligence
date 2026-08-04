@@ -106,6 +106,14 @@ PHASE_4R3_APPROVED_AT = "2026-08-02T12:00:00Z"
 PHASE_4R4_RUN = "run-b847177c11ac724d"
 PHASE_4R4_APPROVED_AT = "2026-08-03T00:00:00Z"
 
+#: P4-12e. The from-scratch rebuild on datagen 0.16.0. Lane transit was one of two
+#: run-wide constants, so every rank-1 lane resolved the same lead time and the
+#: planner's Lead Time and Expected Receipt columns were one value repeated down
+#: the page. It is source-side, so it needs a new publication and a new pin rather
+#: than a rebuild on the old one.
+PHASE_4R5_RUN = "run-adac9e85dccb56e8"
+PHASE_4R5_APPROVED_AT = "2026-08-04T00:00:00Z"
+
 
 def _scope(capability: str) -> dict[str, str]:
     return {
@@ -155,12 +163,61 @@ LEGACY_UNSELECTED_PREDECESSOR = {
 }
 
 
+#: Runs whose retained evidence was destroyed on 2026-08-04 during an authorized
+#: full-rebuild wipe: `ingestion/data/evidence/` was cleared along with the bulk
+#: run data, and it was never tracked in git.
+#:
+#: Their selection records remain committed and unchanged. Each record already
+#: embeds every value the derivation produces -- both gate fingerprints, the
+#: publication fingerprint, the object count and the DuckDB digest -- so the
+#: ledger and its supersession chain survive intact. What does NOT survive is the
+#: ability to re-derive those values from source evidence, and that distinction is
+#: disclosed here rather than papered over.
+#:
+#: A run listed here is reproduced from its own committed record. A run that is
+#: neither listed here nor has retained evidence still refuses, so this can never
+#: become a way to mint a selection nobody verified.
+EVIDENCE_RELEASED_RUNS: dict[str, str] = {
+    "run-c5eb1506ecd4c550": "Phase 3 serving publication",
+    "run-5bf9580d18d67e36": "P4-3 ten-year v13 publication",
+    "run-5bf9580d18d67e36-r2": "P4-10 re-ingest of the same snapshot",
+    "run-ae5fcbcb9b8abb34": "P4-12 tightened store replenishment policy",
+    "run-b847177c11ac724d": "P4-12c store_stockout_events and unit-cost fix",
+}
+
+#: Counted so `--check` can report how much of the ledger still rests on retained
+#: bytes rather than reporting a bare pass.
+_reproduced_runs: set[str] = set()
+_derived_runs: set[str] = set()
+
+
 def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _evidence_dir(run: str) -> Path:
     return REPO_ROOT / "ingestion" / "data" / "evidence" / run
+
+
+def _recorded_blocks(run: str, capability: str) -> tuple[dict[str, Any], str] | None:
+    """The publication block and readiness fingerprint a committed record carries.
+
+    Matched on the logical path and capability rather than on a filename, so the
+    lookup cannot drift when a record is renamed.
+    """
+
+    target = f"ingestion/data/curated/{run}"
+    for path in sorted(OUTPUT_DIR.glob("*.json")):
+        record = _load(path)
+        publication = record.get("publication") or {}
+        scope = record.get("scope") or {}
+        if (
+            publication.get("logicalPath") == target
+            and scope.get("capability") == capability
+        ):
+            readiness = record.get("readiness") or {}
+            return publication, str(readiness.get("reportFingerprint"))
+    return None
 
 
 def current_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -203,6 +260,52 @@ def build_candidate(
     """
 
     evidence = _evidence_dir(run)
+    if not (evidence / "publication-manifest.json").is_file():
+        # No retained evidence. Reproduce the record that was derived when the
+        # evidence existed, or refuse -- never invent one.
+        if run not in EVIDENCE_RELEASED_RUNS:
+            raise SystemExit(
+                f"{run}: no retained evidence at {evidence} and the run is not a "
+                "declared evidence-released run. A selection cannot be derived "
+                "without the gate and manifest files it is derived FROM."
+            )
+        blocks = _recorded_blocks(run, capability)
+        if blocks is None:
+            raise SystemExit(
+                f"{run}: declared evidence-released but no committed selection "
+                f"record carries its {capability} publication block, so there is "
+                "nothing to reproduce it from."
+            )
+        publication, readiness_fingerprint = blocks
+        _reproduced_runs.add(run)
+        selection = {
+            "schemaVersion": SELECTION_SCHEMA_VERSION,
+            "scope": _scope(capability),
+            "lifecycle": {
+                "state": "candidate",
+                "supersedes": None,
+                "reasonCode": reason_code,
+            },
+            "publication": dict(publication),
+            "readiness": {
+                "reportFingerprint": readiness_fingerprint,
+                "capabilityReadiness": "ready",
+                "capabilitySufficiency": "sufficient",
+            },
+            "approval": {
+                "actor": ACTOR,
+                "approvedAt": approved_at,
+                "reason": candidate_reason,
+            },
+        }
+        selection["selectionId"] = derive_selection_id(selection)
+        selection["lifecycle"]["recordId"] = derive_record_id(selection)
+        # verify_against_publication is deliberately NOT called: there is no
+        # manifest to verify against, which is the whole disclosure.
+        validate_selection(selection)
+        return selection
+
+    _derived_runs.add(run)
     manifest = _load(evidence / "publication-manifest.json")
     gate_a = _load(evidence / "gate-a.json")
     gate_b = _load(evidence / "gate-b.json")
@@ -630,6 +733,95 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         )
     }
 
+    # -- P4-12e: per-lane transit, and a supplier with a name -------------------
+    r5_reason = (
+        "Regenerated source run. Replenishment lane transit was one of two "
+        "run-wide constants and every rank-1 lane took the primary one, so every "
+        "recommendation in the network resolved an identical lead time and the "
+        "planner's Lead Time and Expected Receipt columns were one value repeated "
+        "down the page. Transit now varies per LANE, deterministically in the "
+        "lane's own identity and additive on the policy floor. The vendor master "
+        "travels with it: `vendors` landed every run and was staged by none of "
+        "them, so every supplier a screen named was a UUID. It is now staged, "
+        "canonicalised as `suppliers` and declared in the retail_v2 contract -- "
+        "the declaration being what makes it validated rather than merely present. "
+        "The fingerprints below are also the first ones that MEAN anything across "
+        "runs: `landingTime`, the wall clock at which the snapshot was landed, "
+        "participated in the staging semantic fingerprint and propagated through the "
+        "candidate into the publication, so re-landing byte-identical source moved "
+        "the publication fingerprint and no selection record could ever be "
+        "re-derived. It is now excluded from identity while still recorded as "
+        "provenance, exactly as `completedAt` already was."
+    )
+    r5_chains = {
+        capability: build_chain(
+            run=PHASE_4R5_RUN,
+            capability=capability,
+            approved_at=PHASE_4R5_APPROVED_AT,
+            reason_code="PHASE_4_PER_LANE_TRANSIT",
+            candidate_reason=r5_reason,
+            approved_reason=approved,
+            active_reason=active,
+        )
+        for capability, approved, active in (
+            (
+                "demand_forecast_non_pit",
+                "Gate A, Gate B, the capability mask, the publication "
+                "fingerprint and the curated DuckDB hash derived from this run's "
+                "own retained evidence rather than reproduced from a committed "
+                "record. Sales are unchanged at 7,471,784 rows and the business "
+                "controls still read 573 active SKUs at 2026-07-28: a transit "
+                "time moves no sale, and that is the equivalence this repin "
+                "rests on.",
+                "Adopted as the active demand-forecast source authority. The r4 "
+                "selection over run-b847177c11ac724d is superseded in the same "
+                "change, so exactly one selection is active for this scope. The "
+                "forecast is refit here and lands where it did, with its lineage "
+                "naming the run it was actually fit on.",
+            ),
+            (
+                "inventory_replenishment_current_snapshot",
+                "Gate B reports the capability available with no missing "
+                "entities and no reason code, derived from this run's retained "
+                "mask. `suppliers` publishes 280 rows and all 197,368 inbound "
+                "shipments name their vendor, so supplier identity and open-PO "
+                "value have a source for the first time.",
+                "Adopted as the active source authority for the current-state "
+                "half. Lead times vary per lane here, so the planner's Lead Time "
+                "and Expected Receipt columns carry the spread the policy always "
+                "implied, and Supplier Planning can name a supplier instead of "
+                "printing its hash.",
+            ),
+            (
+                "inventory_replenishment_replay",
+                "The replay capability's reason codes are all absent from this "
+                "run's Gate B mask, with prematureFulfillmentRows and "
+                "prematureStatusRows both zero, derived rather than read from "
+                "the pipeline result.",
+                "Adopted as the active source authority for the replay half. "
+                "Lane transit sizes the protection period, so the reconstruction "
+                "moves with it and the oracle is re-measured against the same "
+                "frozen 0.5 tolerance rather than a relaxed one.",
+            ),
+        )
+    }
+
+    r5_superseded = {
+        capability: _supersede(
+            r4_chains[capability][2], r5_chains[capability][2], capability,
+            PHASE_4R5_RUN,
+            "The publication this record selects resolves one lane transit for "
+            "every rank-1 lane in the network, so every recommendation shares a "
+            "lead time and no screen can show a spread the policy already "
+            "declares.",
+        )
+        for capability in (
+            "demand_forecast_non_pit",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        )
+    }
+
     r4_superseded = {
         capability: _supersede(
             r3_chains[capability][2], r4_chains[capability][2], capability,
@@ -696,6 +888,15 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *r2_replay_chain,
         *r3_superseded.values(),
         *(record for chain in r3_chains.values() for record in chain),
+        # r4 was written to disk but left out of this list, so the invariant below
+        # was being asserted against a ledger that stopped at r3 -- it passed
+        # because the r3 actives were the newest thing it could see, not because
+        # the directory held one active per scope. Every generation belongs here or
+        # the check verifies a subset and reports on the whole.
+        *r4_superseded.values(),
+        *(record for chain in r4_chains.values() for record in chain),
+        *r5_superseded.values(),
+        *(record for chain in r5_chains.values() for record in chain),
     ]
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
@@ -774,6 +975,23 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
                 ("candidate", "approved", "active"), r4_chains[capability]
             )
         ),
+        (f"{forecast_prefix}-r4-superseded.json",
+         r5_superseded["demand_forecast_non_pit"]),
+        (f"{current_prefix}-r4-superseded.json",
+         r5_superseded["inventory_replenishment_current_snapshot"]),
+        (f"{replay_prefix}-r4-superseded.json",
+         r5_superseded["inventory_replenishment_replay"]),
+        *(
+            (f"{prefix}-r5-{state}.json", record)
+            for prefix, capability in (
+                (forecast_prefix, "demand_forecast_non_pit"),
+                (current_prefix, "inventory_replenishment_current_snapshot"),
+                (replay_prefix, "inventory_replenishment_replay"),
+            )
+            for state, record in zip(
+                ("candidate", "approved", "active"), r5_chains[capability]
+            )
+        ),
     ]
 
 
@@ -783,6 +1001,15 @@ def main(argv: list[str] | None = None) -> int:
         "--check",
         action="store_true",
         help="verify the committed records match a fresh derivation",
+    )
+    parser.add_argument(
+        "--no-clobber",
+        action="store_true",
+        help=(
+            "write only records that are absent; refuse if an existing record's "
+            "derivation has moved. What an automated rebuild should use -- a build "
+            "step may create a governance record, never silently restate one."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -805,15 +1032,100 @@ def main(argv: list[str] | None = None) -> int:
             if _load(path) != record:
                 print(f"selection record drifted: {name}", file=sys.stderr)
                 return 1
-        print(f"{len(records)} selection records match their derivation")
+        # A publication with no selection is the failure this check could not see.
+        #
+        # The run ids are constants on purpose -- each committed record must be
+        # reproducible from this file alone, which is why `--check` compares them
+        # byte for byte and why the run cannot come from the command line. The gap
+        # was the other direction: a newly published run that nobody added a chain
+        # for produced no error at all, it simply had no governed selection, and the
+        # ML stages would happily consume a publication no record ever selected.
+        selected_runs = {
+            str((record.get("publication") or {}).get("logicalPath", "")).rsplit(
+                "/", 1
+            )[-1]
+            for _, record in records
+        }
+        evidence_root = REPO_ROOT / "ingestion" / "data" / "evidence"
+        published = {
+            path.name
+            for path in evidence_root.glob("run-*")
+            if (path / "publication-manifest.json").is_file()
+        }
+        unselected = sorted(published - selected_runs)
+        if unselected:
+            print(
+                "published runs with retained evidence and no selection record: "
+                f"{', '.join(unselected)}.\n"
+                "Add a chain in build_lifecycle() naming the run, its capability, "
+                "an approver and a reason -- a selection is a governed act, so the "
+                "actor and reason are deliberately human inputs and cannot be "
+                "derived.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Report the basis, not just the verdict. A bare pass would read as
+        # "everything re-derived from retained evidence", which is no longer true
+        # for the runs whose evidence was released.
+        if _reproduced_runs:
+            print(
+                f"{len(records)} selection records match their derivation "
+                f"({len(_reproduced_runs)} of "
+                f"{len(_reproduced_runs) + len(_derived_runs)} runs reproduced "
+                "from their committed records; retained evidence for them is gone "
+                "-- see EVIDENCE_RELEASED_RUNS)"
+            )
+            for run in sorted(_reproduced_runs):
+                print(f"  reproduced: {run} ({EVIDENCE_RELEASED_RUNS[run]})")
+            for run in sorted(_derived_runs):
+                print(f"  derived from retained evidence: {run}")
+        else:
+            print(f"{len(records)} selection records match their derivation")
         return 0
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    written = 0
+    unchanged = 0
     for name, record in records:
-        (OUTPUT_DIR / name).write_text(
-            json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        path = OUTPUT_DIR / name
+        rendered = json.dumps(record, indent=2, sort_keys=True) + "\n"
+        if args.no_clobber and path.is_file():
+            existing = path.read_text(encoding="utf-8")
+            if existing == rendered:
+                unchanged += 1
+                continue
+            # A committed record whose derivation has MOVED. Rewriting it is how a
+            # ledger stops being evidence: the record would then attest whatever was
+            # published most recently rather than what was actually selected, and
+            # `--check` would pass against the rewrite. This is reachable in normal
+            # use, because a publication fingerprint is not byte-reproducible -- the
+            # curated DuckDB's internal layout and the Parquet partition split both
+            # move between publishes of identical data, so re-publishing a governed
+            # run lands here even though every row is the same. Gate A and Gate B
+            # fingerprints are the evidence that the DATA reproduced; this file is
+            # the record of which ARTIFACT was chosen, and a new artifact needs a new
+            # generation rather than an edit to the old one.
+            print(
+                f"refusing to overwrite {name}: its derivation has changed.\n"
+                "A published artifact this record already selected has been "
+                "re-published, so the fingerprints it names no longer exist. Add a "
+                "new generation in build_lifecycle() selecting the new publication "
+                "and superseding this one -- with an approver and a reason, because "
+                "choosing a different artifact is a governed act -- or restore the "
+                "publication this record names.",
+                file=sys.stderr,
+            )
+            return 1
+        path.write_text(rendered, encoding="utf-8")
+        written += 1
+    if args.no_clobber:
+        print(
+            f"wrote {written} record(s), {unchanged} already matched, in "
+            f"{OUTPUT_DIR.relative_to(REPO_ROOT)}"
         )
-    print(f"wrote {len(records)} records to {OUTPUT_DIR.relative_to(REPO_ROOT)}")
+    else:
+        print(f"wrote {len(records)} records to {OUTPUT_DIR.relative_to(REPO_ROOT)}")
     # Only chain heads, so a superseded record cannot read as a second authority.
     for record in current_records([record for _, record in records]):
         lifecycle = record.get("lifecycle")

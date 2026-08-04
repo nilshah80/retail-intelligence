@@ -823,6 +823,27 @@ entities:
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
+  # The vendor master. `supplier_performance` keys off `supplier_id` and carries no
+  # identity, so without this entity the only supplier a screen could name was the
+  # hash. Every field is required and non-nullable: the row IS the master record, so
+  # a vendor with no name is a staging defect rather than an absent fact, and the
+  # place to catch it is here.
+  suppliers:
+    ownership: in
+    tier: t2_operational
+    temporalClass: observational
+    grain: [supplier_id, known_as_of]
+    primaryKey: [supplier_id, known_as_of]
+    fields:
+      supplier_id: {type: string, required: true}
+      market_id: {type: string, required: true}
+      supplier_name: {type: string, required: true}
+      supplier_number: {type: string, required: true}
+      brand_name: {type: string, required: true}
+      currency_code: {type: string, required: true}
+      known_as_of: {type: timestamp, required: true}
+      known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
+
   supplier_performance:
     ownership: in
     tier: t2_operational

@@ -46,7 +46,13 @@ boundaryAllowlist:
         sale the shelf could not cover, which the DC fulfilled -- without it the
         weekly replay charges the DC's share to the store and canonical does not
         balance against itself.
-      occurrences: 66
+        Raised 66 -> 67 at P4-12e for vendors, again one mapping in the same
+        table. It carries the vendor master, which landed on every run since v13
+        and was staged by none of them, so every supplier a screen named was a
+        UUID. The budget test caught this before the role was declared, which is
+        the check working: a relation may not be consumed without appearing in
+        this inventory.
+      occurrences: 67
     - path: ingestion/src/retail_ingestion/mappings/locations.py
       reason: >-
         location crosswalk construction reads `stage_data.shopify_locations` and
@@ -142,6 +148,7 @@ relationRoleMap:
   warehouse_capacity: {provider: bc_warehouse_capacity, role: warehouse_capacity}
   wms_comparisons:  {provider: bc_wms_comparisons, role: wms_comparison}
   supplier_performance: {provider: bc_supplier_performance, role: supplier_performance}
+  vendors: {provider: bc_vendors, role: vendors}
   dimension_signal:
     provider: companion_dimension_signal
     disposition: retired_no_consumer
@@ -234,6 +241,7 @@ roleProviderMap:
   warehouse_capacity:     {providers: [bc_warehouse_capacity]}
   wms_comparison:         {providers: [bc_wms_comparisons]}
   supplier_performance:   {providers: [bc_supplier_performance]}
+  vendors:                {providers: [bc_vendors]}
   invoice_sales_control:  {providers: [bc_sales_control]}
   customer_segment_count: {providers: [shopify_customer_segment_counts]}
   holiday:                {providers: [companion_holidays]}

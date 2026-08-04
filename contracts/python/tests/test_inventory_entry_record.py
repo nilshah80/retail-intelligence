@@ -120,8 +120,25 @@ def test_the_authority_ledger_chain_is_recorded_without_a_null_predecessor() -> 
 
     ledger = _record()["authorityLedger"]
     roots = set(ledger["nullPredecessorEventIds"])
-    # Event 7's incident stays disclosed rather than being edited out.
-    assert 7 in roots
+    # Event 7's incident stays disclosed rather than being edited out -- but it is
+    # no longer disclosed HERE. `inventory_activation_events` lives in
+    # retail_serving, which a from-scratch rebuild drops, so this record can only
+    # describe the generation the live stack still has. The pre-wipe ledger is
+    # retained verbatim in `released-activation-history.json`, and that is where
+    # event 7 is now asserted, by test_closure_record. Reading it from there rather
+    # than dropping the assertion is the whole point: an incident that stops being
+    # derivable must not thereby stop being recorded.
+    released = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "contracts"
+            / "evidence"
+            / "released-activation-history.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert 7 in set(
+        released["inventoryAuthorityLedger"]["nullPredecessorEventIds"]
+    ), "event 7's incident has been edited out of the released history"
     # This record summarises the ledger and does not carry the event list, so the
     # per-scope walk lives in test_closure_record where the events do. What is
     # checkable here is that the current authority is itself accounted for: it

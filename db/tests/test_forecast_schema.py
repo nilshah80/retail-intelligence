@@ -58,7 +58,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0018_market_policy_scope",)
+            assert cursor.fetchone() == ("0019_supplier_identity",)
             cursor.execute(
                 """
                 SELECT table_name

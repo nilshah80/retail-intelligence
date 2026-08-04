@@ -67,14 +67,21 @@ The Phase-2 implementation now includes:
 - an Aarv-based read-only Go API and React Data Management dashboard over accepted evidence.
 
 The full pin is landed as snapshot
-`681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`: all 8,726 objects
-were streamed through byte/SHA-256 verification into 8,480 public, 245 restricted-truth and one
-restricted-mirror object. The performance-profile pipeline publishes 40 canonical entities,
-1,509 Parquet objects and one 1,406,676,992-byte `retail_v2.duckdb`. Gate A and Gate B pass,
+`cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05`: all 9,938 objects
+were streamed through byte/SHA-256 verification into 9,692 public, 245 restricted-truth and one
+restricted-mirror object. The performance-profile pipeline publishes 47 canonical entities,
+1,663 Parquet objects and one 1,456,484,352-byte `retail_v2.duckdb`. Gate A and Gate B pass,
 restricted objects remain unopened by public ingestion, and INR/USD gross/net/tax/units
 reconcile with zero differences.
 
-The accepted v12 publication contains 7,471,784 dense daily sales rows. All 4,275,653
+The forty-seventh entity is `suppliers`, the vendor master. It landed on every run since source
+spec v13 and was staged by none of them, so the only supplier identity that reached a screen was a
+UUID. Declaring it mattered as much as staging it: Gate B validates the intersection of the tables
+present with the entities `retail_v2/schema.yaml` names, so an undeclared canonical table is
+published with no nullability and no key check — and the publisher refuses a candidate outright for
+containing an entity it never declared, which is how the omission surfaced.
+
+The accepted v13 publication contains 7,471,784 dense daily sales rows. All 4,275,653
 materialized zero-sales rows and all 5,122 assortment rows are `native_observed`; a zero becomes
 available only after local business-day close. B21 therefore no longer lists sales or assortment.
 It still honestly downgrades the broader `point_in_time_forecasting` capability for 8 locations,
@@ -88,14 +95,14 @@ The authoritative cross-platform entry point is:
 # Windows PowerShell
 py -3 tools/dev.py contracts
 py -3 tools/dev.py test
-py -3 tools/dev.py land --source-root datagen\output\multi-market-10-year-demo\run-c5eb1506ecd4c550 --landing-root ingestion\data\raw --execution-profile safe
+py -3 tools/dev.py land --source-root datagen\output\multi-market-10-year-demo\run-adac9e85dccb56e8 --landing-root ingestion\data\raw --execution-profile safe
 ```
 
 ```bash
 # macOS / Linux
 python3 tools/dev.py contracts
 python3 tools/dev.py test
-python3 tools/dev.py land --source-root datagen/output/multi-market-10-year-demo/run-c5eb1506ecd4c550 --landing-root ingestion/data/raw --execution-profile safe
+python3 tools/dev.py land --source-root datagen/output/multi-market-10-year-demo/run-adac9e85dccb56e8 --landing-root ingestion/data/raw --execution-profile safe
 ```
 
 The `Makefile` is a POSIX convenience only. Windows does not require Make or a Unix shell.
@@ -109,24 +116,24 @@ Run the retained snapshot through every governed stage:
 
 ```powershell
 # Windows PowerShell
-py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b --work-root ingestion\data\work\run-c5eb1506ecd4c550 --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 --execution-profile ultra-performance
+py -3 tools/dev.py run --snapshot-root ingestion\data\raw\snapshots\cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 --work-root ingestion\data\work\run-adac9e85dccb56e8 --publication-root ingestion\data\curated\run-adac9e85dccb56e8 --execution-profile ultra-performance
 ```
 
 ```bash
 # macOS / Linux
-python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b --work-root ingestion/data/work/run-c5eb1506ecd4c550 --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 --execution-profile ultra-performance
+python3 tools/dev.py run --snapshot-root ingestion/data/raw/snapshots/cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 --work-root ingestion/data/work/run-adac9e85dccb56e8 --publication-root ingestion/data/curated/run-adac9e85dccb56e8 --execution-profile ultra-performance
 ```
 
 After acceptance, retain the small evidence bundle and remove rebuildable staging/candidate work:
 
 ```powershell
 # Windows PowerShell
-py -3 tools/dev.py finalize --work-root ingestion\data\work\run-c5eb1506ecd4c550 --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 --evidence-root ingestion\data\evidence\run-c5eb1506ecd4c550 --prune-work
+py -3 tools/dev.py finalize --work-root ingestion\data\work\run-adac9e85dccb56e8 --publication-root ingestion\data\curated\run-adac9e85dccb56e8 --evidence-root ingestion\data\evidence\run-adac9e85dccb56e8 --prune-work
 ```
 
 ```bash
 # macOS / Linux
-python3 tools/dev.py finalize --work-root ingestion/data/work/run-c5eb1506ecd4c550 --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 --evidence-root ingestion/data/evidence/run-c5eb1506ecd4c550 --prune-work
+python3 tools/dev.py finalize --work-root ingestion/data/work/run-adac9e85dccb56e8 --publication-root ingestion/data/curated/run-adac9e85dccb56e8 --evidence-root ingestion/data/evidence/run-adac9e85dccb56e8 --prune-work
 ```
 
 Production retention is explicit: keep immutable raw landing according to replay/audit policy,

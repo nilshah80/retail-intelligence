@@ -338,6 +338,10 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "category": "grocery",
                     "category_label": "Grocery",
                     "scope_count": 2,
+                    "supplier_name": "Synthetic Approved Distributor",
+                    "open_po_units": 260,
+                    "open_po_value_minor": 325000,
+                    "currency_code": "INR" if market == "india-west" else "USD",
                 }
             ]
         ),

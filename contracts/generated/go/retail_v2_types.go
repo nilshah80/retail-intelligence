@@ -586,6 +586,17 @@ type WmsInventoryComparisons struct {
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
 
+type Suppliers struct {
+	SupplierID string `json:"supplier_id"`
+	MarketID string `json:"market_id"`
+	SupplierName string `json:"supplier_name"`
+	SupplierNumber string `json:"supplier_number"`
+	BrandName string `json:"brand_name"`
+	CurrencyCode string `json:"currency_code"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
 type SupplierPerformance struct {
 	SupplierID string `json:"supplier_id"`
 	Period string `json:"period"`

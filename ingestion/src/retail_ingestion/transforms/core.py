@@ -1012,11 +1012,33 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
     )
     connection.execute(
         """
+        CREATE TABLE canonical_data.suppliers AS
+        SELECT
+            concat(v.market_id, ':', v.supplier_source_key)::VARCHAR AS supplier_id,
+            v.market_id,
+            v.display_name::VARCHAR AS supplier_name,
+            v.supplier_number::VARCHAR AS supplier_number,
+            v.brand_name::VARCHAR AS brand_name,
+            v.currency_code::VARCHAR AS currency_code,
+            v.known_as_of,
+            v.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+        FROM stage.stage_data.vendors AS v
+        """
+    )
+    connection.execute(
+        """
         CREATE TABLE canonical_data.inbound_shipments AS
         SELECT
             s.shipment_id,
             concat(s.market_id, ':', s.sku_source_key)::VARCHAR AS sku_id,
             NULL::VARCHAR AS from_location,
+            -- The vendor that ordered it, keyed the same way every supplier id is.
+            -- from_location stays NULL because an external supplier is not a node
+            -- in the location crosswalk; forcing one through it would invent a
+            -- warehouse that does not exist.
+            CASE WHEN s.supplier_source_key IS NULL THEN NULL
+                 ELSE concat(s.market_id, ':', s.supplier_source_key)
+            END::VARCHAR AS supplier_id,
             concat(s.market_id, ':', x.canonical_location_key)::VARCHAR
                 AS to_location,
             s.qty::BIGINT AS qty,
@@ -1421,7 +1443,7 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
         "promotion_scopes", "promotion_merchandise_targets", "inventory_cost",
         "inventory_batches", "inbound_shipments", "transfer_orders",
         "allocations", "waste_events", "warehouse_capacity_snapshots",
-        "wms_inventory_comparisons", "supplier_performance",
+        "wms_inventory_comparisons", "suppliers", "supplier_performance",
         "service_lanes", "inbound_shipment_status_events",
         "inventory_transfer_events", "supply_terms",
         "store_shortfall_events",

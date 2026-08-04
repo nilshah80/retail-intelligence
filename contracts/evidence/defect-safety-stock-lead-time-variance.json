@@ -1,0 +1,38 @@
+{
+  "consequence": "Lead-time reliability has no effect on any buffer. Two suppliers with identical demand dispersion get the identical safety stock whether their lead time is metronomic or swings by nine days, and on this network that is not a hypothetical: 16,198 of 17,829 published supplier-period rows carry a non-zero lead-time standard deviation, mean OTD is 15.08%, and lead times run from 5 to 31 days. The second consequence is a screen: the reference's Safety Stock page decomposes a buffer into demand variability and lead-time variability, and that decomposition cannot be published at all, because one of its two drivers does not exist in the implementation. It was withheld on those grounds rather than filled with a term that would have been the whole buffer relabelled.",
+  "decisionIds": [
+    92
+  ],
+  "defectId": "SAFETY_STOCK_LEAD_TIME_VARIANCE_ABSENT",
+  "evidence": {
+    "declaredFormula": "contracts/guardrails/inventory-policy-v2.yaml:174 safetyStock.formula = service_level_z * sqrt(protection_weeks * demand_variance_weekly + mean_weekly_demand^2 * lead_time_variance_weeks). Two addends.",
+    "implementedExpression": "ml/src/retail_ml/engines/primitives.py:180 returns service_level_z(service_level) * fractional_horizon_rss(weekly_spreads, protection_days) / NormalDist().inv_cdf(0.90). One term. There is no lead_time_variance_weeks anywhere in the engine.",
+    "firstAddendIsReconciled": "The demand term is computed from the accepted forecast interval rather than from a demand_variance_weekly estimate, and that substitution is declared: safetyStock.intervalSource = accepted_forecast_p90_minus_p50, with the division by the 0.90 normal quantile converting a P90 spread into a one-sigma equivalent. The formula TEXT is stale about it; the code is not wrong. This is called out separately so the real gap is not lost inside a wording complaint.",
+    "secondAddendIsAbsent": "Lead time enters the engine only through protection_days -- leadTime.protectionPeriodFormula = lead_time_days + review_period_days -- which sizes the RSS window. That consumes the MEAN. The variance is never read.",
+    "policyKeysWithNoConsumer": {
+      "leadTime.minimumObservations": "Declared 8. Ten suppliers publish fewer than eight periods (3 with one, 1 with two, 3 with three, 3 with five), so the threshold has a real population and nothing applies it.",
+      "leadTime.variabilityMethod": "Declared supplier_performance_mean_and_std. The std half has no reader.",
+      "leadTime.zeroVarianceBehavior": "Declared reason_code_not_zero_buffer, with zeroVarianceReasonCode LEAD_TIME_VARIABILITY_UNAVAILABLE. 1,631 rows do publish a zero standard deviation, so the reason code has a real population and can never be emitted -- there is no code path that could emit it."
+    },
+    "theInputExistsAndIsPublished": "canonical_data.supplier_performance.lead_time_std_days over run-adac9e85dccb56e8: 17,829 rows across 279 suppliers, min 0.000, median 1.286, max 9.500, non-zero on 16,198 rows. The datum the formula needs is canonical, declared in retail_v2/schema.yaml and reaches the ML tier already.",
+    "whyItSurvivedReview": "The engine's own docstring cites the policy for the independence assumption RSS rests on -- 'That assumption is declared by policy v2 (safetyStock.formula)' -- so the code reads as though it implements that formula. It implements the first addend of it."
+  },
+  "fix": {
+    "guardrail": "Whatever is published must let the two drivers be told apart, or the Safety Stock decomposition stays withheld. Publishing a single number under two driver labels would be worse than the current withholding.",
+    "openQuestion": "Whether the frozen policy's formula is the target, or whether the interval-only buffer is the intended design and the policy text plus its four orphaned leadTime keys should be corrected to say so. That is a policy decision, not an implementation one, which is why this record proposes no default. Note that P4-D13 forbids weakening a threshold after seeing a result, so the choice should be made on the design and not on which buffer the demo prefers.",
+    "scope": "engine + policy, no retrain: lead_time_std_days is already canonical and already loaded, so nothing upstream of the engine moves",
+    "steps": [
+      "decide the open question below before touching code",
+      "if the formula stands: add the mean_weekly_demand^2 * lead_time_variance_weeks addend, sourced from supplier_performance mean and std as leadTime.variabilityMethod declares",
+      "enforce leadTime.minimumObservations and emit LEAD_TIME_VARIABILITY_UNAVAILABLE for zero or under-observed variance, which is what makes the reason code reachable",
+      "publish the two driver contributions separately so the Safety Stock decomposition has a source",
+      "rebuild, verify and re-materialize the inventory bundle"
+    ]
+  },
+  "measuredOn": "run-adac9e85dccb56e8 curated publication; engine expression read from ml/src/retail_ml/engines/primitives.py",
+  "notFixedYet": true,
+  "rootCause": "Contract and implementation diverge, and the same class as FORECAST_HEALTH_GRAIN_MISMATCH: the contract states the semantics and nothing enforces them. Policy v2 declares a two-addend buffer plus the apparatus for sourcing, thresholding and reason-coding lead-time variability; the engine implements the demand addend and no part of the lead-time one.",
+  "schemaVersion": "retail-defect-record/v1",
+  "severity": "medium_policy_divergence",
+  "summary": "Policy v2's safetyStock.formula declares a lead-time-variance addend, and its leadTime block declares where that input comes from, how many observations it needs and what reason code stands in when it is zero. The engine implements none of it: lead time reaches the buffer only as a mean that sizes the protection window, so four policy keys and one reason code have no consumer and a supplier's unreliability changes no buffer."
+}

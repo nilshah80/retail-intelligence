@@ -490,6 +490,16 @@ class WmsInventoryComparisons(TypedDict):
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
+class Suppliers(TypedDict):
+    supplier_id: str
+    market_id: str
+    supplier_name: str
+    supplier_number: str
+    brand_name: str
+    currency_code: str
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
 class SupplierPerformance(TypedDict):
     supplier_id: str
     period: str

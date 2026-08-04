@@ -155,6 +155,9 @@ class InventoryInputs:
     #: market_id, location_id, open_shipments, open_units, received_shipments,
     #: late_shipments -- inbound reliability per receiving node
     inbound_summary: pd.DataFrame
+    #: market_id, supplier_id, location_id, sku_id, open_units -- inbound still on
+    #: order, at the cell grain the accepted cost is keyed by
+    open_purchase_orders: pd.DataFrame
     #: market_id, location_id, channel_id, sku_id, requested_units
     channel_demand: pd.DataFrame
     #: per-market resolved policy, keyed by market_id
@@ -1453,7 +1456,41 @@ def _build_allocations(
     )
 
 
+def _open_po_by_supplier(
+    inputs: InventoryInputs,
+) -> dict[tuple[str, str], tuple[int, int]]:
+    """Open inbound units and their value, per market and supplier.
+
+    Valued at the accepted unit cost for the RECEIVING cell, which is the same
+    cost every other money figure in this bundle is struck at. A cell with no
+    accepted cost contributes its units and no value, so the quantity stays
+    complete and the money understates rather than inventing a price.
+    """
+
+    costs = {
+        (str(row.market_id), str(row.location_id), str(row.sku_id)): int(
+            row.unit_cost_minor
+        )
+        for row in inputs.unit_costs.itertuples(index=False)
+        if row.unit_cost_minor is not None and not pd.isna(row.unit_cost_minor)
+    }
+    totals: dict[tuple[str, str], tuple[int, int]] = {}
+    for row in inputs.open_purchase_orders.itertuples(index=False):
+        key = (str(row.market_id), str(row.supplier_id))
+        units = int(row.open_units)
+        cost = costs.get(
+            (str(row.market_id), str(row.location_id), str(row.sku_id))
+        )
+        held_units, held_value = totals.get(key, (0, 0))
+        totals[key] = (
+            held_units + units,
+            held_value + (units * cost if cost is not None else 0),
+        )
+    return totals
+
+
 def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
+    open_po = _open_po_by_supplier(inputs)
     rows: list[dict[str, Any]] = []
     for record in inputs.suppliers.itertuples(index=False):
         row = record._asdict()
@@ -1497,6 +1534,25 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
                     None
                     if row.get("scope_count") is None
                     else int(row["scope_count"])
+                ),
+                "supplier_name": (
+                    None
+                    if row.get("supplier_name") is None
+                    else str(row["supplier_name"])
+                ),
+                "open_po_units": open_po.get(
+                    (market, str(row["supplier_id"])), (0, 0)
+                )[0],
+                "open_po_value_minor": open_po.get(
+                    (market, str(row["supplier_id"])), (0, 0)
+                )[1],
+                # The currency the open-PO value is denominated in. Without it a
+                # multi-market slice would add dollars to rupees, which is the one
+                # defect this phase spent the most time removing.
+                "currency_code": (
+                    None
+                    if row.get("currency_code") is None
+                    else str(row["currency_code"])
                 ),
             }
         )

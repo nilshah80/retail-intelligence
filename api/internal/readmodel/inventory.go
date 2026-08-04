@@ -25,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0018_market_policy_scope"
+	InventoryMigrationRevision = "0019_supplier_identity"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -175,6 +175,25 @@ func (s *InventoryStore) rowFXMoney(amount string) string {
 		branches = append(branches, fmt.Sprintf(
 			"WHEN dim.currency_code = '%s' THEN %s::numeric * %s",
 			currency, amount, s.fxToReporting[currency],
+		))
+	}
+	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
+}
+
+// rowFXMoneyIn is rowFXMoney for a row that names its OWN currency column.
+//
+// rowFXMoney reads dim.currency_code, which only exists on the row pages that join
+// the display dimension. Supplier Planning does not -- it keys on a supplier, not a
+// cell -- so its open-PO value carries the vendor master's currency instead.
+func (s *InventoryStore) rowFXMoneyIn(amount, currency string) string {
+	if len(s.fxToReporting) == 0 {
+		return amount + "::numeric"
+	}
+	branches := make([]string, 0, len(s.fxToReporting))
+	for _, code := range sortedKeys(s.fxToReporting) {
+		branches = append(branches, fmt.Sprintf(
+			"WHEN %s = '%s' THEN %s::numeric * %s",
+			currency, code, amount, s.fxToReporting[code],
 		))
 	}
 	return fmt.Sprintf("CASE %s END", strings.Join(branches, " "))
@@ -531,7 +550,8 @@ func (s *InventoryStore) Read(
 		return s.tableSlice(ctx, query, "replenishment_suppliers",
 			"market_id, supplier_id, otd_rate, lead_time_mean_days, "+
 				"lead_time_std_days, capacity_confirmed_pct, risk_class, "+
-				"reason_codes, category, category_label, scope_count",
+				"reason_codes, category, category_label, scope_count, "+
+				"supplier_name, open_po_units",
 			rankBySupplierRisk)
 	case "/api/v1/replenishment/safety-stock":
 		return s.tableSlice(ctx, query, "replenishment_safety_stock",
@@ -653,9 +673,18 @@ func (s *InventoryStore) tableSlice(
 			// %[3]s values a UNIT variance at a rolled-up category cost: it
 			// multiplies like a quantity, but reads its cost from the rollup rather
 			// than the per-cell dimension, because valuation has no single SKU.
-			selected += strings.ReplaceAll(
+			projected = strings.ReplaceAll(
 				projected, "%[3]s", s.rowFXVariance("wms_variance_units"),
 			)
+			// %[4]s is an already-money row column in its own currency. Left
+			// unsubstituted it would reach PostgreSQL as a literal "%[4]s".
+			if money, present := rowMoneyAmounts[table]; present {
+				projected = strings.ReplaceAll(
+					projected, "%[4]s",
+					s.rowFXMoneyIn(money.amount, money.currency),
+				)
+			}
+			selected += projected
 		}
 	}
 	if lookup, present := rowNameLookup[table]; present {
@@ -1515,6 +1544,15 @@ var rowMoneyUnits = map[string]string{
 	"inventory_expiry_waste": "inventory_expiry_waste.expiring_units",
 }
 
+// %[4]s on a ROW page: a column that is ALREADY money, with the currency column it
+// is denominated in. Distinct from %[1]s, which multiplies a unit count by a cost.
+var rowMoneyAmounts = map[string]struct{ amount, currency string }{
+	"replenishment_suppliers": {
+		"replenishment_suppliers.open_po_value_minor",
+		"replenishment_suppliers.currency_code",
+	},
+}
+
 // Extra joins a row page needs beyond the display dimension, with the columns
 // they contribute.
 //
@@ -1708,7 +1746,8 @@ var rowExtraJoins = map[string]struct {
 	// source" and "Maintain"; this printed the raw reason_codes array.
 	"replenishment_suppliers": {
 		join: "",
-		columns: `, CASE
+		columns: `, %[4]s AS open_po_value_minor,
+			CASE
 				WHEN risk_class = 'high'
 					THEN 'Expedite and qualify an alternate source'
 				WHEN capacity_confirmed_pct < 0.70

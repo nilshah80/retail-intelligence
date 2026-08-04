@@ -22,7 +22,12 @@ from jsonschema import Draft202012Validator
 #: The count is asserted rather than inferred on purpose: an entity appearing or
 #: disappearing silently is a contract change, and this is the line that makes it
 #: a deliberate one.
-EXPECTED_ENTITY_COUNT = 57
+#:
+#: 58 adds `suppliers`, the vendor master. It was staged and canonicalised without
+#: being declared here, which meant Gate B validated it against nothing -- B01 and
+#: B02 only cover the entities this contract names -- and the publisher refused the
+#: candidate for containing a table it never declared. Both are the same omission.
+EXPECTED_ENTITY_COUNT = 58
 VERSIONED_ENTITIES = {
     "sales": "sales_version",
     "sales_adjustments": "adjustment_version",

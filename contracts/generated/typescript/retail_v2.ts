@@ -530,6 +530,17 @@ export interface WmsInventoryComparisons {
   known_as_of_evidence_grade: EvidenceGrade;
 }
 
+export interface Suppliers {
+  supplier_id: string;
+  market_id: string;
+  supplier_name: string;
+  supplier_number: string;
+  brand_name: string;
+  currency_code: string;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
 export interface SupplierPerformance {
   supplier_id: string;
   period: string;

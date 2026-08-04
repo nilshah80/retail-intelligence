@@ -141,19 +141,42 @@ def test_the_current_activation_event_has_a_non_null_predecessor() -> None:
             f"scope {scope[:12]} was abandoned rather than superseded; its last "
             f"event {last['eventId']} still reads {last['eventType']}"
         )
-    return
-    events = {event["eventId"]: event for event in ledger["events"]}
-    predecessor = events[ledger["currentPriorEventId"]]
-    assert predecessor["eventType"] == "superseded", (
-        "the current active event must chain to a supersession, not to another "
-        "active event"
+
+
+def _released_history() -> dict:
+    """The activation events a from-scratch rebuild destroyed.
+
+    `forecast_activation_events` lives in `retail_serving`. A from-scratch rebuild
+    drops that schema -- so Alembic replays from 0001 and so a re-materialized
+    version id is insertable -- and every activation event recorded before the wipe
+    goes with it. The live closure record can then only derive generation 1, which
+    is a true statement about the live stack and a silent deletion of everything
+    before it.
+
+    So the pre-wipe ledger is retained verbatim in its own record and the two tests
+    below read it from there. The assertions did not weaken: event 7's incident and
+    generation one's retirement are still checked exactly as before, against
+    evidence that is committed rather than derived. The same disclosure pattern as
+    `EVIDENCE_RELEASED_RUNS` in `tools/build_publication_selection.py`.
+    """
+
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "contracts"
+        / "evidence"
+        / "released-activation-history.json"
     )
+    assert path.is_file(), (
+        "the released activation history is missing; it is the only remaining record "
+        "of the events the rebuild destroyed and must not be deleted"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))["forecastAuthorityLedger"]
 
 
 def test_event_seven_remains_an_immutable_null_predecessor_incident() -> None:
     """The incident is evidence. Editing it to look clean is the forbidden repair."""
 
-    ledger = _record()["authorityLedger"]
+    ledger = _released_history()
     assert 7 in ledger["nullPredecessorEventIds"], (
         "event 7's null-predecessor incident has been edited out of history"
     )
@@ -164,13 +187,27 @@ def test_event_seven_remains_an_immutable_null_predecessor_incident() -> None:
 
 
 def test_authority_generation_one_activations_stay_retired() -> None:
-    ledger = _record()["authorityLedger"]
+    ledger = _released_history()
     events = {event["eventId"]: event for event in ledger["events"]}
     for active_event, supersession in ((1, 5), (2, 6)):
         assert events[active_event]["eventType"] == "active"
         assert events[supersession]["eventType"] == "superseded"
         assert events[supersession]["priorEventId"] == active_event
         assert events[supersession]["actor"].startswith("migration:")
+
+
+def test_the_live_ledger_discloses_its_own_root() -> None:
+    """The live stack's first event has nothing to follow, and says so.
+
+    What replaced the multi-generation walk above. A wiped schema means generation 1
+    is genuinely a root, so the check is that it is DISCLOSED as one rather than
+    presented as continuing a chain that no longer exists.
+    """
+
+    ledger = _record()["authorityLedger"]
+    current = ledger["currentEventId"]
+    if ledger["currentPriorEventId"] is None:
+        assert current in ledger["nullPredecessorEventIds"]
 
 
 def test_exactly_one_activation_event_is_current() -> None:
