@@ -277,6 +277,12 @@ def _inputs(**overrides: Any) -> InventoryInputs:
              "snapshot_date": AS_OF},
         ]
     )
+    inbound_summary = pd.DataFrame(
+        [
+            {"market_id": MARKET, "location_id": DC, "open_shipments": 3,
+             "open_units": 180, "received_shipments": 40, "late_shipments": 9},
+        ]
+    )
     fields: dict[str, Any] = {
         "as_of": AS_OF,
         "positions": positions,
@@ -290,6 +296,7 @@ def _inputs(**overrides: Any) -> InventoryInputs:
         "supply_terms": [dict(term) for term in SUPPLY_TERMS],
         "suppliers": suppliers,
         "warehouse_capacity": warehouse_capacity,
+        "inbound_summary": inbound_summary,
         "channel_demand": channel_demand,
         "policy": POLICIES,
         "currency_by_market": CURRENCIES,

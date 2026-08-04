@@ -45,6 +45,10 @@ def test_forecast_serving_schema_integration() -> None:
         "inventory_replay_metrics",
         # Migration 0014: the storage ceiling Capacity Utilization divides by.
         "inventory_warehouse_capacity",
+        # Migration 0017: inbound reliability per receiving node.
+        "inventory_inbound_summary",
+        # Migration 0018: the market ceilings a plan is measured against.
+        "inventory_market_policy",
     }
     with psycopg.connect(dsn) as connection:
         with connection.cursor() as cursor:
@@ -54,7 +58,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0014_warehouse_capacity",)
+            assert cursor.fetchone() == ("0018_market_policy_scope",)
             cursor.execute(
                 """
                 SELECT table_name

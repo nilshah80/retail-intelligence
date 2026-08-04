@@ -38,7 +38,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: 0010 adds the inventory serving surface. Materializing against 0009 would load
 #: evidence into tables that do not exist; against a later head, into tables whose
 #: constraints this writer has not been checked against.
-MIGRATION_REVISION: Final[str] = "0014_warehouse_capacity"
+MIGRATION_REVISION: Final[str] = "0018_market_policy_scope"
 
 
 class InventoryServingError(RuntimeError):
@@ -314,6 +314,23 @@ def materialize_inventory_run(
                         table=table,
                         version_id=version_id,
                         frame=frame,
+                    )
+                # Refresh the planner's statistics on every table just written.
+                #
+                # A serving table accumulates one partition per activation, and
+                # after the sixteenth the stale row estimates made PostgreSQL
+                # choose hash joins over the grain indexes: the Replenishment
+                # Planner route went from 58ms to 52 SECONDS and the API served it
+                # as a closed connection rather than a governed error. Autovacuum
+                # would have caught up eventually; a screen that is wrong until it
+                # does is not acceptable, and the writer is the only place that
+                # knows a bulk load just happened.
+                for table in frames:
+                    cursor.execute(
+                        sql.SQL("ANALYZE {}.{}").format(
+                            sql.Identifier(SERVING_SCHEMA),
+                            sql.Identifier(table),
+                        )
                     )
     except InventoryServingError:
         raise

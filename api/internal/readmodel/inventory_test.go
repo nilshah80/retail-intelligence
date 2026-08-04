@@ -99,8 +99,10 @@ func TestJoinedAggregateSourcesNameTheirBaseTable(t *testing.T) {
 	// scope clauses -- written unqualified -- would apply to the wrong side.
 	for table, source := range aggregateSource {
 		base := table
-		if table == "inventory_valuation_by_kind" {
-			base = "inventory_valuation"
+		// Pseudo-tables declare the projection they read, so this guard does not
+		// need a special case per companion.
+		if declared, ok := pseudoTableBase[table]; ok {
+			base = declared
 		}
 		if !strings.Contains(source, "retail_serving."+base) {
 			t.Errorf("%s: aggregate source does not read from %s: %q",

@@ -354,21 +354,27 @@ describe("inventory & replenishment destinations", () => {
       // its own coverage.
       {
         marketId: "india-west", locationId: "india-west:mumbai-bandra",
-        skuId: "sku-fast", abcClass: "A", serviceLevel: 0.97,
-        safetyStockUnits: 18.5, intervalAvailable: true, reasonCode: null
+        skuId: "sku-fast", abcClass: "A", segmentLabel: "A / High Velocity",
+        productName: "Fast Mover", serviceLevel: 0.97,
+        safetyStockUnits: 18.5, safetyStockValueMinor: 1850000,
+        intervalAvailable: true, reasonCode: null
       },
       // Varied-term H5+ cold-start row: visibly partial.
       {
         marketId: "india-west", locationId: "india-west:pune-overflow",
-        skuId: "sku-new", abcClass: "C", serviceLevel: null,
-        safetyStockUnits: null, intervalAvailable: false,
+        skuId: "sku-new", abcClass: "C", segmentLabel: "C / Low Velocity",
+        productName: "New Arrival", serviceLevel: null,
+        safetyStockUnits: null, safetyStockValueMinor: null,
+        intervalAvailable: false,
         reasonCode: "COLD_START_INTERVAL_UNCALIBRATED"
       },
       // No declared route: withheld for a DIFFERENT reason.
       {
         marketId: "india-west", locationId: "india-west:orphan-store",
-        skuId: "sku-any", abcClass: null, serviceLevel: null,
-        safetyStockUnits: null, intervalAvailable: false,
+        skuId: "sku-any", abcClass: null, segmentLabel: null,
+        productName: "Unrouted Item", serviceLevel: null,
+        safetyStockUnits: null, safetyStockValueMinor: null,
+        intervalAvailable: false,
         reasonCode: "SUPPLY_ROUTE_UNRESOLVED"
       }
     ],
@@ -507,9 +513,14 @@ describe("inventory & replenishment destinations", () => {
 
     const table = await findRowsTable();
     const withheld = within(table).getAllByText("Manual judgment required");
-    // Two withheld rows x the three interval-derived columns the reference gives
-    // Safety Stock: Service Target, Current Value and Recommended Value.
-    expect(withheld).toHaveLength(6);
+    // Two withheld rows x the two INTERVAL-derived columns: Service Target and
+    // Recommended Value. Current Value is no longer one of them, and that is the
+    // point -- it used to be bound to the same safety_stock_units as Recommended
+    // Value, so the table printed one number twice and called it a comparison.
+    // The buffer in force belongs to the incumbent policy and is not published at
+    // all, so that column is unavailable on an ASSESSED row too, which is a
+    // different governed treatment from an interval the engine withheld.
+    expect(withheld).toHaveLength(4);
     // The forbidden renderings, all four of them.
     expect(within(table).queryByText("0")).not.toBeInTheDocument();
     expect(within(table).queryByText("0.0")).not.toBeInTheDocument();
@@ -523,9 +534,12 @@ describe("inventory & replenishment destinations", () => {
 
     const table = await findRowsTable();
     // Service Target renders as a percentage because that is the reference's
-    // column; the buffer appears in both Current and Recommended Value.
+    // column. The buffer now appears once, under Recommended Value, and as MONEY
+    // -- the reference's own column is Rs 2.8 Cr, and this read a unit count.
     expect(within(table).getByText("97.0%")).toBeInTheDocument();
-    expect(within(table).getAllByText("19").length).toBeGreaterThan(0);
+    expect(
+      within(table).getAllByText((text) => /^₹|^\$/.test(text.trim())).length
+    ).toBeGreaterThan(0);
     // Three rows plus the header: a withheld row must not be collapsed away.
     expect(within(table).getAllByRole("row")).toHaveLength(4);
   });
@@ -541,8 +555,9 @@ describe("inventory & replenishment destinations", () => {
     const unresolved = table.querySelectorAll(
       '[data-reason-code="SUPPLY_ROUTE_UNRESOLVED"]'
     );
-    expect(coldStart).toHaveLength(3);
-    expect(unresolved).toHaveLength(3);
+    // Two interval-derived columns per withheld row now, plus the row marker.
+    expect(coldStart).toHaveLength(2);
+    expect(unresolved).toHaveLength(2);
     // The titles must not be interchangeable: one resolves as the product ages,
     // the other needs somebody to declare a route.
     expect(coldStart[0].getAttribute("title")).toContain("horizon 4");
@@ -583,8 +598,11 @@ describe("inventory & replenishment destinations", () => {
     renderPage("safetyStock");
 
     const table = await findRowsTable();
-    expect(within(table).getByText("sku-new")).toBeInTheDocument();
-    expect(within(table).getByText("C")).toBeInTheDocument();
+    // By NAME, which is the identity these columns now print: the reference reads
+    // "A / High Velocity" and a product, not an ABC letter and a SKU key. The
+    // property under test is unchanged -- a withheld row still says what it is.
+    expect(within(table).getByText("New Arrival")).toBeInTheDocument();
+    expect(within(table).getByText("C / Low Velocity")).toBeInTheDocument();
   });
 
   it("refuses a payload whose envelope cannot be traced to an authority", async () => {

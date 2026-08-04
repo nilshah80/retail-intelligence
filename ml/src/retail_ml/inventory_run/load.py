@@ -500,6 +500,29 @@ def load_suppliers(
             FROM supplier_performance
             WHERE CAST(period AS DATE) <= ? AND known_as_of < ? + INTERVAL 1 DAY
             ORDER BY supplier_id, CAST(period AS DATE) DESC
+        ),
+        scoped AS (
+            -- The merchandise scope a supplier serves, and how many it serves.
+            -- Category terms rank first because that is the grain the screen's
+            -- column is captioned at; a supplier with only dept or SKU terms
+            -- falls back to those rather than showing nothing.
+            SELECT DISTINCT ON (origin_id)
+                origin_id,
+                merch_scope_type,
+                merch_scope_id,
+                (SELECT COUNT(DISTINCT inner_terms.merch_scope_id)
+                   FROM supply_terms AS inner_terms
+                  WHERE inner_terms.origin_id = supply_terms.origin_id
+                    AND inner_terms.known_as_of < ? + INTERVAL 1 DAY)
+                    AS scope_count
+            FROM supply_terms
+            WHERE origin_id IS NOT NULL
+              AND known_as_of < ? + INTERVAL 1 DAY
+            GROUP BY origin_id, merch_scope_type, merch_scope_id
+            ORDER BY origin_id,
+                CASE merch_scope_type WHEN 'category' THEN 0
+                     WHEN 'dept' THEN 1 ELSE 2 END,
+                COUNT(*) DESC, merch_scope_id
         )
         SELECT DISTINCT ON (performance.supplier_id)
             locations.market_id,
@@ -507,15 +530,86 @@ def load_suppliers(
             performance.otd_rate,
             performance.lead_time_mean_days,
             performance.lead_time_std_days,
-            performance.capacity_confirmed_pct
+            performance.capacity_confirmed_pct,
+            scoped.merch_scope_id AS category,
+            scoped.scope_count
         FROM performance
         JOIN suppliers_leadtimes AS terms
           ON terms.supplier_id = performance.supplier_id
         JOIN locations
           ON locations.location_id = terms.destination_location_id
+        LEFT JOIN scoped ON scoped.origin_id = performance.supplier_id
         ORDER BY performance.supplier_id, locations.market_id
         """,
-        [as_of, as_of],
+        [as_of, as_of, as_of, as_of],
+    )
+
+
+def load_inbound_summary(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Inbound reliability per node: what is open, and what arrived late.
+
+    The position projection carries an on-order and an in-transit bucket and no
+    DATES, so nothing downstream could tell a late receipt from a merely open one
+    -- and policy v2 declares those buckets disjoint, which makes "on order with
+    nothing in transit" true of every unshipped order. The dates are in the
+    source: `inbound_shipment_status_events` carries an expected_receipt_date and
+    the full on_order -> in_transit -> received lifecycle per shipment.
+
+    Lateness is measured on ARRIVALS over the trailing window, not on the open
+    book. Nothing is currently past due at this origin -- every open shipment is
+    expected on or after it -- so an open-book measure reads zero at every node
+    and says nothing about reliability. What did arrive, arrived late three times
+    in four.
+
+    The latest status per shipment wins: a shipment appears once per lifecycle
+    transition, and counting the rows would count one delivery three times.
+    """
+
+    start = as_of - timedelta(days=TRAILING_DAYS - 1)
+    return _frame(
+        connection,
+        """
+        WITH visible AS (
+            SELECT shipment_id, to_location, qty, status, status_effective_at,
+                   expected_receipt_date
+            FROM inbound_shipment_status_events
+            WHERE known_as_of < ? + INTERVAL 1 DAY
+              AND CAST(status_effective_at AS DATE) <= ?
+        ),
+        latest AS (
+            SELECT DISTINCT ON (shipment_id)
+                shipment_id, to_location, qty, status, expected_receipt_date
+            FROM visible
+            ORDER BY shipment_id, status_effective_at DESC
+        ),
+        arrived AS (
+            SELECT shipment_id, to_location, expected_receipt_date,
+                   MIN(CAST(status_effective_at AS DATE)) AS received_on
+            FROM visible
+            WHERE status = 'received'
+              AND CAST(status_effective_at AS DATE) BETWEEN ? AND ?
+            GROUP BY 1, 2, 3
+        )
+        SELECT
+            locations.market_id,
+            latest.to_location AS location_id,
+            COUNT(*) FILTER (WHERE latest.status <> 'received')
+                AS open_shipments,
+            COALESCE(SUM(latest.qty)
+                FILTER (WHERE latest.status <> 'received'), 0) AS open_units,
+            (SELECT COUNT(*) FROM arrived
+              WHERE arrived.to_location = latest.to_location) AS received_shipments,
+            (SELECT COUNT(*) FROM arrived
+              WHERE arrived.to_location = latest.to_location
+                AND arrived.received_on > arrived.expected_receipt_date)
+                AS late_shipments
+        FROM latest
+        JOIN locations ON locations.location_id = latest.to_location
+        GROUP BY 1, 2
+        """,
+        [as_of, as_of, start, as_of],
     )
 
 
@@ -731,6 +825,7 @@ def load_inventory_inputs(
             supply_terms=load_supply_terms(connection, as_of=as_of),
             suppliers=load_suppliers(connection, as_of=as_of),
             warehouse_capacity=load_warehouse_capacity(connection, as_of=as_of),
+            inbound_summary=load_inbound_summary(connection, as_of=as_of),
             channel_demand=load_channel_demand(connection, as_of=as_of),
             policy={market: policy[market] for market in markets},
             currency_by_market=currency_by_market,

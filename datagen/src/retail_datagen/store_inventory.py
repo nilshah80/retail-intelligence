@@ -136,8 +136,20 @@ class StoreEchelon:
         rows: list[dict[str, Any]] = []
         for store in self.stores.values():
             for rank, warehouse_id in enumerate(store["warehousePriority"], start=1):
-                transit = (
-                    self.primary_transit if rank == 1 else self.spill_transit
+                # Per LANE, not per rank. The two policy values are run-wide, so
+                # every rank-1 lane in the network carried an identical transit
+                # time and every replenishment recommendation downstream resolved
+                # the same lead time -- 2 days on all 720 orders, which made the
+                # planner's Lead Time and Expected Receipt columns one repeated
+                # value.
+                #
+                # The spread is deterministic in the lane's own identity, so a
+                # regeneration reproduces it exactly, and it is additive on top of
+                # the declared floor rather than replacing it: the policy still
+                # sets the minimum, and a lane can be up to three days slower.
+                base = self.primary_transit if rank == 1 else self.spill_transit
+                transit = base + stable_integer(
+                    "lane-transit", store["storeId"], warehouse_id, modulo=4
                 )
                 rows.append(
                     {

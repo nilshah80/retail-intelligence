@@ -333,7 +333,11 @@ marketCurrencyRules:
   - marketId: india-west
     currencyCode: INR
     timezone: Asia/Kolkata
-    weeklyReplenishmentBudgetMinor: 250000000
+    # Rs 23 Cr per market-week. The prior 250000000 (Rs 25 lakh) was a
+    # placeholder two orders of magnitude below the network it governs: one
+    # review period's recommendations are Rs 26.08 Cr, so the ceiling was
+    # exceeded 104-fold and no compliance figure could mean anything.
+    weeklyReplenishmentBudgetMinor: 23000000000
     nodeCapacityUnits: 180000
     serviceLevelsByClass:
       A: "0.97"
@@ -344,7 +348,9 @@ marketCurrencyRules:
   - marketId: us-new-york
     currencyCode: USD
     timezone: America/New_York
-    weeklyReplenishmentBudgetMinor: 4000000
+    # USD 1.2M per market-week, against USD 1.37M of recommendations -- the
+    # same 34-fold placeholder problem as india-west.
+    weeklyReplenishmentBudgetMinor: 120000000
     nodeCapacityUnits: 120000
     serviceLevelsByClass:
       A: "0.96"

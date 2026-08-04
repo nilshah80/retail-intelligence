@@ -54,6 +54,16 @@ interface KpiSpec {
   readonly format: "units" | "money" | "count" | "percent" | "days" | "turns";
   /** A second summary field forming the denominator of a percentage. */
   readonly of?: string;
+  /**
+   * A companion figure on the reference's delta line, in its own words --
+   * "4,286 recommendations" beside a money total. Distinct from `of`, which
+   * renders a SHARE of a denominator; this is a second measure entirely.
+   */
+  readonly delta?: {
+    readonly field: string;
+    readonly format: KpiSpec["format"];
+    readonly suffix: string;
+  };
   /** The basis of the number, shown beneath it. Never decorative. */
   readonly note?: string;
   /** Governed reason when `field` is null: the platform does not measure this. */
@@ -136,6 +146,12 @@ const WITHHELD = "Manual judgment required";
  * the first question in a demo is always whether the gap is permanent.
  */
 export const AVAILABILITY: Record<string, {why: string; when: string}> = {
+  // Used by a KPI as well as a column now, so it needs a cause and a condition
+  // and not only the column-level sentence.
+  FILL_RATE_NEEDS_REPLAY: {
+    why: "a fulfilment rate is served units over demanded units within one period, which only the weekly replay produces; the allocation projection's requested_units is trailing sales over 91 days, so dividing by it compares today's stock with a quarter of demand",
+    when: "when a replay reproduces and its policy comparison is accepted, publishing fillRate per market and cohort"
+  },
   REPLAY_UNAVAILABLE: {
     // The publisher distinguishes two causes -- REPLAY_ORACLE_DID_NOT_REPRODUCE
     // and REPLAY_NO_CANDIDATE_IMPROVEMENT -- but that code rides on the
@@ -184,10 +200,14 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
     why: "only the current trailing window is published",
     when: "when a second window is retained to compare against"
   },
-  BUDGET_NOT_APPLIED: {
-    why: "the market budget ceiling is declared in policy but not yet applied to recommendations",
-    when: "when the budget cap is enforced in the replenishment engine"
-  },
+  // Sharpened after reading the engine rather than the policy text. The resolved
+  // policy's `safetyStock.formula` describes a demand-variance plus lead-time-
+  // variance expression, and the implementation does not compute either term: the
+  // buffer is the root-sum-square of the forecast's weekly P90-P50 spreads over
+  // the protection window, scaled by the service-level z against z(0.90). So
+  // lead-time variability has no contribution to report -- lead time only sets
+  // how many weeks of spread accumulate -- and promotion/seasonality is absent
+  // from the expression entirely.
   DRIVER_COMPONENTS_NOT_PUBLISHED: {
     why: "the safety-stock artifact publishes the buffer the policy produced and the class it was sized under, not the demand and lead-time terms that went into it",
     when: "when the engine emits its per-cell inputs alongside its output"
@@ -256,6 +276,16 @@ export const REASON_TEXT: Record<string, string> = {
     "the ageing artifact publishes units per age bucket and no costed value, so a value here would be computed off-contract",
   RECOVERY_VALUE_NOT_PUBLISHED:
     "the waste artifact publishes an exposure column that is empty on every row, and what could be recovered from near-expiry stock needs a recovery price the platform does not hold",
+  SERVICE_IMPACT_NEEDS_REPLAY:
+    "a service-level delta is the difference between two policies measured over the same weeks, which only the weekly replay produces",
+  PO_VALUE_NOT_PER_SUPPLIER:
+    "inbound already on order is published per location and SKU, not per supplier, so a supplier's share cannot be attributed without a purchase-order line",
+  INCUMBENT_BUFFER_NOT_PUBLISHED:
+    "the engine publishes the buffer it recommends; the buffer currently in force belongs to the incumbent policy and is not carried, so there is nothing to compare it against",
+  EXCEPTION_OWNER_NOT_PUBLISHED:
+    "exceptions are published as evidence rows with no assignment and no raised timestamp, so neither an owner nor an age is carried",
+  INTERNAL_NODE_HAS_NO_RISK_CLASS:
+    "the risk engine classifies SUPPLIERS on on-time delivery, lead-time variability and confirmed capacity, and an internal warehouse publishes none of the three, so it carries no risk class of its own",
   FILL_RATE_NEEDS_REPLAY:
     "fill rate is served units over demanded units per period, which only the weekly replay produces, and the replay capability is not available on this bundle",
   PROVISION_PENDING_MARKDOWN_POLICY:
@@ -353,8 +383,15 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Accepted unit cost times units on hand"},
       {caption: "Available to Promise", field: "atpValueMinor", format: "money",
        of: "onHandValueMinor", note: "After committed, reserved and damaged"},
+      // The reference's delta is "2,420 shipments". A shipment COUNT is not
+      // derivable -- the projection carries in-transit units per cell and no
+      // shipment identity -- so the delta names what is counted: cells with stock
+      // inbound. Borrowing the word "shipments" for a cell count would be the
+      // one thing the parity rules forbid.
       {caption: "Inventory in Transit", field: "inTransitValueMinor",
-       format: "money", note: "Received against a declared lane"},
+       format: "money",
+       delta: {field: "inTransitCells", format: "count", suffix: "cells inbound"},
+       note: "Received against a declared lane"},
       // Rupees and a share of on-hand value, as the reference shows it. The
       // scope is the reference's own note: everything the health engine did not
       // class healthy -- overstock, ageing, expiry.
@@ -510,6 +547,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
          format: "percent"},
         {header: "Fill Rate", field: "fillRate", format: "percent"},
         {header: "Blocked Stock", field: "blockedValueMinor", format: "money"},
+        // Receipts that arrived late, from the published shipment lifecycle.
         {header: "Delayed Receipts", field: "delayedReceipts", format: "count"},
         {header: "Action", field: "warehouseAction"}
       ]}
@@ -694,12 +732,16 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Suggested orders under lane, term, capacity and budget guards",
     endpoint: "/api/v1/replenishment/planner",
     kpis: [
-      // Units, under a caption the reference words as "Value". Withholding a
-      // figure the platform can compute would be worse than labelling it, so
-      // the note says plainly which one this is.
-      {caption: "Suggested Replenishment Value", field: "recommendedUnits",
-       format: "units",
-       note: "Units, not money -- a recommendation carries no costed line"},
+      // MONEY in the reference -- Rs 18.4 Cr. It carried a unit count and a note
+      // explaining that a recommendation has no costed line, which stopped being
+      // true when the dimension published a cost: this is the same figure the
+      // grid below now values per row.
+      // The reference pairs this money total with the COUNT behind it:
+      // "Rs 18.4 Cr / 4,286 recommendations".
+      {caption: "Suggested Replenishment Value", field: "orderValueMinor",
+       format: "money",
+       delta: {field: "cellsToOrder", format: "count", suffix: "recommendations"},
+       note: "Recommended units at the destination's cost"},
       {caption: "Revenue Protected", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"},
@@ -709,8 +751,14 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Projected Service Level", field: null, format: "percent",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"},
+      // The reference's delta here is "Rs 1.4 Cr at risk", and that figure is NOT
+      // available: demand-at-risk withholds its VALUE on exactly the cells whose
+      // interval was withheld, so the exposure on an exception order is null by
+      // construction rather than merely unpublished. The share of the assessed
+      // network these represent is published, is the same order of information,
+      // and is true.
       {caption: "Exception Orders", field: "withheldCells", format: "count",
-       note: "Cells withheld with a governed reason"}
+       of: "cells", note: "Cells withheld with a governed reason"}
     ],
     breakdown: [
       // Order mix, by where the recommendation would be sourced from.
@@ -744,31 +792,59 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        format: "count", of: "cells"},
       {label: "MOQ / pack-size compliance", field: "moqCompliantCells",
        format: "count", of: "moqAttemptedCells"},
-      {label: "Orders within budget", field: null, format: "percent",
-       unavailableReason: "BUDGET_NOT_APPLIED"},
+      // Measured against the ceiling the market policy declares and the run now
+      // publishes, consumed in the plan's own priority order.
+      {label: "Orders within budget", field: "withinBudgetCells",
+       format: "count", of: "cellsToOrder"},
       {label: "Supplier capacity confirmed",
        field: "supplierMeanCapacityConfirmedPct", format: "percent"}
     ],
+    // The reference's second rows card, which had no spec at all -- so the
+    // recommendations grid was rendered into its slot and this card vanished.
+    grouped: [
+      {heading: "Lead-Time Risk", card: "leadTime", columns: [
+        // The NAME of the node this plan draws on. Keyed on suppliers this
+        // printed a UUID -- the source carries a supplier_id and no supplier
+        // name at all -- and described suppliers none of the 720 orders use.
+        {header: "Supplier / Source", field: "sourceName"},
+        {header: "Lead Time", field: "leadTimeDays", format: "days"},
+        {header: "Late Orders", field: "lateOrderRate", format: "percent"},
+        {header: "Risk", field: null,
+         unavailableReason: "INTERNAL_NODE_HAS_NO_RISK_CLASS"}
+      ]}
+    ],
     tables: [
       {heading: "Priority Replenishment Recommendations", columns: [
-        {header: "select", field: null},
-        {header: "Priority", field: "reasonCode"},
+        {header: "Priority", field: "replenishmentPriority", badge: true},
         {header: "SKU / Product", field: "productName"},
-        {header: "Destination", field: "destinationLocationId"},
-        {header: "Current Stock", field: null},
-        {header: "Forecast Demand", field: null},
-        {header: "Safety Stock", field: null},
+        {header: "Destination", field: "destinationName"},
+        // On-hand at the node being replenished, so a planner can see what the
+        // suggested quantity is being added to. Not gated: the holding is
+        // published whether or not an interval was available to order against.
+        {header: "Current Stock", field: "currentStockUnits", format: "units"},
+        // Policy v2 defines order_up_to as reorder_point plus expected demand
+        // over the review period, so the difference IS the published demand.
+        {header: "Forecast Demand", field: "forecastDemandUnits",
+         format: "units", gated: true},
+        {header: "Safety Stock", field: "safetyStockUnits", format: "units",
+         gated: true},
         {header: "Suggested Qty", field: "recommendedUnits", format: "units",
          gated: true},
-        {header: "Source", field: "supplyLocationId"},
-        {header: "Lead Time", field: null},
-        {header: "Expected Receipt", field: null},
-        {header: "Order Value", field: null},
-        {header: "Service Impact", field: "orderUpToUnits", format: "units",
+        {header: "Source", field: "sourceName"},
+        // The lead time the supply term resolved to, published by the run that
+        // already computed it to size the protection period.
+        {header: "Lead Time", field: "leadTimeDays", format: "days"},
+        {header: "Expected Receipt", field: "expectedReceiptDate"},
+        {header: "Order Value", field: "orderValueMinor", format: "money",
          gated: true},
-        {header: "Confidence", field: "reorderPointUnits", format: "units",
-         gated: true},
-        {header: "Status", field: "erpStatus", badge: true}
+        // Service Impact and Confidence were bound to order_up_to and the
+        // reorder point -- two unit counts under a points-delta and a percentage.
+        {header: "Service Impact", field: null,
+         unavailableReason: "SERVICE_IMPACT_NEEDS_REPLAY"},
+        // The forecast projection already publishes this derivation per series
+        // and horizon, scoped to the version this bundle consumed.
+        {header: "Confidence", field: "forecastConfidence", format: "percent"},
+        {header: "Status", field: "erpStatusLabel", badge: true}
       ]}
     ]
   },
@@ -784,9 +860,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "High Priority", field: "highPriorityCells", format: "count",
        of: "cellsToOrder",
        note: "Ordering into a destination that is stocked out"},
-      {caption: "Within Budget", field: null, format: "percent",
-       unavailableReason: "BUDGET_NOT_APPLIED",
-       note: "Market budget ceiling is not yet applied"},
+      {caption: "Within Budget", field: "withinBudgetCells", format: "count",
+       of: "cellsToOrder", note: "Against the market's weekly ceiling"},
       {caption: "Expected Fill Rate", field: null, format: "percent",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
@@ -794,15 +869,18 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     tables: [
       {heading: null, columns: [
         {header: "Order", field: "productName"},
-        {header: "Type", field: "erpStatus", badge: true},
-        {header: "Destination", field: "destinationLocationId"},
-        {header: "Source", field: "supplyLocationId"},
+        // Type and Status were each showing the other's answer: Type read
+        // erp_status ("Shadow (not sent)") and Status read a reason code.
+        {header: "Type", field: "orderType", badge: true},
+        {header: "Destination", field: "destinationName"},
+        {header: "Source", field: "sourceName"},
         {header: "Items", field: "recommendedUnits", format: "units", gated: true},
-        {header: "Value", field: null},
-        {header: "Need Date", field: null},
-        {header: "Confidence", field: "reorderPointUnits", format: "units",
-         gated: true},
-        {header: "Status", field: "reasonCode"}
+        {header: "Value", field: "orderValueMinor", format: "money", gated: true},
+        {header: "Need Date", field: "expectedReceiptDate"},
+        // The forecast projection already publishes this derivation per series
+        // and horizon, scoped to the version this bundle consumed.
+        {header: "Confidence", field: "forecastConfidence", format: "percent"},
+        {header: "Status", field: "erpStatusLabel", badge: true}
       ]}
     ]
   },
@@ -830,13 +908,16 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     tables: [
       {heading: null, columns: [
         {header: "Supplier", field: "supplierId"},
-        {header: "Category", field: null},
-        {header: "Open PO Value", field: null},
+        // The scope this supplier serves. 239 of 280 serve more than one, so the
+        // row also carries scopeCount and the cell is not read as exclusive.
+        {header: "Category", field: "categoryLabel"},
+        {header: "Open PO Value", field: null,
+         unavailableReason: "PO_VALUE_NOT_PER_SUPPLIER"},
         {header: "Capacity", field: "capacityConfirmedPct", format: "percent"},
         {header: "Lead Time", field: "leadTimeMeanDays", format: "days"},
         {header: "OTD", field: "otdRate", format: "percent"},
         {header: "Risk", field: "riskClass", badge: true},
-        {header: "Action", field: "reasonCodes"}
+        {header: "Action", field: "supplierAction"}
       ]}
     ]
   },
@@ -845,8 +926,10 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Policy segments from the hard-gated interval",
     endpoint: "/api/v1/replenishment/safety-stock",
     kpis: [
-      {caption: "Safety Stock Value", field: "safetyStockUnits", format: "units",
-       note: "Units across cells with a computed buffer"},
+      // MONEY in the reference -- Rs 6.4 Cr -- and the segments table beside it
+      // already valued the same buffer, so tile and table disagreed on units.
+      {caption: "Safety Stock Value", field: "safetyStockValueMinor",
+       format: "money", note: "The recommended buffer at accepted cost"},
       {caption: "Policy Coverage", field: "assessedCells", format: "count",
        of: "cells", note: "Cells with an available interval"},
       {caption: "Below Safety Stock", field: "belowSafetyCells", format: "count",
@@ -870,17 +953,27 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {label: "Promotion / seasonality", field: null, format: "count",
        unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"}
     ],
+    // The reference's own six columns, kept as a ROWS table on purpose: this is
+    // the page where a withheld interval is visible per row, and an aggregated
+    // card has no interval to withhold on. What was wrong was the bindings --
+    // "SKUs" printed one SKU IDENTIFIER under a count header, and Current and
+    // Recommended Value were the SAME field, so the table showed one number
+    // twice and called it a comparison.
     tables: [
-      {heading: "Safety Stock Drivers", columns: [
-        {header: "Policy Segment", field: "abcClass", badge: true},
-        {header: "SKUs", field: "skuId"},
+      {heading: null, columns: [
+        {header: "Policy Segment", field: "segmentLabel", badge: true},
+        {header: "SKUs", field: "productName"},
         {header: "Service Target", field: "serviceLevel", format: "percent",
          gated: true},
-        {header: "Current Value", field: "safetyStockUnits", format: "units",
-         gated: true},
-        {header: "Recommended Value", field: "safetyStockUnits", format: "units",
-         gated: true},
-        {header: "Impact", field: "reasonCode"}
+        // The engine publishes the buffer it RECOMMENDS. The buffer in force is
+        // the incumbent policy's and is not carried, so neither the current
+        // value nor the impact delta built on it has anything to stand on.
+        {header: "Current Value", field: null,
+         unavailableReason: "INCUMBENT_BUFFER_NOT_PUBLISHED"},
+        {header: "Recommended Value", field: "safetyStockValueMinor",
+         format: "money", gated: true},
+        {header: "Impact", field: null,
+         unavailableReason: "INCUMBENT_BUFFER_NOT_PUBLISHED"}
       ]}
     ]
   },
@@ -889,14 +982,37 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     subtitle: "Constrained channel allocation over one node ATP pool",
     endpoint: "/api/v1/replenishment/allocations",
     kpis: [
-      {caption: "Available Allocation Pool", field: "allocatedUnits",
-       format: "units", note: "Units allocated from node ATP"},
-      {caption: "Store Requests", field: "requestedUnits", format: "units",
-       note: "Requested across channels in scope"},
-      {caption: "Fulfillment Rate", field: "allocatedUnits", format: "percent",
-       of: "requestedUnits", note: "Allocated share of requested"},
-      {caption: "Priority Shortfall", field: "shortfallUnits", format: "units",
-       note: "Requested less allocated"},
+      // The pool is the ATP the optimizer had to distribute, in money as the
+      // reference shows it -- not the units it managed to allocate out of it.
+      // Withheld, and both candidates are why. Bound to allocatedUnits it was a
+      // unit count under a money caption AND a duplicate of the Allocated column
+      // beside it. Reached through positions it became Rs 204 Cr of ENTERPRISE
+      // ATP across eight nodes, above rows whose own pools are hundreds of units
+      // at the four stores that actually allocate. The per-cell pool is published
+      // per row instead, where the node it belongs to is named.
+      // Summed over DISTINCT allocation cells, so a node's stock counts once
+      // however many channels compete for it, and only over the cells that
+      // actually allocate rather than all eight nodes.
+      {caption: "Available Allocation Pool", field: "poolPoolValueMinor",
+       format: "money",
+       delta: {field: "poolPoolCells", format: "count", suffix: "cells"},
+       note: "Available to promise at the allocating cells"},
+      // A COUNT of requests, as the reference's 2,486 is. Bound to
+      // requestedUnits this read 790,745 -- the units inside them.
+      {caption: "Store Requests", field: "rows", format: "count",
+       note: "Channel requests in scope"},
+      // Withheld, not computed. Bound to allocatedUnits under a percent format
+      // this rendered 1744700.0%, and the obvious repair -- allocated over
+      // requested -- is not a fulfilment rate either: requested_units is trailing
+      // SALES over 91 days while allocated is what today's ATP covers, so the
+      // ratio compares stock to a quarter of demand and reads 2.2%.
+      {caption: "Fulfillment Rate", field: null, format: "percent",
+       unavailableReason: "FILL_RATE_NEEDS_REPLAY",
+       note: "Served over demanded per period is a replay output"},
+      // Requests carrying an unmet balance. Summing shortfall_units inherits the
+      // trailing-sales base and reads 773,298, which is not a queue of work.
+      {caption: "Priority Shortfall", field: "shortfallRows", format: "count",
+       of: "rows", note: "Requests with an unmet balance"},
       {caption: "Revenue Protected", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"}
@@ -904,13 +1020,18 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     tables: [
       {heading: null, columns: [
         {header: "Product", field: "productName"},
-        {header: "Available Pool", field: "allocatedUnits", format: "units"},
+        // The pool is the ATP the optimizer had to distribute. This was bound to
+        // allocatedUnits -- the same field as the Allocated column beside it --
+        // so the page showed one number under two headers and no reader could
+        // see how much was available in the first place.
+        {header: "Available Pool", field: "availablePoolUnits", format: "units"},
         {header: "Store Demand", field: "requestedUnits", format: "units"},
         {header: "Allocated", field: "allocatedUnits", format: "units"},
         {header: "Shortfall", field: "shortfallUnits", format: "units"},
-        {header: "Allocation Rule", field: "channelId"},
-        {header: "Priority", field: "channelId", badge: true},
-        {header: "Status", field: "locationId"}
+        // Rule, Priority and Status were all bound to channel_id or location_id.
+        {header: "Allocation Rule", field: "allocationRule"},
+        {header: "Priority", field: "allocationPriority", badge: true},
+        {header: "Status", field: "allocationStatus", badge: true}
       ]}
     ]
   },
@@ -923,24 +1044,30 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Engine-derived, read-only"},
       {caption: "High Priority", field: "warnings", format: "count",
        note: "Severity warning"},
-      {caption: "Budget Exceptions", field: null, format: "count",
-       unavailableReason: "BUDGET_NOT_APPLIED",
-       note: "Market budget ceiling is not yet applied"},
-      {caption: "Supplier Exceptions", field: "classes", format: "count",
-       note: "Distinct exception classes in scope"},
+      {caption: "Budget Exceptions", field: "orderOverBudgetCells",
+       format: "count", note: "Orders past their market's weekly ceiling"},
+      // Exceptions whose cause is the supply side. This was bound to `classes`,
+      // the number of DISTINCT exception classes -- a three-item taxonomy count
+      // under a caption a planner reads as a workload. It is zero on this bundle:
+      // the engine published forecast and interval gaps and one order-constraint
+      // conflict, and no supply-side exception at all.
+      {caption: "Supplier Exceptions", field: "supplierExceptions",
+       format: "count", note: "Supply-side causes in scope"},
       {caption: "ERP Failures", field: "orderErpFailures", format: "count",
        note: "No send path exists in this release"}
     ],
     tables: [
       {heading: null, columns: [
-        {header: "Exception", field: "exceptionClass"},
+        {header: "Exception", field: "exceptionLabel"},
         {header: "Order / SKU", field: "productName"},
         {header: "Business Impact", field: "evidence"},
-        {header: "Owner", field: null},
-        {header: "Age", field: null},
+        {header: "Owner", field: null,
+         unavailableReason: "EXCEPTION_OWNER_NOT_PUBLISHED"},
+        {header: "Age", field: null,
+         unavailableReason: "EXCEPTION_OWNER_NOT_PUBLISHED"},
         {header: "Priority", field: "severity", badge: true},
-        {header: "Recommended Resolution", field: "reasonCode"},
-        {header: "Status", field: "locationId"}
+        {header: "Recommended Resolution", field: "exceptionResolution"},
+        {header: "Status", field: "exceptionStatus", badge: true}
       ]}
     ]
   }
@@ -1081,6 +1208,16 @@ function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
           {(share * 100).toFixed(1)}% {shareBasis(spec.of)}
         </span>
       )}
+      {!spec.of && spec.delta && (() => {
+        const companion = asNumber(summary?.[spec.delta.field]);
+        if (companion === null) return null;
+        return (
+          <span className="delta up">
+            {formatValue(companion, spec.delta.format, currency)}{" "}
+            {spec.delta.suffix}
+          </span>
+        );
+      })()}
       {spec.note && <div className="demo-note">{spec.note}</div>}
     </div>
   );
@@ -1503,6 +1640,60 @@ function CardBlocks({
       blocks.push({layout: card.layout, cards: [card]});
     }
   }
+  // Which declared spec fills each of the reference's `rows` cards, resolved by
+  // HEADING before position.
+  //
+  // Position alone was wrong wherever a page has more than one rows card. The
+  // Replenishment Planner has two -- "Lead-Time Risk" in the grid-2 block and
+  // "Priority Replenishment Recommendations" in the full-width block -- and the
+  // generated layout orders cards by LAYOUT, so Lead-Time Risk is the first rows
+  // card in the sequence. Consuming `tables` positionally therefore rendered the
+  // recommendations grid into the Lead-Time Risk slot, complete with that card's
+  // heading, and left the recommendations card itself with no spec at all: one
+  // grid appeared twice as far as a reader could tell, and one vanished.
+  //
+  // Headings are the reference's own identifiers, so matching on them keeps the
+  // approved layout authoritative no matter what order the blocks fall in. A spec
+  // with no heading -- the single-table pages -- still resolves positionally from
+  // whatever is left over.
+  const rowsCards = reference.cards.filter((card) => card.kind === "rows");
+  const claimedGrouped = new Set<number>();
+  const claimedTables = new Set<number>();
+  const rowsPlan = rowsCards.map((card) => {
+    if (card.heading) {
+      const g = (screen.grouped ?? []).findIndex(
+        (spec, i) => !claimedGrouped.has(i) && spec.heading === card.heading
+      );
+      if (g >= 0) {
+        claimedGrouped.add(g);
+        return {kind: "grouped" as const, index: g};
+      }
+      const r = screen.tables.findIndex(
+        (spec, i) => !claimedTables.has(i) && spec.heading === card.heading
+      );
+      if (r >= 0) {
+        claimedTables.add(r);
+        return {kind: "table" as const, index: r};
+      }
+    }
+    return null;
+  });
+  // Anything the headings did not claim falls back to declaration order, grouped
+  // cards first, which is what the single-rows-card pages rely on.
+  rowsPlan.forEach((slot, position) => {
+    if (slot) return;
+    const g = (screen.grouped ?? []).findIndex((_, i) => !claimedGrouped.has(i));
+    if (g >= 0) {
+      claimedGrouped.add(g);
+      rowsPlan[position] = {kind: "grouped", index: g};
+      return;
+    }
+    const r = screen.tables.findIndex((_, i) => !claimedTables.has(i));
+    if (r >= 0) {
+      claimedTables.add(r);
+      rowsPlan[position] = {kind: "table", index: r};
+    }
+  });
   let rowsIndex = 0;
   return (
     <div style={{display: "grid", gap: 14, marginTop: 14}}>
@@ -1556,9 +1747,10 @@ function CardBlocks({
             // reference's Inventory Overview is three grouped cards and no row
             // table at all; consuming both lists in the same order keeps the
             // reference's card sequence authoritative.
-            const index = rowsIndex++;
-            const grouped = screen.grouped?.[index];
-            if (grouped) {
+            const slot = rowsPlan[rowsIndex++];
+            if (!slot) return null;
+            if (slot.kind === "grouped") {
+              const grouped = (screen.grouped ?? [])[slot.index];
               return (
                 <GroupedCard
                   key={key}
@@ -1567,7 +1759,7 @@ function CardBlocks({
                 />
               );
             }
-            const table = screen.tables[index - (screen.grouped?.length ?? 0)];
+            const table = screen.tables[slot.index];
             if (!table) return null;
             return (
               <DataCard

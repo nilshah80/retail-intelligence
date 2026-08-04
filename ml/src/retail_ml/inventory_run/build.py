@@ -152,6 +152,9 @@ class InventoryInputs:
     #: market_id, location_id, capacity_units, snapshot_date -- one row per
     #: warehouse, at the latest snapshot the origin admits
     warehouse_capacity: pd.DataFrame
+    #: market_id, location_id, open_shipments, open_units, received_shipments,
+    #: late_shipments -- inbound reliability per receiving node
+    inbound_summary: pd.DataFrame
     #: market_id, location_id, channel_id, sku_id, requested_units
     channel_demand: pd.DataFrame
     #: per-market resolved policy, keyed by market_id
@@ -1133,6 +1136,10 @@ def _replenishment_plan(
                     "recommended_units": None,
                     "reorder_point_units": None,
                     "order_up_to_units": None,
+                    # The resolved lead time, even on a withheld row: the supply
+                    # term resolved even where the interval did not, and it is
+                    # what a planner needs to judge when a manual order lands.
+                    "lead_time_days": cell.lead_time_days,
                     "interval_available": False,
                     "reason_code": governed,
                     "erp_status": ERP_STATUS,
@@ -1225,6 +1232,10 @@ def _replenishment_plan(
                 "recommended_units": recommended,
                 "reorder_point_units": float(point),
                 "order_up_to_units": float(level),
+                # Already resolved to compute the protection period above, and
+                # discarded until now: the screen's Lead Time and Expected Receipt
+                # columns were blank on every row for want of this one integer.
+                "lead_time_days": cell.lead_time_days,
                 # The interval WAS available; a null recommendation here means the
                 # constraint solver refused, and `refusal` says why. 0010's gate on
                 # this table is one-directional precisely to admit that state.
@@ -1471,10 +1482,75 @@ def _build_suppliers(inputs: InventoryInputs) -> pd.DataFrame:
                 ),
                 "risk_class": verdict["risk_class"],
                 "reason_codes": list(verdict["reason_codes"]) or None,
+                # The scope this supplier serves. `_label` turns the source's own
+                # slug into the words the screen shows: "grocery-dairy" reads
+                # "Grocery - Dairy", exactly as the SKU dimension does elsewhere.
+                "category": (
+                    None if row.get("category") is None else str(row["category"])
+                ),
+                "category_label": (
+                    None
+                    if row.get("category") is None
+                    else _label(str(row["category"]))
+                ),
+                "scope_count": (
+                    None
+                    if row.get("scope_count") is None
+                    else int(row["scope_count"])
+                ),
             }
         )
     return pd.DataFrame(
         rows, columns=list(ARTIFACT_COLUMNS["replenishment_suppliers"])
+    )
+
+
+def market_policy_frame(
+    policy: Mapping[str, Mapping[str, Any]],
+    currency_by_market: Mapping[str, str],
+) -> pd.DataFrame:
+    """The market-scoped ceilings, resolved from the policy contract.
+
+    Published because the read model cannot open a policy document: the weekly
+    replenishment budget is declared per market and every governance figure
+    measured against it had no denominator to divide by.
+    """
+
+    return pd.DataFrame(
+        [
+            {
+                "market_id": market,
+                "weekly_replenishment_budget_minor": int(
+                    resolved["weeklyReplenishmentBudgetMinor"]
+                ),
+                "currency_code": currency_by_market[market],
+            }
+            for market, resolved in sorted(policy.items())
+        ]
+    )
+
+
+def _build_inbound_summary(inputs: InventoryInputs) -> pd.DataFrame:
+    """Pass the loaded inbound facts through at the node grain.
+
+    Counts only, no rate. A late SHARE is a ratio the read model scopes per market
+    and per echelon; freezing it here would publish one denominator and make every
+    filtered view of it wrong.
+    """
+
+    rows = [
+        {
+            "market_id": str(record.market_id),
+            "location_id": str(record.location_id),
+            "open_shipments": int(record.open_shipments),
+            "open_units": int(record.open_units),
+            "received_shipments": int(record.received_shipments),
+            "late_shipments": int(record.late_shipments),
+        }
+        for record in inputs.inbound_summary.itertuples(index=False)
+    ]
+    return pd.DataFrame(
+        rows, columns=list(ARTIFACT_COLUMNS["inventory_inbound_summary"])
     )
 
 
@@ -1762,6 +1838,10 @@ def build_artifacts(
         "replenishment_exceptions": exception_frame,
         "inventory_replay_metrics": replay_metrics,
         "inventory_warehouse_capacity": _build_warehouse_capacity(inputs),
+        "inventory_inbound_summary": _build_inbound_summary(inputs),
+        "inventory_market_policy": market_policy_frame(
+            inputs.policy, inputs.currency_by_market
+        ),
     }
     for name, frame in artifacts.items():
         artifacts[name] = frame[list(ARTIFACT_COLUMNS[name])].reset_index(drop=True)

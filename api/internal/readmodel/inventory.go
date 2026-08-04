@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0014_warehouse_capacity"
+	InventoryMigrationRevision = "0018_market_policy_scope"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -529,7 +530,8 @@ func (s *InventoryStore) Read(
 	case "/api/v1/replenishment/suppliers":
 		return s.tableSlice(ctx, query, "replenishment_suppliers",
 			"market_id, supplier_id, otd_rate, lead_time_mean_days, "+
-				"lead_time_std_days, capacity_confirmed_pct, risk_class, reason_codes",
+				"lead_time_std_days, capacity_confirmed_pct, risk_class, "+
+				"reason_codes, category, category_label, scope_count",
 			rankBySupplierRisk)
 	case "/api/v1/replenishment/safety-stock":
 		return s.tableSlice(ctx, query, "replenishment_safety_stock",
@@ -624,7 +626,10 @@ func (s *InventoryStore) tableSlice(
 		// this was nested inside that gate their entries were declared and silently
 		// never applied. Five named fields resolved against nothing.
 		if extra, present := rowExtraJoins[table]; present {
-			source += extra.join
+			// %[9]s in a JOIN is the forecast-authority predicate. Substituted here
+			// rather than written into the literal because the version is per
+			// activation, not per build.
+			source += s.expandSource(extra.join)
 			// %[1]s is the row's money expression, converted with this store's
 			// approved reporting FX rather than a rate written into the literal.
 			// %[2]s converts an amount that is ALREADY money -- the demand-at-risk
@@ -677,8 +682,12 @@ func (s *InventoryStore) tableSlice(
 			AND names.names_market = %[2]s.market_id
 			AND names.names_key = %[3]s`, key, table, lookup.on)
 		// %[1]s is the row's money expression under this store's approved FX.
+		lookupUnits := lookup.units
+		if lookupUnits == "" {
+			lookupUnits = "units"
+		}
 		selected += strings.ReplaceAll(
-			lookup.columns, "%[1]s", s.namesFXExpr("units"),
+			lookup.columns, "%[1]s", s.namesFXExpr(lookupUnits),
 		)
 	}
 	statement := fmt.Sprintf(
@@ -826,9 +835,24 @@ var (
 			cover_days ASC NULLS FIRST, market_id, location_id, sku_id`,
 		criterion: "the largest capital at risk, then the least healthy cells",
 	}
+	// NULLS LAST is load-bearing on both of these. Postgres sorts DESC as NULLS
+	// FIRST, and 3,724 of 4,739 recommendation rows carry no quantity because the
+	// engine withheld them -- so a card captioned "Top actions" opened with 79 per
+	// cent of the network's NON-actions and a planner had to page past all of them
+	// to reach the first order. The safety-stock page had it identically: 3,722
+	// rows carry no buffer.
+	// Priority BEFORE quantity. The card is titled "Priority Replenishment
+	// Recommendations" and links "Top actions", and the reference's own rows read
+	// High, High, Medium -- but this ranked on quantity alone, so the first page
+	// was the twenty biggest orders and every one of them happened to be Medium.
+	// The column varies across the set (89 High, 489 Medium, 142 Low); the
+	// ranking was hiding it.
 	rankByRecommendation = inventoryRanking{
-		orderBy:   "recommended_units DESC, market_id, destination_location_id, sku_id",
-		criterion: "the largest recommended order quantity",
+		orderBy: `CASE desthealth.health_class WHEN 'stockout' THEN 0
+				WHEN 'understock' THEN 1 ELSE 2 END,
+			recommended_units DESC NULLS LAST,
+			market_id, destination_location_id, sku_id`,
+		criterion: "the most urgent destination first, then the largest quantity",
 	}
 	rankBySupplierRisk = inventoryRanking{
 		orderBy: `CASE risk_class WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -837,7 +861,7 @@ var (
 	}
 	rankByBuffer = inventoryRanking{
 		orderBy: `CASE abc_class WHEN 'A' THEN 0 WHEN 'B' THEN 1 ELSE 2 END,
-			safety_stock_units DESC, market_id, location_id, sku_id`,
+			safety_stock_units DESC NULLS LAST, market_id, location_id, sku_id`,
 		criterion: "class A first, then the largest safety buffer",
 	}
 	rankByShortfall = inventoryRanking{
@@ -873,6 +897,11 @@ type groupedCard struct {
 	columns string
 	orderBy string
 	limit   int
+	// An extra restriction on the card's own rows, beyond the route's scope.
+	// Lead-Time Risk needs it: the recommendation projection carries a row for
+	// every cell the engine assessed, including 16 external supplier sources it
+	// never ordered from, and those grouped into named-less rows with no orders.
+	where string
 }
 
 // The money join. Every card that reports currency needs a unit cost, and the
@@ -906,6 +935,7 @@ const outboundNeedJoin = `
 		FROM retail_serving.replenishment_recommendations AS rec
 		WHERE rec.supply_location_id IS NOT NULL
 		  AND rec.recommended_units > 0
+		  AND rec.%[8]s
 		GROUP BY rec.inventory_version_id, rec.market_id,
 		         rec.supply_location_id, rec.sku_id
 	) AS need
@@ -913,6 +943,69 @@ const outboundNeedJoin = `
 	 AND need.need_market = inventory_positions.market_id
 	 AND need.need_location = inventory_positions.location_id
 	 AND need.need_sku = inventory_positions.sku_id`
+
+// safeVersionID guards an identifier that is interpolated into SQL rather than
+// bound as a parameter. Every id here is minted by the platform itself and is
+// hex-shaped, but the join text is assembled before the argument list exists, so
+// the shape is checked rather than assumed.
+var safeVersionID = regexp.MustCompile(`^[a-z]{2}_[0-9a-f]{16}$`)
+
+// forecastScope restricts a forecast_series read to the forecast version this
+// inventory bundle actually consumed. The table carries ten run/version pairs, so
+// an unscoped read would average a decision-relevant confidence across forecasts
+// the bundle never saw.
+//
+// Fails CLOSED: an id that does not match the expected shape yields FALSE, so the
+// join matches nothing and the column withholds rather than serving a number
+// nobody can trace to an authority.
+func (s *InventoryStore) forecastScope(alias string) string {
+	if !safeVersionID.MatchString(s.forecastRunID) ||
+		!safeVersionID.MatchString(s.forecastVersionID) {
+		return "FALSE"
+	}
+	return fmt.Sprintf(
+		"%[1]s.forecast_run_id = '%[2]s' AND %[1]s.version_id = '%[3]s'",
+		alias, s.forecastRunID, s.forecastVersionID,
+	)
+}
+
+// expandSource resolves the version placeholders a composed FROM clause carries.
+//
+// %[8]s is this bundle's own version predicate, and every subquery that
+// pre-aggregates a projection needs it. Without it the subquery groups EVERY
+// materialized version before the join discards all but one: fifteen versions of
+// a 4,739-row projection is 71,041 rows, and the outbound-need roll-up alone took
+// the positions aggregate from 1.4s to 8.8s, which put the overview and stock
+// health routes past the server's write timeout and served them as closed
+// connections.
+//
+// The join predicate already matched on version, so the numbers were right the
+// whole time -- only the work was wrong.
+func (s *InventoryStore) expandSource(source string) string {
+	if !strings.Contains(source, "%[8]s") && !strings.Contains(source, "%[9]s") {
+		return source
+	}
+	version := "FALSE"
+	if safeVersionID.MatchString(s.inventoryVersionID) {
+		version = fmt.Sprintf(
+			"inventory_version_id = '%s'", s.inventoryVersionID,
+		)
+	}
+	source = strings.ReplaceAll(source, "%[8]s", version)
+	return strings.ReplaceAll(source, "%[9]s", s.forecastScope("fseries"))
+}
+
+// inboundJoin attaches a node's inbound reliability. One row per version x market
+// x location, so it cannot multiply the positions it is joined to.
+const inboundJoin = `
+	LEFT JOIN (
+		SELECT market_id AS ib_market, location_id AS ib_location,
+		       open_shipments, open_units, received_shipments, late_shipments
+		FROM retail_serving.inventory_inbound_summary
+		WHERE %[8]s
+	) AS inbound
+	  ON inbound.ib_market = inventory_positions.market_id
+	 AND inbound.ib_location = inventory_positions.location_id`
 
 // capacityJoin attaches a node's storage ceiling. One row per version x market x
 // location, so it cannot multiply the positions it is joined to.
@@ -928,6 +1021,7 @@ const capacityJoin = `
 		       location_id AS cap_location,
 		       capacity_units
 		FROM retail_serving.inventory_warehouse_capacity
+		WHERE %[8]s
 	) AS capacity
 	  ON capacity.cap_version = inventory_positions.inventory_version_id
 	 AND capacity.cap_market = inventory_positions.market_id
@@ -958,6 +1052,7 @@ const valuationCostJoin = `
 		            ELSE AVG(unit_cost_minor) END AS category_unit_cost,
 		       MAX(currency_code) AS vc_currency
 		FROM retail_serving.inventory_sku_dimension
+		WHERE %[8]s
 		GROUP BY inventory_version_id, market_id, location_id, category
 	) AS catcost
 	  ON catcost.vc_version = inventory_valuation.inventory_version_id
@@ -1036,7 +1131,7 @@ var groupedCards = map[string][]groupedCard{
 			// chases. on_order_units answered "how many units are coming".
 			name: "warehouses",
 			source: "retail_serving.inventory_positions " + costJoin +
-				outboundNeedJoin + capacityJoin,
+				outboundNeedJoin + capacityJoin + inboundJoin,
 			groupBy: "market_id, location_id, dim.location_name",
 			columns: `%[1]s AS value_minor,
 				-- The damaged holding at cost. This valued the whole ON-HAND of any
@@ -1046,20 +1141,31 @@ var groupedCards = map[string][]groupedCard{
 				%[4]s AS blocked_value_minor,
 				SUM(on_hand_units) AS on_hand_units,
 				SUM(damaged_units) AS damaged_units,
-				-- Late inbound LINES, not units. A line with nothing yet received
-				-- against it is the thing the reference counts.
-				COUNT(*) FILTER (WHERE on_order_units > 0
-					AND in_transit_units = 0) AS delayed_receipts,
+				-- Receipts that ARRIVED LATE in the trailing window, from the
+				-- shipment lifecycle the run now publishes. The previous reading --
+				-- an open order with nothing in transit -- was true of every
+				-- unshipped order, because policy v2 declares those two buckets
+				-- disjoint, so it counted 100% of open lines as delayed.
+				MAX(inbound.late_shipments) AS delayed_receipts,
+				MAX(inbound.open_shipments) AS open_shipments,
 				` + fillRateExpr + ` AS fill_rate,
 				` + capacityUtilizationExpr + ` AS capacity_utilization,
 				-- The reference's Action column names what to do about the state
 				-- this row is in, in its own words.
+				--
+				-- "Expedite receipts" used to be the second branch, keyed on an open
+				-- order with nothing in transit. Those buckets are disjoint by
+				-- policy, so that test is true of every warehouse holding any open
+				-- order: three of the four read "Expedite receipts" for no reason,
+				-- and the one with damage only escaped it by matching the branch
+				-- above. Ordered by what the row can actually evidence instead:
+				-- blocked stock, then a warehouse that cannot fill what is asked of
+				-- it, then stock that has stopped moving.
 				CASE
 					WHEN SUM(damaged_units) > 0 THEN 'Release blocked stock'
-					WHEN COUNT(*) FILTER (WHERE on_order_units > 0
-						AND in_transit_units = 0) > 0 THEN 'Expedite receipts'
-					WHEN COUNT(*) FILTER (WHERE residual_only) > 0
-						THEN 'Review residual stock'
+					WHEN ` + fillRateExpr + ` < 0.95 THEN 'Rebalance supply'
+					WHEN COUNT(*) FILTER (WHERE residual_only)
+						> COUNT(*) / 2 THEN 'Review residual stock'
 					ELSE 'Maintain'
 				END AS warehouse_action,
 				COUNT(*) AS cells,
@@ -1294,6 +1400,16 @@ var groupedCards = map[string][]groupedCard{
 				USING (inventory_version_id, market_id, location_id, sku_id)`,
 			groupBy: "abc_class",
 			columns: `COUNT(DISTINCT sku_id) AS skus,
+				-- The reference names its segments -- "A / High Velocity" -- not
+				-- their letters. The class letter is the ABC engine's own code,
+				-- and its meaning is exactly what the policy ranks it on:
+				-- annualized consumption value.
+				CASE abc_class
+					WHEN 'A' THEN 'A / High Velocity'
+					WHEN 'B' THEN 'B / Medium Velocity'
+					WHEN 'C' THEN 'C / Low Velocity'
+					ELSE abc_class
+				END AS segment_label,
 				AVG(service_level) AS service_level,
 				SUM(safety_stock_units) AS safety_stock_units,
 				%[2]s AS value_minor,
@@ -1307,16 +1423,64 @@ var groupedCards = map[string][]groupedCard{
 	},
 	"replenishment_recommendations": {
 		{
-			// "Lead-Time Risk" -- per supply source, not per recommendation.
-			name:    "leadTime",
-			source:  `retail_serving.replenishment_recommendations`,
-			groupBy: "market_id, supply_location_id",
-			columns: `COUNT(*) AS cells,
+			// The reference's "Lead-Time Risk": Supplier / Source, Lead Time, Late
+			// Orders, Risk. It was grouped by supply_location_id and carried a cell
+			// count, an order count and a withheld count -- not one of the four
+			// columns the card actually has -- and the screen declared it nowhere,
+			// so it was computed on every request and rendered never.
+			//
+			// Grouped by the SOURCE the plan actually draws on, named. Every one of
+			// the 720 orders in this bundle sources from an internal DC, so a
+			// supplier-keyed card would describe nodes the plan never orders from --
+			// and would print a UUID, because the source publishes a supplier_id and
+			// no supplier name anywhere.
+			//
+			// Lead time is a real average now that the run publishes the resolved
+			// term per recommendation. Late Orders and Risk are withheld: see the
+			// reason codes on the screen for why neither exists for an internal node.
+			name: "leadTime",
+			source: `retail_serving.replenishment_recommendations
+				LEFT JOIN (
+					SELECT DISTINCT inventory_version_id AS sl_version,
+					       market_id AS sl_market, location_id AS sl_location,
+					       location_name AS source_name
+					FROM retail_serving.inventory_sku_dimension
+					WHERE %[8]s
+				) AS sourcename
+				  ON sourcename.sl_version
+				       = replenishment_recommendations.inventory_version_id
+				 AND sourcename.sl_market = replenishment_recommendations.market_id
+				 AND sourcename.sl_location
+				       = replenishment_recommendations.supply_location_id
+				LEFT JOIN (
+					SELECT market_id AS ib_market, location_id AS ib_location,
+					       received_shipments, late_shipments
+					FROM retail_serving.inventory_inbound_summary
+					WHERE %[8]s
+				) AS inbound
+				  ON inbound.ib_market = replenishment_recommendations.market_id
+				 AND inbound.ib_location
+				       = replenishment_recommendations.supply_location_id`,
+			groupBy: "market_id, supply_location_id, sourcename.source_name",
+			columns: `AVG(lead_time_days) AS lead_time_days,
 				COUNT(*) FILTER (WHERE recommended_units > 0) AS orders,
 				SUM(recommended_units) AS recommended_units,
-				COUNT(*) FILTER (WHERE NOT interval_available) AS withheld_cells`,
-			orderBy: "COUNT(*) FILTER (WHERE recommended_units > 0) DESC, market_id, supply_location_id",
-			limit:   20,
+				-- Inbound reliability of the node supplying these orders: of the
+				-- shipments it received in the trailing window, the share that
+				-- missed their expected date. Measured on ARRIVALS because nothing
+				-- is currently past due -- an open-book measure reads zero at every
+				-- node and says nothing about how reliable it is.
+				CASE WHEN MAX(inbound.received_shipments) > 0
+					THEN MAX(inbound.late_shipments)::numeric
+					     / MAX(inbound.received_shipments)
+				END AS late_order_rate`,
+			orderBy: `COUNT(*) FILTER (WHERE recommended_units > 0) DESC,
+				market_id, supply_location_id`,
+			// Only the sources this plan actually draws on. Unrestricted, the card
+			// listed 16 external suppliers with a resolved term and zero orders --
+			// and no name, because the source publishes no supplier name.
+			where: "recommended_units > 0",
+			limit: 20,
 		},
 	},
 }
@@ -1342,6 +1506,9 @@ var rowDisplayTables = map[string]bool{
 // and reads on_hand_units from there, which is what Stock Health does.
 var rowMoneyUnits = map[string]string{
 	"inventory_ageing": "inventory_ageing.on_hand_units",
+	// The buffer this row recommends, at cost. The reference's safety-stock table
+	// carries a money value per segment and this page had only the unit count.
+	"replenishment_safety_stock": "replenishment_safety_stock.safety_stock_units",
 	// The reference's waste Value column sits beside "Units", and its Units column
 	// is the EXPIRED quantity -- so the money figure is what is at risk now, the
 	// expiring holding, not what has already been written off.
@@ -1459,6 +1626,270 @@ var rowExtraJoins = map[string]struct {
 		join:    valuationCostJoin,
 		columns: `, %[3]s AS variance_value_minor`,
 	},
+	// Safety-stock rows. The reference's segment column reads "A / High Velocity",
+	// and the value beside it is money.
+	"replenishment_safety_stock": {
+		join: "",
+		columns: `, %[1]s AS safety_stock_value_minor,
+			CASE abc_class
+				WHEN 'A' THEN 'A / High Velocity'
+				WHEN 'B' THEN 'B / Medium Velocity'
+				WHEN 'C' THEN 'C / Low Velocity'
+				ELSE abc_class
+			END AS segment_label`,
+	},
+	// Allocation rows. The reference gives each an Available Pool distinct from
+	// what was Allocated, plus a rule, a priority and a status -- and all three of
+	// the latter were bound to channel_id or location_id, so the page printed a
+	// channel under "Allocation Rule", the same channel again under "Priority",
+	// and a location id under "Status".
+	"replenishment_allocations": {
+		join: `
+			LEFT JOIN (
+				SELECT inventory_version_id AS ap_version, market_id AS ap_market,
+				       location_id AS ap_location, sku_id AS ap_sku, atp_units
+				FROM retail_serving.inventory_positions
+				WHERE %[8]s
+			) AS allocpos
+			  ON allocpos.ap_version
+			       = replenishment_allocations.inventory_version_id
+			 AND allocpos.ap_market = replenishment_allocations.market_id
+			 AND allocpos.ap_location = replenishment_allocations.location_id
+			 AND allocpos.ap_sku = replenishment_allocations.sku_id`,
+		columns: `, allocpos.atp_units AS available_pool_units,
+			-- One rule for every row, because policy v2 declares one:
+			-- allocationPriority is service_class, then the minimum-share
+			-- guarantee, then value weight, then a deterministic tie break. The
+			-- reference shows two different rules per row; this engine applies the
+			-- same ladder to all of them, and saying so is truer than varying a
+			-- label the policy does not vary.
+			'Service class, then value weight' AS allocation_rule,
+			-- Priority and status from the row's own outcome, in the reference's
+			-- own vocabulary: High/Normal and Review/Ready.
+			CASE WHEN shortfall_units > 0 THEN 'High' ELSE 'Normal'
+			END AS allocation_priority,
+			CASE WHEN shortfall_units > 0 THEN 'Review' ELSE 'Ready'
+			END AS allocation_status`,
+	},
+	// Exception rows. Owner and Age have no published fact behind them, so they
+	// stay withheld; Status did too and was bound to location_id, printing a node
+	// id under a state column.
+	"replenishment_exceptions": {
+		join: "",
+		columns: `, -- The class in words. The engine's own identifier is
+			-- node_forecast_absent, and the Exception column printed it verbatim
+			-- where the reference reads a phrase a planner can act on.
+			CASE exception_class
+				WHEN 'node_forecast_absent' THEN 'No forecast for node'
+				WHEN 'node_interval_basis_unavailable'
+					THEN 'Node interval basis unavailable'
+				WHEN 'order_constraint_conflict' THEN 'Order constraint conflict'
+				WHEN 'cold_start_interval_unavailable'
+					THEN 'Cold-start interval uncalibrated'
+				ELSE initcap(replace(exception_class, '_', ' '))
+			END AS exception_label,
+			-- Every published exception is open: there is no resolution
+			-- workflow in this release, so no row can be anything else. A constant
+			-- is the honest answer where the alternative was a location id.
+			'Open' AS exception_status,
+			-- The reference names a resolution per row. Composed from the class the
+			-- engine itself assigned, so each of the three published classes gets
+			-- the action that actually clears it.
+			CASE exception_class
+				WHEN 'node_forecast_absent'
+					THEN 'Publish a forecast for this node'
+				WHEN 'node_interval_basis_unavailable'
+					THEN 'Calibrate the interval for this node'
+				WHEN 'order_constraint_conflict'
+					THEN 'Approve exception or relax the cover cap'
+			END AS exception_resolution`,
+	},
+	// Supplier rows. The reference's Action column reads "Expedite + alternate
+	// source" and "Maintain"; this printed the raw reason_codes array.
+	"replenishment_suppliers": {
+		join: "",
+		columns: `, CASE
+				WHEN risk_class = 'high'
+					THEN 'Expedite and qualify an alternate source'
+				WHEN capacity_confirmed_pct < 0.70
+					THEN 'Request capacity confirmation'
+				WHEN otd_rate < 0.90 THEN 'Review delivery performance'
+				ELSE 'Maintain'
+			END AS supplier_action`,
+	},
+	// The Priority Replenishment Recommendations row, which the reference gives
+	// fifteen columns and this projection can fill six of. Every join below is
+	// keyed on the DESTINATION -- the node being replenished -- and every column
+	// but the one it contributes is aliased away, because the position, health and
+	// safety-stock projections all carry market_id, location_id and sku_id, and
+	// the recommendations projection also carries a reason_code. Joined bare, the
+	// outer scope clauses go ambiguous and the page fails closed.
+	"replenishment_recommendations": {
+		join: `
+			LEFT JOIN (
+				SELECT inventory_version_id AS rp_version, market_id AS rp_market,
+				       location_id AS rp_location, sku_id AS rp_sku,
+				       on_hand_units, atp_units
+				FROM retail_serving.inventory_positions
+				WHERE %[8]s
+			) AS destpos
+			  ON destpos.rp_version
+			       = replenishment_recommendations.inventory_version_id
+			 AND destpos.rp_market = replenishment_recommendations.market_id
+			 AND destpos.rp_location
+			       = replenishment_recommendations.destination_location_id
+			 AND destpos.rp_sku = replenishment_recommendations.sku_id
+			LEFT JOIN (
+				SELECT inventory_version_id AS rs_version, market_id AS rs_market,
+				       location_id AS rs_location, sku_id AS rs_sku,
+				       safety_stock_units
+				FROM retail_serving.replenishment_safety_stock
+				WHERE %[8]s
+			) AS destbuffer
+			  ON destbuffer.rs_version
+			       = replenishment_recommendations.inventory_version_id
+			 AND destbuffer.rs_market = replenishment_recommendations.market_id
+			 AND destbuffer.rs_location
+			       = replenishment_recommendations.destination_location_id
+			 AND destbuffer.rs_sku = replenishment_recommendations.sku_id
+			LEFT JOIN (
+				SELECT inventory_version_id AS rh_version, market_id AS rh_market,
+				       location_id AS rh_location, sku_id AS rh_sku, health_class
+				FROM retail_serving.inventory_stock_health
+				WHERE %[8]s
+			) AS desthealth
+			  ON desthealth.rh_version
+			       = replenishment_recommendations.inventory_version_id
+			 AND desthealth.rh_market = replenishment_recommendations.market_id
+			 AND desthealth.rh_location
+			       = replenishment_recommendations.destination_location_id
+			 AND desthealth.rh_sku = replenishment_recommendations.sku_id
+			LEFT JOIN (
+				SELECT DISTINCT inventory_version_id AS dn_version,
+				       market_id AS dn_market, location_id AS dn_location,
+				       location_name AS destination_name
+				FROM retail_serving.inventory_sku_dimension
+				WHERE %[8]s
+			) AS destname
+			  ON destname.dn_version
+			       = replenishment_recommendations.inventory_version_id
+			 AND destname.dn_market = replenishment_recommendations.market_id
+			 AND destname.dn_location
+			       = replenishment_recommendations.destination_location_id
+			LEFT JOIN (
+				SELECT DISTINCT inventory_version_id AS sn_version,
+				       market_id AS sn_market, location_id AS sn_location,
+				       location_name AS source_name, location_kind AS source_kind
+				FROM retail_serving.inventory_sku_dimension
+				WHERE %[8]s
+			) AS sourcename
+			  ON sourcename.sn_version
+			       = replenishment_recommendations.inventory_version_id
+			 AND sourcename.sn_market = replenishment_recommendations.market_id
+			 AND sourcename.sn_location
+			       = replenishment_recommendations.supply_location_id
+			-- The confidence in the demand signal this order is sized against.
+			-- Decision #12 derives it from the P50-to-P90 spread, and the forecast
+			-- projection already publishes that derivation per series and horizon,
+			-- so nothing is recomputed here.
+			--
+			-- Horizon 1 because policy v2 sets reviewPeriodDays to 7: the order
+			-- covers the next week's demand. The protection period is longer --
+			-- lead time plus review -- but no lead time is published per row, so
+			-- the review week is the only anchor the data supports.
+			--
+			-- Averaged across the store's channels: forecast_series is per channel
+			-- and a recommendation is per node, and policy v2 aggregates node
+			-- demand additively across channels.
+			LEFT JOIN (
+				SELECT market_id AS fc_market, store_id AS fc_store,
+				       sku_id AS fc_sku, AVG(confidence) AS forecast_confidence
+				FROM retail_serving.forecast_series AS fseries
+				WHERE horizon_week = 1 AND %[9]s
+				GROUP BY market_id, store_id, sku_id
+			) AS forecast
+			  ON forecast.fc_market = replenishment_recommendations.market_id
+			 AND forecast.fc_store
+			       = replenishment_recommendations.destination_location_id
+			 AND forecast.fc_sku = replenishment_recommendations.sku_id
+			-- The origin this bundle decided on, so an expected receipt is a DATE
+			-- rather than a day count the reader has to add up. Aliased away from
+			-- inventory_version_id, which the outer scope clause already names.
+			LEFT JOIN (
+				SELECT inventory_version_id AS ver_version, decision_as_of
+				FROM retail_serving.inventory_versions
+				WHERE %[8]s
+			) AS ver
+			  ON ver.ver_version
+			       = replenishment_recommendations.inventory_version_id`,
+		columns: `, destpos.on_hand_units AS current_stock_units,
+			destbuffer.safety_stock_units,
+			destname.destination_name,
+			-- A NAME at both ends. The reference reads "Mumbai 01" and "West DC";
+			-- this page printed india-west:mumbai-bandra and the raw supply id.
+			-- A recommendation sourced from a supplier resolves to no internal
+			-- node, which is the reference's own "Supplier PO".
+			COALESCE(sourcename.source_name, 'Supplier PO') AS source_name,
+			-- Forecast demand over the review period, which policy v2 defines
+			-- exactly: order_up_to = reorder_point + expected_demand_over_review
+			-- _period. So the difference IS the published demand, not an estimate.
+			CASE
+				WHEN replenishment_recommendations.order_up_to_units IS NOT NULL
+					AND replenishment_recommendations.reorder_point_units
+					    IS NOT NULL
+				THEN replenishment_recommendations.order_up_to_units
+					- replenishment_recommendations.reorder_point_units
+			END AS forecast_demand_units,
+			-- The reference's Priority is a WORD ranking urgency. It was bound to
+			-- reason_code, so the column printed FORECAST_ABSENT_FOR_NODE where a
+			-- planner expects High. Urgency comes from the destination's health:
+			-- nothing available to sell outranks a thin buffer, which outranks a
+			-- node ordering while still healthy.
+			CASE
+				WHEN desthealth.health_class = 'stockout' THEN 'High'
+				WHEN desthealth.health_class = 'understock' THEN 'Medium'
+				WHEN replenishment_recommendations.recommended_units > 0
+					THEN 'Low'
+			END AS replenishment_priority,
+			-- The reference's Type column: "Purchase Order", "Warehouse Transfer".
+			-- It was bound to erp_status, which is the row's SEND state, and the
+			-- Status column beside it was bound to reason_code -- so the two
+			-- columns showed each other's answers and neither showed its own.
+			CASE
+				WHEN replenishment_recommendations.supply_location_id IS NULL
+					THEN 'Purchase Order'
+				WHEN sourcename.source_kind IN ('dc', '3pl')
+					THEN 'Warehouse Transfer'
+				WHEN sourcename.source_kind = 'store'
+					THEN 'Inter-store Transfer'
+			END AS order_type,
+			-- The engine's own code is shadow_not_sent; the Status column printed
+			-- it verbatim. P4-D11's shadow posture is the fact worth showing, in
+			-- words a planner reads.
+			CASE replenishment_recommendations.erp_status
+				WHEN 'shadow_not_sent' THEN 'Shadow (not sent)'
+				WHEN 'sent' THEN 'Sent to ERP'
+				WHEN 'failed' THEN 'Send failed'
+				ELSE replenishment_recommendations.erp_status
+			END AS erp_status_label,
+			forecast.forecast_confidence,
+			replenishment_recommendations.lead_time_days,
+			-- Expected receipt: the origin plus the resolved lead time. Derived
+			-- here rather than stored, so it cannot drift out of step with either
+			-- the origin or the term it came from.
+			-- Rendered as text in the reference's own form ("18 Jul") rather than
+			-- returned as a date: a date column serialises to a full ISO instant,
+			-- and "2026-07-30T00:00:00Z" in a table cell is a timestamp where a
+			-- planner reads a day.
+			CASE WHEN replenishment_recommendations.lead_time_days IS NOT NULL
+				THEN to_char(
+					ver.decision_as_of
+						+ replenishment_recommendations.lead_time_days
+						  * INTERVAL '1 day',
+					'DD Mon'
+				)
+			END AS expected_receipt_date`,
+	},
 	// The reference's transfer row names both ends in words and shows the qty
 	// AVAILABLE at the source beside the qty suggested. Raw location ids and a
 	// single quantity reused for both columns is what shipped.
@@ -1559,7 +1990,11 @@ var rowExtraJoins = map[string]struct {
 // a name. A product's name does not depend on where it sits, so a SKU-only
 // lookup is enough -- and DISTINCT because the dimension has one row per cell.
 var rowNameLookup = map[string]struct {
-	on      string
+	on string
+	// The unit column %[1]s values, empty meaning `units`. Written per table
+	// because the quantity a row prices differs: a transfer moves `units`, a
+	// recommendation orders `recommended_units`.
+	units   string
 	columns string
 }{
 	"replenishment_transfers": {
@@ -1569,8 +2004,13 @@ var rowNameLookup = map[string]struct {
 		columns: ", names.product_name, names.category_label, %[1]s AS transfer_value_minor",
 	},
 	"replenishment_recommendations": {
-		on:      "replenishment_recommendations.sku_id",
-		columns: ", names.product_name, names.category_label",
+		on:    "replenishment_recommendations.sku_id",
+		units: "replenishment_recommendations.recommended_units",
+		// The reference's "Order Value" per row -- Rs 18.6L against a suggested
+		// 244 units. It was declared with no field at all, so the column was
+		// blank on every row of a page whose whole purpose is deciding what to buy.
+		columns: ", names.product_name, names.category_label," +
+			" %[1]s AS order_value_minor",
 	},
 	"replenishment_exceptions": {
 		on:      "replenishment_exceptions.sku_id",
@@ -1626,6 +2066,17 @@ var dashboardCompanions = map[string][]dashboardCompanion{
 	"replenishment_safety_stock": {
 		{table: "inventory_valuation", prefix: "valuation"},
 	},
+	"replenishment_allocations": {
+		{table: "replenishment_allocation_pool", prefix: "pool"},
+	},
+	// No POSITIONS companion for allocations, deliberately. "Available Allocation
+	// Pool" is money in the reference and this projection holds no cost, so the
+	// ATP in positions looks like the answer -- but the companion is scoped by the
+	// ROUTE's filters, and allocation happens at four demanding stores while
+	// positions covers all eight nodes. Wired that way the tile read Rs 204 Cr of
+	// enterprise ATP above rows whose own pools are in the hundreds of units.
+	// Summing the per-cell pool instead would double count: a cell appears once
+	// per channel, so its ATP would be added as many times as it has channels.
 	"replenishment_suppliers": {
 		{table: "replenishment_recommendations", prefix: "order"},
 		// "Open PO Value" is inbound already on order, which lives in the
@@ -1660,6 +2111,7 @@ var filterableColumns = map[string]map[string]bool{
 	"inventory_valuation":           {"market_id": true, "location_id": true, "category": true},
 	"inventory_sku_dimension":       {"market_id": true, "location_id": true, "sku_id": true, "category": true},
 	"inventory_valuation_by_kind":   {"market_id": true, "location_id": true, "category": true},
+	"replenishment_allocation_pool": {"market_id": true, "location_id": true},
 	"replenishment_recommendations": {"market_id": true, "sku_id": true},
 	"replenishment_safety_stock":    {"market_id": true, "location_id": true, "sku_id": true},
 	"replenishment_transfers":       {"market_id": true, "sku_id": true},
@@ -1721,7 +2173,12 @@ var inventoryAggregates = map[string]map[string]string{
 		"assortedCells": "COUNT(*) FILTER (WHERE assortment_active)",
 		"inStockAssortedCells": "COUNT(*) FILTER " +
 			"(WHERE assortment_active AND atp_units > 0)",
-		"zeroCells":         "COUNT(*) FILTER (WHERE on_hand_units = 0)",
+		"zeroCells": "COUNT(*) FILTER (WHERE on_hand_units = 0)",
+		// The count behind the in-transit money, for the reference's delta line.
+		// It counts CELLS with stock inbound, not shipments: the position
+		// projection carries in_transit_units and no shipment identity, so the
+		// noun says cells rather than borrowing one it cannot support.
+		"inTransitCells":    "COUNT(*) FILTER (WHERE in_transit_units > 0)",
 		"cells":             "COUNT(*)",
 		"residualOnlyCells": "COUNT(*) FILTER (WHERE residual_only)",
 		"activeCells":       "COUNT(*) FILTER (WHERE assortment_active)",
@@ -1832,6 +2289,18 @@ var inventoryAggregates = map[string]map[string]string{
 			"AND reason_code IS DISTINCT FROM 'MOQ_EXCEEDS_MAX_COVER')",
 		"moqRefusedCells": "COUNT(*) FILTER " +
 			"(WHERE reason_code = 'MOQ_EXCEEDS_MAX_COVER')",
+		// Orders that fit inside their market's weekly ceiling, taken in priority
+		// order: the cumulative order value up to each line, compared with the
+		// budget that market declares. A line whose running total is still under
+		// the ceiling is within budget; the first one past it and everything after
+		// are the exceptions.
+		//
+		// The ceiling is published per market by migration 0018, so this divides by
+		// a fact rather than by a policy document the read model cannot open.
+		"withinBudgetCells": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND budget.running_value_minor <= budget.weekly_replenishment_budget_minor)",
+		"overBudgetCells": "COUNT(*) FILTER (WHERE recommended_units > 0 " +
+			"AND budget.running_value_minor > budget.weekly_replenishment_budget_minor)",
 		// The denominator is lines the solver TRIED to place, not lines it placed.
 		// Against cellsToOrder the share is 720 of 720 and can never be anything
 		// else -- a line that ordered cleared MOQ by construction -- so the tile
@@ -1898,12 +2367,29 @@ var inventoryAggregates = map[string]map[string]string{
 		"meanTransitDays": "AVG(transit_days)",
 		"maxTransitDays":  "MAX(transit_days)",
 	},
+	"replenishment_allocation_pool": {
+		"poolCells": "COUNT(*)",
+		"poolUnits": "COALESCE(SUM(position.atp_units), 0)",
+	},
 	"replenishment_allocations": {
 		"rows":           "COUNT(*)",
 		"requestedUnits": "COALESCE(SUM(requested_units), 0)",
 		"allocatedUnits": "COALESCE(SUM(allocated_units), 0)",
 		"shortfallUnits": "COALESCE(SUM(shortfall_units), 0)",
 		"channels":       "COUNT(DISTINCT channel_id)",
+		// No fulfillmentRate here, and the obvious candidate is why. The tile was
+		// bound to allocated_units under a percent format, so a unit count went
+		// through times-one-hundred and rendered 1744700.0%. Allocated over
+		// requested looks like the fix and is not: `requested_units` is TRAILING
+		// SALES over the 91-day window (load_channel_demand sums the sales table),
+		// while `allocated_units` is what today's ATP can cover. The ratio is
+		// current stock against a quarter of demand -- it reads 2.2% and it is not
+		// a fulfilment rate. Served over demanded PER PERIOD is a replay output,
+		// which is why the tile now withholds on FILL_RATE_NEEDS_REPLAY.
+		//
+		// `shortfall_units` inherits the same base, so the shortfall tile counts
+		// REQUESTS carrying an unmet balance rather than summing those units.
+		"shortfallRows": "COUNT(*) FILTER (WHERE shortfall_units > 0)",
 		// No fillRate here, deliberately. Allocated over requested looks like the
 		// reference's "Warehouse Fill Rate" and is not: every one of the 2,065
 		// allocation rows sits at a STORE, and the projection carries no supply
@@ -1927,6 +2413,16 @@ var inventoryAggregates = map[string]map[string]string{
 		"warnings": "COUNT(*) FILTER (WHERE severity = 'warning')",
 		"infos":    "COUNT(*) FILTER (WHERE severity = 'info')",
 		"classes":  "COUNT(DISTINCT exception_class)",
+		// "Supplier Exceptions" counts exceptions whose cause is the SUPPLY side.
+		// It was bound to `classes`, the number of DISTINCT exception classes --
+		// a single-digit taxonomy count under a caption a planner reads as a
+		// workload. The classes are the engine's own vocabulary, matched on the
+		// supply-side prefixes rather than an inclusive list, so a class added
+		// later is counted without editing this.
+		"supplierExceptions": "COUNT(*) FILTER (WHERE exception_class LIKE 'supply%' " +
+			"OR exception_class LIKE 'supplier%' OR exception_class LIKE 'lead_time%' " +
+			"OR exception_class LIKE '%capacity%')",
+		"distinctCells": "COUNT(DISTINCT (location_id, sku_id))",
 	},
 }
 
@@ -1943,6 +2439,15 @@ var moneyAggregates = map[string]map[string]string{
 	// Value" onto expected_benefit_minor answered the wrong question.
 	"replenishment_transfers": {
 		"transferValueMinor": "units",
+	},
+	// "Safety Stock Value" is Rs 6.4 Cr in the reference and was a unit count
+	// here. The segments card beside it already valued the same buffer, so the
+	// tile and the table under it disagreed about what they were measuring.
+	"replenishment_safety_stock": {
+		"safetyStockValueMinor": "safety_stock_units",
+	},
+	"replenishment_allocation_pool": {
+		"poolValueMinor": "position.atp_units",
 	},
 	"inventory_ageing": {
 		// Each bucket's holding at cost. The reference's four ageing tiles are
@@ -2051,6 +2556,11 @@ var aggregateSource = map[string]string{
 
 	"replenishment_safety_stock": `retail_serving.replenishment_safety_stock
 		LEFT JOIN retail_serving.inventory_positions AS position
+		USING (inventory_version_id, market_id, location_id, sku_id)
+		-- The cost, so the buffer can be valued. Same grain on both sides, so the
+		-- join cannot multiply rows; without it a money aggregate on this table
+		-- names dim.unit_cost_minor against nothing and the route fails closed.
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 		USING (inventory_version_id, market_id, location_id, sku_id)`,
 
 	// Not a projection -- a companion-only view. Valuation is held per market x
@@ -2085,6 +2595,54 @@ var aggregateSource = map[string]string{
 		AND dim.rc_location
 		     = replenishment_recommendations.destination_location_id
 		AND dim.rc_sku = replenishment_recommendations.sku_id
+		-- Budget position of each ordering line. The running total is taken in the
+		-- same priority order the plan is worked in -- urgency, then size -- so
+		-- "within budget" means the ceiling had not been consumed by the time this
+		-- line came up, which is what a planner spending it would experience.
+		--
+		-- The ceiling itself comes from the market policy the run publishes; the
+		-- read model cannot open a policy document.
+		LEFT JOIN (
+			SELECT ranked.bd_version, ranked.bd_market, ranked.bd_location,
+			       ranked.bd_sku,
+			       ranked.running_value_minor,
+			       policy.weekly_replenishment_budget_minor
+			FROM (
+				SELECT rec.inventory_version_id AS bd_version,
+				       rec.market_id AS bd_market,
+				       rec.destination_location_id AS bd_location,
+				       rec.sku_id AS bd_sku,
+				       SUM(rec.recommended_units * COALESCE(d.unit_cost_minor, 0))
+				         OVER (
+				           PARTITION BY rec.inventory_version_id, rec.market_id
+				           ORDER BY
+				             CASE h.health_class WHEN 'stockout' THEN 0
+				                  WHEN 'understock' THEN 1 ELSE 2 END,
+				             rec.recommended_units DESC,
+				             rec.destination_location_id, rec.sku_id
+				         ) AS running_value_minor
+				FROM retail_serving.replenishment_recommendations AS rec
+				LEFT JOIN retail_serving.inventory_sku_dimension AS d
+				  ON d.inventory_version_id = rec.inventory_version_id
+				 AND d.market_id = rec.market_id
+				 AND d.location_id = rec.destination_location_id
+				 AND d.sku_id = rec.sku_id
+				LEFT JOIN retail_serving.inventory_stock_health AS h
+				  ON h.inventory_version_id = rec.inventory_version_id
+				 AND h.market_id = rec.market_id
+				 AND h.location_id = rec.destination_location_id
+				 AND h.sku_id = rec.sku_id
+				WHERE rec.recommended_units > 0 AND rec.%[8]s
+			) AS ranked
+			JOIN retail_serving.inventory_market_policy AS policy
+			  ON policy.inventory_version_id = ranked.bd_version
+			 AND policy.market_id = ranked.bd_market
+		) AS budget
+		ON budget.bd_version = replenishment_recommendations.inventory_version_id
+		AND budget.bd_market = replenishment_recommendations.market_id
+		AND budget.bd_location
+		     = replenishment_recommendations.destination_location_id
+		AND budget.bd_sku = replenishment_recommendations.sku_id
 		-- The DESTINATION's health, for how urgent each order is. Every column
 		-- but health_class is aliased away on purpose: the health projection
 		-- carries a reason_code too, and joined bare it makes the reason_code
@@ -2114,6 +2672,34 @@ var aggregateSource = map[string]string{
 		             location_kind
 		      FROM retail_serving.inventory_positions) AS echelon
 		USING (inventory_version_id, market_id, location_id)`,
+
+	// A companion whose grain is the allocation CELL rather than the channel row.
+	// "Available Allocation Pool" is the ATP the optimizer had to distribute, and
+	// the allocation projection repeats a cell once per channel -- so summing the
+	// per-row pool counts a node's stock as many times as it has channels. Reduced
+	// to DISTINCT cells first, the sum is the pool exactly once, and restricted to
+	// the cells that actually allocate rather than all eight nodes.
+	"replenishment_allocation_pool": `(
+			SELECT DISTINCT inventory_version_id, market_id, location_id, sku_id
+			FROM retail_serving.replenishment_allocations
+		) AS pool
+		JOIN retail_serving.inventory_positions AS position
+		USING (inventory_version_id, market_id, location_id, sku_id)
+		LEFT JOIN retail_serving.inventory_sku_dimension AS dim
+		USING (inventory_version_id, market_id, location_id, sku_id)`,
+}
+
+// pseudoTableBase names the real projection a companion pseudo-table reads from.
+//
+// A pseudo-table exists where a companion needs a different GRAIN of a projection
+// than the route serves: "by kind" adds the echelon to valuation, and the
+// allocation pool reduces allocations to one row per cell so a node's stock is
+// not counted once per channel. Both still scope with the base projection's own
+// unqualified columns, which is what makes them safe -- and what the aggregate
+// source guard checks.
+var pseudoTableBase = map[string]string{
+	"inventory_valuation_by_kind":   "inventory_valuation",
+	"replenishment_allocation_pool": "replenishment_allocations",
 }
 
 // moneyColumnAggregates names aggregates over a column that is ALREADY money,
@@ -2266,6 +2852,7 @@ func (s *InventoryStore) aggregate(
 	if !joined {
 		source = "retail_serving." + table
 	}
+	source = s.expandSource(source)
 	// Sorted so the generated SQL is stable across runs and diffable in logs.
 	names := make([]string, 0, len(expressions))
 	for name := range expressions {
@@ -2305,6 +2892,7 @@ func (s *InventoryStore) groupedCard(
 	ctx context.Context, card groupedCard, filters []inventoryFilter,
 	static []string,
 ) ([]map[string]any, error) {
+	cardSource := s.expandSource(card.source)
 	base := card.source
 	if index := strings.IndexAny(base, " \n\t"); index > 0 {
 		base = base[:index]
@@ -2340,6 +2928,9 @@ func (s *InventoryStore) groupedCard(
 			"%s %s $%d", column, filter.operator, len(args),
 		))
 	}
+	if card.where != "" {
+		clauses = append(clauses, card.where)
+	}
 	args = append(args, card.limit)
 	// A card's money columns carry %[1]s / %[2]s placeholders so the FX
 	// conversion is applied with this store's approved rates rather than baked
@@ -2367,7 +2958,7 @@ func (s *InventoryStore) groupedCard(
 	cardOrderBy := replace.Replace(card.orderBy)
 	statement := fmt.Sprintf(
 		"SELECT %s, %s FROM %s WHERE %s GROUP BY %s ORDER BY %s LIMIT $%d",
-		card.groupBy, cardColumns, card.source,
+		card.groupBy, cardColumns, cardSource,
 		strings.Join(clauses, " AND "), card.groupBy, cardOrderBy, len(args),
 	)
 	rows, err := s.pool.Query(ctx, statement, args...)

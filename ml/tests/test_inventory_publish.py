@@ -252,6 +252,7 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "recommended_units": 24,
                     "reorder_point_units": 18.5,
                     "order_up_to_units": 64.0,
+                    "lead_time_days": 6,
                     "interval_available": True,
                     "reason_code": None,
                     "erp_status": "shadow_not_sent",
@@ -264,6 +265,7 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "recommended_units": None,
                     "reorder_point_units": None,
                     "order_up_to_units": None,
+                    "lead_time_days": 6,
                     "interval_available": False,
                     "reason_code": "COLD_START_INTERVAL_UNCALIBRATED",
                     "erp_status": "shadow_not_sent",
@@ -333,6 +335,9 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "capacity_confirmed_pct": 0.85,
                     "risk_class": "medium",
                     "reason_codes": ["LEAD_TIME_VARIABILITY"],
+                    "category": "grocery",
+                    "category_label": "Grocery",
+                    "scope_count": 2,
                 }
             ]
         ),
@@ -372,6 +377,27 @@ def _frames() -> dict[str, pd.DataFrame]:
         # One row per warehouse, not per snapshot date: the run publishes the
         # latest ceiling its origin admits, and the grain check rejects a second
         # row for the same node.
+        "inventory_market_policy": stack(
+            lambda market: [
+                {
+                    "market_id": market,
+                    "weekly_replenishment_budget_minor": 23000000000,
+                    "currency_code": "INR" if market == "india-west" else "USD",
+                }
+            ]
+        ),
+        "inventory_inbound_summary": stack(
+            lambda market: [
+                {
+                    "market_id": market,
+                    "location_id": f"{market}-dc-1",
+                    "open_shipments": 4,
+                    "open_units": 260,
+                    "received_shipments": 40,
+                    "late_shipments": 9,
+                }
+            ]
+        ),
         "inventory_warehouse_capacity": stack(
             lambda market: [
                 {

@@ -114,6 +114,8 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "inventory_expiry_waste": "retail-inventory-expiry-waste/v1",
     "inventory_sku_dimension": "retail-inventory-sku-dimension/v1",
     "inventory_warehouse_capacity": "retail-inventory-warehouse-capacity/v1",
+    "inventory_inbound_summary": "retail-inventory-inbound-summary/v1",
+    "inventory_market_policy": "retail-inventory-market-policy/v1",
     "inventory_valuation": "retail-inventory-valuation/v1",
     "replenishment_recommendations": "retail-replenishment-recommendations/v1",
     "replenishment_safety_stock": "retail-replenishment-safety-stock/v1",
@@ -215,6 +217,10 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "recommended_units",
         "reorder_point_units",
         "order_up_to_units",
+        # The lead time the supply term resolved to. The engine computed it to
+        # size the protection period and published nothing, so the reference's
+        # Lead Time and Expected Receipt columns had no fact behind them.
+        "lead_time_days",
         "interval_available",
         "reason_code",
         "erp_status",
@@ -252,6 +258,13 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "replenishment_suppliers": (
         "market_id",
         "supplier_id",
+        # The merchandise scope this supplier serves, and how many scopes it
+        # serves in total. A supplier is not single-category -- 239 of the 280 in
+        # the source carry more than one term -- so the count travels with the
+        # label and the screen can say "+2" rather than implying exclusivity.
+        "category",
+        "category_label",
+        "scope_count",
         "otd_rate",
         "lead_time_mean_days",
         "lead_time_std_days",
@@ -287,6 +300,25 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "location_id",
         "capacity_units",
         "snapshot_date",
+    ),
+    # Inbound reliability per node. The position projection carries an on-order
+    # and an in-transit bucket and no dates, so nothing downstream could tell a
+    # late receipt from a merely open one.
+    "inventory_inbound_summary": (
+        "market_id",
+        "location_id",
+        "open_shipments",
+        "open_units",
+        "received_shipments",
+        "late_shipments",
+    ),
+    # The market-scoped ceilings the screens measure a plan against. The policy
+    # declares them and the read model cannot read a policy document, so a
+    # governance figure had no denominator.
+    "inventory_market_policy": (
+        "market_id",
+        "weekly_replenishment_budget_minor",
+        "currency_code",
     ),
 }
 
@@ -328,6 +360,8 @@ ARTIFACT_GRAIN: Final[dict[str, tuple[str, ...]]] = {
     ),
     "inventory_replay_metrics": ("market_id", "metric", "cohort"),
     "inventory_warehouse_capacity": ("market_id", "location_id"),
+    "inventory_inbound_summary": ("market_id", "location_id"),
+    "inventory_market_policy": ("market_id",),
 }
 
 class IntervalGate(NamedTuple):

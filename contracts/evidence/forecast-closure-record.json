@@ -393,7 +393,7 @@
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0014_warehouse_capacity",
+  "servingMigration": "0018_market_policy_scope",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": [
     {

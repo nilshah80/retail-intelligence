@@ -241,7 +241,7 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0014_warehouse_capacity",
+  "servingMigration": "0018_market_policy_scope",
   "sourceSelection": {
     "activeRecordId": "rec_023d19e82a48c03d",
     "capabilityReadiness": "ready",
