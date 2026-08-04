@@ -21,6 +21,7 @@ from .customers import CustomerPopulation
 from .identity import rng, shopify_order_name, stable_integer
 from .lifecycle import lifecycle_adjustment
 from .operations import fulfillment_timestamps
+from .store_inventory import StoreEchelon
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -1680,6 +1681,27 @@ def simulate(
                 )
 
     opening_inventory = dict(inventory)
+
+    # Source contract v13. The store echelon owns SKU x store stock, its
+    # replenishment over declared lanes, and its own emission rule. It is kept in
+    # its own module rather than inlined here because this function already carries
+    # the DC causal loop, and interleaving a second echelon's state into it would
+    # make both harder to reason about.
+    store_echelon = StoreEchelon(
+        config=config,
+        markets=markets,
+        stores=stores,
+        warehouses=warehouses,
+        store_variants=store_variants,
+        start=start,
+        end=end,
+        master_seed=master_seed,
+    )
+    store_observations = row_stream("simulation-store-observations")
+    store_transfer_events = row_stream("simulation-store-transfer-events")
+    store_waste_events = row_stream("simulation-store-waste-events")
+    store_stockout_events = row_stream("simulation-store-stockout-events")
+    store_echelon.seed_opening(opening_daily_rate)
     receipts_by_date: dict[date, list[dict[str, Any]]] = defaultdict(list)
     receipt_events = row_stream("simulation-receipt-events")
     cycle = inventory_policy["replenishmentCycleDays"]
@@ -1921,6 +1943,11 @@ def simulate(
                         "causeIds": "|".join(sorted(cause_ids)),
                     }
                 )
+        # v13 store echelon, ordered to match the frozen period sequence:
+        # receive, then expire, then sell. Receiving after selling would let a
+        # shipment cover demand it arrived too late for.
+        store_transfer_events.extend(store_echelon.receive(day))
+        store_waste_events.extend(store_echelon.expire(day))
         for receipt in receipts_by_date.pop(day, []):
             key = (receipt["warehouseId"], receipt["sku"])
             inventory[key] += receipt["quantity"]
@@ -3071,6 +3098,39 @@ def simulate(
                     )
                     realized_units = sum(row["quantity"] for row in allocations)
                     lost_units = latent_units - realized_units
+                    # v13: consume store stock for store-channel demand. The DC
+                    # allocation above is unchanged and remains the withdrawal that
+                    # `sales_fulfillments` records; this asks the separate question
+                    # of whether the store could have covered the sale from its own
+                    # shelf. A shortfall is a store stockout, not a lost sale --
+                    # the customer was served, from the DC.
+                    if channel_types.get(channel_id) == "store" and realized_units:
+                        store_served, store_short = store_echelon.sell(
+                            day,
+                            store["storeId"],
+                            variant["sku"],
+                            realized_units,
+                        )
+                        if store_short:
+                            store_stockout_events.append(
+                                {
+                                    "eventKey": f"store-stockout:{event_key}",
+                                    "marketKey": market_id,
+                                    "storeKey": store["storeId"],
+                                    "channelId": channel_id,
+                                    "sku": variant["sku"],
+                                    "eventDate": day.isoformat(),
+                                    "demandUnits": realized_units,
+                                    "servedFromStoreUnits": store_served,
+                                    "shortfallUnits": store_short,
+                                    "servedFromSupplyNode": allocations[0][
+                                        "warehouseId"
+                                    ],
+                                    "observedAt": _iso_at(
+                                        day, 23, markets[market_id]["timezone"]
+                                    ),
+                                }
+                            )
                     for allocation in allocations:
                         realized_demand_by_day[
                             (allocation["warehouseId"], variant["sku"])
@@ -3329,6 +3389,8 @@ def simulate(
         order_headers.extend(daily_orders)
         line_events.extend(daily_lines)
 
+        store_transfer_events.extend(store_echelon.review(day))
+        store_observations.extend(store_echelon.snapshot(day))
         if (day - start).days % inventory_policy["snapshotCadenceDays"] == 0 or day == end:
             for warehouse in sorted(warehouses.values(), key=lambda row: row["warehouseId"]):
                 market_id = warehouse["marketId"]
@@ -3441,4 +3503,10 @@ def simulate(
         "competitorMatches": competitor_matches,
         "pandemicSignals": pandemic_signals,
         "finalInventory": dict(inventory),
+        "storeObservations": store_observations,
+        "storeTransferEvents": store_transfer_events,
+        "storeWasteEvents": store_waste_events,
+        "storeStockoutEvents": store_stockout_events,
+        "serviceLanes": store_echelon.lane_rows(),
+        "storeInventoryControls": store_echelon.coverage_summary(),
     }

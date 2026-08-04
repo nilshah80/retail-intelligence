@@ -35,13 +35,35 @@ boundaryAllowlist:
         `_create_standardized_views` still selects platform relations by name.
         PP3-A3 replaces this with role bindings; the occurrences are tracked
         here so the boundary test fails if new ones appear.
-      occurrences: 61
+        Raised 61 -> 65 at P4-2: source contract v13 adds four neutral roles
+        (service_lanes, inbound_status_events, inventory_transfer_events,
+        supply_terms), each contributing exactly one platform-relation mapping
+        in the same `direct` table every existing role uses. The builder IS the
+        boundary where platform spelling terminates, so these four belong here
+        and nowhere else; canonical transforms import only the neutral names.
+        Raised 65 -> 66 at P4-12c for store_shortfall_events, on the same terms:
+        one mapping in the same `direct` table. It publishes the part of a store
+        sale the shelf could not cover, which the DC fulfilled -- without it the
+        weekly replay charges the DC's share to the store and canonical does not
+        balance against itself.
+        Raised 66 -> 67 at P4-12e for vendors, again one mapping in the same
+        table. It carries the vendor master, which landed on every run since v13
+        and was staged by none of them, so every supplier a screen named was a
+        UUID. The budget test caught this before the role was declared, which is
+        the check working: a relation may not be consumed without appearing in
+        this inventory.
+      occurrences: 67
     - path: ingestion/src/retail_ingestion/mappings/locations.py
       reason: >-
         location crosswalk construction reads `stage_data.shopify_locations` and
         an `upstream_topology_bc_code` field. PP3-A3 rebuilds both from neutral
         roles.
-      occurrences: 4
+        Raised 4 -> 5 at P4-2: v13 stores hold stock under their own Business
+        Central location code, and that code must resolve to the SAME canonical
+        store its Shopify location resolves to. The one new occurrence is the
+        store row's `upstream_topology_bc_code` authority label -- the same
+        vocabulary the warehouse mapping has always used.
+      occurrences: 5
   prohibited:
     - ingestion/src/retail_ingestion/transforms
     - ingestion/src/retail_ingestion/quality
@@ -100,6 +122,11 @@ relationRoleMap:
   locations:        {provider: shopify_locations, role: location}
   prices:           {provider: shopify_prices, role: sell_price}
   supplier_terms:   {provider: bc_supplier_terms, role: supplier_term}
+  # Source contract v13. `supplier_terms` above stays mapped: v1 rows remain
+  # readable and remain replay-ineligible, while `supply_terms` carries the
+  # typed origin the resolver needs.
+  supply_terms:     {provider: bc_supply_terms, role: supply_term}
+  service_lanes:    {provider: companion_service_lanes, role: service_lane}
   invoice_sales_control: {provider: bc_sales_control, role: invoice_sales_control}
   customer_segment_counts:
     provider: shopify_customer_segment_counts
@@ -107,11 +134,21 @@ relationRoleMap:
   inventory_cost:   {provider: bc_inventory_cost, role: inventory_cost}
   inventory_batches: {provider: bc_inventory_batches, role: inventory_batch}
   inbound_shipments: {provider: bc_inbound_shipments, role: inbound_shipment}
+  inbound_status_events:
+    provider: bc_inbound_status_events
+    role: inbound_status_event
+  store_shortfall_events:
+    provider: bc_store_shortfall_events
+    role: store_shortfall_event
   transfer_orders:  {provider: bc_transfer_orders, role: transfer_order}
+  inventory_transfer_events:
+    provider: bc_inventory_transfer_events
+    role: inventory_transfer_event
   waste_events:     {provider: bc_waste_events, role: waste_event}
   warehouse_capacity: {provider: bc_warehouse_capacity, role: warehouse_capacity}
   wms_comparisons:  {provider: bc_wms_comparisons, role: wms_comparison}
   supplier_performance: {provider: bc_supplier_performance, role: supplier_performance}
+  vendors: {provider: bc_vendors, role: vendors}
   dimension_signal:
     provider: companion_dimension_signal
     disposition: retired_no_consumer
@@ -191,14 +228,20 @@ roleProviderMap:
   inventory:              {providers: [bc_inventory]}
   receipt:                {providers: [bc_receipts]}
   supplier_term:          {providers: [bc_supplier_terms]}
+  supply_term:            {providers: [bc_supply_terms]}
+  service_lane:           {providers: [companion_service_lanes]}
   inventory_cost:         {providers: [bc_inventory_cost]}
   inventory_batch:        {providers: [bc_inventory_batches]}
   inbound_shipment:       {providers: [bc_inbound_shipments]}
+  inbound_status_event:   {providers: [bc_inbound_status_events]}
   transfer_order:         {providers: [bc_transfer_orders]}
+  inventory_transfer_event:
+    providers: [bc_inventory_transfer_events]
   waste_event:            {providers: [bc_waste_events]}
   warehouse_capacity:     {providers: [bc_warehouse_capacity]}
   wms_comparison:         {providers: [bc_wms_comparisons]}
   supplier_performance:   {providers: [bc_supplier_performance]}
+  vendors:                {providers: [bc_vendors]}
   invoice_sales_control:  {providers: [bc_sales_control]}
   customer_segment_count: {providers: [shopify_customer_segment_counts]}
   holiday:                {providers: [companion_holidays]}

@@ -1,8 +1,8 @@
 schemaVersion: retail-source-profile/v1
 profileId: retail-datagen-multi-source
-profileVersion: "1.2.0"
+profileVersion: "1.3.0"
 sourceSystem: generator
-sourceSchemaVersion: retail-source-config/v12
+sourceSchemaVersion: retail-source-config/v13
 businessTimezone: source_location_timezone
 extractWindow:
   start: "2016-07-28"
@@ -113,6 +113,34 @@ datasets:
     datasetId: inboundShipments
     sourceKeys: [shipmentId]
     grainFields: [shipmentId]
+  - <<: *staged
+    datasetId: inboundStatusEvents
+    sourceKeys: [shipmentId, sku, status]
+    grainFields: [shipmentId, sku, status, statusEffectiveAt]
+  - <<: *staged
+    datasetId: supplyTerms
+    sourceKeys: [vendorId, destinationLocationCode, merchScopeType, merchScopeId]
+    grainFields: [vendorId, destinationLocationCode, merchScopeType, merchScopeId, effectiveFrom]
+  - <<: *staged
+    datasetId: storeInventorySnapshots
+    sourceKeys: [locationCode, sku, observedAt]
+    grainFields: [locationCode, sku, observedAt]
+  - <<: *staged
+    datasetId: storeTransferEvents
+    sourceKeys: [transferId, status]
+    grainFields: [transferId, sku, status, statusEffectiveAt]
+  - <<: *staged
+    datasetId: storeWasteEvents
+    sourceKeys: [eventId]
+    grainFields: [eventId]
+  # Source contract v13: the part of a store sale the shelf could not cover, which
+  # the DC fulfilled. Same classification and lane as the other store-echelon
+  # relations -- it carries no identifiers a customer could be recovered from,
+  # only a location, a SKU and three unit counts.
+  - <<: *staged
+    datasetId: storeStockoutEvents
+    sourceKeys: [eventId]
+    grainFields: [eventId]
   - <<: *staged
     datasetId: inventorySnapshots
     sourceKeys: [locationCode, sku, observedAt]
@@ -260,6 +288,11 @@ datasets:
     datasetId: macroIndex
     sourceKeys: [marketKey, indexName, targetType, targetId, validDate, observedAt]
     grainFields: [marketKey, indexName, targetType, targetId, validDate, observedAt]
+  - <<: *staged
+    sourceSystem: companion
+    datasetId: serviceLanes
+    sourceKeys: [laneKey]
+    grainFields: [laneKey]
   - <<: *staged
     sourceSystem: companion
     datasetId: pandemicSignals

@@ -123,6 +123,50 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
     "fulfillmentStatusHistory": (
         "fulfillmentId", "sequence", "status", "occurredAt", "warehouseKey",
     ),
+    # Source contract v13 store echelon. Declared so a small window that produced
+    # no store waste (or a feature-off run) still emits a schema-complete empty
+    # file rather than failing the writer.
+    "storeInventorySnapshots": (
+        "locationCode", "observedAt", "sku", "inventory", "availableInventory",
+        "committedInventory", "reservedInventory", "damagedInventory",
+        "qualityControlInventory", "safetyStockInventory", "incomingInventory",
+        "assortmentActive", "residualOnly", "oldestReceiptDate",
+    ),
+    "storeTransferEvents": (
+        "transferId", "sku", "fromLocationCode", "toLocationCode", "quantity",
+        "status", "statusEffectiveAt", "observedAt", "unitCostAmountMinor",
+        "currencyCode",
+    ),
+    "storeWasteEvents": (
+        "eventId", "sku", "locationCode", "eventDate", "quantity",
+        "reasonCode", "observedAt",
+    ),
+    # A store sale the shelf could not cover, which the DC fulfilled instead. The
+    # simulation has always computed this; it was declared in the dataset list and
+    # never written, so `sales` recorded the sale while the shelf dropped only by
+    # servedFromStoreUnits and nothing downstream could tell the two apart. Any
+    # shelf-level reconstruction then charges the whole sale to the store: on the
+    # tightened network that is 123,894 units of india-west drift over 52 weeks.
+    "storeStockoutEvents": (
+        "eventId", "sku", "locationCode", "channelId", "eventDate",
+        "demandUnits", "servedFromStoreUnits", "shortfallUnits",
+        "servedFromLocationCode", "observedAt",
+    ),
+    "inboundStatusEvents": (
+        "shipmentId", "sku", "locationCode", "quantity", "status",
+        "statusEffectiveAt", "observedAt", "expectedReceiptDate",
+    ),
+    "supplyTerms": (
+        "vendorId", "destinationLocationCode", "originKind", "merchScopeType",
+        "merchScopeId", "effectiveFrom", "leadTimeDays", "leadTimeStdDevDays",
+        "minimumOrderQuantity", "orderMultiple", "capacityUnitsPerMonth",
+        "paymentTermsCode", "observedAt",
+    ),
+    "serviceLanes": (
+        "laneKey", "marketKey", "laneType", "demandLocationKey", "channelKey",
+        "supplyLocationKey", "priorityRank", "transitDays", "effectiveFrom",
+        "effectiveTo", "observedAt",
+    ),
     "taxLines": (
         "orderLineId", "orderId", "title", "rate", "shareOfTax", "price",
         "currencyCode", "jurisdiction",

@@ -35,7 +35,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
 #: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
 #: interval can be stored, and pairs them with an attributable reason.
-MIGRATION_REVISION: Final[str] = "0008_nullable_withheld_interval"
+MIGRATION_REVISION: Final[str] = "0020_safety_stock_drivers"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
@@ -84,6 +84,10 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "yhat_p50",
         "yhat_p90",
         "confidence",
+        # Explicit since 0009. Absent from this tuple the COPY omitted it and the
+        # NOT NULL constraint rejected every row -- the one failure mode a column
+        # list that drifts from its schema produces, and it produced it.
+        "interval_available",
         "interval_unavailable_reason",
         "data_quality_class",
     ),
@@ -211,6 +215,10 @@ class ForecastActivation:
     version_id: str
     activation_scope_fingerprint: str
     already_active: bool
+    #: Scopes superseded in the same transaction. Reported rather than logged: an
+    #: operator activating a re-pin needs to see WHICH competing lineage was
+    #: retired, and a silent retirement is the one outcome this must never be.
+    retired_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -494,16 +502,40 @@ def prepare_serving_projection(
     # Decision #92. A withheld interval must carry WHY, and the reason comes from the
     # bundle's own `intervalAvailability.reasonCode` rather than being invented here: the
     # publisher decided what was withheld, so the serving layer must not author its own
-    # explanation for it. Migration 0008 enforces the pairing in the database.
-    interval_reason = str(
-        (run.manifest.get("intervalAvailability") or {}).get("reasonCode")
-        or "INTERVAL_UNAVAILABLE"
-    )
+    # explanation for it. Migration 0009 enforces the pairing in the database.
+    availability = run.manifest.get("intervalAvailability") or {}
+    interval_reason = str(availability.get("reasonCode") or "INTERVAL_UNAVAILABLE")
     series = series.copy()
+    # Migration 0009 made availability an EXPLICIT NOT NULL column precisely so a
+    # consumer can stop inferring it from P90 nullability -- the two facts are
+    # different and only the flag is authoritative downstream. This writer is the
+    # boundary where the flag is established, and the artifact's nullability is the
+    # only per-row source it has, so the derivation is reconciled against the
+    # publisher's own count below rather than simply trusted. Omitting the column
+    # entirely, which is what this code did before, produced a NOT NULL violation
+    # at COPY time on the first republish after 0009.
+    interval_available = pd.to_numeric(
+        series["yhat_p90"], errors="coerce"
+    ).notna()
+    series["interval_available"] = interval_available.to_numpy()
+    declared_withheld = availability.get("withheldRows")
+    derived_withheld = int((~interval_available).sum())
+    _require(
+        declared_withheld is None or int(declared_withheld) == derived_withheld,
+        f"the bundle declares {declared_withheld} withheld interval rows but the "
+        f"projection derives {derived_withheld}. The publisher decided what was "
+        "withheld; a writer that disagrees with it must not choose a winner.",
+    )
+    _require(
+        declared_withheld is not None,
+        "the bundle records no withheldRows count, so the derived availability "
+        "flag cannot be reconciled against the publisher's decision",
+    )
+    # Derived from the SAME flag, never independently from nullability: two
+    # derivations of one fact are two chances to disagree, and 0009's CHECK
+    # constraint would then reject the row with no indication which was wrong.
     series["interval_unavailable_reason"] = np.where(
-        pd.to_numeric(series["yhat_p90"], errors="coerce").isna(),
-        interval_reason,
-        None,
+        series["interval_available"], None, interval_reason
     )
     serving_series = series.merge(
         dimensions,
@@ -873,17 +905,47 @@ def activate_forecast_version(
     activation_scope_fingerprint: str,
     expected_publication_fingerprint: str,
     actor: str,
+    retire_other_scopes: bool = False,
 ) -> ForecastActivation:
-    """Append an activation transition without mutating the accepted artifacts."""
+    """Append an activation transition without mutating the accepted artifacts.
+
+    `retire_other_scopes` supersedes every OTHER currently-active scope inside the
+    same transaction. It exists because a re-pin onto a new source publication was
+    otherwise unreachable: the scope fingerprint covers the input bundle, so a new
+    publication legitimately mints a new scope, the same-scope supersession below
+    finds nothing to retire, and the decision-#90 assertion at the end then refuses
+    with "retire it before activating" -- advice nothing in this module could
+    follow. That is a real dead end, not a safety feature.
+
+    Three properties make it safe to have:
+
+    * it is opt-in, so a competing lineage can never be retired as a side effect
+      of a routine activation;
+    * it happens in the SAME transaction as the new activation, so serving never
+      passes through a window with zero active versions. A separate retire command
+      would be a self-inflicted outage;
+    * it is append-only. Each retirement inserts a `superseded` event chained to
+      the event it retires, so the history says who retired what and when, and
+      nothing is deleted or rewritten.
+    """
 
     _require(bool(actor.strip()), "activation actor is required")
     try:
         with psycopg.connect(postgres_dsn) as connection:
             with connection.cursor() as cursor:
                 _require_schema(cursor)
+                # Lock the whole table, not just this scope: retiring OTHER scopes
+                # means two concurrent activations in different scopes could each
+                # retire the other's fresh activation. Scope-local locking is
+                # enough only while activation is scope-local, which it no longer
+                # is whenever retire_other_scopes is set.
                 cursor.execute(
                     "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (activation_scope_fingerprint,),
+                    (
+                        "retail_serving.forecast_activation_events"
+                        if retire_other_scopes
+                        else activation_scope_fingerprint,
+                    ),
                 )
                 cursor.execute(
                     f"""
@@ -958,6 +1020,61 @@ def activate_forecast_version(
                         "failed to record superseded activation",
                     )
                     prior_event_id = int(superseded[0])
+
+                retired: list[dict[str, str]] = []
+                if retire_other_scopes:
+                    # Every other scope whose latest event is still `active`. The
+                    # DISTINCT ON picks each scope's newest event and keeps it only
+                    # if that event is an activation, so a scope already retired is
+                    # skipped rather than retired twice.
+                    cursor.execute(
+                        f"""
+                        WITH latest AS (
+                            SELECT DISTINCT ON (activation_scope_fingerprint)
+                                activation_scope_fingerprint, event_id,
+                                forecast_run_id, version_id, event_type
+                            FROM {SERVING_SCHEMA}.forecast_activation_events
+                            WHERE activation_scope_fingerprint <> %s
+                            ORDER BY activation_scope_fingerprint, event_id DESC
+                        )
+                        SELECT activation_scope_fingerprint, event_id,
+                               forecast_run_id, version_id
+                        FROM latest
+                        WHERE event_type = 'active'
+                        ORDER BY activation_scope_fingerprint
+                        """,
+                        (activation_scope_fingerprint,),
+                    )
+                    for scope, retired_event, retired_run, retired_version in (
+                        cursor.fetchall()
+                    ):
+                        cursor.execute(
+                            f"""
+                            INSERT INTO {SERVING_SCHEMA}.forecast_activation_events (
+                                activation_scope_fingerprint,
+                                forecast_run_id,
+                                version_id,
+                                event_type,
+                                actor,
+                                prior_event_id
+                            ) VALUES (%s, %s, %s, 'superseded', %s, %s)
+                            """,
+                            (
+                                str(scope),
+                                str(retired_run),
+                                str(retired_version),
+                                actor,
+                                int(retired_event),
+                            ),
+                        )
+                        retired.append(
+                            {
+                                "activationScopeFingerprint": str(scope),
+                                "forecastRunId": str(retired_run),
+                                "versionId": str(retired_version),
+                            }
+                        )
+
                 cursor.execute(
                     f"""
                     INSERT INTO {SERVING_SCHEMA}.forecast_activation_events (
@@ -995,9 +1112,11 @@ def activate_forecast_version(
                 _require(
                     active_rows is not None and int(active_rows[0]) == 1,
                     "decision #90 requires exactly one active forecast version; found "
-                    f"{None if active_rows is None else active_rows[0]}. A scope minted "
-                    "under retail-forecast-activation-scope/v1 is probably still active; "
-                    "retire it before activating.",
+                    f"{None if active_rows is None else active_rows[0]}. Another "
+                    "activation scope is still active -- most often because this "
+                    "publication is a re-pin and the scope fingerprint covers the "
+                    "input bundle. Pass retire_other_scopes to supersede it in the "
+                    "same transaction (--retire-other-scopes on the CLI).",
                 )
     except ForecastServingError:
         raise
@@ -1009,6 +1128,9 @@ def activate_forecast_version(
         version_id=version_id,
         activation_scope_fingerprint=activation_scope_fingerprint,
         already_active=False,
+        retired_scopes=tuple(
+            entry["activationScopeFingerprint"] for entry in retired
+        ),
     )
 
 

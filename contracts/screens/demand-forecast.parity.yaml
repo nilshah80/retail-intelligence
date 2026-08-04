@@ -13,10 +13,23 @@ activation:
   verifier: retail_ml.publish.verify.verify_forecast_run
   requiredLifecycleStatus: accepted
   requiredAcceptanceVerdict: true
-  currentState: no_accepted_forecast
-  forecastRunId: null
-  versionId: null
-  semanticFingerprint: null
+  # Reconciled at P4-0. This block still read `no_accepted_forecast` with three
+  # null identity fields while a hard-gated acceptance-v5 forecast had been active
+  # and serving since 2026-07-31. A screen contract that denies the run it renders
+  # is the same class of stale evidence as the closure record's 0007 pin.
+  currentState: accepted_forecast_active
+  forecastRunId: fr_357575f586905b11
+  versionId: fv_3d66e3bd9939430d
+  semanticFingerprint: fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3
+  acceptanceSchemaVersion: retail-forecast-acceptance/v5
+  coverageGateMode: hard
+  servingMigration: 0008_nullable_withheld_interval
+  intervalAvailability:
+    policyId: retail-forecast-interval-availability/v1
+    calibratedMaxHorizon: 4
+    withheldRows: 8756
+    withheldSeries: 398
+    reasonCode: COLD_START_INTERVAL_UNCALIBRATED
   rejectedHistoricalRunId: fr_92135aa7b5215b69
   rejectionReason: INCOMPLETE_SEASONAL_NAIVE_COMPARISON
   fixturesAllowedInLiveScreen: false
@@ -80,7 +93,74 @@ reviewGate:
       Decision #60 and contracts/ml/forecast-classification-policy.json freeze
       the five exception formulas, thresholds/severity, unavailable-promotion
       behavior, and per-series Good/Watch/Issue quality battery.
+    Q19: >-
+      Decision #92 withholds the cold-start P90 and its derived confidence beyond
+      h4 while retaining P50 at every horizon, so a selected window of 8, 13 or 26
+      weeks mixes horizons that carry an interval with horizons that do not. Two
+      workbench cells are affected and each is frozen separately.
+      CONFIDENCE is unavailable when the window is mixed. Its arithmetic is
+      corrected first -- the max(P50,1)-weighted mean of decision #12 is restricted
+      to the weeks that carry an interval on BOTH sides of its ratio, so a retained
+      P50 weight can no longer dilute a numerator that skipped it -- and the
+      corrected value is then withheld from display rather than shown, because an
+      h1-h4 number under a heading reading "Confidence", beside forecast values
+      covering the whole selection, states a scope the screen does not. That is the
+      failure decision #78 exists to prevent, and the approved element-level
+      unavailable state already has a defined rendering. The corrected value
+      remains the internal reference the regression asserts.
+      THE INTERVAL TOTAL (aiForecastP90) is absent with a governed reason whenever
+      the window contains a withheld week. Confining the sum to h1-h4 would remove
+      the population mismatch and still label a sum of weekly upper bounds as an
+      interval for a multi-week total, which was never true and is not made true by
+      scoping. This choice changes no rendered element: the field is carried in the
+      payload and rendered nowhere.
+      At a 4-week selection nothing is withheld, so both cells stay numeric and
+      unchanged. Silently blending the two horizon populations in one cell is not
+      an admissible outcome for either field.
   pendingDecisions: {}
+
+# --------------------------------------------------------------------------
+# Versioned amendments to this frozen contract. An amendment is appended here
+# with its own id and approval; a frozen contract is never silently edited.
+# --------------------------------------------------------------------------
+amendments:
+  - amendmentId: P4-0P-A1
+    amendedAt: "2026-08-01"
+    package: P4-0P
+    decisionIds: [12, 64, 78, 85, 92]
+    decisionAmendment: "Decision #64 Q19"
+    title: Cold-start interval scope in the SKU workbench
+    defectRepaired: >-
+      plans/local/phase4-implementation-plan.md §1.3.1. Two served aggregates were
+      written when every row carried an interval. SUM skips nulls, so after decision
+      #92's withholding the confidence numerator omitted the withheld weeks while
+      its denominator still counted their retained P50 weight, and SUM(yhat_p90)
+      covered only h1-h4 beside a central total covering the whole selection.
+      Measured on the live active version over the 398 affected series at 26 weeks:
+      served weighted confidence 0.0814 against a covered-week 0.5817, and 372 of
+      398 series returned an interval total below their own central total. The
+      defect applies at 8, 13 and 26 weeks -- every selection the screen offers
+      except the 4-week default -- and nothing coerces a null, so no null-handling
+      check could catch it.
+    affectedElements:
+      - "#forecastWorkbenchTable column Confidence"
+      - forecastWorkbench.aiForecastP90 (payload only; rendered nowhere)
+    frozenBehavior:
+      confidence: unavailable_when_mixed
+      intervalTotal: absent_with_governed_reason_when_mixed
+    rendersNewElement: false
+    approval:
+      status: approved
+      actor: nilay.shah
+      approvedAt: "2026-08-01"
+      authorization: >-
+        Explicit user instruction to complete Phase 4 autonomously, deciding
+        without pausing for input and documenting any deviation for review. The
+        plan's own recommendation for both fields was adopted unchanged.
+      classification: autonomous_authorization_not_independent_human_review
+      reviewOutstanding: >-
+        A per-screen human visual review of the amended Confidence cell is still
+        owed and is tracked as a P4-0P deviation, not as a completed approval.
 
 shell:
   inheritFrom: contracts/screens/data-management.yaml
@@ -382,7 +462,22 @@ panels:
           - {label: Last Actual, source: forecast_eval_predictions latest completed target, status: live_when_forecast_accepted}
           - {label: Accuracy, source: forecast_metrics series accuracy, status: live_when_forecast_accepted}
           - {label: Bias, source: forecast_metrics series bias, status: live_when_forecast_accepted}
-          - {label: Confidence, source: forecast_series.confidence, status: live_when_forecast_accepted}
+          - label: Confidence
+            source: forecast_series.confidence
+            status: live_when_forecast_accepted
+            # P4-0P amendment A1. See reviewGate.resolvedDecision.Q19.
+            intervalScope:
+              rule: unavailable_when_window_mixes_published_and_withheld_intervals
+              weighting: max(P50,1)-weighted mean per decision #12
+              population: >-
+                Restricted on BOTH sides of the ratio to the horizon weeks that
+                carry an interval. A retained P50 weight may never appear in a
+                denominator whose numerator skipped it.
+              mixedWindowPresentation: Not available
+              mixedWindowReasonCode: COLD_START_INTERVAL_UNCALIBRATED
+              cleanSelections: [4]
+              mixedSelections: [8, 13, 26]
+              amendedBy: P4-0P
           - {label: Primary Driver, source: forecast_drivers highest live contribution, status: live_when_forecast_accepted}
           - {label: Data Quality, source: forecast_data_quality, status: live_when_forecast_accepted}
           - {label: Status, source: governed current-cycle exception presence, status: live_when_forecast_accepted}

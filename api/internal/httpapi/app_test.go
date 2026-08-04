@@ -53,7 +53,7 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), execution.Resolved{
+	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), readmodel.LoadInventory(context.Background(), readmodel.InventoryConfig{}), execution.Resolved{
 		SchemaVersion: execution.SchemaVersion,
 		Profile:       "safe",
 		API: execution.APIProfile{
@@ -119,6 +119,32 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 	}
 }
 
+// TestInventoryRoutesFailClosedWithoutActivation is the P4-8 governed NO-GO
+// half: no accepted inventory bundle exists yet, so every one of the fifteen
+// routes must return the governed 503 envelope -- never an empty 200, and never
+// an identity it cannot back with an activation.
+func TestInventoryRoutesFailClosedWithoutActivation(t *testing.T) {
+	if status := inventoryUnavailableStatus(readmodel.InventoryReasonForecastSuperseded); status != http.StatusConflict {
+		t.Fatalf("superseded consumed forecast must map to 409, got %d", status)
+	}
+	if status := inventoryUnavailableStatus(readmodel.InventoryReasonUnmaterialized); status != http.StatusServiceUnavailable {
+		t.Fatalf("unmaterialized must map to 503, got %d", status)
+	}
+	store := readmodel.LoadInventory(context.Background(), readmodel.InventoryConfig{})
+	if store.Available() {
+		t.Fatal("an unconfigured inventory store must be unavailable")
+	}
+	payload := store.Unavailable()
+	if payload["dataMode"] != "unavailable" ||
+		payload["inventoryRunId"] != nil ||
+		payload["inventoryVersionId"] != nil {
+		t.Fatalf("fail-closed payload must not expose an identity: %v", payload)
+	}
+	if len(inventoryPaths) != 15 {
+		t.Fatalf("the route inventory drifted: %d paths", len(inventoryPaths))
+	}
+}
+
 func TestForecastUnavailableStatus(t *testing.T) {
 	if status := forecastUnavailableStatus(readmodel.ForecastReasonLineage); status != http.StatusConflict {
 		t.Fatalf("lineage mismatch status = %d", status)
@@ -126,6 +152,10 @@ func TestForecastUnavailableStatus(t *testing.T) {
 	for _, reason := range []string{
 		readmodel.ForecastReasonInvalid,
 		readmodel.ForecastReasonUnmaterialized,
+		// An ambiguous authority is a governed unavailable state, not a
+		// staleness conflict: 409 would imply one activated version we could
+		// name, and the whole point is that we cannot.
+		readmodel.ForecastReasonAuthorityAmbiguous,
 	} {
 		if status := forecastUnavailableStatus(reason); status != http.StatusServiceUnavailable {
 			t.Fatalf("%s status = %d", reason, status)
@@ -165,7 +195,7 @@ func TestOpenAPIDocumentationRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := []byte("openapi: 3.1.0\ninfo:\n  title: Test\n  version: 1.0.0\n")
-	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), execution.Resolved{
+	app, err := New(store, readmodel.LoadForecast(context.Background(), readmodel.ForecastConfig{}), readmodel.LoadInventory(context.Background(), readmodel.InventoryConfig{}), execution.Resolved{
 		SchemaVersion: execution.SchemaVersion,
 		Profile:       "safe",
 		API: execution.APIProfile{

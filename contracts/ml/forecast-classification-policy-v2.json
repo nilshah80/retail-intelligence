@@ -1,0 +1,331 @@
+{
+  "dataQuality": {
+    "checks": {
+      "canonical_key_complete": {
+        "issue": "false"
+      },
+      "core_feature_missing_share": {
+        "issue": ">0.20",
+        "watch": ">0.05"
+      },
+      "latest_actual_age_days": {
+        "issue": ">21",
+        "watch": ">14"
+      },
+      "observation_coverage_13w": {
+        "issue": "<0.75",
+        "watch": "<0.90"
+      },
+      "reconciliation_passed": {
+        "issue": "false"
+      },
+      "source_quality_critical_count": {
+        "issue": ">0"
+      },
+      "source_quality_warning_count": {
+        "watch": ">0"
+      }
+    },
+    "evaluationCutoff": "decision_as_of",
+    "evidenceContract": {
+      "encoding": "canonical-json-string",
+      "requiredFields": [
+        "checks",
+        "decision_as_of",
+        "policy_id"
+      ]
+    },
+    "inputSemantics": {
+      "coreFeatureMissingShare": "Missing share excludes declared-unavailable promotion inputs and expected governed fallback values.",
+      "latestActualAgeDays": "decision_as_of date minus the latest origin-visible actual date.",
+      "sourceFindings": "Only findings bound to the same SeriesKey and accepted input publication are counted.",
+      "zeroDemand": "Sparse or zero demand is a demand behavior, not by itself a data-quality defect."
+    },
+    "policyId": "retail-forecast-data-quality/v1",
+    "reduction": {
+      "Good": "no Issue checks and no Watch checks",
+      "Issue": "one or more Issue checks",
+      "Watch": "no Issue checks and one or more Watch checks",
+      "precedence": [
+        "Issue",
+        "Watch",
+        "Good"
+      ]
+    },
+    "semanticFingerprint": "3c80b69f40b268be64b2f9068d5c366bd192cebd878c8fbd179b8ea95b4df81c",
+    "status": "active",
+    "testVectors": [
+      {
+        "expectedClass": "Good",
+        "id": "good",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.01",
+          "latest_actual_age_days": 7,
+          "observation_coverage_13w": "1.00",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 0
+        }
+      },
+      {
+        "expectedClass": "Watch",
+        "id": "watch",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.10",
+          "latest_actual_age_days": 15,
+          "observation_coverage_13w": "0.85",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 1
+        }
+      },
+      {
+        "expectedClass": "Issue",
+        "id": "issue",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0.25",
+          "latest_actual_age_days": 22,
+          "observation_coverage_13w": "0.70",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 0,
+          "source_quality_warning_count": 0
+        }
+      },
+      {
+        "expectedClass": "Issue",
+        "id": "critical-source-finding-dominates",
+        "input": {
+          "canonical_key_complete": true,
+          "core_feature_missing_share": "0",
+          "latest_actual_age_days": 0,
+          "observation_coverage_13w": "1",
+          "reconciliation_passed": true,
+          "source_quality_critical_count": 1,
+          "source_quality_warning_count": 0
+        }
+      }
+    ]
+  },
+  "decisionId": 60,
+  "decisionIds": [
+    60,
+    92
+  ],
+  "exceptions": {
+    "classes": {
+      "cold_start_interval_unavailable": {
+        "consumerBehavior": {
+          "coerceNullToZero": false,
+          "note": "P50 remains available and usable where the consuming feature's own contract authorizes it. An interval-dependent output is skipped, never computed from a zero spread: safety stock is quantile spread times service level, so a zero would return zero safety stock on the least predictable products.",
+          "retainCentralForecast": true
+        },
+        "emitOnce": "Exactly one record per affected SeriesKey. forecast_exceptions is keyed on (version_id, sku_id, store_id, channel_id, exception_class) and has no horizon column, so per-horizon records would collide rather than accumulate. The affected horizon range is carried in the evidence.",
+        "formula": "interval_available=false for at least one selected horizon of the SeriesKey; affected range is [unavailableFromHorizon, unavailableThroughHorizon]",
+        "grain": "series_key",
+        "severity": "medium",
+        "thresholds": {
+          "calibratedMaxHorizon": 4,
+          "reasonCode": "COLD_START_INTERVAL_UNCALIBRATED"
+        },
+        "trigger": "cohort=cold_start AND any horizon > calibratedMaxHorizon carries interval_available=false"
+      },
+      "data_quality_exception": {
+        "formula": "data_quality_class=Issue",
+        "severity": "high",
+        "thresholds": {},
+        "trigger": "formula is true"
+      },
+      "high_over_forecast_risk": {
+        "formula": "over_gap_units=yhat_p50-ma13_baseline; over_gap_ratio=over_gap_units/max(ma13_baseline,1)",
+        "severity": "high",
+        "thresholds": {
+          "minimumGapRatio": "0.50",
+          "minimumGapUnits": "5"
+        },
+        "trigger": "over_gap_units>=5 AND over_gap_ratio>=0.50"
+      },
+      "high_under_forecast_risk": {
+        "formula": "upper_gap_units=yhat_p90-yhat_p50; upper_gap_ratio=upper_gap_units/max(yhat_p50,1)",
+        "severity": "high",
+        "thresholds": {
+          "minimumGapRatio": "0.50",
+          "minimumGapUnits": "5"
+        },
+        "trigger": "upper_gap_units>=5 AND upper_gap_ratio>=0.50"
+      },
+      "new_product_sparse_history": {
+        "formula": "history_weeks<26 OR zero_share_52w>0.60",
+        "severity": {
+          "high": "history_weeks<13 OR zero_share_52w>0.80",
+          "medium": "otherwise"
+        },
+        "thresholds": {
+          "highZeroShare": "0.80",
+          "minimumEstablishedHistoryWeeks": 26,
+          "minimumHistoryWeeks": 13,
+          "sparseZeroShare": "0.60"
+        },
+        "trigger": "formula is true"
+      },
+      "promotion_uplift_conflict": {
+        "formula": "uplift_shortfall=planned_promotion_uplift_pct-forecast_uplift_vs_ma13_pct",
+        "severity": "medium",
+        "thresholds": {
+          "minimumPlannedUpliftPct": "0.10",
+          "minimumUpliftShortfallPct": "0.10"
+        },
+        "trigger": "promotion_plan_available AND planned_promotion_uplift_pct>=0.10 AND uplift_shortfall>=0.10",
+        "unavailableBehavior": {
+          "emitException": false,
+          "reasonCode": "NO_ORIGIN_VISIBLE_PROMOTION_PLAN",
+          "renderingState": "unavailable"
+        }
+      }
+    },
+    "decisionIds": [
+      60,
+      92
+    ],
+    "evaluationCutoff": "decision_as_of",
+    "evidenceContract": {
+      "encoding": "canonical-json-string",
+      "requiredFields": [
+        "decision_as_of",
+        "observed",
+        "policy_id",
+        "rule_id",
+        "thresholds"
+      ]
+    },
+    "policyId": "retail-forecast-exceptions/v2",
+    "semanticFingerprint": "54ca14024e27c38bb01a2e889b05cd3055ae67b5f441695d190675dc261d0945",
+    "status": "active",
+    "supersedes": {
+      "policyId": "retail-forecast-exceptions/v1",
+      "reason": "Adds decision #92's cold_start_interval_unavailable class. v1 stays immutable and remains the bound policy for every bundle published before this one.",
+      "semanticFingerprint": "6a061db92136264217b8b3225b5f6dbb68a579c40333dcaf16f021e98d853fc8"
+    },
+    "testVectors": [
+      {
+        "expected": [
+          {
+            "exceptionClass": "high_under_forecast_risk",
+            "severity": "high"
+          }
+        ],
+        "id": "upper-tail-risk",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "0",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0",
+          "promotion_plan_available": false,
+          "yhat_p50": "10",
+          "yhat_p90": "16",
+          "zero_share_52w": "0.10"
+        }
+      },
+      {
+        "expected": [
+          {
+            "exceptionClass": "high_over_forecast_risk",
+            "severity": "high"
+          },
+          {
+            "exceptionClass": "new_product_sparse_history",
+            "severity": "high"
+          }
+        ],
+        "id": "over-and-sparse-risk",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "1.00",
+          "history_weeks": 10,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0",
+          "promotion_plan_available": false,
+          "yhat_p50": "20",
+          "yhat_p90": "22",
+          "zero_share_52w": "0.85"
+        }
+      },
+      {
+        "expected": [],
+        "id": "promotion-unavailable-is-not-conflict",
+        "input": {
+          "data_quality_class": "Good",
+          "forecast_uplift_vs_ma13_pct": "0",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0.30",
+          "promotion_plan_available": false,
+          "yhat_p50": "10",
+          "yhat_p90": "12",
+          "zero_share_52w": "0.10"
+        }
+      },
+      {
+        "expected": [
+          {
+            "exceptionClass": "promotion_uplift_conflict",
+            "severity": "medium"
+          },
+          {
+            "exceptionClass": "data_quality_exception",
+            "severity": "high"
+          }
+        ],
+        "id": "promotion-conflict-and-quality-issue",
+        "input": {
+          "data_quality_class": "Issue",
+          "forecast_uplift_vs_ma13_pct": "0.05",
+          "history_weeks": 52,
+          "ma13_baseline": "10",
+          "planned_promotion_uplift_pct": "0.20",
+          "promotion_plan_available": true,
+          "yhat_p50": "10.5",
+          "yhat_p90": "12",
+          "zero_share_52w": "0.10"
+        }
+      },
+      {
+        "expected": {
+          "exception_classes": [
+            "cold_start_interval_unavailable"
+          ],
+          "records": 1,
+          "severity": "medium"
+        },
+        "id": "cold-start-interval-withheld-beyond-h4",
+        "input": {
+          "calibrated_max_horizon": 4,
+          "cohort": "cold_start",
+          "interval_unavailable_from_horizon": 5,
+          "interval_unavailable_reason": "COLD_START_INTERVAL_UNCALIBRATED",
+          "interval_unavailable_through_horizon": 26,
+          "interval_withheld_horizon_count": 22
+        }
+      },
+      {
+        "expected": {
+          "exception_classes": [],
+          "records": 0
+        },
+        "id": "established-history-keeps-its-full-range-interval",
+        "input": {
+          "calibrated_max_horizon": 4,
+          "cohort": "established_history",
+          "interval_unavailable_from_horizon": null,
+          "interval_unavailable_reason": null,
+          "interval_unavailable_through_horizon": null,
+          "interval_withheld_horizon_count": 0
+        }
+      }
+    ]
+  },
+  "schemaVersion": "retail-forecast-classification-policy/v2"
+}

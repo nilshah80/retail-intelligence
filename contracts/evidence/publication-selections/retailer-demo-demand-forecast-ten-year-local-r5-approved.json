@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-04T00:00:00Z",
+    "reason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash derived from this run's own retained evidence rather than reproduced from a committed record. Sales are unchanged at 7,471,784 rows and the business controls still read 573 active SKUs at 2026-07-28: a transit time moves no sale, and that is the equivalence this repin rests on."
+  },
+  "lifecycle": {
+    "reasonCode": "PHASE_4_PER_LANE_TRANSIT",
+    "recordId": "rec_29d5799582d64f52",
+    "state": "approved",
+    "supersedes": "rec_d8bd14b9a530d2bd"
+  },
+  "publication": {
+    "duckdbSha256": "98db9ee6cf4d661ce700425bbb784670002eb2b7c06d2f687d074af1f7d8d537",
+    "gateASemanticFingerprint": "089df45da83de6db7b34a9d50a84660f233becd23c7fc82d32ea138bf3c10ad1",
+    "gateBSemanticFingerprint": "0a3a6c0c39556c9e1037053f1251e8043aaa2ff26fc30599f88bbf43b86b0505",
+    "logicalPath": "ingestion/data/curated/run-adac9e85dccb56e8",
+    "objectCount": 1589,
+    "publicationSemanticFingerprint": "af41f60202348835af43f43c0db8d4a63650e6479fa6c74f9b21b21cf3199c24",
+    "sourceSnapshotId": "cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0a3a6c0c39556c9e1037053f1251e8043aaa2ff26fc30599f88bbf43b86b0505"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_bc9669b864c94943"
+}

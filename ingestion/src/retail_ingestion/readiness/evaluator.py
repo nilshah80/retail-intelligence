@@ -21,6 +21,9 @@ from pathlib import Path
 from typing import Any, Final, Mapping, Sequence
 
 POLICY_PATH: Final[str] = "contracts/onboarding/temporal-evidence-policy.json"
+POLICY_PATH_V2: Final[str] = (
+    "contracts/onboarding/temporal-evidence-policy-v2.json"
+)
 READINESS_SCHEMA_VERSION: Final[str] = "retail-readiness-report/v1"
 
 READY: Final[str] = "ready"
@@ -38,11 +41,31 @@ class ReadinessError(RuntimeError):
 
 
 def load_policy(repository_root: str | Path = ".") -> dict[str, Any]:
-    path = Path(repository_root) / POLICY_PATH
-    policy = json.loads(path.read_text(encoding="utf-8"))
-    if policy.get("schemaVersion") != "retail-temporal-evidence-policy/v1":
-        raise ReadinessError("unknown temporal-evidence policy version")
-    return policy
+    """Load the newest temporal-evidence policy present.
+
+    v2 splits `inventory_replenishment` into an explicitly current-scoped
+    capability and an origin-safe replay capability, because one flag could not
+    say that DC current-position analytics are serviceable on this pin while
+    historical replay is not. v1 stays loadable and remains the policy every
+    readiness verdict published before v2 was evaluated under; a repository
+    without v2 keeps behaving exactly as before.
+    """
+
+    root = Path(repository_root)
+    for path, expected in (
+        (root / POLICY_PATH_V2, "retail-temporal-evidence-policy/v2"),
+        (root / POLICY_PATH, "retail-temporal-evidence-policy/v1"),
+    ):
+        if not path.is_file():
+            continue
+        policy = json.loads(path.read_text(encoding="utf-8"))
+        if policy.get("schemaVersion") != expected:
+            raise ReadinessError(
+                f"{path.name} declares {policy.get('schemaVersion')!r}, "
+                f"expected {expected!r}"
+            )
+        return policy
+    raise ReadinessError("no temporal-evidence policy is present")
 
 
 @dataclass(frozen=True)

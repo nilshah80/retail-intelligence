@@ -115,6 +115,7 @@ def _command_score_current(args: argparse.Namespace) -> int:
         ),
         runtime_profile=resolve_ml_runtime_profile(args.execution_profile),
         blend_model_path=args.blend_model,
+        coverage_model_path=args.coverage_model,
     )
     print(json.dumps(asdict(stats), indent=2, sort_keys=True))
     return 0
@@ -282,6 +283,7 @@ def _command_activate_serving(args: argparse.Namespace) -> int:
             input_bundle.publication_semantic_fingerprint
         ),
         actor=args.actor,
+        retire_other_scopes=bool(args.retire_other_scopes),
     )
     print(json.dumps(asdict(result), indent=2, sort_keys=True))
     return 0
@@ -364,6 +366,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     score_current.add_argument(
+        "--coverage-model",
+        type=Path,
+        default=None,
+        help=(
+            "candidate C2 coverage_calibration_model.json from the accepted "
+            "backtest. Restores cold-start P90 coverage to the decision #58 band."
+        ),
+    )
+    score_current.add_argument(
         "--execution-profile",
         choices=("safe", "balanced", "performance", "ultra-performance"),
         default="safe",
@@ -422,7 +433,24 @@ def build_parser() -> argparse.ArgumentParser:
     activate.add_argument("--activation-scope-fingerprint", required=True)
     activate.add_argument("--actor", required=True)
     activate.add_argument("--postgres-dsn", default=None)
+    activate.add_argument(
+        "--retire-other-scopes",
+        action="store_true",
+        help=(
+            "supersede every other active activation scope in the same "
+            "transaction. Required when re-pinning onto a new publication, "
+            "because the scope fingerprint covers the input bundle and the new "
+            "publication therefore mints a new scope that supersedes nothing."
+        ),
+    )
     activate.set_defaults(handler=_command_activate_serving)
+
+    # Registered from the package that owns them: the four inventory steps share
+    # the same three modules and only make sense together, so their arguments
+    # belong next to their handlers rather than restated here.
+    from retail_ml.inventory_run.cli import register as register_inventory
+
+    register_inventory(subparsers)
 
     for name in ("train", "run"):
         future = subparsers.add_parser(name)

@@ -1,0 +1,165 @@
+{
+  "activeIdentity": {
+    "forecastAuthority": {
+      "forecastRunId": "fr_5f6fa2015d80eee5",
+      "forecastVersionId": "fv_ba2791b4273e3b4f"
+    },
+    "inventoryRunId": "ir_b10bb797108e80a7",
+    "inventoryVersionId": "iv_b10bb797108e80a7",
+    "markets": [
+      "india-west",
+      "us-new-york"
+    ],
+    "policyVersion": "inventory-policy/2.0.0",
+    "semanticFingerprint": "8b3e7456c3808824b7c9e7dbc82017b97ddd34d5a38c2ff1f4e8f7313181b6e0",
+    "sourceSelectionId": "sel_2d3c5e156bedabd4"
+  },
+  "baseUrl": "http://127.0.0.1:8080",
+  "checked": [
+    "statusIs200",
+    "envelopeMatchesPostgresActiveIdentity",
+    "forecastAuthorityMatchesConsumedForecast",
+    "dataModeIsLive",
+    "allFifteenAgree"
+  ],
+  "routeCount": 15,
+  "routes": [
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/versions",
+      "rows": 1,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/overview",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/stores",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/warehouses",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/ageing",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/transfers",
+      "rows": 2,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/valuation",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/expiry-waste",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/inventory/stock-health",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/planner",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/orders",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/suppliers",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/safety-stock",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/allocations",
+      "rows": 100,
+      "status": 200
+    },
+    {
+      "markets": [
+        "india-west",
+        "us-new-york"
+      ],
+      "path": "/api/v1/replenishment/exceptions",
+      "rows": 100,
+      "status": 200
+    }
+  ],
+  "schemaVersion": "retail-inventory-api-smoke/v1",
+  "state": "live"
+}

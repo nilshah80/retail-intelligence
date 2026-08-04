@@ -1,4 +1,4 @@
-specVersion: retail-source-config/v12
+specVersion: retail-source-config/v13
 identity:
   scenarioId: multi-market-10-year-demo
   scenarioVersion: 1.0.0
@@ -731,6 +731,7 @@ channels:
   type: online
 stores:
 - storeId: mumbai-bandra
+  businessCentralLocationCode: MUM-BAN
   name: Mumbai Bandra
   marketId: india-mumbai
   legalEntityId: northstar-india
@@ -745,6 +746,7 @@ stores:
   assortmentCoverage: 0.92
   demandScale: 0.65
 - storeId: pune-koregaon
+  businessCentralLocationCode: PUN-KOR
   name: Pune Koregaon Park
   marketId: india-mumbai
   legalEntityId: northstar-india
@@ -759,6 +761,7 @@ stores:
   assortmentCoverage: 0.86
   demandScale: 0.35
 - storeId: ny-manhattan
+  businessCentralLocationCode: NYC-MAN
   name: New York Manhattan
   marketId: us-new-york
   legalEntityId: northstar-us
@@ -772,6 +775,7 @@ stores:
   assortmentCoverage: 0.9
   demandScale: 0.65
 - storeId: ny-brooklyn
+  businessCentralLocationCode: NYC-BKL
   name: New York Brooklyn
   marketId: us-new-york
   legalEntityId: northstar-us
@@ -2453,6 +2457,29 @@ operations:
   webhook:
     fixtureSecret: northstar-synthetic-fixture-secret
     invalidFixtureRate: 0.25
+  storeInventory:
+    snapshotCadenceDays: 7
+    reviewCycleDays: 7
+    # Tightened at P4-11. The previous policy -- 14 days of cover plus 3 units of
+    # safety stock, reviewed weekly, with one day of transit -- replenished faster
+    # than any store could sell, so no store ever ran out. Every availability
+    # measure then saturated: in-stock 99.6%, replay fill rate 99.9999%, and the
+    # heatmap read exactly 100% for every store. That is not a screen defect, it
+    # is a network with nothing to manage, and an inventory product demonstrated
+    # on it has nothing to show.
+    #
+    # Seven days of cover against a seven-day review cycle means a store is
+    # planning to arrive at zero exactly as its next delivery lands, so ordinary
+    # demand variance produces real stock-outs. Two days of transit is also the
+    # honest figure for a DC-to-store lane and gives the in-transit position
+    # something to hold.
+    targetDaysOfCover: 7
+    safetyStockUnits: 1
+    replenishmentPackSize: 6
+    openingDaysOfCover: 5
+    residualWorkoffWeeks: 26
+    primaryLaneTransitDays: 2
+    spillLaneTransitDays: 3
   features:
     detailedFulfillment: true
     returnsAndRefunds: true
@@ -2464,6 +2491,7 @@ operations:
     supplierPlanning: true
     promotionPlanning: true
     allocationEvidence: true
+    storeInventory: true
 output:
   rootDirectory: output
   publicFormats:

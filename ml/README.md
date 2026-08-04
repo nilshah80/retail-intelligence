@@ -57,6 +57,48 @@ allowed model floating-point tolerance is explicit and tested rather than assume
 Evidence is produced with developer-run commands on supported hosts. Repository CI workflows are
 prohibited by `contracts/validation-policy.yaml` and are not a present or future completion gate.
 
+**Inventory and replenishment artifacts.** `ARTIFACT_COLUMNS` in
+`inventory_publish/run_artifacts.py` is the only place each artifact's column contract is written
+down, and `ARTIFACT_GRAIN` beside it declares the key. Both are enforced at publish time, and
+migration 0016 now enforces the grain at the database boundary as well — the publisher's check and a
+unique index are not redundant, because the check only sees one bundle.
+
+Sixteen artifacts are published. Twelve are current-state or forecast-derived and belong to the
+`inventory_replenishment_current_snapshot` capability; `inventory_replay_metrics` alone belongs to
+`inventory_replenishment_replay`, which is scoped separately because it rests on different evidence
+and fails independently. A network whose weekly stock cannot be reconstructed still serves its own
+observed positions, which need no replay to be true.
+
+Four of them exist because a screen was already trying to show something the run computed and threw
+away:
+
+| Artifact | Publishes | Was previously |
+| --- | --- | --- |
+| `inventory_warehouse_capacity` | The storage ceiling per node | Capacity Utilization had no denominator |
+| `inventory_inbound_summary` | Open and late inbound per node | Delayed Receipts counted *open* orders as late |
+| `inventory_market_policy` | The market budget ceilings | The read model cannot open a policy document |
+| `replenishment_recommendations.lead_time_days` | The resolved supply-term lead time | Computed for the protection period, then discarded |
+
+**Money in an artifact carries its currency.** A value column without one is how a multi-market
+total ends up adding dollars to rupees — the single most common defect found across the inventory
+screens. Where a quantity may be uncosted, the units and the value are published as separate
+columns so the money understates rather than inventing a price, and a `costedCells` count travels
+beside every money aggregate so a reader can see the coverage it rests on.
+
+**The pin gates every stage.** `contracts/ml/expected-pin.json` names the source snapshot, both
+gates and the publication — including the curated DuckDB's hash and byte length — so any change
+below this layer fails the stages closed until it is re-established. Decision #89 makes that a
+governed step with equivalence evidence, not a formality. The pin is the only thing the chain
+consults to find its curated root: `features` takes no source argument, so `--source-root` on it is
+silently ignored.
+
+`tools/build_expected_pin.py --run run-<id>` moves it, `--list` reports what is pinned against what
+has retained evidence, and the `repin` pipeline stage runs both it and the selection ledger in the
+right order, so a rebuild does not need a manual gap. What stays manual is the *decision*: the pin
+refuses while the active publication selection names a different snapshot, and that selection carries
+an approver and a reason. Re-pin *before* running the chain; the reverse costs a full features and
+backtest pass. See the root README §8a.
+
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.
 

@@ -175,6 +175,12 @@ export const forecastSummarySchema = z.object({
     qualityCounts: z.record(z.string(), z.number().int()),
     forecastCoveragePct: nullableNumber,
     backtestCoveragePct: nullableNumber,
+    // Phase 4 measures the forecast screen has always asked for: forecast
+    // demand the inventory position cannot serve.
+    demandAtRiskMinor: z.number().optional(),
+    demandAtRiskUnits: z.number().optional(),
+    demandAtRiskCells: z.number().int().optional(),
+    demandAtRiskLocations: z.number().int().optional(),
     categories: z.array(z.string())
   }))
 });
@@ -185,6 +191,9 @@ export const forecastActualsSchema = z.object({
   items: z.array(z.object({
     targetWeekStart: z.string(),
     forecast: z.number(),
+    // The P90. Optional so a bundle published before the read model served it
+    // still validates rather than blanking the chart.
+    forecastP90: z.number().optional(),
     actual: z.number()
   }))
 });
@@ -230,7 +239,11 @@ export const forecastStoresSchema = z.object({
     active: z.boolean(),
     accuracy: nullableNumber,
     bias: nullableNumber,
-    p90Coverage: nullableNumber
+    p90Coverage: nullableNumber,
+    demandAtRiskMinor: z.number().nullish(),
+    demandAtRiskUnits: z.number().nullish(),
+    demandAtRiskCells: z.number().int().nullish(),
+    stockoutRisk: z.string().nullish()
   }))
 });
 
@@ -267,6 +280,26 @@ export const forecastWorkbenchSchema = z.object({
     // confidence is derived from that interval, so both can legitimately be absent. A
     // non-nullable schema would have rejected the payload outright.
     confidence: nullableNumber,
+    // Decision #64 Q19 / parity amendment P4-0P-A1. Every field below must be
+    // declared here or it never reaches a component: this is a plain `z.object`,
+    // so Zod strips unknown keys and a field added only server-side is discarded
+    // silently. That is why the scope fields land in the schema in the same change
+    // as the read model rather than after it.
+    //
+    // The selected window is cumulative from h1, and withholding starts at h5, so
+    // the 4-week default is clean while 8, 13 and 26 are mixed. In a mixed window
+    // both `confidence` and `aiForecastP90` are null by contract and the state
+    // fields say why -- never read the absence as zero spread.
+    confidenceState: z.enum(["measured", "unavailable_mixed_window"]),
+    // Diagnostic only. The corrected covered-window mean, restricted to the weeks
+    // that carry an interval on both sides of the ratio. Never rendered: the
+    // Confidence cell is unavailable when the window is mixed.
+    confidenceCoveredWindowMean: nullableNumber,
+    aiForecastP90State: z.enum(["available", "unavailable_mixed_window"]),
+    intervalCoveredFromHorizon: z.number().int().nullable(),
+    intervalCoveredThroughHorizon: z.number().int().nullable(),
+    intervalWithheldWeeks: z.number().int(),
+    intervalUnavailableReason: z.string().nullable(),
     primaryDriver: z.string().nullable(),
     dataQuality: z.string(),
     priority: z.string(),
@@ -402,3 +435,66 @@ export const loadForecastSignals = () =>
   get("/api/v1/forecast/signals", forecastSignalsSchema);
 export const loadForecastVersions = () =>
   get("/api/v1/forecast/versions", forecastVersionsSchema);
+
+/**
+ * The inventory/replenishment live envelope (P4-8/P4-9).
+ *
+ * `items` is deliberately a permissive record: fourteen destinations serve
+ * fourteen different row shapes, and enumerating each here would duplicate
+ * the parity contract that already freezes them per screen. What IS pinned is
+ * the envelope -- the identity, the consumed forecast authority and the policy
+ * version -- because those are what make a rendered number traceable. A
+ * response missing any of them is not servable data.
+ */
+export const inventorySliceSchema = z.object({
+  schemaVersion: z.string(),
+  dataMode: z.literal("live"),
+  inventoryRunId: z.string(),
+  inventoryVersionId: z.string(),
+  semanticFingerprint: z.string(),
+  forecastAuthority: z.object({
+    forecastRunId: z.string(),
+    forecastVersionId: z.string()
+  }),
+  policyVersion: z.string(),
+  markets: z.array(z.string()),
+  // The currency every money figure in the payload is already converted to.
+  reportingCurrency: z.string().optional(),
+  items: z.array(z.record(z.string(), z.unknown())),
+  // SQL aggregates over every scoped row of the active version, for the KPI
+  // tiles. Optional because a projection may declare none, and validated rather
+  // than passed through: a tile whose value arrived unchecked is a tile nobody
+  // can trace. Absent it entirely and Zod strips it, which renders five
+  // "Not available" tiles over a working API -- which is exactly what happened.
+  summary: z.record(z.string(), z.union([z.number(), z.string(), z.null()]))
+    .optional(),
+  pagination: z.object({
+    offset: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int()
+  }).optional(),
+  // How the route decided which rows made the page, in the words the screen
+  // shows. A capped table is only honest if the reader knows what it is capped
+  // to: "20 of 4,741" alone does not say whether those twenty are the worst
+  // offenders or the first twenty SKU codes alphabetically.
+  ranking: z.string().optional(),
+  // Cards the reference draws at a grain that is NOT the projection's row grain
+  // -- one row per category, per location, per age bucket, per ABC segment. The
+  // read model groups them in SQL under the page's own scope and returns them
+  // here, so a screen stays one request and its cards cannot disagree with its
+  // table.
+  cards: z.record(
+    z.string(),
+    z.array(z.record(z.string(), z.unknown()))
+  ).optional()
+});
+
+export type InventorySlice = z.infer<typeof inventorySliceSchema>;
+
+export const loadInventorySlice = (endpoint: string, marketId?: string) =>
+  get(
+    marketId
+      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}marketId=${encodeURIComponent(marketId)}`
+      : endpoint,
+    inventorySliceSchema
+  );

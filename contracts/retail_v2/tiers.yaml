@@ -17,6 +17,8 @@ tiers:
       - sell_prices
       - stock_snapshots
       - suppliers_leadtimes
+      - service_lanes
+      - supply_terms
       - assortment_calendar
       - customer_segments
       - fx_rates
@@ -43,11 +45,14 @@ tiers:
       - macro_index
       - inventory_batches
       - inbound_shipments
+      - inbound_shipment_status_events
       - transfer_orders
+      - inventory_transfer_events
       - allocations
       - waste_events
       - warehouse_capacity_snapshots
       - wms_inventory_comparisons
+      - suppliers
       - supplier_performance
 
   t3_control:

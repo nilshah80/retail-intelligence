@@ -8,6 +8,7 @@ import {
   type FxRates
 } from "./api";
 import {DemandForecast} from "./Forecast";
+import {InventoryPage, inventoryScreens, type InventoryPageId} from "./Inventory";
 
 type SourceRow = Dashboard["sources"][number];
 
@@ -37,6 +38,52 @@ const pricingNavigation = [
   {icon: "◉", label: "Competitor Monitor"},
   {icon: "▣", label: "Promotion Planner"}
 ];
+
+/**
+ * Every addressable destination. A nav item that cannot be reached is
+ * decoration, so the union is the navigation's source of truth and the label
+ * maps below are derived from it rather than duplicated.
+ */
+export type PageId = "demandForecast" | "dataManagement" | InventoryPageId;
+
+const inventoryPageIds: InventoryPageId[] = [
+  "inventoryOverview", "storeInventory", "warehouseInventory",
+  "inventoryAgeing", "inventoryTransfers", "inventoryValuation",
+  "expiryWaste", "replenishmentPlanner", "suggestedOrders",
+  "supplierPlanning", "safetyStock", "allocationFulfillment",
+  "replenishmentExceptions", "stockHealth"
+];
+
+export function isPageId(value: string | null): value is PageId {
+  if (value === "demandForecast" || value === "dataManagement") return true;
+  return inventoryPageIds.includes(value as InventoryPageId);
+}
+
+export function pageTitle(page: PageId): string {
+  if (page === "demandForecast") return "Demand Forecast";
+  if (page === "dataManagement") return "Data Management";
+  return inventoryScreens[page].title;
+}
+
+export function pageSubtitle(page: PageId): string {
+  if (page === "demandForecast") {
+    return "Forecast demand by SKU, store, channel and time";
+  }
+  if (page === "dataManagement") {
+    return "Monitor source systems, data freshness and data quality";
+  }
+  return inventoryScreens[page].subtitle;
+}
+
+/** Nav label -> destination, keyed off the same table the parity contract uses. */
+const pageByNavLabel: Record<string, PageId> = Object.fromEntries(
+  inventoryPageIds.map((id) => [
+    // "Exceptions" is the nav label the reference HTML uses for the
+    // replenishment exceptions destination; every other label matches its title.
+    id === "replenishmentExceptions" ? "Exceptions" : inventoryScreens[id].title,
+    id
+  ])
+) as Record<string, PageId>;
 
 const inventoryNavigation = [
   {icon: "▥", label: "Store Inventory"},
@@ -153,11 +200,33 @@ function Sidebar({
   page,
   onPage
 }: {
-  page: "demandForecast" | "dataManagement";
-  onPage: (page: "demandForecast" | "dataManagement") => void;
+  page: PageId;
+  onPage: (page: PageId) => void;
 }) {
-  const [inventoryOpen, setInventoryOpen] = useState(false);
-  const [replenishmentOpen, setReplenishmentOpen] = useState(false);
+  const inventoryChildren: PageId[] = [
+    "storeInventory", "warehouseInventory", "inventoryAgeing",
+    "inventoryTransfers", "inventoryValuation", "expiryWaste"
+  ];
+  const replenishmentChildren: PageId[] = [
+    "suggestedOrders", "supplierPlanning", "safetyStock",
+    "allocationFulfillment", "replenishmentExceptions"
+  ];
+  const [inventoryOpen, setInventoryOpen] = useState(
+    () => page === "inventoryOverview" || inventoryChildren.includes(page)
+  );
+  const [replenishmentOpen, setReplenishmentOpen] = useState(
+    () => page === "replenishmentPlanner" || replenishmentChildren.includes(page)
+  );
+  // Keep the group containing the active destination expanded. Without this a
+  // deep link highlights a nav item inside a collapsed submenu.
+  useEffect(() => {
+    if (page === "inventoryOverview" || inventoryChildren.includes(page)) {
+      setInventoryOpen(true);
+    }
+    if (page === "replenishmentPlanner" || replenishmentChildren.includes(page)) {
+      setReplenishmentOpen(true);
+    }
+  }, [page]);
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -197,19 +266,50 @@ function Sidebar({
           icon="▤"
           label="Inventory Overview"
           open={inventoryOpen}
-          onToggle={() => setInventoryOpen((value) => !value)}
+          onToggle={() => {
+            setInventoryOpen((value) => !value);
+            onPage("inventoryOverview");
+          }}
         >
-          {inventoryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+          {inventoryNavigation.map((item) => (
+            <NavItem
+              key={item.label}
+              {...item}
+              active={page === pageByNavLabel[item.label]}
+              onClick={() => {
+                const target = pageByNavLabel[item.label];
+                if (target) onPage(target);
+              }}
+            />
+          ))}
         </NavigationParent>
         <NavigationParent
           icon="⇄"
           label="Replenishment Planner"
           open={replenishmentOpen}
-          onToggle={() => setReplenishmentOpen((value) => !value)}
+          onToggle={() => {
+            setReplenishmentOpen((value) => !value);
+            onPage("replenishmentPlanner");
+          }}
         >
-          {replenishmentNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+          {replenishmentNavigation.map((item) => (
+            <NavItem
+              key={item.label}
+              {...item}
+              active={page === pageByNavLabel[item.label]}
+              onClick={() => {
+                const target = pageByNavLabel[item.label];
+                if (target) onPage(target);
+              }}
+            />
+          ))}
         </NavigationParent>
-        <NavItem icon="◇" label="Stock Health" />
+        <NavItem
+          icon="◇"
+          label="Stock Health"
+          active={page === "stockHealth"}
+          onClick={() => onPage("stockHealth")}
+        />
       </div>
 
       <NavigationSection title="ANALYTICS" items={analyticsNavigation} />
@@ -687,8 +787,8 @@ function Shell({
   fx?: FxRates;
   fxPending?: boolean;
   fxError?: Error | null;
-  page: "demandForecast" | "dataManagement";
-  onPage: (page: "demandForecast" | "dataManagement") => void;
+  page: PageId;
+  onPage: (page: PageId) => void;
   storeId: string;
   onStoreId: (value: string) => void;
   channelType: string;
@@ -709,10 +809,8 @@ function Shell({
       <main className="main">
         <Topbar
           dashboard={dashboard}
-          title={page === "demandForecast" ? "Demand Forecast" : "Data Management"}
-          subtitle={page === "demandForecast"
-            ? "Forecast demand by SKU, store, channel and time"
-            : "Monitor source systems, data freshness and data quality"}
+          title={pageTitle(page)}
+          subtitle={pageSubtitle(page)}
           storeId={storeId}
           onStoreId={onStoreId}
           channelType={channelType}
@@ -798,8 +896,8 @@ function DataManagement({dashboard}: {dashboard: Dashboard}) {
 
 export default function App() {
   const initialPage = new URLSearchParams(window.location.search).get("page");
-  const [page, setPage] = useState<"demandForecast" | "dataManagement">(
-    initialPage === "dataManagement" ? "dataManagement" : "demandForecast"
+  const [page, setPage] = useState<PageId>(
+    isPageId(initialPage) ? initialPage : "demandForecast"
   );
   const [storeId, setStoreId] = useState("");
   const [channelType, setChannelType] = useState("");
@@ -816,7 +914,15 @@ export default function App() {
     queryFn: loadForecastSummary,
     enabled: page === "demandForecast"
   });
-  const changePage = (nextPage: "demandForecast" | "dataManagement") => {
+  // The tab label follows the destination. index.html hard-codes "Data
+  // Management" and nothing ever updated it, so every tab claimed to be that page
+  // regardless of what it showed. With sixteen destinations and several tabs open
+  // that is not cosmetic: the tab strip is how someone finds the window they
+  // want, and all of them read the same.
+  useEffect(() => {
+    document.title = `Retail Intelligence · ${pageTitle(page)}`;
+  }, [page]);
+  const changePage = (nextPage: PageId) => {
     setPage(nextPage);
     const url = new URL(window.location.href);
     url.searchParams.set("page", nextPage);
@@ -862,16 +968,18 @@ export default function App() {
       {...shellProps}
       dashboard={dashboard.data}
     >
-      {page === "demandForecast"
-        ? (
-          <DemandForecast
-            dashboard={dashboard.data}
-            storeId={storeId}
-            onStoreId={setStoreId}
-            channelType={channelType}
-          />
-        )
-        : <DataManagement dashboard={dashboard.data} />}
+      {page === "demandForecast" ? (
+        <DemandForecast
+          dashboard={dashboard.data}
+          storeId={storeId}
+          onStoreId={setStoreId}
+          channelType={channelType}
+        />
+      ) : page === "dataManagement" ? (
+        <DataManagement dashboard={dashboard.data} />
+      ) : (
+        <InventoryPage pageId={page} />
+      )}
     </Shell>
   );
 }

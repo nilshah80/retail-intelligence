@@ -1,0 +1,385 @@
+{
+  "forecastAuthorityLedger": {
+    "currentEventId": 23,
+    "currentPriorEventId": 22,
+    "events": [
+      {
+        "activationScopeFingerprint": "04c9019b638a138dbdb55839bcdf7eff7e95d108acabb4cb17f85accc6b3d8ee",
+        "actor": "nilay.shah",
+        "eventId": 1,
+        "eventType": "active",
+        "forecastRunId": "fr_9aaa1d4431381570",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 13:25:58.177128+00",
+        "versionId": "fv_efcbbc03d991007f"
+      },
+      {
+        "activationScopeFingerprint": "5585b7dbfb0abea45e7b74ba41b71b50db8d338e98d958470c1f6d27fb843594",
+        "actor": "nilay.shah",
+        "eventId": 2,
+        "eventType": "active",
+        "forecastRunId": "fr_422e1113355eb05b",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 13:40:52.01365+00",
+        "versionId": "fv_86cd60c37be7e203"
+      },
+      {
+        "activationScopeFingerprint": "04c9019b638a138dbdb55839bcdf7eff7e95d108acabb4cb17f85accc6b3d8ee",
+        "actor": "migration:0007_activation_and_coverage",
+        "eventId": 5,
+        "eventType": "superseded",
+        "forecastRunId": "fr_9aaa1d4431381570",
+        "priorEventId": 1,
+        "recordedAt": "2026-07-31 14:43:15.403522+00",
+        "versionId": "fv_efcbbc03d991007f"
+      },
+      {
+        "activationScopeFingerprint": "5585b7dbfb0abea45e7b74ba41b71b50db8d338e98d958470c1f6d27fb843594",
+        "actor": "migration:0007_activation_and_coverage",
+        "eventId": 6,
+        "eventType": "superseded",
+        "forecastRunId": "fr_422e1113355eb05b",
+        "priorEventId": 2,
+        "recordedAt": "2026-07-31 14:43:15.403522+00",
+        "versionId": "fv_86cd60c37be7e203"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 7,
+        "eventType": "active",
+        "forecastRunId": "fr_b2ef3d33f398095b",
+        "priorEventId": null,
+        "recordedAt": "2026-07-31 16:51:27.852994+00",
+        "versionId": "fv_23722eff8e3b8995"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 8,
+        "eventType": "superseded",
+        "forecastRunId": "fr_b2ef3d33f398095b",
+        "priorEventId": 7,
+        "recordedAt": "2026-07-31 18:15:10.737055+00",
+        "versionId": "fv_23722eff8e3b8995"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 9,
+        "eventType": "active",
+        "forecastRunId": "fr_357575f586905b11",
+        "priorEventId": 8,
+        "recordedAt": "2026-07-31 18:15:10.737055+00",
+        "versionId": "fv_3d66e3bd9939430d"
+      },
+      {
+        "activationScopeFingerprint": "4bf2924945bc762d798c713c86087ce50f59e2c0f89fa11704335f06e1d759bc",
+        "actor": "nilay.shah",
+        "eventId": 11,
+        "eventType": "superseded",
+        "forecastRunId": "fr_357575f586905b11",
+        "priorEventId": 9,
+        "recordedAt": "2026-08-01 16:03:26.984964+00",
+        "versionId": "fv_3d66e3bd9939430d"
+      },
+      {
+        "activationScopeFingerprint": "1eaf94fa85fe16128cb8fef45394fd84443af697d1cdddcc592a25ec470beca7",
+        "actor": "nilay.shah",
+        "eventId": 12,
+        "eventType": "active",
+        "forecastRunId": "fr_5f6fa2015d80eee5",
+        "priorEventId": null,
+        "recordedAt": "2026-08-01 16:03:26.984964+00",
+        "versionId": "fv_ba2791b4273e3b4f"
+      },
+      {
+        "activationScopeFingerprint": "1eaf94fa85fe16128cb8fef45394fd84443af697d1cdddcc592a25ec470beca7",
+        "actor": "nilayshah",
+        "eventId": 13,
+        "eventType": "superseded",
+        "forecastRunId": "fr_5f6fa2015d80eee5",
+        "priorEventId": 12,
+        "recordedAt": "2026-08-02 07:15:59.496705+00",
+        "versionId": "fv_ba2791b4273e3b4f"
+      },
+      {
+        "activationScopeFingerprint": "0a2ddf98c5509272150003869879c2666bb5ebf76ca1ea408d98565a082ff930",
+        "actor": "nilayshah",
+        "eventId": 14,
+        "eventType": "active",
+        "forecastRunId": "fr_90c168fad5cd9c0b",
+        "priorEventId": null,
+        "recordedAt": "2026-08-02 07:15:59.496705+00",
+        "versionId": "fv_403c5e5fca3fb227"
+      },
+      {
+        "activationScopeFingerprint": "0a2ddf98c5509272150003869879c2666bb5ebf76ca1ea408d98565a082ff930",
+        "actor": "nilayshah",
+        "eventId": 15,
+        "eventType": "superseded",
+        "forecastRunId": "fr_90c168fad5cd9c0b",
+        "priorEventId": 14,
+        "recordedAt": "2026-08-02 14:54:55.072953+00",
+        "versionId": "fv_403c5e5fca3fb227"
+      },
+      {
+        "activationScopeFingerprint": "8cb68a56813f774d7c27d90eafa4db3de38544bd2e22956cb8b2cb96bf83ac23",
+        "actor": "nilayshah",
+        "eventId": 16,
+        "eventType": "active",
+        "forecastRunId": "fr_3232ac28a6065541",
+        "priorEventId": null,
+        "recordedAt": "2026-08-02 14:54:55.072953+00",
+        "versionId": "fv_77b645e52357264d"
+      },
+      {
+        "activationScopeFingerprint": "8cb68a56813f774d7c27d90eafa4db3de38544bd2e22956cb8b2cb96bf83ac23",
+        "actor": "nilayshah",
+        "eventId": 18,
+        "eventType": "superseded",
+        "forecastRunId": "fr_3232ac28a6065541",
+        "priorEventId": 16,
+        "recordedAt": "2026-08-02 20:52:31.496585+00",
+        "versionId": "fv_77b645e52357264d"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 19,
+        "eventType": "active",
+        "forecastRunId": "fr_2f4483c0bc9df184",
+        "priorEventId": null,
+        "recordedAt": "2026-08-02 20:52:31.496585+00",
+        "versionId": "fv_472a1200b9f106ae"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 20,
+        "eventType": "superseded",
+        "forecastRunId": "fr_2f4483c0bc9df184",
+        "priorEventId": 19,
+        "recordedAt": "2026-08-03 13:04:15.235887+00",
+        "versionId": "fv_472a1200b9f106ae"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 21,
+        "eventType": "active",
+        "forecastRunId": "fr_74151e73fd4227b4",
+        "priorEventId": 20,
+        "recordedAt": "2026-08-03 13:04:15.235887+00",
+        "versionId": "fv_a5e0195b4a29d476"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 22,
+        "eventType": "superseded",
+        "forecastRunId": "fr_74151e73fd4227b4",
+        "priorEventId": 21,
+        "recordedAt": "2026-08-03 14:07:22.68371+00",
+        "versionId": "fv_a5e0195b4a29d476"
+      },
+      {
+        "activationScopeFingerprint": "a60f3b2f7c8b73b639a1f51c2e6e61cd17421929187bda95ebc5f3a60d5b1339",
+        "actor": "nilayshah",
+        "eventId": 23,
+        "eventType": "active",
+        "forecastRunId": "fr_a08dfd164b77ac34",
+        "priorEventId": 22,
+        "recordedAt": "2026-08-03 14:07:22.68371+00",
+        "versionId": "fv_b0a75559c2a1fb40"
+      }
+    ],
+    "nullPredecessorEventIds": [
+      1,
+      2,
+      7,
+      12,
+      14,
+      16,
+      19
+    ],
+    "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
+    "unusedEventIds": [
+      3,
+      4,
+      10,
+      17
+    ]
+  },
+  "historicalAttestationLedger": {
+    "attestationClassification": {
+      "note": "Attested evidence is labelled attested, never locally_verified. No retained execution artifact exists for these on this host.",
+      "trackA": "user_attested",
+      "windowsLinuxPortability": "user_attested"
+    },
+    "disposition": "retained_by_reference_with_declared_missing_hashes",
+    "hashedGenerations": [
+      {
+        "generation": "pitfix_v12",
+        "hashesRetained": true
+      },
+      {
+        "generation": "pitfix_v14",
+        "hashesRetained": true
+      },
+      {
+        "generation": "pitfix_v15",
+        "hashesRetained": true
+      },
+      {
+        "generation": "v6_cohort82",
+        "hashesRetained": true,
+        "note": "Separately rejected; retained as rejected evidence."
+      },
+      {
+        "generation": "forecast_run_v6_c5_final",
+        "hashesRetained": true,
+        "note": "The only one of the five C5 siblings with retained hashes."
+      }
+    ],
+    "note": "The pre-v2 closure ledger held manifest and acceptance hashes for older generations that never reached the current serving schema. Those that were hashed remain verifiable by reference; those whose bytes are gone are recorded as missing and are never reconstructed.",
+    "reconstructionForbidden": true,
+    "unhashedSiblingReason": "Bundle bytes were deleted before their manifest/acceptance hashes were retained. Superseded by retained run id, original directory, generation label and reason only.",
+    "unhashedSupersededSiblings": [
+      {
+        "forecastRunId": "fr_463f53be6353e481",
+        "generation": "_c5",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_f62041e95fe7c305",
+        "generation": "_v2",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_b55046df351c1a65",
+        "generation": "_grain",
+        "hashesRetained": false
+      },
+      {
+        "forecastRunId": "fr_8e73fb0f8d3c502c",
+        "generation": "_gov",
+        "hashesRetained": false
+      }
+    ]
+  },
+  "inventoryAuthorityLedger": {
+    "currentEventId": 23,
+    "currentPriorEventId": 22,
+    "identitiesWithoutRetainedBytes": [
+      "fr_b2ef3d33f398095b",
+      "fr_357575f586905b11",
+      "fr_90c168fad5cd9c0b",
+      "fr_2f4483c0bc9df184",
+      "fr_3232ac28a6065541",
+      "fr_422e1113355eb05b",
+      "fr_74151e73fd4227b4",
+      "fr_5f6fa2015d80eee5",
+      "fr_9aaa1d4431381570"
+    ],
+    "nullPredecessorEventIds": [
+      1,
+      2,
+      7,
+      12,
+      14,
+      16,
+      19
+    ],
+    "supersededIdentityCount": 9
+  },
+  "recordType": "released_activation_history",
+  "releasedBy": "from-scratch rebuild: retail_serving dropped and replayed from 0001",
+  "releasedOn": "2026-08-04",
+  "retainedFrom": "contracts/evidence/forecast-closure-record.json at the commit preceding the rebuild",
+  "schemaVersion": "retail-released-activation-history/v1",
+  "supersededIdentities": [
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_b2ef3d33f398095b",
+      "forecastVersionId": "fv_23722eff8e3b8995",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_357575f586905b11",
+      "forecastVersionId": "fv_3d66e3bd9939430d",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_90c168fad5cd9c0b",
+      "forecastVersionId": "fv_403c5e5fca3fb227",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_2f4483c0bc9df184",
+      "forecastVersionId": "fv_472a1200b9f106ae",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_3232ac28a6065541",
+      "forecastVersionId": "fv_77b645e52357264d",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_422e1113355eb05b",
+      "forecastVersionId": "fv_86cd60c37be7e203",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_74151e73fd4227b4",
+      "forecastVersionId": "fv_a5e0195b4a29d476",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_5f6fa2015d80eee5",
+      "forecastVersionId": "fv_ba2791b4273e3b4f",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_9aaa1d4431381570",
+      "forecastVersionId": "fv_efcbbc03d991007f",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    }
+  ],
+  "whyItCannotBeDerived": "forecast_activation_events and inventory_activation_events lived in the retail_serving schema. A from-scratch rebuild drops that schema so Alembic replays from 0001 and so a re-materialized version id is insertable, which destroys every activation event recorded before the wipe. The live stack can therefore only derive generation 1. These events are retained here, verbatim from the record committed before the wipe, so a reader can still audit the chain that was actually walked -- the same disclosure pattern as EVIDENCE_RELEASED_RUNS in tools/build_publication_selection.py."
+}

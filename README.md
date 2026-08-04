@@ -6,10 +6,10 @@ synthetic scenarios may combine India, the United States, the United Kingdom and
 European representative market (Germany). This monorepo is where the PoC behind the
 `ai_retail_intelligence_dashboard_multicurrency_v6` dashboard will be built.
 
-> **Status:** Phase 1 datagen v0.13.0/source contract v12 and the Phase 2 governed ingestion
+> **Status:** Phase 1 datagen v0.16.0/source contract v13 and the Phase 2 governed ingestion
 > vertical slice are implemented. The accepted ten-year input is
-> `run-c5eb1506ecd4c550` (2016-07-28 through 2026-07-28), landed as immutable snapshot
-> `681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`. Gate A, bounded
+> `run-adac9e85dccb56e8` (2016-07-28 through 2026-07-28), landed as immutable snapshot
+> `cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05`. Gate A, bounded
 > Shopify/Business Central/companion adapters, standardized staging, source-neutral transforms,
 > Gate B, exact reconciliation and atomic curated Parquet/DuckDB publication run end to end.
 > The initial Aarv-based Go API exposes the accepted evidence. The first React screen proved API
@@ -51,7 +51,7 @@ European representative market (Germany). This monorepo is where the PoC behind 
   `source-run.duckdb` browsing mirror, a
   source-run manifest and hidden synthetic truth. The single DuckDB contains restricted truth
   when truth is enabled and is permissioned accordingly. Datagen never imports or emits
-  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms. Its v12
+  `retail_v2`, Gate A/B rules, canonical `known_as_of` rules or ingestion transforms. Its v13
   contract includes a tested 2005–2024 preset, opening-incumbent and later product/SKU launches,
   overlapping predecessor/successor runout with lifecycle promotions, config-owned phased
   pandemic/supply disruption, and a Config Builder-owned customer population/acquisition model.
@@ -63,8 +63,10 @@ European representative market (Germany). This monorepo is where the PoC behind 
   source-neutral transformations, canonical `retail_v2`, Gate B and curated Parquet/DuckDB.
   Missing source timestamps, versions, formats or manifest details are handled or derived here
   under an explicit adapter/profile policy; they are not universal source requirements. Source
-  contract v12 adds a native assortment observation timestamp so origin-safe zero-demand labels
-  can be derived after each covered business day; older v11 inputs retain their explicit
+  contract v13 adds the multi-echelon inventory datasets — typed effective-dated service lanes,
+  inbound and transfer status histories, origin-safe supply terms and store shortfall events — on
+  top of v12's native assortment observation timestamp, which is what lets origin-safe zero-demand
+  labels be derived after each covered business day. Older v11 inputs retain their explicit
   point-in-time capability downgrade.
 
 **2. Ingestion vs ML.**
@@ -158,14 +160,14 @@ use the accepted deterministic ten-year demo:
 | Item | Value |
 |---|---|
 | Source dates | `2016-07-28` through `2026-07-28` |
-| Source run | `run-c5eb1506ecd4c550` |
+| Source run | `run-adac9e85dccb56e8` |
 | Config | `datagen/configs/multi-market-10-year-demo.yaml` |
-| Immutable snapshot | `681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b` |
-| Source output | `datagen/output/multi-market-10-year-demo/run-c5eb1506ecd4c550/` |
-| Raw landing | `ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b/` |
-| Curated output | `ingestion/data/curated/run-c5eb1506ecd4c550/` |
-| Accepted evidence | `ingestion/data/evidence/run-c5eb1506ecd4c550/` |
-| Curated database | `ingestion/data/curated/run-c5eb1506ecd4c550/retail_v2.duckdb` |
+| Immutable snapshot | `cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05` |
+| Source output | `datagen/output/multi-market-10-year-demo/run-adac9e85dccb56e8/` |
+| Raw landing | `ingestion/data/raw/snapshots/cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05/` |
+| Curated output | `ingestion/data/curated/run-adac9e85dccb56e8/` |
+| Accepted evidence | `ingestion/data/evidence/run-adac9e85dccb56e8/` |
+| Curated database | `ingestion/data/curated/run-adac9e85dccb56e8/retail_v2.duckdb` |
 
 The data directories are intentionally gitignored. A fresh clone therefore contains the code and
 configuration, not the 34+ GiB accepted local artifacts. Generate and ingest the run, or restore
@@ -282,7 +284,7 @@ python3 tools/dev.py run-status
 ```
 
 The seed, resolved scenario and generator version make this preset deterministic: rerunning the
-same contract verifies and reuses `run-c5eb1506ecd4c550`; it does not silently create different
+same contract verifies and reuses `run-adac9e85dccb56e8`; it does not silently create different
 business data. Change the seed or scenario only when a new synthetic history is intended.
 `source-run.duckdb` is a restricted browsing mirror, not the ingestion permission boundary and
 not the authoritative source format. Ordinary ingestion reads only manifest-declared public
@@ -294,7 +296,7 @@ Windows PowerShell:
 
 ```powershell
 py -3 tools\dev.py land `
-  --source-root datagen\output\multi-market-10-year-demo\run-c5eb1506ecd4c550 `
+  --source-root datagen\output\multi-market-10-year-demo\run-adac9e85dccb56e8 `
   --landing-root ingestion\data\raw `
   --execution-profile safe
 ```
@@ -303,14 +305,14 @@ macOS/Linux:
 
 ```bash
 python3 tools/dev.py land \
-  --source-root datagen/output/multi-market-10-year-demo/run-c5eb1506ecd4c550 \
+  --source-root datagen/output/multi-market-10-year-demo/run-adac9e85dccb56e8 \
   --landing-root ingestion/data/raw \
   --execution-profile safe
 ```
 
 Landing verifies every declared byte count and SHA-256, separates public and restricted lanes,
 and promotes immutable snapshot
-`681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b`.
+`cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05`.
 Repeating the command is an idempotent verification, not a second copy.
 
 ### 6. Run the governed ingestion pipeline
@@ -322,9 +324,9 @@ Windows PowerShell:
 
 ```powershell
 py -3 tools\dev.py run `
-  --snapshot-root ingestion\data\raw\snapshots\681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b `
-  --work-root ingestion\data\work\run-c5eb1506ecd4c550 `
-  --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 `
+  --snapshot-root ingestion\data\raw\snapshots\cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 `
+  --work-root ingestion\data\work\run-adac9e85dccb56e8 `
+  --publication-root ingestion\data\curated\run-adac9e85dccb56e8 `
   --execution-profile safe
 ```
 
@@ -332,9 +334,9 @@ macOS/Linux:
 
 ```bash
 python3 tools/dev.py run \
-  --snapshot-root ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b \
-  --work-root ingestion/data/work/run-c5eb1506ecd4c550 \
-  --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 \
+  --snapshot-root ingestion/data/raw/snapshots/cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 \
+  --work-root ingestion/data/work/run-adac9e85dccb56e8 \
+  --publication-root ingestion/data/curated/run-adac9e85dccb56e8 \
   --execution-profile safe
 ```
 
@@ -344,31 +346,31 @@ Windows PowerShell:
 
 ```powershell
 py -3 tools\dev.py gate-a `
-  --snapshot-root ingestion\data\raw\snapshots\681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b `
-  --report-path ingestion\data\work\run-c5eb1506ecd4c550\gate-a.json `
+  --snapshot-root ingestion\data\raw\snapshots\cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 `
+  --report-path ingestion\data\work\run-adac9e85dccb56e8\gate-a.json `
   --execution-profile safe
 
 py -3 tools\dev.py stage `
-  --snapshot-root ingestion\data\raw\snapshots\681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b `
-  --output-database ingestion\data\work\run-c5eb1506ecd4c550\staging.duckdb `
+  --snapshot-root ingestion\data\raw\snapshots\cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 `
+  --output-database ingestion\data\work\run-adac9e85dccb56e8\staging.duckdb `
   --execution-profile safe
 
 py -3 tools\dev.py transform `
-  --staging-database ingestion\data\work\run-c5eb1506ecd4c550\staging.duckdb `
-  --candidate-database ingestion\data\work\run-c5eb1506ecd4c550\retail_v2-candidate.duckdb `
+  --staging-database ingestion\data\work\run-adac9e85dccb56e8\staging.duckdb `
+  --candidate-database ingestion\data\work\run-adac9e85dccb56e8\retail_v2-candidate.duckdb `
   --execution-profile safe
 
 py -3 tools\dev.py gate-b `
-  --staging-database ingestion\data\work\run-c5eb1506ecd4c550\staging.duckdb `
-  --candidate-database ingestion\data\work\run-c5eb1506ecd4c550\retail_v2-candidate.duckdb `
-  --gate-a-report ingestion\data\work\run-c5eb1506ecd4c550\gate-a.json `
-  --report-path ingestion\data\work\run-c5eb1506ecd4c550\gate-b.json `
+  --staging-database ingestion\data\work\run-adac9e85dccb56e8\staging.duckdb `
+  --candidate-database ingestion\data\work\run-adac9e85dccb56e8\retail_v2-candidate.duckdb `
+  --gate-a-report ingestion\data\work\run-adac9e85dccb56e8\gate-a.json `
+  --report-path ingestion\data\work\run-adac9e85dccb56e8\gate-b.json `
   --execution-profile safe
 
 py -3 tools\dev.py publish `
-  --candidate-database ingestion\data\work\run-c5eb1506ecd4c550\retail_v2-candidate.duckdb `
-  --gate-b-report ingestion\data\work\run-c5eb1506ecd4c550\gate-b.json `
-  --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 `
+  --candidate-database ingestion\data\work\run-adac9e85dccb56e8\retail_v2-candidate.duckdb `
+  --gate-b-report ingestion\data\work\run-adac9e85dccb56e8\gate-b.json `
+  --publication-root ingestion\data\curated\run-adac9e85dccb56e8 `
   --execution-profile safe
 ```
 
@@ -376,31 +378,31 @@ macOS/Linux:
 
 ```bash
 python3 tools/dev.py gate-a \
-  --snapshot-root ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b \
-  --report-path ingestion/data/work/run-c5eb1506ecd4c550/gate-a.json \
+  --snapshot-root ingestion/data/raw/snapshots/cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 \
+  --report-path ingestion/data/work/run-adac9e85dccb56e8/gate-a.json \
   --execution-profile safe
 
 python3 tools/dev.py stage \
-  --snapshot-root ingestion/data/raw/snapshots/681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b \
-  --output-database ingestion/data/work/run-c5eb1506ecd4c550/staging.duckdb \
+  --snapshot-root ingestion/data/raw/snapshots/cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05 \
+  --output-database ingestion/data/work/run-adac9e85dccb56e8/staging.duckdb \
   --execution-profile safe
 
 python3 tools/dev.py transform \
-  --staging-database ingestion/data/work/run-c5eb1506ecd4c550/staging.duckdb \
-  --candidate-database ingestion/data/work/run-c5eb1506ecd4c550/retail_v2-candidate.duckdb \
+  --staging-database ingestion/data/work/run-adac9e85dccb56e8/staging.duckdb \
+  --candidate-database ingestion/data/work/run-adac9e85dccb56e8/retail_v2-candidate.duckdb \
   --execution-profile safe
 
 python3 tools/dev.py gate-b \
-  --staging-database ingestion/data/work/run-c5eb1506ecd4c550/staging.duckdb \
-  --candidate-database ingestion/data/work/run-c5eb1506ecd4c550/retail_v2-candidate.duckdb \
-  --gate-a-report ingestion/data/work/run-c5eb1506ecd4c550/gate-a.json \
-  --report-path ingestion/data/work/run-c5eb1506ecd4c550/gate-b.json \
+  --staging-database ingestion/data/work/run-adac9e85dccb56e8/staging.duckdb \
+  --candidate-database ingestion/data/work/run-adac9e85dccb56e8/retail_v2-candidate.duckdb \
+  --gate-a-report ingestion/data/work/run-adac9e85dccb56e8/gate-a.json \
+  --report-path ingestion/data/work/run-adac9e85dccb56e8/gate-b.json \
   --execution-profile safe
 
 python3 tools/dev.py publish \
-  --candidate-database ingestion/data/work/run-c5eb1506ecd4c550/retail_v2-candidate.duckdb \
-  --gate-b-report ingestion/data/work/run-c5eb1506ecd4c550/gate-b.json \
-  --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 \
+  --candidate-database ingestion/data/work/run-adac9e85dccb56e8/retail_v2-candidate.duckdb \
+  --gate-b-report ingestion/data/work/run-adac9e85dccb56e8/gate-b.json \
+  --publication-root ingestion/data/curated/run-adac9e85dccb56e8 \
   --execution-profile safe
 ```
 
@@ -419,9 +421,9 @@ Windows PowerShell:
 
 ```powershell
 py -3 tools\dev.py finalize `
-  --work-root ingestion\data\work\run-c5eb1506ecd4c550 `
-  --publication-root ingestion\data\curated\run-c5eb1506ecd4c550 `
-  --evidence-root ingestion\data\evidence\run-c5eb1506ecd4c550 `
+  --work-root ingestion\data\work\run-adac9e85dccb56e8 `
+  --publication-root ingestion\data\curated\run-adac9e85dccb56e8 `
+  --evidence-root ingestion\data\evidence\run-adac9e85dccb56e8 `
   --prune-work
 ```
 
@@ -429,9 +431,9 @@ macOS/Linux:
 
 ```bash
 python3 tools/dev.py finalize \
-  --work-root ingestion/data/work/run-c5eb1506ecd4c550 \
-  --publication-root ingestion/data/curated/run-c5eb1506ecd4c550 \
-  --evidence-root ingestion/data/evidence/run-c5eb1506ecd4c550 \
+  --work-root ingestion/data/work/run-adac9e85dccb56e8 \
+  --publication-root ingestion/data/curated/run-adac9e85dccb56e8 \
+  --evidence-root ingestion/data/evidence/run-adac9e85dccb56e8 \
   --prune-work
 ```
 
@@ -464,6 +466,148 @@ v12 or `fr_92135aa7b5215b69` identities. Until a new run passes, forecast API ro
 return unavailable. The local endpoints are PostgreSQL at `127.0.0.1:5432` and MLflow at
 `http://127.0.0.1:5000`.
 
+### 8a. Re-establish the ML pin after any regeneration (decision #89)
+
+`contracts/ml/expected-pin.json` names the exact source snapshot, both quality gates and the
+publication the ML stages are allowed to consume — including the curated DuckDB's `sha256`, its
+byte length and its object count. Every ML stage fails closed against it.
+
+That means **any** change below the ML layer invalidates it, not just a datagen change:
+
+| What changed | Snapshot id | Pin must be re-established |
+| --- | --- | --- |
+| Generator output (a `GENERATOR_VERSION` bump) | moves | yes — with equivalence evidence |
+| An ingestion transform or adapter only | unchanged | yes — publication fingerprint and DuckDB hash still move |
+| Nothing below ML | unchanged | no |
+
+Decision #89 makes this a governed step rather than a formality: a regeneration moves
+`sourceSnapshotId` because the id hashes Parquet bytes, so re-pinning has to record *why* the new
+bundle is an acceptable substitute for the accepted one. Re-pin after `publish` and before the
+forecast chain:
+
+```text
+python3 tools/build_expected_pin.py
+python3 tools/dev.py contracts
+```
+
+```text
+python3 tools/build_expected_pin.py --list          # what is pinned, what has evidence
+python3 tools/build_expected_pin.py --run run-<id>  # move the pin
+python3 tools/dev.py contracts
+```
+
+The run is named on the command line, not edited into source. It is *not* discovered by a
+newest-wins glob: decision #89 makes moving the pin a governed act, so the caller states which
+publication they are pinning. The `RUN` constant remains the record of what is pinned now, so
+`--check` needs no argument.
+
+That pin is the only thing the ML chain consults to find its curated root — `features` takes no
+source argument, so passing `--source-root` to it does nothing. Re-pin first; running the chain
+before the pin moves costs a full features and backtest pass for nothing.
+
+**One command.** `tools/dev.py pipeline` chains all sixteen stages from `land` to
+`inventory-activate`, and `repin` is one of them — it sits between `finalize` and `features`, writes
+the publication selections, verifies them, and rebuilds `contracts/ml/expected-pin.json` for the run
+that just published. Datagen stays separate (see `command_datagen`), so a rebuild is two commands:
+
+```text
+python3 tools/dev.py datagen --regenerate
+python3 tools/dev.py pipeline
+```
+
+**What the `repin` stage does not do is decide.** It refuses unless `build_lifecycle()` in
+`tools/build_publication_selection.py` already contains a chain naming this run, because a selection
+record carries an approver and a reason that no derivation can invent — decision #89 exists for a
+human recording why the new bundle is an acceptable substitute for the accepted one. So:
+
+- **A run someone has already governed rebuilds in one command.** This is the common case: any change
+  below the ML layer re-publishes the same source run, and the chain that names it already exists.
+- **A brand-new source run stops at `repin`** with the sentence naming what to add — the run, its
+  capability, an approver and a reason. Add the chain, then the same one command carries through.
+
+The order inside the stage is write → verify → pin, chosen for the error message: pinning first fails
+with a fingerprint mismatch, which reads like a corrupt publication, while verifying first names the
+actual problem, which is a run nobody selected.
+
+### 8b. Forecast chain
+
+```text
+python3 tools/dev.py features
+python3 tools/dev.py characterize
+python3 tools/dev.py backtest
+python3 tools/dev.py ml-publish
+python3 tools/dev.py forecast-materialize --forecast-run <bundle>
+python3 tools/dev.py forecast-activate --forecast-run-id <id> \
+  --activation-scope-fingerprint <fingerprint> --actor <your-name>
+```
+
+Each stage refuses to overwrite prior artifacts, so a re-run needs the previous bundle cleared
+first — the guard exists because publishing over evidence somebody may have activated is
+indistinguishable from replacing it.
+
+### 8c. Inventory and replenishment chain
+
+The four subcommands are build, verify, materialize, activate. Verify is independent of build on
+purpose: it re-derives the acceptance verdict from the bundle rather than trusting the builder's
+own claim.
+
+```text
+python3 -m retail_ml.cli inventory-build \
+  --curated-root ingestion/data/curated/<run-id> \
+  --bundle ml/data/artifacts/<bundle-name> \
+  --as-of <decision-origin> \
+  --postgres-dsn <dsn> --execution-profile performance
+python3 -m retail_ml.cli inventory-verify --bundle <bundle> --postgres-dsn <dsn>
+python3 -m retail_ml.cli inventory-materialize --bundle <bundle> --postgres-dsn <dsn>
+python3 -m retail_ml.cli inventory-activate \
+  --inventory-run-id <ir_...> --run-semantic-fingerprint <fingerprint> \
+  --actor <your-name> --postgres-dsn <dsn>
+```
+
+Materialization writes one version per run and then `ANALYZE`s every table it wrote. That is not
+housekeeping: a serving table accumulates one partition per activation, and after the sixteenth the
+stale row estimates made PostgreSQL abandon the grain indexes — the Replenishment Planner route
+went from 58ms to 52 seconds and the API served it as a closed connection rather than a governed
+error. The writer is the only place that knows a bulk load just happened.
+
+Activation refuses a second active version for the same scope. Pass `--retire-other-scopes` when
+an earlier version is still active (decision #90: exactly one).
+
+After activating, regenerate the two evidence records so they name the migration head actually
+applied — `tools/dev.py verify` compares them against the Alembic graph and fails when they drift:
+
+```text
+python3 tools/dev.py closure-record --forecast-run <forecast-bundle>
+python3 tools/dev.py inventory-entry-record
+```
+
+### 8d. Running from scratch
+
+A true first-run needs the generated data gone as well as the derived data. The generator writes
+under `datagen/output/<scenario>/`, which is easy to miss because it is not called `data`:
+
+```text
+rm -rf datagen/output/<scenario>/run-*
+rm -rf ingestion/data/raw ingestion/data/curated ingestion/data/evidence ingestion/data/work
+rm -rf ml/data/artifacts ml/data/features
+```
+
+Then drop the serving schema and re-migrate. MLflow's own tables live in the same database under
+`public` and are **not** part of this wipe — the forecast stage logs to them, and dropping that
+schema mid-rebuild costs the run for no pipeline benefit:
+
+```sql
+DROP SCHEMA IF EXISTS retail_serving CASCADE;
+DROP TABLE IF EXISTS retail_intelligence_alembic_version;
+```
+
+```text
+python3 tools/dev.py db-upgrade
+```
+
+`contracts/evidence/*.json` and `contracts/ml/expected-pin.json` are committed contracts, not run
+data. They are rewritten in place by the steps above rather than deleted.
+
 ### 9. Start the API
 
 From `api/`:
@@ -476,12 +620,13 @@ $env:RETAIL_FORECAST_ACTIVATION_SCOPE = (docker compose -f deploy/compose.yaml e
 if (-not $env:RETAIL_FORECAST_ACTIVATION_SCOPE) { throw "Materialize and activate a verifier-v3 forecast before starting the API." }
 go run ./cmd/server `
   -address 127.0.0.1:8080 `
-  -gate-a-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-a.json `
-  -gate-b-report ..\ingestion\data\evidence\run-c5eb1506ecd4c550\gate-b.json `
-  -publication-manifest ..\ingestion\data\curated\run-c5eb1506ecd4c550\publication-manifest.json `
+  -gate-a-report ..\ingestion\data\evidence\run-adac9e85dccb56e8\gate-a.json `
+  -gate-b-report ..\ingestion\data\evidence\run-adac9e85dccb56e8\gate-b.json `
+  -publication-manifest ..\ingestion\data\curated\run-adac9e85dccb56e8\publication-manifest.json `
   -execution-profiles ..\execution\src\retail_execution\data\v1\profiles.json `
   -execution-profile safe `
-  -openapi-spec ..\contracts\api\openapi.yaml
+  -openapi-spec ..\contracts\api\openapi.yaml `
+  -forecast-activation-scope <activation_scope_fingerprint>
 ```
 
 macOS/Linux:
@@ -492,12 +637,26 @@ export RETAIL_FORECAST_ACTIVATION_SCOPE="$(docker compose -f deploy/compose.yaml
 test -n "$RETAIL_FORECAST_ACTIVATION_SCOPE" || { echo "Materialize and activate a verifier-v3 forecast before starting the API." >&2; exit 1; }
 go run ./cmd/server \
   -address 127.0.0.1:8080 \
-  -gate-a-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-a.json \
-  -gate-b-report ../ingestion/data/evidence/run-c5eb1506ecd4c550/gate-b.json \
-  -publication-manifest ../ingestion/data/curated/run-c5eb1506ecd4c550/publication-manifest.json \
+  -gate-a-report ../ingestion/data/evidence/run-adac9e85dccb56e8/gate-a.json \
+  -gate-b-report ../ingestion/data/evidence/run-adac9e85dccb56e8/gate-b.json \
+  -publication-manifest ../ingestion/data/curated/run-adac9e85dccb56e8/publication-manifest.json \
   -execution-profiles ../execution/src/retail_execution/data/v1/profiles.json \
   -execution-profile safe \
-  -openapi-spec ../contracts/api/openapi.yaml
+  -openapi-spec ../contracts/api/openapi.yaml \
+  -forecast-activation-scope <activation_scope_fingerprint>
+```
+
+**`-forecast-activation-scope` is not optional if you want the Demand Forecast screen.** Omitting it
+leaves every `/api/v1/forecast/*` route answering 503 `FORECAST_READ_MODEL_UNAVAILABLE` with the
+message *"No active PostgreSQL forecast projection is configured"* — while the inventory screens serve
+live data, which makes it read like a forecast-data problem rather than a missing flag. The inventory
+read model resolves its own scope from the active version; the forecast read model does not, by
+design, because a scope names the exact activation a reader is entitled to. Take the value from the
+live activation:
+
+```bash
+docker exec retail-intelligence-postgres-1 psql -U retail -d retail_intelligence -tAc \
+  "select activation_scope_fingerprint from retail_serving.active_forecast_versions;"
 ```
 
 Available URLs:
@@ -542,19 +701,19 @@ valid filter context. Footer `Channels` therefore reports 2, not the four intern
 
 ### 11. Inspect the curated data
 
-The accepted publication contains 40 canonical entities and 7,471,784 daily
+The accepted publication contains 47 canonical entities and 7,471,784 daily
 SKU×store×channel sales rows. To list tables without requiring a separate DuckDB CLI:
 
 Windows PowerShell:
 
 ```powershell
-.\ingestion\.venv\Scripts\python.exe -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-c5eb1506ecd4c550/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
+.\ingestion\.venv\Scripts\python.exe -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-adac9e85dccb56e8/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
 ```
 
 macOS/Linux:
 
 ```bash
-ingestion/.venv/bin/python -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-c5eb1506ecd4c550/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
+ingestion/.venv/bin/python -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-adac9e85dccb56e8/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
 ```
 
 The retained publication currently enables data management, revenue reporting, accepted non-PIT
@@ -582,6 +741,9 @@ python3 tools/dev.py test
 python3 tools/dev.py verify
 python3 tools/dev.py wheels --offline
 ```
+
+`docs/pipeline-stage-timings.md` records the wall clock and disk footprint of a full from-scratch
+run, stage by stage, so the cost of a rebuild is known before anyone commits to one.
 
 See `datagen/README.md`, `ingestion/README.md`, `api/README.md` and `ui/README.md` for
 component-specific contracts, troubleshooting and deeper implementation details.

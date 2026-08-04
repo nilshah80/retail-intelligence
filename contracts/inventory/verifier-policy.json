@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "retail-inventory-verifier-policy/v1",
+  "policyId": "retail-inventory-verifier/v1",
+  "description": "What the independent inventory verifier must RECOMPUTE before a bundle may materialize. Stored booleans and stored hashes are never verifier authority: the verifier replays the evidence, it does not read the run's opinion of itself. This is the same posture the forecast verifier reached only after a closure record was found asserting facts nothing had checked.",
+  "decisionIds": [85, 90, 92],
+  "recompute": {
+    "artifactHashes": "sha256 of every artifact in the manifest, byte-for-byte",
+    "artifactRowCounts": "row count of every Parquet artifact against the manifest",
+    "oracleReproduction": "re-derive the weekly state deltas against the observed snapshots and re-evaluate the frozen tolerance",
+    "replayGates": "recompute stockout/lost-unit/fill/mean-inventory comparisons from replay_metrics, globally and per market",
+    "cohortIdentity": "re-derive the 5/95 cohort assignment from the frozen key, hash version and seed; both fingerprints must reproduce",
+    "holdoutDisjointness": "assert calibration and holdout key sets are disjoint and collectively complete",
+    "conservation": [
+      "allocated + residual = node ATP for every allocation pool",
+      "no channel is allocated twice",
+      "no channel demand disappears in aggregation",
+      "transfer source retains residual cover and target respects max cover"
+    ],
+    "intervalConsumption": [
+      "no artifact value is derived from a withheld interval",
+      "every skipped interval-dependent row has a governed cold_start_interval_unavailable exception",
+      "skipped-row/series/demand shares reconcile with the forecast availability artifact",
+      "a market with 100% skipped cold-start SeriesKeys or demand is marked sub-capability unavailable"
+    ],
+    "moneyDiscipline": [
+      "no cross-currency unit or money aggregation outside approved reporting FX",
+      "every money value is integer minor units in its own market currency"
+    ],
+    "lineage": [
+      "inputBundle fingerprints match the named curated publication",
+      "sourceSelectionId names an ACTIVE decision-#73 selection for this scope",
+      "forecastAuthority matches the exactly-one active forecast under decision #90",
+      "policy resolvedFingerprints reproduce from inventory-policy/2.0.0 for each market"
+    ]
+  },
+  "refusals": {
+    "storedVerdictTrusted": "verification that reads `passed` without recomputing it is invalid",
+    "missingArtifact": "a manifest entry whose bytes are absent fails the whole bundle",
+    "tamperedArtifact": "any hash mismatch fails the whole bundle; there is no partial pass",
+    "staleLineage": "a superseded forecast authority or inactive source selection fails the bundle",
+    "nullCoercion": "any zero that traces to a withheld interval fails the bundle"
+  },
+  "output": {
+    "record": "verification.json inside the bundle, or a separately retained verifier record bound to every artifact hash",
+    "verdicts": ["verified", "failed"],
+    "note": "Materialization requires `verified`. Activation is a separate append-only event and is NOT granted by verification."
+  }
+}

@@ -65,6 +65,11 @@ _SIMULATION_SEQUENCE_FIELDS = (
     "batchBalances",
     "allocationRequests",
     "supplyPools",
+    # Source contract v13 store echelon.
+    "storeObservations",
+    "storeTransferEvents",
+    "storeWasteEvents",
+    "storeStockoutEvents",
 )
 _SIMULATION_MARKET_STREAM_FIELDS = (
     "weatherActual",
@@ -220,6 +225,20 @@ def _merge_market_simulations(
         for result in ordered_results
         for row in result["storeAssortment"]
     ]
+    # Lanes are one row per store x supplying node, so they stay a plain list.
+    merged["serviceLanes"] = sorted(
+        (
+            row
+            for result in ordered_results
+            for row in result["serviceLanes"]
+        ),
+        key=lambda row: row["laneKey"],
+    )
+    store_controls: dict[str, int] = {}
+    for result in ordered_results:
+        for key, value in result["storeInventoryControls"].items():
+            store_controls[key] = store_controls.get(key, 0) + int(value)
+    merged["storeInventoryControls"] = store_controls
     for field in ("openingInventory", "finalInventory"):
         merged[field] = {
             key: value
@@ -1645,22 +1664,54 @@ def generate(
                 source_system="businessCentral",
                 dataset="itemLifecycleEvents",
             )
-            writer.write_dataset(
-                f"{company_dir}/locations.csv",
-                [
+            bc_location_rows = [
+                {
+                    "id": bc_uuid("Location", warehouse_id),
+                    "code": warehouse["businessCentralLocationCode"],
+                    "displayName": warehouse["name"],
+                    "marketCode": warehouse["marketId"],
+                    "countryRegionCode": markets[warehouse["marketId"]][
+                        "countryCode"
+                    ],
+                    "taxAreaCode": markets[warehouse["marketId"]]["localePack"][
+                        "tax"
+                    ]["jurisdiction"],
+                }
+                for warehouse_id in company["warehouseIds"]
+                for warehouse in [warehouses[warehouse_id]]
+            ]
+            if config["operations"]["features"].get("storeInventory"):
+                # Source contract v13. A store that holds stock must be
+                # addressable as a BC location, or its inventory rows cannot
+                # resolve through the location crosswalk and store stock would
+                # land nowhere.
+                bc_location_rows.extend(
                     {
-                        "id": bc_uuid("Location", warehouse_id),
-                        "code": warehouse["businessCentralLocationCode"],
-                        "displayName": warehouse["name"],
-                        "marketCode": warehouse["marketId"],
-                        "countryRegionCode": markets[warehouse["marketId"]]["countryCode"],
-                        "taxAreaCode": markets[warehouse["marketId"]]["localePack"][
+                        "id": bc_uuid("Location", store["storeId"]),
+                        "code": store["businessCentralLocationCode"],
+                        "displayName": store["name"],
+                        "marketCode": store["marketId"],
+                        "countryRegionCode": markets[store["marketId"]][
+                            "countryCode"
+                        ],
+                        "taxAreaCode": markets[store["marketId"]]["localePack"][
                             "tax"
                         ]["jurisdiction"],
                     }
-                    for warehouse_id in company["warehouseIds"]
-                    for warehouse in [warehouses[warehouse_id]]
-                ],
+                    for store in sorted(
+                        (
+                            row
+                            for row in stores.values()
+                            if row.get("legalEntityId")
+                            == company["legalEntityId"]
+                            and row.get("businessCentralLocationCode")
+                        ),
+                        key=lambda row: row["storeId"],
+                    )
+                )
+            writer.write_dataset(
+                f"{company_dir}/locations.csv",
+                bc_location_rows,
                 source_system="businessCentral",
                 dataset="locations",
             )
@@ -1852,6 +1903,129 @@ def generate(
                 source_system="businessCentral",
                 dataset="inventorySnapshots",
             )
+            if config["operations"]["features"].get("storeInventory"):
+                # Source contract v13. Store rows go into the SAME BC-shaped
+                # relation as the DC rows, so they reach `canonical_data.
+                # stock_snapshots` through the existing, already-tested inventory
+                # staging role and transform. A parallel store-only path would
+                # have needed its own transform and would have let the two
+                # echelons drift apart on ATP semantics.
+                company_store_codes = {
+                    store["businessCentralLocationCode"]: store
+                    for store in stores.values()
+                    if store.get("legalEntityId") == company["legalEntityId"]
+                    and store.get("businessCentralLocationCode")
+                }
+                writer.write_dataset(
+                    f"{company_dir}/store_inventory_snapshots.csv",
+                    (
+                        {
+                            "locationCode": observation["locationCode"],
+                            "observedAt": observation["observedAt"],
+                            "sku": observation["sku"],
+                            "inventory": observation["onHand"],
+                            "availableInventory": observation["available"],
+                            "committedInventory": observation["committed"],
+                            "reservedInventory": 0,
+                            "damagedInventory": observation["damaged"],
+                            "qualityControlInventory": 0,
+                            "safetyStockInventory": 0,
+                            "incomingInventory": observation["inTransit"],
+                            # Carried so a consumer can tell a retained residual
+                            # cell from an actively assorted one without
+                            # re-deriving the assortment window.
+                            "assortmentActive": observation["assortmentActive"],
+                            "residualOnly": observation["residualOnly"],
+                            "oldestReceiptDate": observation["oldestReceiptDate"],
+                        }
+                        for observation in simulation["storeObservations"]
+                        if observation["locationCode"] in company_store_codes
+                    ),
+                    source_system="businessCentral",
+                    dataset="storeInventorySnapshots",
+                )
+                writer.write_dataset(
+                    f"{company_dir}/store_transfer_events.csv",
+                    (
+                        {
+                            "transferId": event["transferKey"],
+                            "sku": event["sku"],
+                            "fromLocationCode": warehouses[
+                                event["fromLocationKey"]
+                            ]["businessCentralLocationCode"],
+                            "toLocationCode": stores[event["toLocationKey"]][
+                                "businessCentralLocationCode"
+                            ],
+                            "quantity": event["quantity"],
+                            "status": event["status"],
+                            # The two times are separate on purpose: a status
+                            # cannot be knowable before it happened, and Gate B
+                            # B05 requires known_as_of >= statusEffectiveAt.
+                            "statusEffectiveAt": event["statusEffectiveAt"],
+                            "observedAt": event["observedAt"],
+                            "unitCostAmountMinor": event["unitCostMinor"],
+                            "currencyCode": event["currencyCode"],
+                        }
+                        for event in simulation["storeTransferEvents"]
+                        if stores.get(event["toLocationKey"], {}).get(
+                            "legalEntityId"
+                        )
+                        == company["legalEntityId"]
+                    ),
+                    source_system="businessCentral",
+                    dataset="storeTransferEvents",
+                )
+                writer.write_dataset(
+                    f"{company_dir}/store_waste_events.csv",
+                    (
+                        {
+                            "eventId": event["eventKey"],
+                            "sku": event["sku"],
+                            "locationCode": stores[event["storeKey"]][
+                                "businessCentralLocationCode"
+                            ],
+                            "eventDate": event["eventDate"],
+                            "quantity": event["units"],
+                            "reasonCode": event["reasonCode"],
+                            "observedAt": event["observedAt"],
+                        }
+                        for event in simulation["storeWasteEvents"]
+                        if stores.get(event["storeKey"], {}).get("legalEntityId")
+                        == company["legalEntityId"]
+                    ),
+                    source_system="businessCentral",
+                    dataset="storeWasteEvents",
+                )
+                writer.write_dataset(
+                    f"{company_dir}/store_stockout_events.csv",
+                    (
+                        {
+                            "eventId": event["eventKey"],
+                            "sku": event["sku"],
+                            "locationCode": stores[event["storeKey"]][
+                                "businessCentralLocationCode"
+                            ],
+                            "channelId": event["channelId"],
+                            "eventDate": event["eventDate"],
+                            "demandUnits": event["demandUnits"],
+                            "servedFromStoreUnits": event["servedFromStoreUnits"],
+                            "shortfallUnits": event["shortfallUnits"],
+                            # Which node covered the part the shelf could not. The
+                            # sale is real and already in `sales`; this names where
+                            # it actually came from so a shelf-level reconstruction
+                            # does not charge it to the store.
+                            "servedFromLocationCode": warehouses[
+                                event["servedFromSupplyNode"]
+                            ]["businessCentralLocationCode"],
+                            "observedAt": event["observedAt"],
+                        }
+                        for event in simulation["storeStockoutEvents"]
+                        if stores.get(event["storeKey"], {}).get("legalEntityId")
+                        == company["legalEntityId"]
+                    ),
+                    source_system="businessCentral",
+                    dataset="storeStockoutEvents",
+                )
             if config["operations"]["features"]["supplyChain"]:
                 company_location_codes = {
                     warehouses[warehouse_id]["businessCentralLocationCode"]
@@ -1910,6 +2084,18 @@ def generate(
                         "inboundShipments",
                         "inboundShipments",
                         None,
+                    ),
+                    (
+                        "inbound_status_events.csv",
+                        "inboundStatusEvents",
+                        "inboundStatusEvents",
+                        "storeInventory",
+                    ),
+                    (
+                        "supply_terms.csv",
+                        "supplyTerms",
+                        "supplyTerms",
+                        "storeInventory",
                     ),
                     (
                         "warehouse_receipts.csv",
@@ -2319,6 +2505,23 @@ def generate(
                 source_system="companion",
                 dataset="storeAssortment",
             )
+            if config["operations"]["features"].get("storeInventory"):
+                # Source contract v13. Published as a companion relation because
+                # the lane is a retailer PLANNING declaration, not an ERP or
+                # commerce artifact -- and because publishing it at all is the
+                # point: the relationship already existed in generator config and
+                # already matched the observed fulfillment shares, but a
+                # downstream resolver had nothing typed to read.
+                writer.write_dataset(
+                    f"{companion_dir}/service_lanes.csv",
+                    [
+                        row
+                        for row in simulation["serviceLanes"]
+                        if row["marketKey"] == market_id
+                    ],
+                    source_system="companion",
+                    dataset="serviceLanes",
+                )
             if config["operations"]["features"]["allocationEvidence"]:
                 writer.write_dataset(
                     f"{companion_dir}/allocation_demand_requests.csv",

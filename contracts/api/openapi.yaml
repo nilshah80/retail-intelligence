@@ -111,6 +111,11 @@ paths:
   /api/v1/forecast/series:
     get:
       operationId: forecastSeries
+      description: >-
+        Returns the per-horizon series rows by default, or the aggregated SKU
+        workbench row when `view=workbench`. Workbench items additionally satisfy
+        `#/components/schemas/ForecastWorkbenchIntervalScope`, which frozen
+        decision #64 Q19 requires every interval-bearing aggregate to carry.
       parameters:
         - {$ref: "#/components/parameters/ForecastMarket"}
         - {$ref: "#/components/parameters/ForecastRegion"}
@@ -239,6 +244,321 @@ paths:
           $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/inventory/versions:
+    get:
+      operationId: inventoryVersions
+      description: >-
+        Active inventory/replenishment version, lineage and capability state. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/overview:
+    get:
+      operationId: inventoryOverview
+      description: >-
+        Market/location position, health, risk and replay summary. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/stores:
+    get:
+      operationId: inventoryStores
+      description: >-
+        Store-grain position, availability, days of supply and risk. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/warehouses:
+    get:
+      operationId: inventoryWarehouses
+      description: >-
+        DC position, valuation, utilization and receipt state. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/ageing:
+    get:
+      operationId: inventoryAgeing
+      description: >-
+        Age buckets and the deterministic action ladder, including de-assorted residual stock. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/transfers:
+    get:
+      operationId: inventoryTransfers
+      description: >-
+        Current transfer recommendations over typed lanes. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/valuation:
+    get:
+      operationId: inventoryValuation
+      description: >-
+        Gross valuation and DC-only ERP-vs-WMS variance; NRV and provisions are unavailable per P4-D10. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/expiry-waste:
+    get:
+      operationId: inventoryExpiryWaste
+      description: >-
+        Expiry-window exposure and waste actuals for shelf-life-bearing SKUs. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/inventory/stock-health:
+    get:
+      operationId: inventoryStockHealth
+      description: >-
+        Eight-column SKU x store triage table. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/planner:
+    get:
+      operationId: replenishmentPlanner
+      description: >-
+        Replenishment planner rows with lane, term, capacity and budget guards. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/orders:
+    get:
+      operationId: replenishmentOrders
+      description: >-
+        Read-only suggested orders; ERP status is shadow_not_sent. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/suppliers:
+    get:
+      operationId: replenishmentSuppliers
+      description: >-
+        Supplier performance, capacity confirmation and risk. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/safety-stock:
+    get:
+      operationId: replenishmentSafetyStock
+      description: >-
+        Safety-stock segments from the hard-gated interval; a withheld interval row is skipped with its governed exception, never zero. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/allocations:
+    get:
+      operationId: replenishmentAllocations
+      description: >-
+        Constrained channel allocation over one node ATP pool. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/replenishment/exceptions:
+    get:
+      operationId: replenishmentExceptions
+      description: >-
+        Deterministic engine-derived exceptions; workflow fields are unavailable. Serves only the explicitly activated, lineage-matching
+        PostgreSQL projection of one accepted inventory/replenishment run;
+        fails closed otherwise.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {$ref: "#/components/parameters/ForecastOffset"}
+        - {$ref: "#/components/parameters/ForecastLimit"}
+      responses:
+        "200":
+          $ref: "#/components/responses/InventoryLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
 components:
   parameters:
     ForecastMarket:
@@ -308,6 +628,30 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ForecastUnavailable"
+    InventoryLive:
+      description: >-
+        Live data from the explicitly activated, lineage-matching PostgreSQL
+        inventory/replenishment projection.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/InventoryLive"
+    InventoryUnavailable:
+      description: >-
+        Inventory data is unavailable because no fully verified
+        inventory/replenishment read model can be served.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/InventoryUnavailable"
+    InventoryStale:
+      description: >-
+        An activated inventory version exists, but its lineage is stale or
+        superseded and cannot be served.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/InventoryUnavailable"
     ForecastStale:
       description: >-
         An activated forecast exists, but its curated-publication lineage is
@@ -394,6 +738,158 @@ components:
             offset: {type: integer, minimum: 0}
             limit: {type: integer, minimum: 1, maximum: 1000}
             total: {type: integer, minimum: 0}
+    ForecastWorkbenchIntervalScope:
+      description: >-
+        The interval-scope contract for the SKU workbench row, frozen by decision
+        #64 Q19 and parity amendment P4-0P-A1.
+
+        Decision #92 publishes the cold-start P90 and its derived confidence only
+        within the calibrated h1-h4 range and retains P50 at all 26 horizons, so a
+        selected window of 8, 13 or 26 weeks mixes horizons that carry an interval
+        with horizons that do not. `SUM` skips nulls, so before this contract the
+        weighted-confidence numerator omitted the withheld weeks while its
+        denominator still counted their retained P50 weight, and the interval total
+        covered fewer weeks than the central total displayed beside it.
+
+        These fields exist so a mixed window is an explicit, explicable
+        unavailable state rather than a silently blended number. A consumer must
+        never read an absent interval as zero spread.
+      type: object
+      required:
+        - confidenceState
+        - aiForecastP90State
+        - intervalWithheldWeeks
+      properties:
+        confidence:
+          description: >-
+            The max(P50,1)-weighted mean of per-row confidence per decision #12.
+            Null when `confidenceState` is `unavailable_mixed_window`.
+          type: [number, "null"]
+        confidenceState:
+          type: string
+          enum: [measured, unavailable_mixed_window]
+        confidenceCoveredWindowMean:
+          description: >-
+            Diagnostic, never the display value. The arithmetically corrected
+            weighted mean restricted to the weeks that carry an interval on both
+            sides of the ratio. Rendered nowhere; the workbench Confidence cell is
+            unavailable when the window is mixed.
+          type: [number, "null"]
+        aiForecastP90:
+          description: >-
+            Sum of weekly upper bounds over the selected window. Null when the
+            window contains a withheld week: a sum of P90 bounds is not the P90 of
+            the sum, so scoping it to the covered weeks would not make the label
+            true.
+          type: [number, "null"]
+        aiForecastP90State:
+          type: string
+          enum: [available, unavailable_mixed_window]
+        intervalCoveredFromHorizon:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 26
+        intervalCoveredThroughHorizon:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 26
+        intervalWithheldWeeks:
+          description: Count of selected horizons with no published interval.
+          type: integer
+          minimum: 0
+        intervalUnavailableReason:
+          type: [string, "null"]
+          enum: [COLD_START_INTERVAL_UNCALIBRATED, null]
+    InventoryLive:
+      type: object
+      required:
+        - schemaVersion
+        - dataMode
+        - inventoryRunId
+        - inventoryVersionId
+        - semanticFingerprint
+        - forecastAuthority
+        - policyVersion
+        - markets
+        - items
+      properties:
+        schemaVersion:
+          type: string
+          pattern: ^retail-inventory-[a-z-]+/v1$
+        dataMode: {const: live}
+        inventoryRunId:
+          type: string
+          pattern: ^ir_[0-9a-f]{16}$
+        inventoryVersionId:
+          type: string
+          pattern: ^iv_[0-9a-f]{16}$
+        semanticFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        forecastAuthority:
+          description: >-
+            The exactly-one active forecast this bundle consumed. Serving
+            refuses when this no longer matches the live forecast authority:
+            an inventory number computed from a superseded forecast is stale by
+            definition.
+          type: object
+          required: [forecastRunId, forecastVersionId]
+          properties:
+            forecastRunId:
+              type: string
+              pattern: ^fr_[0-9a-f]{16}$
+            forecastVersionId:
+              type: string
+              pattern: ^fv_[0-9a-f]{16}$
+        policyVersion: {const: inventory-policy/2.0.0}
+        markets:
+          type: array
+          minItems: 1
+          items: {type: string}
+        items:
+          type: array
+          items: {type: object}
+        unavailableItems:
+          type: array
+          items: {type: object}
+        pagination:
+          type: object
+          additionalProperties: false
+          required: [offset, limit, total]
+          properties:
+            offset: {type: integer, minimum: 0}
+            limit: {type: integer, minimum: 1, maximum: 1000}
+            total: {type: integer, minimum: 0}
+    InventoryUnavailable:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, dataMode, reasonCode, message, capabilities]
+      properties:
+        schemaVersion: {const: retail-inventory-unavailable/v1}
+        dataMode: {const: unavailable}
+        inventoryRunId: {type: "null"}
+        inventoryVersionId: {type: "null"}
+        semanticFingerprint: {type: "null"}
+        reasonCode: {type: string}
+        message: {type: string}
+        capabilities:
+          type: object
+          required:
+            - inventoryReplenishmentCurrentSnapshot
+            - inventoryReplenishmentReplay
+          properties:
+            inventoryReplenishmentCurrentSnapshot:
+              type: object
+              required: [available]
+              properties:
+                available: {type: boolean}
+                reasonCode: {type: [string, "null"]}
+            inventoryReplenishmentReplay:
+              type: object
+              required: [available]
+              properties:
+                available: {type: boolean}
+                reasonCode: {type: [string, "null"]}
     ForecastUnavailable:
       type: object
       additionalProperties: false

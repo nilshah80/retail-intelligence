@@ -19,14 +19,14 @@ RUN_ROOT = (
     / "datagen"
     / "output"
     / "multi-market-10-year-demo"
-    / "run-c5eb1506ecd4c550"
+    / "run-adac9e85dccb56e8"
 )
 MANIFEST = RUN_ROOT / "source-run-manifest.json"
 EVIDENCE_ROOT = (
-    REPO_ROOT / "ingestion" / "data" / "evidence" / "run-c5eb1506ecd4c550"
+    REPO_ROOT / "ingestion" / "data" / "evidence" / "run-adac9e85dccb56e8"
 )
 CURATED_ROOT = (
-    REPO_ROOT / "ingestion" / "data" / "curated" / "run-c5eb1506ecd4c550"
+    REPO_ROOT / "ingestion" / "data" / "curated" / "run-adac9e85dccb56e8"
 )
 
 
@@ -37,30 +37,39 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         "run rather than selecting latest or regenerating with another seed"
     )
     raw = MANIFEST.read_bytes()
-    # Re-pinned 2026-07-31 after an authorized clean-slate regeneration. The guard is
-    # kept deliberately byte-exact -- it exists to catch an unnoticed regeneration or a
-    # changed seed, and that is exactly what it did.
+    # Re-pinned 2026-08-04 onto the from-scratch rebuild, generator 0.16.0 / source
+    # spec v13. The guard is kept deliberately byte-exact -- it exists to catch an
+    # unnoticed regeneration or a changed seed, and that is exactly what it did.
     #
     # It cannot, however, be satisfied BY a regeneration: the manifest embeds
     # executionTelemetry (cpuProcessSeconds, cpuUtilizationPct, elapsed and per-worker
     # wallSeconds/peakRssBytes), so its bytes move on every run regardless of the data.
     # `runIdentityMethod` already excludes telemetry from runId; this hash does not.
     # So a rebuild must re-pin, and the exact-value assertions below are what actually
-    # prove the data reproduced -- every one of them passed against the regenerated run
-    # while this hash did not. Decision #89 covers whether that split is acceptable.
+    # prove the data reproduced. Decision #89 covers whether that split is acceptable.
+    #
+    # This re-pin skipped three accepted runs -- the test still named the Phase 3
+    # v12 run while r2, r3 and r4 came and went -- so the values below moved for
+    # reasons this change did not cause, and each one that MOVED is annotated with
+    # which run moved it. The ones that did NOT move across four regenerations and a
+    # source-spec bump are the equivalence evidence: sales at 7,471,784 rows, 573
+    # active SKUs at 2026-07-28, and a closed money reconciliation.
     assert hashlib.sha256(raw).hexdigest() == (
-        "a2358732391f3678c2804133f04fcb2eb72d5c5da8adf9b82d9526d384b303c5"
+        "f9fc6c4a6f3628c4ee43e3b498915200a15edb8392f5e23abe2a363b6936fd73"
     )
     manifest = json.loads(raw)
-    assert manifest["runId"] == "run-c5eb1506ecd4c550"
+    assert manifest["runId"] == "run-adac9e85dccb56e8"
     assert manifest["configHash"] == (
-        "ae0f74be19d850079934ee8f87858d10b46ac9d3ec93baea8e97a58b989f57e9"
+        "6dd93041e093e7d6294dd5925a031146c447ce0159169ad321a05a231e77b094"
     )
-    assert manifest["generatorVersion"] == "0.13.0"
-    assert manifest["sourceSpecVersion"] == "retail-source-config/v12"
+    assert manifest["generatorVersion"] == "0.16.0"
+    assert manifest["sourceSpecVersion"] == "retail-source-config/v13"
 
     objects = manifest["objects"]
-    assert len(objects) == 8_726
+    # 8,726 under source spec v12. The datasets v13 added -- service lanes, inbound
+    # and transfer status events, supply terms, store shortfall events -- account for
+    # the difference; it is not a change in what any v12 dataset contains.
+    assert len(objects) == 9_938
     paths = [row["path"] for row in objects]
     assert len(paths) == len(set(paths))
     source_truth_rows = sum(
@@ -68,7 +77,10 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         for row in objects
         if row["sourceSystem"] != "generator"
     )
-    assert source_truth_rows == 252_864_055
+    # 252,864,055 under v12, and the delta is entirely the new datasets: every v12
+    # control below -- the currency totals, the fill rate, the order and line counts --
+    # is unchanged, which is what says no existing row moved.
+    assert source_truth_rows == 255_061_144
 
     public = [row for row in objects if not row["restricted"]]
     truth = [
@@ -81,7 +93,10 @@ def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:
         for row in objects
         if row["restricted"] and row["format"] == "duckdb"
     ]
-    assert len(public) == 8_480  # 8,477 source objects + 3 public metadata
+    assert len(public) == 9_692  # 9,689 source objects + 3 public metadata
+    # Both unchanged from v12. The restricted lane is the one the permission model
+    # rests on, so it growing by nothing while the public lane grew by 1,212 is worth
+    # asserting rather than deriving: 9,692 + 245 + 1 is the whole inventory.
     assert len(truth) == 245
     assert len(restricted_mirrors) == 1
     assert not [
@@ -138,7 +153,7 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
     assert gate_b["status"] == "pass"
     assert publication["sourceSnapshotId"] == gate_a["sourceSnapshotId"]
     assert publication["sourceSnapshotId"] == gate_b["sourceSnapshotId"]
-    assert len(gate_a["datasetInventory"]) == 132
+    assert len(gate_a["datasetInventory"]) == 146  # 132 under source spec v12
     assert gate_a["rules"][9]["evidence"]["restrictedObjectsOpened"] == 0
     assert next(
         rule for rule in gate_b["rules"] if rule["ruleId"] == "B18"
@@ -182,7 +197,11 @@ def test_phase2_pipeline_gate_and_publication_evidence() -> None:
         row["difference"] == [0, 0, 0, 0]
         for row in gate_b["reconciliation"]
     )
-    assert len(publication["entityCounts"]) == 40
+    # 40 when this test was last re-pinned. The six v13 entities account for most of
+    # it; the forty-seventh is `suppliers`, the vendor master, which landed every run
+    # since v13 and was staged by none of them until P4-12e.
+    assert len(publication["entityCounts"]) == 47
+    assert publication["entityCounts"]["suppliers"] == 280
     assert publication["entityCounts"]["sales"] == 7_471_784
     assert publication["businessControls"] == {
         "activeSkus": 573,

@@ -17,6 +17,15 @@ from retail_contracts.fingerprint import semantic_fingerprint
 
 PUBLICATION_MANIFEST_VERSION = "retail-curated-publication/v1"
 
+#: Entities the publication step materialises itself, so they cannot appear in the
+#: candidate's declared control set. `_write_gate_controls` rebuilds
+#: `reconciliation_results` from the Gate-B report. Listing them explicitly is what
+#: separates "the publisher created this" from "an uncontrolled table appeared",
+#: which the recomputed controls must be able to tell apart.
+PUBLICATION_CREATED_ENTITIES: frozenset[str] = frozenset(
+    {"reconciliation_results"}
+)
+
 
 class PublicationError(RuntimeError):
     """A candidate cannot be promoted atomically."""
@@ -222,6 +231,55 @@ def _business_controls(
     }
 
 
+def _recomputed_entity_controls(
+    connection: duckdb.DuckDBPyConnection,
+    candidate_controls: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Recompute every entity control from the final publication database.
+
+    Uses the transform's own `_entity_control`, deliberately, rather than a second
+    implementation. Two independent control definitions would eventually disagree,
+    and a disagreement between "the control the candidate computed" and "the
+    control the publication computed" is exactly the bug this repairs -- it would
+    just move rather than close.
+
+    The entity set comes from the candidate controls so the publication attests the
+    same inventory the candidate declared: an entity appearing or vanishing between
+    the two is a real defect, and it is reported rather than absorbed.
+    """
+
+    from ..transforms.core import _entity_control
+
+    present = {
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'canonical_data'
+            """
+        ).fetchall()
+    }
+    declared = set(candidate_controls)
+    missing = sorted(declared - present)
+    if missing:
+        raise PublicationError(
+            "candidate declared controls for entities absent from the "
+            f"publication database: {missing}"
+        )
+    # An entity the publication itself materialises is expected; anything else
+    # appearing between candidate and publication is an uncontrolled table, which
+    # is the same class of defect as an uncontrolled row.
+    appeared = sorted(present - declared - PUBLICATION_CREATED_ENTITIES)
+    if appeared:
+        raise PublicationError(
+            "publication database contains entities the candidate never "
+            f"declared: {appeared}"
+        )
+    controlled = sorted((declared | PUBLICATION_CREATED_ENTITIES) & present)
+    return {entity: _entity_control(connection, entity) for entity in controlled}
+
+
 def _write_gate_controls(
     connection: duckdb.DuckDBPyConnection,
     report: Mapping[str, Any],
@@ -364,6 +422,26 @@ def publish_candidate(
         )
         _write_gate_controls(connection, report, published_at=published_at)
         business_controls = _business_controls(connection)
+        # `P4-2` task 20. Controls must be computed from the database that is about
+        # to be exported, not copied from the candidate.
+        #
+        # The candidate manifest was written before `_write_gate_controls` inserted
+        # the Gate-B outcomes above, so `entityControls.quality_violations`
+        # attested `rows: 0` with no digests while the Parquet export carried the
+        # B15 and B21 rows. A control that does not cover the rows it accompanies
+        # makes every critical-row gate unfalsifiable: "zero critical violations"
+        # and "the controls never looked" are indistinguishable.
+        entity_controls = _recomputed_entity_controls(
+            connection, candidate_manifest.get("entityControls", {})
+        )
+        entity_counts = {
+            entity: int(
+                connection.execute(
+                    f'SELECT count(*) FROM canonical_data."{entity}"'
+                ).fetchone()[0]
+            )
+            for entity in sorted(entity_controls)
+        }
         tables = _table_names(connection)
         for entity in tables:
             entity_root = parquet_root / entity
@@ -417,8 +495,9 @@ def publish_candidate(
             ],
             "gateBSemanticFingerprint": report["semanticFingerprint"],
             "capabilityMask": report["capabilityMask"],
-            "entityCounts": candidate_manifest["entityCounts"],
-            "entityControls": candidate_manifest.get("entityControls", {}),
+            "entityCounts": entity_counts,
+            "entityControls": entity_controls,
+            "candidateEntityCounts": candidate_manifest["entityCounts"],
             "businessControls": business_controls,
             "duckdb": {
                 "path": "retail_v2.duckdb",

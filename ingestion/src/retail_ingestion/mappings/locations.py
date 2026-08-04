@@ -199,6 +199,26 @@ def build_location_crosswalk(
                 ),
             )
         )
+        # Source contract v13. A store that holds stock appears in Business
+        # Central under its own location code, and that code must resolve to the
+        # SAME canonical store its Shopify location already resolves to. Without
+        # this entry every store inventory row is an unresolved location key --
+        # and a fabricated second canonical location would be worse: one store
+        # would exist twice, once with demand and once with stock.
+        central_location_code = row.get("businessCentralLocationCode")
+        if central_location_code:
+            rows.append(
+                (
+                    "source_native",
+                    "businessCentral",
+                    market,
+                    str(central_location_code),
+                    canonical,
+                    "store",
+                    canonical_name,
+                    "upstream_topology_bc_code",
+                )
+            )
     for row in warehouses:
         market = canonical_market_id(row["marketId"])
         canonical = str(row["warehouseId"])

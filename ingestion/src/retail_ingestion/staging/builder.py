@@ -30,6 +30,29 @@ from retail_ingestion.readers import PublicSourceCatalog
 
 STAGING_MANIFEST_VERSION = "retail-ingestion-staging/v1"
 
+#: Manifest fields recorded but excluded from the staging semantic fingerprint.
+#:
+#: This set is load-bearing far below staging. The transform manifest carries
+#: `stagingSemanticFingerprint`, the candidate's identity carries the transform's, and
+#: the curated publication's carries the candidate's -- so anything admitted here
+#: propagates into the ML input pin and into every publication selection record.
+#:
+#: `landingTime` was NOT excluded until `P4-12e`, and it is the wall clock at which the
+#: snapshot was landed. The curated publication fingerprint therefore changed on every
+#: re-land of byte-identical source: the pin moved on rebuilds that changed nothing,
+#: and a selection record could never be re-derived because the fingerprint it named
+#: had already stopped existing. Transform and publish were each measured deterministic
+#: while the full pipeline was not, which is what located the leak here.
+#:
+#: Exported rather than inlined so the determinism tests assert against THIS tuple.
+#: A copy in the tests could drift from the code and would then prove nothing.
+STAGING_VOLATILE_POINTERS: tuple[str, ...] = (
+    "/completedAt",
+    "/executionProfile",
+    "/databaseSha256",
+    "/landingTime",
+)
+
 
 class StagingError(RuntimeError):
     """Standardized staging could not be built safely."""
@@ -232,9 +255,12 @@ def _drain_adapter_rejects(connection: duckdb.DuckDBPyConnection) -> int:
     candidates = [
         str(row[0])
         for row in connection.execute(
-            """
+            # Raw string: `\_` is not a Python escape, so this emitted a
+            # SyntaxWarning that becomes a SyntaxError in a later Python. The
+            # backslash is meant for SQL's LIKE ... ESCAPE, not for Python.
+            r"""
             SELECT table_name FROM duckdb_tables()
-            WHERE schema_name = 'stage_data' AND table_name LIKE '%\_candidate' ESCAPE '\\'
+            WHERE schema_name = 'stage_data' AND table_name LIKE '%\_candidate' ESCAPE '\'
             """
         ).fetchall()
     ]
@@ -344,6 +370,17 @@ def _create_standardized_views(
         "warehouse_capacity": "bc_warehouse_capacity",
         "wms_comparisons": "bc_wms_comparisons",
         "supplier_performance": "bc_supplier_performance",
+        # The vendor master, so a supplier can be NAMED downstream. Every screen
+        # that shows a supplier was printing its UUID because the dimension landed
+        # and was never staged.
+        "vendors": "bc_vendors",
+        # Source contract v13. Neutral names, because the canonical transforms may
+        # import ONLY these: the platform spelling stops here.
+        "service_lanes": "companion_service_lanes",
+        "inbound_status_events": "bc_inbound_status_events",
+        "store_shortfall_events": "bc_store_shortfall_events",
+        "inventory_transfer_events": "bc_inventory_transfer_events",
+        "supply_terms": "bc_supply_terms",
     }
     # An adapter names its relation after the staging-v2 role, and several neutral
     # relations are not spelled like their role (`locations` <- `location`). The
@@ -756,12 +793,7 @@ def build_staging(
             "executionProfile": dict(execution_profile),
         }
         manifest["semanticFingerprint"] = semantic_fingerprint(
-            manifest,
-            volatile_pointers=(
-                "/completedAt",
-                "/executionProfile",
-                "/databaseSha256",
-            ),
+            manifest, volatile_pointers=STAGING_VOLATILE_POINTERS
         )
         temporary_manifest.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",

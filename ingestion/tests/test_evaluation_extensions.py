@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 from pathlib import Path
 
 import duckdb
@@ -23,20 +24,35 @@ from .oracles.source_controls import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _current_run_id() -> str:
+    """The datagen run the landed snapshot was produced from.
+
+    These paths named `run-c5eb1506ecd4c550` literally, so every regeneration broke
+    four oracle tests on a run whose `_truth/` lane had been deleted -- a rebuild
+    failing tests that have nothing to do with the change being made.
+
+    The landing manifest is the right authority and the cheapest one: `land` records
+    the datagen run it consumed as `nativeSnapshotId`, and the snapshot directory is
+    itself content addressed, so this resolves the run the CURRENT pipeline actually
+    ingested rather than the newest thing on disk.
+    """
+
+    snapshots = REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots"
+    manifests = sorted(snapshots.glob("*/landing-manifest.json"))
+    if not manifests:
+        return "run-unlanded"
+    newest = max(manifests, key=lambda path: path.stat().st_mtime)
+    return str(json.loads(newest.read_text(encoding="utf-8"))["nativeSnapshotId"])
+
+
+RUN_ID = _current_run_id()
 SOURCE_RUN = (
-    REPO_ROOT
-    / "datagen"
-    / "output"
-    / "multi-market-10-year-demo"
-    / "run-c5eb1506ecd4c550"
+    REPO_ROOT / "datagen" / "output" / "multi-market-10-year-demo" / RUN_ID
 )
 CURATED_DATABASE = (
-    REPO_ROOT
-    / "ingestion"
-    / "data"
-    / "curated"
-    / "run-c5eb1506ecd4c550"
-    / "retail_v2.duckdb"
+    REPO_ROOT / "ingestion" / "data" / "curated" / RUN_ID / "retail_v2.duckdb"
 )
 SOURCE_PROFILE = (
     REPO_ROOT

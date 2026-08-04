@@ -35,6 +35,45 @@ repository CI is prohibited.
 **Spec:** §11.8–11.10 (new tables + ingest lineage),
 `../retail_ai/docs/schema.md` (M5 workflow tables to copy).
 
+**Applied chain (head `0019_supplier_identity`).** Every client that names the required head must
+name the same one; `contracts/python/tests/test_serving_migration_pin.py` derives the head from the
+Alembic graph and fails until all six pins agree, so a migration is not complete until the ML
+materializer, the ML publisher's manifest evidence, both Go read models, the schema test and the two
+generated evidence records have moved together.
+
+| Revision | What it publishes, and why the screen needed it |
+| --- | --- |
+| `0010_inventory_serving` | The inventory/replenishment projection surface. |
+| `0011_inventory_sku_dimension` | Category and accepted unit cost. Without them every rupee caption could only render a unit count. |
+| `0012_sku_dimension_trailing` | Trailing daily demand, for cover and sell-through. |
+| `0013_sku_dimension_names` | Display names. Tables showed `india-west:mumbai-dc` where the reference reads "West DC". |
+| `0014_warehouse_capacity` | The storage ceiling. Capacity Utilization had no denominator. |
+| `0015_recommendation_lead_time` | The resolved lead time. The engine computed it to size the protection period and discarded it, so Lead Time and Expected Receipt had no fact behind them. |
+| `0016_projection_grain_indexes` | A UNIQUE index on every projection's declared grain — see below. |
+| `0017_inbound_summary` | Inbound reliability per node. Delayed Receipts had been counting open orders as late. |
+| `0018_market_policy_scope` | The market budget ceilings, and the merchandise scope a supplier serves. |
+| `0019_supplier_identity` | The supplier's name and its open purchase-order value. |
+
+**Why 0016 is not an optimisation.** 0010 gave each projection one index on
+`(inventory_version_id, market_id)` and no key. Every read-model join between projections matches on
+the *full* grain, so each one hash joined the whole table — and that cost grows with every
+activation, because a serving table holds every materialized version. At fifteen versions the
+positions aggregate took 1.4s alone and 8.8s with the outbound-need roll-up joined, which put two
+routes past the server's write timeout: they closed the connection rather than returning a governed
+503, and the page sat on "Loading live retail data..." indefinitely. The indexes take those to 0.10s
+and 0.02s.
+
+They are UNIQUE rather than plain because `ARTIFACT_GRAIN` was checked at publish time and enforced
+nowhere. A duplicate row would have silently multiplied every value it was joined into — exactly
+what 0011 wrote a primary key to prevent for the dimension, which was the only table that had one.
+
+Indexes alone are not sufficient: after a bulk load PostgreSQL's stale estimates will abandon them,
+so the materializer `ANALYZE`s each table it writes. See the root README §8c.
+
+**Revision ids are capped at 32 characters** — `alembic_version.version_num` is
+`varchar(32)`, and a longer id fails the upgrade *after* the DDL has run, with a truncation error
+that names the column rather than the id.
+
 For the Docker Desktop Phase 3 stack:
 
 ```powershell

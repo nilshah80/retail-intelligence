@@ -1368,32 +1368,208 @@ changing datagen merely to manufacture greener metrics.
       new immutable candidate; never overwrite or cosmetically reclassify prior evidence.
 
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
-- [ ] Reorder / safety-stock (quantile-spread × service level).
-- [ ] Service-level policy calibration (5%) + validation (95%); A/B/C.
-- [ ] Multi-echelon `locations`, reconciled ATP, inbound/in-transit shipment state,
+
+Status legend: `[x]` complete and running on the ten-year pin; `[~]` built and
+running with a disclosed limitation, named inline; `[ ]` outstanding.
+
+Live as of P4-10: bundle `ir_a4c304fd6e8e7f18` / `iv_a4c304fd6e8e7f18`
+verified, materialized and active; forecast `fr_90c168fad5cd9c0b` /
+`fv_403c5e5fca3fb227`; all 15 API routes 200 with envelopes bound to the active
+identity; source pin `a92f0254…`, publication `5e7bc174…` (run
+`run-5bf9580d18d67e36-r2`, the same snapshot re-ingested once the store
+echelon's write-offs were landed).
+
+Every table serves a ranked top 20 with its criterion stated and the scoped
+total beside it. 34 of 105 screen elements withhold, each naming a cause and a
+condition; 14 of those are the replay, which now reproduces but whose candidate
+tied its incumbent rather than beat it.
+
+- [x] Reorder / safety-stock (quantile-spread × service level).
+      4,741 safety-stock and recommendation rows; 1,017 carry computed levels. The
+      remaining 3,724 withhold under a governed reason — see the interval note
+      below — and never as a zero.
+- [x] Service-level policy calibration (5%) + validation (95%); A/B/C.
+      Cost-weighted ABC per P4-D7, ranked market-locally because the engine refuses
+      cross-market ranking. Cohorts split 5%/95% on `assign_cohort`'s stable hash.
+- [x] Multi-echelon `locations`, reconciled ATP, inbound/in-transit shipment state,
       batches/expiry and ageing.
-- [ ] Resolve supplier/lead-time/MOQ/pack terms by destination or supply lane; do not apply one
+      4,741 active-or-residual cells from 5,432 possible — never the Cartesian
+      product. ATP is loaded from canonical and refused if it disagrees with
+      on_hand − committed − reserved − damaged. Ageing 2,861 rows, expiry 2,187.
+- [x] Resolve supplier/lead-time/MOQ/pack terms by destination or supply lane; do not apply one
       department-wide term across markets; test `sku > dept > category` precedence and prove null
       external origin never wildcard-matches an internal lane.
-- [ ] Classify ABC and value inventory within market, or use an approved as-of reporting-currency
+      Two echelons with two contracts: `supply_terms` govern external_supplier → DC,
+      `service_lanes` govern DC → store and the lane's transit_days IS the store's
+      lead time. Unresolved routes fail closed under `SUPPLY_ROUTE_UNRESOLVED`; there
+      is no default lead time, MOQ or pack anywhere.
+- [x] Classify ABC and value inventory within market, or use an approved as-of reporting-currency
       conversion before any cross-market ranking/aggregation.
-- [ ] Transfer optimizer; constrained allocation.
-- [ ] Inventory-replay simulator + acceptance; demand-at-risk.
-- [ ] Freeze reviewed parity/data matrices for the original Inventory Overview and its Store
+      326 valuation rows. Store WAC comes from the store's own received transfer
+      lines (P4-D6 first preference); `laneImputedDcWacFallback` remains unapproved
+      and unused. A category with any uncosted on-hand SKU is unvalued with a
+      reason rather than silently understated.
+- [x] Transfer optimizer; constrained allocation.
+      Transfers use the declared rank-2 alternate lane; there is no store-to-store
+      lane in this network and none is invented. 2,065 allocation rows with
+      conservation asserted.
+- [~] Inventory-replay simulator + acceptance; demand-at-risk.
+      Demand-at-risk is complete: 4,741 rows, 1,017 assessed, 3,724 disclosed.
+      **The replay reproduces as of P4-10.** Both markets clear the tolerance
+      frozen before scoring — india-west 0.390 units per cell, us-new-york 0.198,
+      against 0.5 — so the mechanism is validated and the policy comparison ran
+      for the first time. Two defects had to be fixed together, and each looked
+      like a regression alone:
+      * `store_waste_events` reached staging and never reached canonical, so the
+        reconstruction had no store write-offs at all;
+      * the opening state was taken from the preceding Thursday snapshot and used
+        raw as a Monday opening, without the 73-hour bridge P4-D5's `replayClock`
+        requires and that the observed series already had. Every arrival in this
+        source lands Friday 23:00, so three days early meant one whole delivery
+        short — a constant −15,804 offset in period one still reading −12,058
+        fifty periods later.
+      Measured: 8.076 with neither fix, 10.894 with waste alone, 13.032 with the
+      bridge alone, **0.390 with both**. The tolerance never moved.
+      The capability is still `[~]` and still publishes UNAVAILABLE, but for a
+      different and much better reason: the candidate matched the incumbent
+      rather than beating it. Scored gates —
+      `stockoutPeriods` 0 vs 0 and `lostUnits` 0 vs 0 both tie and a tie fails;
+      `fillRate` equal, passes; `meanInventoryUnits` 65,356 vs 117,226, passes.
+      The candidate holds **44% less inventory at identical service**. Nothing can
+      be strictly fewer than zero stock-outs, so those two gates are unreachable
+      against this incumbent — a property of the frozen rule, left alone, because
+      weakening a threshold after seeing the result is what P4-D13 forbids.
+- [x] Freeze reviewed parity/data matrices for the original Inventory Overview and its Store
       Inventory, Warehouse Inventory, Inventory Ageing, Stock Transfers, Inventory Valuation and
       Expiry & Waste submenu pages, plus Replenishment Planner and its Suggested Orders, Supplier
       Planning, Safety Stock, Allocation & Fulfillment and Exceptions submenu pages. Preserve
       every original KPI/table/control position and the common shell; map each value to
       location/warehouse/lane-scoped live evidence.
-- [ ] Extend the read-only Go API and build those UI slices from their reviewed matrices with
+      One `retail-screen-contract-set/v1` document, 14 screen sections, 62 elements.
+      Its machine-checkable half is generated into
+      `ui/src/generated/inventoryScreenContracts.ts`, so title/endpoint/action-order
+      drift fails both the generator's `--check` and a UI test.
+- [x] Extend the read-only Go API and build those UI slices from their reviewed matrices with
       inventory, demand-at-risk, reorder, transfer and replenishment read models. Unavailable
       evidence follows the approved element-level unavailable behavior; it is not replaced by a
       new capability panel, phase message or fabricated zero.
+      15 fail-closed routes with market/location/lane scope applied in SQL, governed
+      409/503, and the request path proven unable to open a file or spawn a process.
+      KPI tiles read a `summary` the read model aggregates in SQL over every scoped
+      row of the active version, reusing the page query's clauses so a filter applies
+      to tiles and table together — never summed in the browser from a 100-row page.
+      The screens are built FROM the reference document rather than from a reading of
+      it: `tools/extract_reference_layout.py` extracts action labels, filter options,
+      KPI captions and column orders into `ui/src/generated/inventoryScreenLayout.ts`
+      and `--check` fails on divergence. That was forced by discovering nine of
+      fourteen action label sets in the parity contract were invented — the reference
+      gives Stock Health "Assign Owner"/"Create Action" where the contract claimed
+      "Stock Health Export". Structure only is extracted; the reference's
+      illustrative figures are not, so no sample number can reach a screen. A KPI or
+      column the platform cannot measure renders the governed unavailable treatment
+      with a reason and KEEPS its header, because dropping it would silently change
+      the approved layout.
+- [x] **P4-10 · Serve what the projections can already answer, and rank what is served.**
+      A sweep of the fourteen screens for elements reading "Not available" over data
+      the platform holds. 34 of 105 elements now withhold, down from 68, and every
+      one of the 34 names a cause and a condition — 14 of them the replay.
+      What was actually wrong, in order of how much it hid:
+      * **Three cards had no spec at all.** A breakdown card resolves reference
+        labels against the screen's spec; a label with no spec falls through to the
+        bare words with nowhere to hang a reason. 24 labels across Inventory
+        Valuation, Replenishment Planner and Safety Stock were in that state. Most
+        turned out measurable — order mix by supply echelon, ERP failures, forecast
+        coverage, supplier capacity, service-level target, cost-missing and
+        negative-value rows are one aggregate each.
+      * **Aggregates nobody had written.** Ageing's 60+/90+ are cumulative bucket
+        sums; transit and capacity are means; stores-at-risk is a distinct-location
+        count; below/excess safety stock is the buffer joined to the position
+        holding it. Ageing went from two withheld tiles to zero.
+      * **Money captions over unit counts.** "Store Inventory Value" read 81,921
+        units; it reads ₹23.95L now, from a valuation companion joined to the
+        positions projection for its echelon.
+      * **A share captioned against the wrong base.** "Stores at Risk 4 / 50.0% of
+        on-hand" is four of eight locations. The denominator names itself now.
+      Four defects surfaced on the way, each invisible until opened: the transport
+      passed a literal page size so the read model's default was dead code; an
+      echelon join used `ON` and left `inventory_version_id` ambiguous, putting the
+      Replenishment Planner behind a governed 503; companion aggregates dropped a
+      filter's clause but kept its argument, which pgx rejects; and the warehouse
+      route never selected `residual_only`, so its Action cell was blank on every
+      row. All four are now covered — 37 Go subtests run every aggregate, every
+      companion and all fourteen route orderings against the live schema, and
+      `tools/check_screen_fields.py` proves all 139 named fields resolve.
+- [x] **P4-10 · Cap every table at a ranked top 20.**
+      Each route declares a materiality order and states it on screen: stockouts
+      first on Stock Health, largest recommended order on the Planner, oldest stock
+      on Ageing, deepest shortfall on Allocation. Every order ends in the projection
+      key so a tie cannot move a row between pages. The scoped total stays in
+      `pagination.total` and the tiles stay SQL aggregates over the whole active
+      version, so twenty rows can never read as the whole set. Before this, all
+      fourteen routes ordered by market/location/SKU — which put whichever SKU sorts
+      first at the top of a stockout list.
 - [ ] Require screenshot/DOM/data parity and human review for each Inventory/Replenishment page
       before it is included in Demo 4; one accepted page cannot be used as evidence for the other
       navigation destinations.
-- [ ] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
+      Fourteen independent human sign-offs, plus manual Windows/Linux developer
+      evidence. Not performable from a macOS host by the implementer; accepted as
+      outstanding.
+- [~] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
       screens preserve the original HTML and render live market/location-scoped outputs.
+      The screen half is met: all fourteen destinations render the reference
+      structure with live market/location-scoped values from the active bundle, and
+      the reference is machine-checked rather than eyeballed, every table is a
+      ranked top 20 that states its criterion, and every withheld element names a
+      cause and a condition.
+      The replay half now RUNS: the oracle reproduces in both markets (0.390 and
+      0.198 per cell against a tolerance frozen at 0.5) and both cohorts are
+      scored, sixteen gate rows across calibration and holdout. What does not pass
+      is the holdout verdict itself — the candidate ties the incumbent at zero
+      stock-outs and zero lost units, and the frozen rule fails a tie, while
+      holding 44% less inventory at identical fill rate. So the checkpoint is
+      demoable and the mechanism is validated; the policy claim is not made.
+      Human sign-off and cross-OS evidence remain outstanding by acceptance.
+
+### Phase 4 production readiness — disclosed, not solved
+
+Nothing shipped is fabricated, sampled or placeholder: every served value is
+computed from the ten-year publication and the live forecast, and every absent
+value carries a governed reason. These are real limitations to close before
+production.
+
+1. ~~**Replay fidelity.**~~ **Closed at P4-10.** The gap was two missing pieces of
+   the same 73-hour clock, not an unexplained residual. `store_waste_events`
+   reached staging and never reached canonical (317,056 units in india-west
+   against 140,787 at its DCs), and the opening state was never bridged from its
+   Thursday snapshot to the Monday the period opens. Measured per cell against
+   the tolerance frozen at 0.5: 8.076 with neither fix, 10.894 with waste alone,
+   13.032 with the bridge alone, **0.390 with both** — and 0.198 in us-new-york.
+   The tolerance never moved.
+   The two candidates guessed at here were both measured and both wrong:
+   crediting returns makes it *worse* (1.062 — the source's snapshots never
+   credit a physical return back to on-hand), and there are no store-outbound
+   transfers to read, because every `from_location_id` in the source is a DC.
+   What remains is not fidelity: the candidate policy ties the incumbent at zero
+   stock-outs and zero lost units, and the frozen rule fails a tie. It holds 44%
+   less inventory at identical fill rate. Beating an incumbent that is already at
+   zero needs either a harder incumbent or a gate that can express "same service,
+   less capital" — a policy decision, not an engineering one, and not one to take
+   after seeing the result.
+2. **Store unit cost.** 6 of 2,552 store cells have no cost-carrying receipt and
+   are excluded with `ABC_UNIT_COST_UNAVAILABLE` rather than inheriting DC cost.
+3. **DC interval basis.** A DC's demand is the additive P50 of its rank-1-supplied
+   stores, which policy v2 permits; its safety stock withholds under
+   `NODE_INTERVAL_BASIS_UNAVAILABLE` because `sumOfChannelP90: forbidden` and the
+   aggregate residual variability is not carried in the forecast artifact.
+   Producing it is a forecasting change, not a serving one.
+4. **Cold-start boundary is not the dominant cause** of the 3,724 withheld cells.
+   DC lead times are 4–9 days and store lane transit 1–2, so protection periods
+   land at horizon 2–3, inside the calibrated 4. Items 2 and 3 dominate.
+5. **ERP transmission** is shadow-only per P4-D11: no send path exists and the
+   action controls are visible and natively disabled.
+6. **Point-in-time forecasting and pricing elasticity** remain unavailable with
+   their inherited reason codes (`LANDING_BACKFILL_DEPENDENCY`,
+   `PRICE_AVAILABILITY_BACKFILLED`). Phase 4 changed neither.
 
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 - [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.
@@ -1577,3 +1753,43 @@ changing datagen merely to manufacture greener metrics.
       contracts and `__init__`; `_free_port` was never called; the horizon limit did not
       validate against its own measured bands and now asserts at import; and the pipeline
       orchestration had no tests, now nine.
+
+- [ ] **The forecast's negative bias is a COLD-START problem, not a broad one, and C1 cannot
+      reach it.** P4-12b wired candidate C1 (`models/bias_correction.py`) into the backtest and
+      the serving path; it passes every gate and is live in `fr_74151e73fd4227b4`. It does not
+      fix "Forecast vs Actual", and measuring why overturned the premise the task was written on.
+
+      The -5.4 per cent aggregate bias is not spread across the forecast. Split by cohort on
+      the published eval:
+
+          cold_start           102,388 rows   22.5% of actual volume   bias -18.35%
+          established_history  605,904 rows   77.5% of actual volume   bias  -1.21%
+
+      C1 may only touch `established_history`. Decision #86 section 2.3 requires C5's untargeted
+      rows to stay byte-identical to the champion it captured, and section 2.4 forbids any
+      display-cell regression past rounding. Both refuse a C1 that composes with C5 on the same
+      rows -- section 2.3 when C1 runs second (p50Identical=False), section 2.4 when it runs
+      first (h26 96.496 -> 96.205, still above its 78.0 target but a regression all the same).
+      Disjoint populations is the only arrangement that satisfies both.
+
+      Fitted on the population it is allowed to correct, C1 honestly reports that almost no
+      correction is needed there: parentFactor 1.00461, factors 0.962 to 1.058, 52 cells, zero
+      shrinkage. The 1.0778 factor from the first attempt was an artifact of fitting across
+      cold_start -- a cohort C1 must not correct -- so that number should not be quoted as C1's
+      effect.
+
+      So the bars stay under the actuals because 22.5 per cent of volume is forecast 18 per cent
+      low by the estimator C5 produces, and C1 is forbidden from touching it. The real work is
+      one of:
+        (a) correct the bias INSIDE C5, so its blended cold-start output is not 18 per cent low.
+            C5 was accepted for cold-start non-inferiority, not for calibration, so this is a
+            change to C5's objective and needs its own candidate and gate.
+        (b) admit a cold-start-scoped bias candidate that supersedes C5 rather than composing
+            with it, so section 2.3's untargeted-row rule has one owner per cohort.
+      (a) is the smaller change; (b) is the cleaner contract.
+
+      Whether to keep C1 as it stands is a judgement call. It is correct, gated and live, and it
+      improves 77.5 per cent of volume by 0.46 per cent -- real but marginal against roughly 190
+      lines across five files. Reverting it touches only `models/bias_correction.py`,
+      `models/forecasting.py`, `models/current_cycle.py`, `cli.py` and `tools/dev.py`; the P4-12c
+      as-of and true-demand fixes live in `inventory_run/` and are unaffected.

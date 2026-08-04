@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-02T00:00:00Z",
+    "reason": "Gate B reports the capability available with no missing entities, reverified here against the retained mask rather than the pipeline result."
+  },
+  "lifecycle": {
+    "reasonCode": "PHASE_4_STORE_WASTE_REINGEST",
+    "recordId": "rec_f9c75a13601f22a9",
+    "state": "approved",
+    "supersedes": "rec_9b20ae28cc9f5801"
+  },
+  "publication": {
+    "duckdbSha256": "716c8cb2f81ddc7ee06695905476002da2c024051b8a090fc427391c18965a1e",
+    "gateASemanticFingerprint": "38e6ce74128b77c3eac099ba0b30e62867a3ea267af13f7de14e731882080b58",
+    "gateBSemanticFingerprint": "6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67",
+    "logicalPath": "ingestion/data/curated/run-5bf9580d18d67e36-r2",
+    "objectCount": 1598,
+    "publicationSemanticFingerprint": "5e7bc174f1b2b82aaf3cfd8d8dfc60382cca77d107049811e8fd3eadfe6cbc93",
+    "sourceSnapshotId": "a92f025475f24949178526341c2c2176468620e7762d08a78925d8eaebfe98d2"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "6fc5109d42e595b8f7ddaaf044874d876059a950a2c46fad0b6063fcc1704f67"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_current_snapshot",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_bbabe11be08952fc"
+}

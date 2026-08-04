@@ -72,14 +72,55 @@ def _positive_int(value: Any, *, context: str, allow_zero: bool = False) -> int:
     return value
 
 
+#: Inventory policy generations, newest first. v1 stays on disk and stays
+#: resolvable because it is bound to every artifact published under it; removing
+#: it would make those artifacts unreproducible rather than merely superseded.
+INVENTORY_POLICY_FILES: dict[str, str] = {
+    "v2": "inventory-policy-v2.yaml",
+    "v1": "policy.yaml",
+}
+
+
 def load_guardrail_documents(
     root: str | Path | None = None,
+    *,
+    inventory_policy_generation: str | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Load the guardrail contracts, newest inventory policy by default.
+
+    `inventory_policy_generation` names a generation explicitly. A caller
+    verifying a vector fingerprinted under `inventory-policy/1.0.0` must be able
+    to say so: resolving that vector under v2 would silently change bytes an
+    immutable artifact was fingerprinted against.
+    """
+
     contract_root = locate_contract_root(root)
     directory = contract_root / "guardrails"
+    if inventory_policy_generation is None:
+        inventory_path = next(
+            (
+                directory / name
+                for name in INVENTORY_POLICY_FILES.values()
+                if (directory / name).is_file()
+            ),
+            directory / INVENTORY_POLICY_FILES["v1"],
+        )
+    else:
+        if inventory_policy_generation not in INVENTORY_POLICY_FILES:
+            raise GuardrailContractError(
+                f"unknown inventory policy generation "
+                f"{inventory_policy_generation!r}"
+            )
+        inventory_path = directory / INVENTORY_POLICY_FILES[
+            inventory_policy_generation
+        ]
+        if not inventory_path.is_file():
+            raise GuardrailContractError(
+                f"inventory policy {inventory_policy_generation} is absent"
+            )
     documents = {
         "pricingRules": load_yaml(directory / "pricing_rules.yaml"),
-        "inventoryPolicy": load_yaml(directory / "policy.yaml"),
+        "inventoryPolicy": load_yaml(inventory_path),
         "priceResponse": load_yaml(directory / "price_response.yaml"),
     }
     _validate_documents(documents)
@@ -204,29 +245,57 @@ def _validate_documents(documents: Mapping[str, Mapping[str, Any]]) -> None:
             )
 
     inventory = documents["inventoryPolicy"]
-    _exact_keys(
-        inventory,
-        required={"schemaVersion", "policyVersion", "globalDefaults"},
-        context="policy",
-    )
-    if inventory["schemaVersion"] != "retail-inventory-policy/v1":
+    inventory_schema = inventory.get("schemaVersion")
+    if inventory_schema == "retail-inventory-policy/v1":
+        inventory_required = {"schemaVersion", "policyVersion", "globalDefaults"}
+        inventory_optional: set[str] = set()
+    elif inventory_schema == "retail-inventory-policy/v2":
+        inventory_required = {
+            "schemaVersion",
+            "policyVersion",
+            "globalDefaults",
+            "marketCurrencyRules",
+            "resolution",
+        }
+        # v2 carries the frozen P4-D decision blocks. Enumerated rather than
+        # allowed wholesale: an unrecognised top-level key in a policy contract is
+        # a rule nothing reads, which is worse than a rule that fails validation.
+        inventory_optional = {"decisionIds", "supersedes", "erpTransmission"}
+    else:
         raise GuardrailContractError("unknown policy schemaVersion")
+    unknown = sorted(set(inventory) - inventory_required - inventory_optional)
+    if unknown or not inventory_required <= set(inventory):
+        _exact_keys(
+            inventory,
+            required=inventory_required | (set(inventory) & inventory_optional),
+            context="policy",
+        )
     inventory_defaults = inventory["globalDefaults"]
-    _exact_keys(
-        inventory_defaults,
-        required={
-            "serviceLevelsByClass",
-            "reviewPeriodDays",
-            "maxCoverDays",
-            "holdDeclineThreshold",
-            "holdCoverDays",
-            "markdownCoverDays",
-            "markdownPct",
-            "calibrationCohortPct",
-            "validationHoldoutPct",
-        },
-        context="policy.globalDefaults",
-    )
+    # v1 froze exactly nine shared controls. v2 adds the engine-facing decision
+    # blocks beside them, so the nine remain REQUIRED while the additions are
+    # permitted -- a v2 document missing a v1 control is still invalid.
+    inventory_default_required = {
+        "serviceLevelsByClass",
+        "reviewPeriodDays",
+        "maxCoverDays",
+        "holdDeclineThreshold",
+        "holdCoverDays",
+        "markdownCoverDays",
+        "markdownPct",
+        "calibrationCohortPct",
+        "validationHoldoutPct",
+    }
+    missing_defaults = sorted(inventory_default_required - set(inventory_defaults))
+    if missing_defaults:
+        raise GuardrailContractError(
+            f"policy.globalDefaults keys invalid: missing={missing_defaults}"
+        )
+    if inventory_schema == "retail-inventory-policy/v1":
+        _exact_keys(
+            inventory_defaults,
+            required=inventory_default_required,
+            context="policy.globalDefaults",
+        )
     service_levels = inventory_defaults["serviceLevelsByClass"]
     _exact_keys(
         service_levels, required={"A", "B", "C"}, context="serviceLevelsByClass"
@@ -299,15 +368,68 @@ def _validate_documents(documents: Mapping[str, Mapping[str, Any]]) -> None:
         raise GuardrailContractError("beta range is reversed")
 
 
+def _resolve_inventory_policy(
+    document: Mapping[str, Any],
+    market_id: str,
+    currency_code: str,
+) -> dict[str, Any]:
+    """Merge inventory policy for one market, version-aware.
+
+    v1 had no override path at all: the resolver returned `globalDefaults`
+    verbatim, so a per-market service level, budget ceiling or node capacity was
+    unexpressible. Multi-echelon replenishment needs all three, and a budget in
+    particular cannot be global -- it is market-local minor units, and one number
+    cannot be both INR and USD.
+
+    v1 documents keep resolving exactly as before. They declare no
+    `marketCurrencyRules`, so there is nothing to merge and the returned shape is
+    unchanged; every artifact resolved under v1 stays reproducible.
+    """
+
+    resolved: dict[str, Any] = {
+        "policyVersion": document["policyVersion"],
+        **document["globalDefaults"],
+    }
+    rules = document.get("marketCurrencyRules")
+    if rules is None:
+        return resolved
+
+    matches = [
+        rule
+        for rule in rules
+        if rule["marketId"] == market_id and rule["currencyCode"] == currency_code
+    ]
+    if len(matches) != 1:
+        raise GuardrailContractError(
+            "exactly one inventory market rule is required for "
+            f"{market_id!r} + {currency_code!r}; found {len(matches)}"
+        )
+    override = {
+        key: value
+        for key, value in matches[0].items()
+        if key not in {"marketId", "currencyCode"}
+    }
+    # A shallow merge, deliberately. A deep merge would let one market inherit
+    # half of another market's absolute rule -- a service-level table with two
+    # classes from here and one from a default is a policy nobody approved.
+    resolved.update(override)
+    resolved["marketId"] = market_id
+    resolved["currencyCode"] = currency_code
+    return resolved
+
+
 def resolve_guardrails(
     market_id: str,
     currency_code: str,
     *,
     root: str | Path | None = None,
+    inventory_policy_generation: str | None = None,
 ) -> dict[str, Any]:
     """Resolve one complete policy; missing/mismatched absolute rules fail closed."""
 
-    documents = load_guardrail_documents(root)
+    documents = load_guardrail_documents(
+        root, inventory_policy_generation=inventory_policy_generation
+    )
     pricing = documents["pricingRules"]
     matches = [
         rule
@@ -335,10 +457,9 @@ def resolve_guardrails(
                 if key not in {"marketId", "currencyCode"}
             },
         },
-        "inventoryPolicy": {
-            "policyVersion": documents["inventoryPolicy"]["policyVersion"],
-            **documents["inventoryPolicy"]["globalDefaults"],
-        },
+        "inventoryPolicy": _resolve_inventory_policy(
+            documents["inventoryPolicy"], market_id, currency_code
+        ),
         "priceResponse": {
             "policyVersion": documents["priceResponse"]["policyVersion"],
             **documents["priceResponse"]["globalDefaults"],
@@ -351,14 +472,21 @@ def resolved_guardrail_fingerprint(
     currency_code: str,
     *,
     root: str | Path | None = None,
+    inventory_policy_generation: str | None = None,
 ) -> str:
     return semantic_fingerprint(
-        resolve_guardrails(market_id, currency_code, root=root),
+        resolve_guardrails(
+            market_id,
+            currency_code,
+            root=root,
+            inventory_policy_generation=inventory_policy_generation,
+        ),
         volatile_pointers=(),
     )
 
 
 __all__ = [
+    "INVENTORY_POLICY_FILES",
     "RESOLVED_POLICY_SCHEMA",
     "GuardrailContractError",
     "load_guardrail_documents",

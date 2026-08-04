@@ -43,12 +43,15 @@
           "pattern": "^[a-z][a-z0-9-]{2,63}$"
         },
         "capability": {
+          "description": "`inventory_replenishment` is retained for selections made under temporal-evidence policy v1. Policy v2 splits it into an explicitly current-scoped capability and an origin-safe replay capability, and a new selection must name one of those rather than the retired aggregate.",
           "enum": [
             "current_descriptive_analytics",
             "demand_forecast_non_pit",
             "historical_replay",
             "point_in_time_forecasting",
             "inventory_replenishment",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
             "price_revenue",
             "price_margin",
             "promotion_aware_forecasting",

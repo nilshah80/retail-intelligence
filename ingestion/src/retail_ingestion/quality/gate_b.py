@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Final, Mapping
 
 import duckdb
 import yaml
@@ -159,6 +159,166 @@ def _scalar(connection: duckdb.DuckDBPyConnection, sql: str) -> int:
 
 def _sql_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+#: Grades that support reconstructing a fact at a past origin. Anything weaker
+#: describes only the present, which is the whole reason the replay capability is
+#: separate from the current-snapshot one.
+_ORIGIN_SAFE_GRADES: Final[frozenset[str]] = frozenset(
+    {
+        "native_observed",
+        "native_processed",
+        "native_posted_available",
+        "native_extracted",
+    }
+)
+
+
+def _replenishment_capabilities(
+    connection: duckdb.DuckDBPyConnection,
+    present: set[str],
+    *,
+    pit_backfill: Mapping[str, int],
+    incoming_split_mismatch: int,
+) -> dict[str, Any]:
+    """Evaluate the two inventory capabilities instead of asserting one verdict.
+
+    `P4-2` task 16. This was hard-coded `available: False` with reason
+    HISTORICAL_INBOUND_STATUS_NOT_VERSIONED. That answer happened to be correct
+    for the pin it was written against, which is exactly why it was dangerous: a
+    publication that DID carry the missing evidence would still have reported the
+    capability unavailable, and a publication that lost evidence it used to have
+    would report the same thing. A constant cannot detect either.
+
+    Temporal-evidence policy v2 splits the claim in two, because DC
+    current-position analytics are serviceable on the current pin while
+    origin-safe replay is not, and one flag cannot say both.
+    """
+
+    def rows(entity: str, predicate: str = "TRUE") -> int:
+        if entity not in present:
+            return 0
+        return _scalar(
+            connection,
+            f"SELECT count(*) FROM canonical_data.{entity} WHERE {predicate}",
+        )
+
+    def weakly_graded(entity: str) -> int:
+        """Rows whose availability evidence cannot support a past origin."""
+
+        if entity not in present:
+            return 0
+        allowed = ", ".join(_sql_string(grade) for grade in sorted(_ORIGIN_SAFE_GRADES))
+        return _scalar(
+            connection,
+            f"SELECT count(*) FROM canonical_data.{entity} "
+            f"WHERE known_as_of_evidence_grade NOT IN ({allowed})",
+        )
+
+    # Current snapshot: a position, its inbound supply, its terms and its routes,
+    # all evaluated at the cutoff. Landing evidence is admissible because the claim
+    # is explicitly scoped to now.
+    current_missing = sorted(
+        entity
+        for entity in ("stock_snapshots", "inbound_shipments", "locations")
+        if rows(entity) == 0
+    )
+    # A term and a lane are required, but either generation satisfies the current
+    # claim: v1 `suppliers_leadtimes` describes the present adequately even though
+    # its null origin makes it replay-ineligible.
+    has_terms = rows("supply_terms") > 0 or rows("suppliers_leadtimes") > 0
+    has_lanes = rows("service_lanes") > 0
+    if not has_terms:
+        current_missing.append("supply_terms")
+    current_available = not current_missing and has_lanes
+
+    # Replay: every fact above must be reconstructible at an arbitrary origin, and
+    # store-grain state must exist. The current pin fails on all four counts.
+    replay_reasons: list[str] = []
+    if rows("inbound_shipment_status_events") == 0:
+        replay_reasons.append("HISTORICAL_INBOUND_STATUS_NOT_VERSIONED")
+    if rows("inventory_transfer_events") == 0:
+        replay_reasons.append("HISTORICAL_TRANSFER_STATUS_NOT_VERSIONED")
+    if not has_lanes:
+        replay_reasons.append("SERVICE_LANES_NOT_DECLARED")
+    store_stock_rows = rows(
+        "stock_snapshots",
+        "location_id IN (SELECT location_id FROM canonical_data.locations "
+        "WHERE type = 'store')",
+    )
+    if store_stock_rows == 0:
+        replay_reasons.append("STORE_GRAIN_INVENTORY_ABSENT")
+    if rows("supply_terms") == 0:
+        replay_reasons.append("ORIGIN_SAFE_SUPPLY_TERMS_ABSENT")
+    else:
+        weak_terms = weakly_graded("supply_terms")
+        if weak_terms:
+            replay_reasons.append("EVIDENCE_GRADE_TOO_WEAK")
+    # A fulfillment knowable before it occurred admits future state into replay.
+    # This is a placement violation rather than weak evidence, so it is reported
+    # under its own reason code.
+    if "sales_fulfillments" in present:
+        premature = _scalar(
+            connection,
+            "SELECT count(*) FROM canonical_data.sales_fulfillments "
+            "WHERE known_as_of < fulfilled_at",
+        )
+        if premature:
+            replay_reasons.append("FULFILLMENT_AVAILABLE_BEFORE_EVENT")
+    else:
+        premature = 0
+    if "inbound_shipment_status_events" in present:
+        premature_status = _scalar(
+            connection,
+            "SELECT count(*) FROM canonical_data.inbound_shipment_status_events "
+            "WHERE known_as_of < status_effective_at",
+        )
+        if premature_status:
+            replay_reasons.append("STATUS_AVAILABLE_BEFORE_EVENT")
+    else:
+        premature_status = 0
+
+    replay_available = not replay_reasons
+    return {
+        "inventory_replenishment_current_snapshot": {
+            "available": current_available,
+            "reasonCode": (
+                None
+                if current_available
+                else (
+                    "SERVICE_LANES_NOT_DECLARED"
+                    if not has_lanes
+                    else "REQUIRED_CURRENT_EVIDENCE_ABSENT"
+                )
+            ),
+            "missingEntities": current_missing,
+            "currentSnapshotStatusSplitAvailable": not incoming_split_mismatch,
+            "scope": "current_cutoff_only",
+        },
+        "inventory_replenishment_replay": {
+            "available": replay_available,
+            # Every failing reason, not the first. A caller that fixes one and
+            # re-runs should not discover the next one at a time.
+            "reasonCodes": replay_reasons,
+            "reasonCode": replay_reasons[0] if replay_reasons else None,
+            "storeGrainInventoryRows": store_stock_rows,
+            "prematureFulfillmentRows": premature,
+            "prematureStatusRows": premature_status,
+            "landingBackfillDependencies": dict(pit_backfill),
+        },
+        # Retained key. It meant "origin-safe replenishment", so it tracks the
+        # replay verdict rather than the easier current-snapshot one: a consumer
+        # reading the old name must not silently gain a weaker guarantee.
+        "replenishment": {
+            "available": replay_available,
+            "reasonCode": replay_reasons[0] if replay_reasons else None,
+            "currentSnapshotStatusSplitAvailable": not incoming_split_mismatch,
+            "supersededBy": [
+                "inventory_replenishment_current_snapshot",
+                "inventory_replenishment_replay",
+            ],
+        },
+    }
 
 
 def _b01_schema(
@@ -439,6 +599,28 @@ def run_gate_b(
         )
         if future_sales:
             b05_errors.append(f"sales: {future_sales} facts known before business date")
+        # `P4-2` task 8. B05 checked this placement class for `sales` only, which
+        # is how 15.8M fulfillment rows shipped knowable before they occurred: the
+        # class of defect was guarded on one entity and present on another. Each
+        # event-bearing entity now pairs its own event time with known_as_of.
+        event_placement_rules = (
+            ("sales_fulfillments", "fulfilled_at"),
+            ("inbound_shipment_status_events", "status_effective_at"),
+            ("inventory_transfer_events", "status_effective_at"),
+        )
+        for entity, event_column in event_placement_rules:
+            if entity not in present:
+                continue
+            premature = _scalar(
+                connection,
+                f"SELECT count(*) FROM canonical_data.{entity} "
+                f"WHERE known_as_of < {event_column}",
+            )
+            if premature:
+                b05_errors.append(
+                    f"{entity}: {premature} rows knowable before {event_column}; "
+                    "a fact cannot be available before it occurred"
+                )
         rules.append(
             _critical("B05", "point-in-time placement validation failed", b05_errors)
             if b05_errors
@@ -1134,11 +1316,12 @@ def run_gate_b(
                 if pit_backfill.get("sell_prices", 0)
                 else None,
             },
-            "replenishment": {
-                "available": False,
-                "reasonCode": "HISTORICAL_INBOUND_STATUS_NOT_VERSIONED",
-                "currentSnapshotStatusSplitAvailable": not incoming_split_mismatch,
-            },
+            **_replenishment_capabilities(
+                connection,
+                present,
+                pit_backfill=pit_backfill,
+                incoming_split_mismatch=incoming_split_mismatch,
+            ),
             "competitor_intelligence": {
                 "available": "competitor_prices" in present
                 and "competitor_matches" in present

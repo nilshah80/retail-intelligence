@@ -413,6 +413,64 @@ export interface InboundShipments {
   known_as_of_evidence_grade: EvidenceGrade;
 }
 
+export interface ServiceLanes {
+  lane_id: string;
+  market_id: string;
+  lane_type: "replenishment" | "customer_fulfillment";
+  demand_location_id: string;
+  channel_id: string | null;
+  supply_location_id: string;
+  priority_rank: number;
+  transit_days: number;
+  effective_from: string;
+  effective_to?: string;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
+export interface InboundShipmentStatusEvents {
+  shipment_id: string;
+  sku_id: string;
+  from_location?: string;
+  to_location: string;
+  qty: Int64String;
+  status: "on_order" | "in_transit" | "received" | "cancelled" | "exception";
+  status_effective_at: string;
+  expected_receipt_date?: string;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
+export interface InventoryTransferEvents {
+  transfer_id: string;
+  sku_id: string;
+  from_location_id: string;
+  to_location_id: string;
+  qty: Int64String;
+  status: "created" | "dispatched" | "in_transit" | "received" | "cancelled";
+  status_effective_at: string;
+  unit_cost_minor?: Int64String;
+  currency_code?: string;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
+export interface SupplyTerms {
+  destination_location_id: string;
+  origin_kind: "external_supplier" | "internal_location";
+  origin_id: string;
+  merch_scope_type: MerchScopeType;
+  merch_scope_id: string;
+  effective_from: string;
+  effective_to?: string;
+  lead_time_days: number;
+  lead_time_std_days?: string;
+  moq: Int64String;
+  pack_qty: Int64String;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
 export interface TransferOrders {
   transfer_id: string;
   sku_id: string;
@@ -468,6 +526,17 @@ export interface WmsInventoryComparisons {
   erp_on_hand_units: Int64String;
   wms_on_hand_units: Int64String;
   difference_units: Int64String;
+  known_as_of: string;
+  known_as_of_evidence_grade: EvidenceGrade;
+}
+
+export interface Suppliers {
+  supplier_id: string;
+  market_id: string;
+  supplier_name: string;
+  supplier_number: string;
+  brand_name: string;
+  currency_code: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }

@@ -11,7 +11,23 @@ from typing import Any, Mapping
 import yaml
 from jsonschema import Draft202012Validator
 
-EXPECTED_ENTITY_COUNT = 53
+#: Contract revision 2 adds the four entities multi-echelon inventory needs and
+#: the current pin cannot express: `service_lanes` (a typed, effective-dated
+#: planning relationship rather than a `allocations.priority` string),
+#: `inbound_shipment_status_events` and `inventory_transfer_events` (status
+#: history, so a position is reconstructible at an arbitrary origin instead of at
+#: the cutoff only), and `supply_terms` (an explicit origin kind, so a null
+#: external origin stops matching an internal lane by accident).
+#:
+#: The count is asserted rather than inferred on purpose: an entity appearing or
+#: disappearing silently is a contract change, and this is the line that makes it
+#: a deliberate one.
+#:
+#: 58 adds `suppliers`, the vendor master. It was staged and canonicalised without
+#: being declared here, which meant Gate B validated it against nothing -- B01 and
+#: B02 only cover the entities this contract names -- and the publisher refused the
+#: candidate for containing a table it never declared. Both are the same omission.
+EXPECTED_ENTITY_COUNT = 58
 VERSIONED_ENTITIES = {
     "sales": "sales_version",
     "sales_adjustments": "adjustment_version",
@@ -272,7 +288,27 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/forecast/signals",
         "/api/v1/forecast/exceptions",
     }
-    expected_paths = live_paths | forecast_paths
+    # P4-4: the inventory/replenishment surface -- the version endpoint plus one
+    # route per screen destination. Enumerated exactly, like everything else in
+    # this inventory: an endpoint appearing without a contract change is drift.
+    inventory_paths = {
+        "/api/v1/inventory/versions",
+        "/api/v1/inventory/overview",
+        "/api/v1/inventory/stores",
+        "/api/v1/inventory/warehouses",
+        "/api/v1/inventory/ageing",
+        "/api/v1/inventory/transfers",
+        "/api/v1/inventory/valuation",
+        "/api/v1/inventory/expiry-waste",
+        "/api/v1/inventory/stock-health",
+        "/api/v1/replenishment/planner",
+        "/api/v1/replenishment/orders",
+        "/api/v1/replenishment/suppliers",
+        "/api/v1/replenishment/safety-stock",
+        "/api/v1/replenishment/allocations",
+        "/api/v1/replenishment/exceptions",
+    }
+    expected_paths = live_paths | forecast_paths | inventory_paths
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:
         raise ContractValidationError("OpenAPI path inventory drifted")
@@ -283,8 +319,12 @@ def validate_openapi(path: Path) -> None:
         operation = methods["get"]
         if not isinstance(operation, Mapping) or not operation.get("operationId"):
             raise ContractValidationError(f"{endpoint}: operationId is absent")
+        # Both governed surfaces carry the full live/stale/unavailable triple:
+        # a route that can only say 200 has no honest way to refuse.
         expected_responses = (
-            {"200", "409", "503"} if endpoint in forecast_paths else {"200"}
+            {"200", "409", "503"}
+            if endpoint in forecast_paths or endpoint in inventory_paths
+            else {"200"}
         )
         responses = operation.get("responses", {})
         if set(responses) != expected_responses:
@@ -394,28 +434,47 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
     from .fingerprint import canonical_json_bytes
     from .guardrails import resolve_guardrails, resolved_guardrail_fingerprint
 
-    guardrail_vectors = json.loads(
-        (contract_root / "guardrails" / "resolved-policy-v1.json").read_text(
-            encoding="utf-8"
-        )
+    # Each vector file is verified against the policy generation it was
+    # fingerprinted under. Resolving a v1 vector with whatever generation happens
+    # to be newest would make an immutable artifact unreproducible the moment a
+    # v2 landed -- and would report that as drift in the vector rather than in
+    # the resolution.
+    guardrail_vector_files = (
+        ("resolved-policy-v1.json", "v1", "sha256"),
+        ("resolved-inventory-policy-v2.json", "v2", "semanticFingerprint"),
     )
-    for vector in guardrail_vectors["vectors"]:
-        resolved = resolve_guardrails(
-            vector["marketId"], vector["currencyCode"], root=contract_root
-        )
-        if canonical_json_bytes(resolved).decode("utf-8") != vector["canonical"]:
-            raise ContractValidationError(
-                f"resolved guardrail bytes drifted for {vector['marketId']}"
+    guardrail_vector_count = 0
+    for file_name, generation, fingerprint_key in guardrail_vector_files:
+        vector_path = contract_root / "guardrails" / file_name
+        if not vector_path.is_file():
+            continue
+        vectors = json.loads(vector_path.read_text(encoding="utf-8"))["vectors"]
+        for vector in vectors:
+            resolved = resolve_guardrails(
+                vector["marketId"],
+                vector["currencyCode"],
+                root=contract_root,
+                inventory_policy_generation=generation,
             )
-        if (
-            resolved_guardrail_fingerprint(
-                vector["marketId"], vector["currencyCode"], root=contract_root
-            )
-            != vector["sha256"]
-        ):
-            raise ContractValidationError(
-                f"resolved guardrail fingerprint drifted for {vector['marketId']}"
-            )
+            if canonical_json_bytes(resolved).decode("utf-8") != vector["canonical"]:
+                raise ContractValidationError(
+                    f"resolved guardrail bytes drifted for "
+                    f"{vector['marketId']} under {generation}"
+                )
+            if (
+                resolved_guardrail_fingerprint(
+                    vector["marketId"],
+                    vector["currencyCode"],
+                    root=contract_root,
+                    inventory_policy_generation=generation,
+                )
+                != vector[fingerprint_key]
+            ):
+                raise ContractValidationError(
+                    f"resolved guardrail fingerprint drifted for "
+                    f"{vector['marketId']} under {generation}"
+                )
+            guardrail_vector_count += 1
     return {
         "entities": len(schema["entities"]),
         "tiers": len(tiers["tiers"]),
@@ -423,7 +482,7 @@ def validate_contract_tree(root: str | Path | None = None) -> dict[str, int]:
         "stagingV2Roles": staging_roles,
         "jsonSchemas": 5,
         "openApiContracts": 1,
-        "guardrailVectors": len(guardrail_vectors["vectors"]),
+        "guardrailVectors": guardrail_vector_count,
         "determinismContracts": 1,
     }
 

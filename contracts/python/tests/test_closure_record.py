@@ -78,3 +78,213 @@ def test_the_record_describes_a_passing_run_under_the_hard_gate() -> None:
     assert acceptance["coverageGateMode"] == "hard"
     # No gate may be recorded as anything other than passing on an accepted run.
     assert all(value is True for value in acceptance["gates"].values())
+
+
+# --------------------------------------------------------------------------
+# `P4-0` / Decision #93. The reconciliation below is what the v2 record was
+# missing: it derived its facts from the bundle and the live activation, which
+# stopped the drift, and in doing so dropped every fact that lives only in the
+# activation ledger. An invariant nobody records is an invariant nobody keeps.
+# --------------------------------------------------------------------------
+
+
+def test_the_current_activation_event_has_a_non_null_predecessor() -> None:
+    """A replacement continues from what it supersedes -- WITHIN its scope.
+
+    The append-only invariant is per activation SCOPE, not global, and asserting
+    a global chain was wrong the moment a scope changed. The ledger shows why:
+    7 -> 8 -> 9 -> 11 is one scope's chain, 12 -> 13 the next, and each new scope
+    opens with a null predecessor because it has no predecessor IN THAT SCOPE.
+    A publication re-pin mints a new scope by construction -- the scope
+    fingerprint covers the input bundle -- so demanding a non-null predecessor
+    there demanded that a first event follow something.
+
+    What must hold is the property that actually stops a parallel root going
+    unnoticed: a null predecessor is allowed only for the FIRST event in its
+    scope, and any earlier scope that was still active must have been superseded
+    rather than abandoned. That is the chain a most-recent-row tiebreak would
+    otherwise arbitrate silently.
+    """
+
+    ledger = _record()["authorityLedger"]
+    events = ledger["events"]
+    by_scope: dict[str, list[dict]] = {}
+    for event in events:
+        by_scope.setdefault(event["activationScopeFingerprint"], []).append(event)
+
+    for scope, scoped in by_scope.items():
+        ordered = sorted(scoped, key=lambda event: event["eventId"])
+        for position, event in enumerate(ordered):
+            if event["priorEventId"] is None:
+                assert position == 0, (
+                    f"event {event['eventId']} opens a parallel root inside scope "
+                    f"{scope[:12]}: a null predecessor is only valid for the "
+                    "first event in a scope"
+                )
+            else:
+                assert event["priorEventId"] == ordered[position - 1]["eventId"], (
+                    f"event {event['eventId']} does not continue from the event "
+                    f"before it in scope {scope[:12]}"
+                )
+
+    # Every scope but the current one must END superseded. A scope simply left
+    # active alongside the current one is the two-active-authorities state
+    # decision #90 forbids, and it would not be caught by the chain check above.
+    current = next(
+        event for event in events if event["eventId"] == ledger["currentEventId"]
+    )
+    for scope, scoped in by_scope.items():
+        if scope == current["activationScopeFingerprint"]:
+            continue
+        last = max(scoped, key=lambda event: event["eventId"])
+        assert last["eventType"] == "superseded", (
+            f"scope {scope[:12]} was abandoned rather than superseded; its last "
+            f"event {last['eventId']} still reads {last['eventType']}"
+        )
+
+
+def _released_history() -> dict:
+    """The activation events a from-scratch rebuild destroyed.
+
+    `forecast_activation_events` lives in `retail_serving`. A from-scratch rebuild
+    drops that schema -- so Alembic replays from 0001 and so a re-materialized
+    version id is insertable -- and every activation event recorded before the wipe
+    goes with it. The live closure record can then only derive generation 1, which
+    is a true statement about the live stack and a silent deletion of everything
+    before it.
+
+    So the pre-wipe ledger is retained verbatim in its own record and the two tests
+    below read it from there. The assertions did not weaken: event 7's incident and
+    generation one's retirement are still checked exactly as before, against
+    evidence that is committed rather than derived. The same disclosure pattern as
+    `EVIDENCE_RELEASED_RUNS` in `tools/build_publication_selection.py`.
+    """
+
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "contracts"
+        / "evidence"
+        / "released-activation-history.json"
+    )
+    assert path.is_file(), (
+        "the released activation history is missing; it is the only remaining record "
+        "of the events the rebuild destroyed and must not be deleted"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))["forecastAuthorityLedger"]
+
+
+def test_event_seven_remains_an_immutable_null_predecessor_incident() -> None:
+    """The incident is evidence. Editing it to look clean is the forbidden repair."""
+
+    ledger = _released_history()
+    assert 7 in ledger["nullPredecessorEventIds"], (
+        "event 7's null-predecessor incident has been edited out of history"
+    )
+    events = {event["eventId"]: event for event in ledger["events"]}
+    assert events[7]["eventType"] == "active"
+    assert events[8]["priorEventId"] == 7
+    assert events[8]["eventType"] == "superseded"
+
+
+def test_authority_generation_one_activations_stay_retired() -> None:
+    ledger = _released_history()
+    events = {event["eventId"]: event for event in ledger["events"]}
+    for active_event, supersession in ((1, 5), (2, 6)):
+        assert events[active_event]["eventType"] == "active"
+        assert events[supersession]["eventType"] == "superseded"
+        assert events[supersession]["priorEventId"] == active_event
+        assert events[supersession]["actor"].startswith("migration:")
+
+
+def test_the_live_ledger_discloses_its_own_root() -> None:
+    """The live stack's first event has nothing to follow, and says so.
+
+    What replaced the multi-generation walk above. A wiped schema means generation 1
+    is genuinely a root, so the check is that it is DISCLOSED as one rather than
+    presented as continuing a chain that no longer exists.
+    """
+
+    ledger = _record()["authorityLedger"]
+    current = ledger["currentEventId"]
+    if ledger["currentPriorEventId"] is None:
+        assert current in ledger["nullPredecessorEventIds"]
+
+
+def test_exactly_one_activation_event_is_current() -> None:
+    ledger = _record()["authorityLedger"]
+    superseded = {
+        event["priorEventId"]
+        for event in ledger["events"]
+        if event["eventType"] == "superseded"
+    }
+    current = [
+        event["eventId"]
+        for event in ledger["events"]
+        if event["eventType"] == "active" and event["eventId"] not in superseded
+    ]
+    assert current == [ledger["currentEventId"]]
+
+
+def test_the_served_identity_is_never_listed_as_superseded() -> None:
+    record = _record()
+    served = {
+        record["acceptedRun"]["forecastRunId"],
+        record["acceptedRun"]["forecastVersionId"],
+    }
+    for entry in record["supersededIdentities"]:
+        assert entry["forecastRunId"] not in served
+        assert entry["forecastVersionId"] not in served
+
+
+def test_a_version_without_bundle_bytes_cannot_be_activated_or_rolled_back_to() -> None:
+    """Retained descriptors are historical evidence, not a bundle.
+
+    `fr_9aaa1d4431381570`'s bytes are gone, so it cannot be independently
+    re-verified. Listing it as a rollback target would offer a recovery path that
+    does not exist.
+    """
+
+    for entry in _record()["supersededIdentities"]:
+        assert entry["activationEligible"] is False
+        if not entry["bundleBytesRetained"]:
+            assert entry["rollbackEligible"] is False
+            assert entry["bundlePath"] is None
+
+
+def test_the_historical_attestation_ledger_has_a_governed_disposition() -> None:
+    ledger = _record()["historicalAttestationLedger"]
+    assert ledger["disposition"] == "retained_by_reference_with_declared_missing_hashes"
+    assert ledger["reconstructionForbidden"] is True
+    unhashed = ledger["unhashedSupersededSiblings"]
+    assert len(unhashed) == 4, "all four deleted C5 siblings must be named exactly once"
+    assert len({entry["forecastRunId"] for entry in unhashed}) == 4
+    assert all(entry["hashesRetained"] is False for entry in unhashed)
+    # Attested evidence must never be relabelled as locally verified.
+    classification = ledger["attestationClassification"]
+    assert classification["windowsLinuxPortability"] == "user_attested"
+    assert classification["trackA"] == "user_attested"
+
+
+def test_the_decision_92_residue_is_handed_to_p4_1_and_keeps_the_two_operations_apart() -> None:
+    """Conflating withholding with gate exclusion is how 86,636 becomes 8,756."""
+
+    residue = _record()["decision92Residue"]
+    assert residue["handedTo"] == "P4-1"
+    assert residue["openItems"], "the remaining #92 work must be enumerated"
+    operations = residue["twoOperationsAreDistinct"]
+    assert operations["withheldFromPublication"]["rows"] == 8756
+    assert operations["withheldFromPublication"]["series"] == 398
+    assert operations["excludedFromOneGateCell"]["rows"] == 86636
+    assert (
+        operations["excludedFromOneGateCell"]["cell"] == "A2_per_cohort.cold_start"
+    )
+
+
+def test_the_served_aggregate_defect_is_recorded_and_gated() -> None:
+    defect = _record()["decision92Residue"]["servedAggregateDefectMeasured"]
+    assert defect["gatedBy"] == "P4-0P"
+    assert defect["affectedSelections"] == [8, 13, 26]
+    assert defect["cleanSelections"] == [4]
+    assert defect["servedMeanWeightedConfidence"] < defect[
+        "coveredWeekMeanWeightedConfidence"
+    ], "the recorded defect must show the served value understating the truth"

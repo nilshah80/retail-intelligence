@@ -231,7 +231,23 @@ class ShopifyAdapter(SourceAdapter):
                 {repr(native_snapshot_id)}::VARCHAR AS native_snapshot_id,
                 fl.id::VARCHAR AS native_record_id,
                 fl._market_id AS market_id,
-                try_cast(f.createdAt AS TIMESTAMPTZ) AS known_as_of,
+                -- v13 / P4-2 task 8. This was `f.createdAt`, inherited from the
+                -- fulfillment's creation, while fulfilled_at below coalesces to
+                -- deliveredAt -- so every DELIVERED line (15,806,271 of
+                -- 15,815,976 rows on the accepted pin) was knowable a median 32
+                -- hours BEFORE it was fulfilled. Filtering `known_as_of <=
+                -- origin` then admits fulfillment events into a replay before
+                -- they occurred. A delivery is knowable no earlier than the
+                -- delivery itself: greatest() restores B05's invariant
+                -- known_as_of >= fulfilled_at without touching rows that were
+                -- never delivered.
+                greatest(
+                    try_cast(f.createdAt AS TIMESTAMPTZ),
+                    coalesce(
+                        try_cast(f.deliveredAt AS TIMESTAMPTZ),
+                        try_cast(f.createdAt AS TIMESTAMPTZ)
+                    )
+                ) AS known_as_of,
                 'native_observed'::VARCHAR AS evidence_grade,
                 'SHOPIFY_ACTUAL'::VARCHAR AS row_provenance,
                 fl._raw_object_hash AS raw_object_hash,

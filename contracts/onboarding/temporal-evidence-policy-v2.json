@@ -1,0 +1,278 @@
+{
+  "capabilities": {
+    "decisionId": 72,
+    "definitions": {
+      "competitor_aware_forecasting": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "origin_visible_match_price_availability"
+        ],
+        "requiredRoles": [
+          "competitor_match",
+          "competitor_price"
+        ]
+      },
+      "current_descriptive_analytics": {
+        "minimumGrade": "landing_backfill",
+        "requiredEvidence": [
+          "reconciliation"
+        ],
+        "requiredRoles": [
+          "product",
+          "location",
+          "merchandise"
+        ]
+      },
+      "demand_forecast_non_pit": {
+        "minimumGrade": "landing_backfill",
+        "requiredEvidence": [
+          "sufficient_history",
+          "accepted_fallback_semantics"
+        ],
+        "requiredRoles": [
+          "merchandise",
+          "assortment",
+          "product",
+          "location"
+        ]
+      },
+      "historical_replay": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "origin_visible_targets",
+          "origin_visible_features"
+        ],
+        "requiredRoles": [
+          "merchandise",
+          "assortment"
+        ]
+      },
+      "inventory_replenishment_current_snapshot": {
+        "landingEvidenceAdmissible": true,
+        "landingEvidenceCondition": "Admissible only for a claim explicitly scoped to the current cutoff. A current-snapshot verdict may never be presented as replay readiness.",
+        "minimumGrade": "landing_backfill",
+        "requiredEvidence": [
+          "reconciled_current_position"
+        ],
+        "requiredRoles": [
+          "inventory",
+          "inbound_shipment",
+          "supply_term",
+          "service_lane",
+          "merchandise"
+        ],
+        "supportsHistoricalOrigins": false
+      },
+      "inventory_replenishment_replay": {
+        "eventPlacementRules": [
+          "known_as_of >= fulfilled_at for every fulfillment line",
+          "known_as_of >= status_effective_at for every status observation"
+        ],
+        "landingEvidenceAdmissible": false,
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "reconciled_demand",
+          "lead_time_evidence",
+          "lead_time_variability",
+          "origin_reconstructible_inbound_state",
+          "store_grain_inventory_state"
+        ],
+        "requiredRoles": [
+          "inventory",
+          "inbound_shipment",
+          "inbound_status_event",
+          "inventory_transfer_event",
+          "supply_term",
+          "service_lane",
+          "merchandise",
+          "assortment"
+        ],
+        "supportsHistoricalOrigins": true
+      },
+      "point_in_time_forecasting": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "all_temporal_entities_origin_safe"
+        ],
+        "requiredRoles": [
+          "merchandise",
+          "assortment",
+          "sell_price",
+          "weather_forecast"
+        ]
+      },
+      "price_margin": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "temporal_cost_ledger_matching_currency_scope"
+        ],
+        "requiredRoles": [
+          "inventory_cost",
+          "sell_price",
+          "merchandise"
+        ]
+      },
+      "price_revenue": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "origin_safe_prices",
+          "demand_response_evidence"
+        ],
+        "requiredRoles": [
+          "sell_price",
+          "merchandise"
+        ]
+      },
+      "promotion_aware_forecasting": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "origin_visible_historical_and_future_plans"
+        ],
+        "requiredRoles": [
+          "promotion",
+          "promotion_target",
+          "merchandise"
+        ]
+      }
+    },
+    "labelSemantics": {
+      "blocked": "A temporal-policy violation is present, such as a business-effective date promoted into availability. Reason code BUSINESS_DATE_AS_AVAILABILITY.",
+      "note": "Both set consumerMayProceed = false. The distinction must stay accurate in evidence and in the UI: one is missing evidence, the other is a rule violation.",
+      "unavailable": "Required evidence is absent or below the grade floor. Reason code EVIDENCE_GRADE_TOO_WEAK."
+    },
+    "readinessVerdicts": [
+      "ready",
+      "validated_partial",
+      "unavailable",
+      "blocked"
+    ],
+    "retiredDefinitions": {
+      "inventory_replenishment": {
+        "minimumGrade": "native_extracted",
+        "requiredEvidence": [
+          "reconciled_demand",
+          "lead_time_evidence"
+        ],
+        "requiredRoles": [
+          "inventory",
+          "inbound_shipment",
+          "supplier_term",
+          "merchandise"
+        ],
+        "retiredReason": "One flag could not distinguish serviceable current-position analytics from unavailable origin-safe replay. Replaced by inventory_replenishment_current_snapshot and inventory_replenishment_replay."
+      }
+    },
+    "rule": "Readiness and statistical sufficiency are separate fields. A capability that is ready may still be statistically insufficient, and validated_partial must stop before any consumer whose required capability is incomplete.",
+    "splitRule": "Each capability publishes independent readiness and sufficiency. A inventory_replenishment_current_snapshot verdict of ready never implies inventory_replenishment_replay readiness, and validated_partial or unavailable current analytics authorizes no replay. Both must be ready + sufficient before the inventory and replenishment destinations exit, because replay is an exit criterion rather than a bonus.",
+    "sufficiencyVerdicts": [
+      "sufficient",
+      "insufficient_evidence",
+      "not_evaluated"
+    ]
+  },
+  "consumerGate": "PP3-A6",
+  "decisionIds": [
+    70,
+    71,
+    72,
+    92
+  ],
+  "description": "Which source evidence may establish that a fact was knowable at a model origin, and when a missing sale may become a zero-demand label. Ingestion success is never sufficient on its own.",
+  "grades": {
+    "landing_backfill": {
+      "downgrades": [
+        "historical_replay",
+        "point_in_time_forecasting"
+      ],
+      "knownAsOfEligible": true,
+      "meaning": "only landing time is known",
+      "rank": 5,
+      "supportsHistoricalReplay": false
+    },
+    "native_extracted": {
+      "knownAsOfEligible": true,
+      "meaning": "an immutable snapshot or CDC extract time is the earliest defensible availability",
+      "rank": 4,
+      "supportsHistoricalReplay": true
+    },
+    "native_observed": {
+      "knownAsOfEligible": true,
+      "meaning": "the source recorded the observation time",
+      "rank": 1,
+      "supportsHistoricalReplay": true
+    },
+    "native_posted_available": {
+      "knownAsOfEligible": true,
+      "meaning": "a retained source posting rule proves availability",
+      "rank": 3,
+      "requires": [
+        "retainedPostingRule"
+      ],
+      "supportsHistoricalReplay": true
+    },
+    "native_processed": {
+      "knownAsOfEligible": true,
+      "meaning": "the source recorded a deterministic processing-availability time",
+      "rank": 2,
+      "supportsHistoricalReplay": true
+    }
+  },
+  "neverProvesAvailability": [
+    "business_date",
+    "effective_date",
+    "transaction_date",
+    "start_date",
+    "end_date",
+    "snapshot_date_without_extract_evidence"
+  ],
+  "policyId": "retail-temporal-evidence/v2",
+  "rules": [
+    "A business-effective date may never be promoted into known_as_of.",
+    "A grade may not be upgraded to improve a capability verdict; it is derived from what the source supplies.",
+    "An unsupported derivation quarantines the row or downgrades the capability, never both silently."
+  ],
+  "schemaVersion": "retail-temporal-evidence-policy/v2",
+  "supersedes": {
+    "policyId": "retail-temporal-evidence/v1",
+    "reason": "Splits inventory_replenishment into an explicitly current-scoped capability and an origin-safe replay capability. v1 remains the policy every readiness verdict published before this was evaluated under."
+  },
+  "zeroDemand": {
+    "conditions": [
+      {
+        "id": "EXTRACT_COMPLETE",
+        "requirement": "the extract is complete for the whole business interval"
+      },
+      {
+        "id": "ASSORTMENT_ACTIVE",
+        "requirement": "SKU x store x channel was actively listed for the interval, from dated assortment evidence"
+      },
+      {
+        "id": "KNOWN_BY_CUTOFF",
+        "requirement": "the observation was knowable by the model fit cutoff"
+      },
+      {
+        "id": "BOUNDARY_EXPOSURE_HANDLED",
+        "requirement": "partial boundary-week exposure is handled under decision #56"
+      },
+      {
+        "id": "NO_UNRESOLVED_GAP",
+        "requirement": "no unresolved source gap or omitted channel applies"
+      }
+    ],
+    "decisionId": 71,
+    "description": "A weekly zero-demand label is derived, not assumed. All conditions must hold; otherwise the cell is unknown, not zero.",
+    "forbidden": [
+      "manufacturing historical zeros from a current catalog snapshot",
+      "treating an absent row as zero without assortment evidence",
+      "inferring assortment from the presence of sales"
+    ],
+    "unknownReasonCodes": [
+      "EXTRACT_INCOMPLETE",
+      "ASSORTMENT_UNKNOWN",
+      "ASSORTMENT_INACTIVE",
+      "NOT_KNOWN_BY_CUTOFF",
+      "BOUNDARY_EXPOSURE_PARTIAL",
+      "CHANNEL_COVERAGE_INCOMPLETE"
+    ]
+  }
+}

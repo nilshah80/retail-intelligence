@@ -288,6 +288,25 @@ def command_test(args: argparse.Namespace) -> int:
     return 0
 
 
+def _committed_pin_publication() -> str | None:
+    """The publication fingerprint `contracts/ml/expected-pin.json` names.
+
+    Read rather than cached: the pin moves when a publication is re-derived, and
+    a stale copy here would reintroduce the arbitrary tiebreak it exists to
+    remove.
+    """
+
+    try:
+        pin = json.loads(
+            (REPO_ROOT / "contracts" / "ml" / "expected-pin.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    return (pin.get("publication") or {}).get("semanticFingerprint")
+
+
 def _discover_forecast_run() -> tuple[Path, str]:
     """Return the newest decision-#82 governed run and its lifecycle status.
 
@@ -349,6 +368,18 @@ def _discover_forecast_run() -> tuple[Path, str]:
         if acceptance.get("schemaVersion") != ACCEPTANCE_SCHEMA_GENERATION:
             continue
         if acceptance.get("candidateClass") != model_policy["candidateClass"]:
+            continue
+        # And it must be pinned to the publication the repository currently pins.
+        # Two bundles refit on different publications share a decisionAsOf, so the
+        # newest-wins tiebreak fell through to the directory name -- which picked
+        # `forecast_run_tenyear` over `forecast_run_r2` on nothing but the letter
+        # "t", and failed the gate on a bundle that cannot serve. Same intent as
+        # every filter above: only offer candidates the current verifier accepts.
+        input_bundle = manifest.get("inputBundle") or {}
+        published = input_bundle.get("publicationSemanticFingerprint") or (
+            input_bundle.get("publication") or {}
+        ).get("semanticFingerprint")
+        if published != _committed_pin_publication():
             continue
         entry = (str(manifest.get("decisionAsOf", "")), manifest_path.parent)
         if manifest.get("lifecycleStatus") == "accepted":
@@ -484,7 +515,46 @@ def command_contracts(_: argparse.Namespace) -> int:
     result = _run([str(ingestion), str(validator)])
     if result:
         return result
-    return _run([str(ingestion), str(generator), "--check"])
+    result = _run([str(ingestion), str(generator), "--check"])
+    if result:
+        return result
+    # `P4-0`: a committed selection record must still match a fresh derivation
+    # from the retained publication evidence. A hand-edited governance record is
+    # indistinguishable from a real one until something recomputes it.
+    selections = REPO_ROOT / "tools" / "build_publication_selection.py"
+    if selections.is_file():
+        return _run([str(ingestion), str(selections), "--check"])
+    return 0
+
+
+def command_closure_record(args: argparse.Namespace) -> int:
+    """Regenerate the forecast closure record from the bundle and live activation.
+
+    The record's own note told developers to run `tools/dev.py closure-record`,
+    but the subcommand was never wired up, so the only way to regenerate the
+    thing that must never drift was to remember the script path. `P4-0` needs it
+    regenerated against migration 0008, so the advertised command now exists.
+    """
+
+    builder = REPO_ROOT / "tools" / "build_closure_record.py"
+    if not builder.is_file():
+        print("closure-record generator has not landed yet", file=sys.stderr)
+        return 3
+    return _run([sys.executable, str(builder), str(args.forecast_run)])
+
+
+def command_inventory_entry_record(args: argparse.Namespace) -> int:
+    """Regenerate or verify the inventory & replenishment entry record."""
+
+    ingestion = _require_python(INGESTION_ENV, "ingestion")
+    builder = REPO_ROOT / "tools" / "build_inventory_entry_record.py"
+    if not builder.is_file():
+        print("inventory entry-record generator has not landed yet", file=sys.stderr)
+        return 3
+    command = [str(ingestion), str(builder)]
+    if getattr(args, "check", False):
+        command.append("--check")
+    return _run(command)
 
 
 def command_ingest_stage(args: argparse.Namespace) -> int:
@@ -731,6 +801,17 @@ PIPELINE_STAGES: tuple[str, ...] = (
     "land",
     "ingest",
     "finalize",
+    # The governed step between publish and features, and the reason a rebuild used
+    # to need two commands with a manual gap. Every ML stage validates the curated
+    # publication against contracts/ml/expected-pin.json and fails closed when it
+    # does not match, so a regeneration -- which moves sourceSnapshotId and every
+    # fingerprint under it -- stops the chain here whether or not the stage exists.
+    # Making it a stage does not weaken decision #89: the pin still refuses unless
+    # the selection ledger already names this run as the active source authority,
+    # and that record carries an approver and a reason no derivation can invent. So
+    # a run a human has governed rebuilds in ONE command, and a brand-new run stops
+    # with the sentence that says which chain to add.
+    "repin",
     "features",
     "characterize",
     "backtest",
@@ -739,6 +820,14 @@ PIPELINE_STAGES: tuple[str, ...] = (
     "publish",
     "materialize",
     "activate",
+    # The inventory half. Previously the chain stopped at the forecast activation
+    # and the four inventory commands were run by hand, which is where the identity
+    # threading went wrong most often: build mints the run id, verify re-derives the
+    # fingerprint, and activate needs both.
+    "inventory-build",
+    "inventory-verify",
+    "inventory-materialize",
+    "inventory-activate",
 )
 
 
@@ -805,6 +894,25 @@ def command_pipeline(args: argparse.Namespace) -> int:
         source_root = promoted[-1]
         print(f"source run: {source_root.relative_to(REPO_ROOT)}")
     run_id = (source_root or Path(args.run_id or "run-unknown")).name
+    if run_id == "run-unknown":
+        # Resuming mid-chain with no --source-root: `curated` and `work` are built
+        # from run_id, so every stage below `land` was silently pointed at
+        # .../curated/run-unknown. `--from inventory-build` therefore failed on a
+        # missing curated root rather than on anything real. Recovered from the
+        # publication that exists -- newest by its own manifest, never a sorted glob
+        # over content hashes, which is the tie-break that once cost a full
+        # regeneration by ingesting an unrelated snapshot.
+        published_runs = [
+            path
+            for path in (REPO_ROOT / "ingestion" / "data" / "evidence").glob("run-*")
+            if (path / "publication-manifest.json").is_file()
+        ]
+        if published_runs:
+            run_id = max(
+                published_runs,
+                key=lambda path: (path / "publication-manifest.json").stat().st_mtime,
+            ).name
+            print(f"resolved run: {run_id}")
 
     work = args.work_root or REPO_ROOT / "ingestion" / "data" / "work" / run_id
     curated = (
@@ -822,10 +930,28 @@ def command_pipeline(args: argparse.Namespace) -> int:
         if args.feature_dir is not None
         else REPO_ROOT / "ml" / "data" / "features" / args.label
     )
-    if not (features / "manifest.json").is_file() and "features" not in stages:
+    # Only the stages that actually READ the feature directory need one to exist.
+    #
+    # The guard used to fire whenever `features` was absent from the slice, which
+    # made every ingestion-only slice refuse: `--to finalize` needs no features at
+    # all, and neither do the inventory stages, yet both were rejected before a
+    # single command ran. The check is for resuming mid-chain -- `--from backtest`
+    # against a feature set that was never built under that label -- so it belongs
+    # to the consumers, not to the absence.
+    FEATURE_CONSUMERS = frozenset(
+        {"characterize", "backtest", "score-current", "publish"}
+    )
+    consumers_in_slice = FEATURE_CONSUMERS.intersection(stages)
+    if (
+        consumers_in_slice
+        and "features" not in stages
+        and not (features / "manifest.json").is_file()
+    ):
         print(
-            f"no feature manifest at {features}. Build features first, or pass "
-            "--feature-dir pointing at an existing feature set.",
+            f"no feature manifest at {features}, and this slice runs "
+            f"{', '.join(sorted(consumers_in_slice))} without building features. "
+            "Build features first, or pass --feature-dir pointing at an existing "
+            "feature set.",
             file=sys.stderr,
         )
         return 2
@@ -836,10 +962,82 @@ def command_pipeline(args: argparse.Namespace) -> int:
 
     horizons = ",".join(str(h) for h in range(1, args.horizons + 1))
     decision_as_of = args.decision_as_of
+    # The forecast stages take an INSTANT; the inventory build takes a DATE. Its
+    # cutoff is a day -- every visibility predicate under it reads
+    # `known_as_of < as_of + INTERVAL 1 DAY` -- and its CLI parses with
+    # `date.fromisoformat`, which refuses '2026-07-31T00:00:00Z'. One flag was
+    # feeding both, so a complete chain died at inventory-build 49 minutes in, after
+    # the forecast had already published, materialized and activated. Truncating
+    # here rather than widening the ML parser: a date is the type that stage means,
+    # and accepting a timestamp would let a non-midnight instant pass and be
+    # silently floored.
+    inventory_as_of = decision_as_of.split("T", 1)[0]
+
+    # Preflight: every immutable output this slice would write, checked before the
+    # first stage runs.
+    #
+    # Publication is immutable by design -- `publish`, `characterize` and the
+    # inventory publisher each refuse to overwrite -- and re-running deterministic
+    # inputs reproduces the same fingerprints, so a repeat run collides on purpose.
+    # What was wrong was the TIMING: a full run died at `characterize` four minutes
+    # in, on a stale report from a previous run, having already re-landed 15 GB and
+    # re-ingested. And it would have reported only that one collision, so clearing it
+    # and rerunning would have died again at `publish`. Every blocker is named at
+    # once, before anything is written.
+    # Every stage below has its own guard, verified against the raising call sites
+    # rather than assumed -- a preflight that clears a slice it has not fully checked
+    # is worse than none, because it converts "you will fail later" into "you are
+    # ready". Grep for FileExistsError under ml/src if a stage is added.
+    immutable_outputs = [
+        ("ingest", curated, "curated publication"),
+        ("features", features, "feature set"),
+        (
+            "characterize",
+            REPO_ROOT / "ml" / "reports" / f"{args.label}-characterization.json",
+            "characterization report",
+        ),
+        ("backtest", backtest, "backtest output"),
+        ("score-current", current, "current-cycle output"),
+        ("classify", classifications, "classification output"),
+        ("publish", bundle, "forecast run bundle"),
+        (
+            "inventory-build",
+            artifacts / f"inventory_run_{args.label}",
+            "inventory run bundle",
+        ),
+    ]
+    collisions = [
+        (stage, path, what)
+        for stage, path, what in immutable_outputs
+        if stage in stages and path.exists()
+    ]
+    if collisions:
+        print(
+            f"{len(collisions)} immutable output(s) already exist, so this slice "
+            "cannot run to completion:",
+            file=sys.stderr,
+        )
+        for stage, path, what in collisions:
+            try:
+                shown = path.relative_to(REPO_ROOT)
+            except ValueError:
+                shown = path
+            print(f"  {stage}: {what} at {shown}", file=sys.stderr)
+        print(
+            "Remove them to rebuild, or pass --label <name> to build alongside them. "
+            "Note that materialize and activate also refuse a version id that is "
+            "already in PostgreSQL, and identical inputs mint an identical id, so a "
+            "true from-scratch run additionally needs the retail_serving schema and "
+            "its ledger dropped -- which is a deliberate act, not something this "
+            "command will do for you.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
+        landing = None
         if "land" in stages:
-            _pipeline_step(
+            landing = _pipeline_step(
                 "land",
                 [
                     str(ingestion), "-m", "retail_ingestion.cli", "land",
@@ -849,10 +1047,25 @@ def command_pipeline(args: argparse.Namespace) -> int:
                 ],
             )
 
-        snapshots = sorted(
-            (REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots").glob("*")
-        )
-        snapshot = args.snapshot_root or (snapshots[-1] if snapshots else None)
+        # The snapshot LAND just wrote, taken from its own output -- not the last
+        # entry of a sorted glob over content-hash directory names.
+        #
+        # That glob is an alphabetical tie-break over hashes, which is to say it
+        # is arbitrary. It cost a full 50-minute regeneration: `land` wrote
+        # d43fd302..., the glob's last entry was f75e1490..., and the pipeline
+        # ingested an unrelated quarter-long scenario whose extract window Gate A
+        # then correctly refused. The gate did its job; the selection was wrong.
+        snapshot = args.snapshot_root
+        if snapshot is None and landing:
+            root = landing.get("snapshotRoot")
+            if root:
+                snapshot = Path(root)
+        if snapshot is None:
+            snapshots = sorted(
+                (REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots").glob("*"),
+                key=lambda path: path.stat().st_mtime,
+            )
+            snapshot = snapshots[-1] if snapshots else None
         if snapshot is None and any(
             stage in stages for stage in ("ingest", "finalize")
         ):
@@ -886,6 +1099,42 @@ def command_pipeline(args: argparse.Namespace) -> int:
                     "--work-root", str(work),
                     "--publication-root", str(curated),
                     "--evidence-root", str(evidence),
+                ],
+            )
+
+        if "repin" in stages:
+            # Write, then verify, then pin -- in that order for the error message.
+            # Pinning first fails with a fingerprint mismatch, which reads like a
+            # corrupt publication; verifying first names the actual problem, which
+            # is a run nobody selected.
+            if run_id == "run-unknown":
+                print(
+                    "repin needs a published run; none has a "
+                    "publication-manifest.json under ingestion/data/evidence",
+                    file=sys.stderr,
+                )
+                return 2
+            selection = REPO_ROOT / "tools" / "build_publication_selection.py"
+            # --no-clobber, emphatically. Without it this step rewrote committed
+            # selection records to match the publication that had just been written,
+            # and the verify step below then passed against that rewrite -- a check
+            # that can never fail, because the thing it checks was just re-aligned to
+            # it. A build command may CREATE a governance record whose derivation is
+            # deterministic; it must not restate one whose subject has changed.
+            _pipeline_step(
+                "repin (selection ledger)",
+                [str(ingestion), str(selection), "--no-clobber"],
+            )
+            _pipeline_step(
+                "repin (selection ledger verified)",
+                [str(ingestion), str(selection), "--check"],
+            )
+            _pipeline_step(
+                "repin (expected pin)",
+                [
+                    str(ingestion),
+                    str(REPO_ROOT / "tools" / "build_expected_pin.py"),
+                    "--run", run_id,
                 ],
             )
 
@@ -941,6 +1190,9 @@ def command_pipeline(args: argparse.Namespace) -> int:
             blend = backtest / "cold_start_blend_model.json"
             if blend.is_file():
                 command.extend(["--blend-model", str(blend)])
+            coverage = backtest / "coverage_calibration_model.json"
+            if coverage.is_file():
+                command.extend(["--coverage-model", str(coverage)])
             _pipeline_step("score-current", command)
 
         if "classify" in stages:
@@ -985,6 +1237,14 @@ def command_pipeline(args: argparse.Namespace) -> int:
             )
 
         materialized: dict = {}
+        # Bound here rather than in the `activate` block, because the closing summary
+        # reads it and an inventory-only slice never enters that block: `--from
+        # inventory-build` raised NameError on the last line of a run that had
+        # otherwise fully succeeded.
+        run: str | None = None
+        # Bound out here for the same reason as `run`: the closing summary prints the
+        # API command, and the API cannot serve the forecast screens without this.
+        scope: str | None = None
         if "materialize" in stages:
             materialized = _pipeline_step(
                 "materialize",
@@ -1013,20 +1273,126 @@ def command_pipeline(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            _pipeline_step(
-                "activate",
+            activate_command = [
+                str(ml), "-m", "retail_ml.cli", "activate-serving",
+                "--forecast-run-id", run,
+                "--activation-scope-fingerprint", scope,
+                "--actor", args.actor,
+                "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+            ]
+            if args.retire_other_scopes:
+                activate_command.append("--retire-other-scopes")
+            _pipeline_step("activate", activate_command)
+
+        # -- inventory half ---------------------------------------------------
+        #
+        # The bundle name follows the artifact label, like the forecast bundle, so a
+        # second cycle under a new label does not collide with the first -- the
+        # inventory publisher refuses to overwrite a bundle directory, and a
+        # colliding name reads as an immutability failure rather than a naming one.
+        inventory_bundle = artifacts / f"inventory_run_{args.label}"
+        dsn = _local_postgres_dsn(sqlalchemy=False)
+        inventory_built: dict = {}
+        if "inventory-build" in stages:
+            inventory_built = _pipeline_step(
+                "inventory-build",
                 [
-                    str(ml), "-m", "retail_ml.cli", "activate-serving",
-                    "--forecast-run-id", run,
-                    "--activation-scope-fingerprint", scope,
-                    "--actor", args.actor,
-                    "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+                    str(ml), "-m", "retail_ml.cli", "inventory-build",
+                    "--curated-root", str(curated),
+                    "--bundle", str(inventory_bundle),
+                    "--as-of", inventory_as_of,
+                    "--postgres-dsn", dsn,
+                    "--execution-profile", profile,
                 ],
             )
+
+        inventory_verified: dict = {}
+        if "inventory-verify" in stages:
+            inventory_verified = _pipeline_step(
+                "inventory-verify",
+                [
+                    str(ml), "-m", "retail_ml.cli", "inventory-verify",
+                    "--bundle", str(inventory_bundle),
+                    "--postgres-dsn", dsn,
+                ],
+            )
+
+        if "inventory-materialize" in stages:
+            _pipeline_step(
+                "inventory-materialize",
+                [
+                    str(ml), "-m", "retail_ml.cli", "inventory-materialize",
+                    "--bundle", str(inventory_bundle),
+                    "--postgres-dsn", dsn,
+                ],
+            )
+
+        if "inventory-activate" in stages:
+            # Verify is the authority on both identities: it re-derives them from
+            # the bundle rather than trusting what build reported.
+            inventory_run = (
+                inventory_verified.get("inventoryRunId")
+                or inventory_built.get("inventory_run_id")
+            )
+            fingerprint = (
+                inventory_verified.get("semanticFingerprint")
+                or inventory_built.get("semantic_fingerprint")
+            )
+            if not inventory_run or not fingerprint:
+                print(
+                    "inventory-activate needs the run id and semantic fingerprint "
+                    "from inventory-verify; rerun with --from inventory-verify",
+                    file=sys.stderr,
+                )
+                return 2
+            # --retire-other-scopes belongs to the FORECAST activation and only to
+            # it: `retail_ml.cli inventory-activate` takes no such flag, so
+            # appending it here made `pipeline --retire-other-scopes` fail at the
+            # sixteenth stage on an argparse error, after the bundle had already
+            # been built, verified and materialized. Inventory activation retires
+            # its own predecessor for the scope it activates.
+            _pipeline_step(
+                "inventory-activate",
+                [
+                    str(ml), "-m", "retail_ml.cli", "inventory-activate",
+                    "--inventory-run-id", inventory_run,
+                    "--run-semantic-fingerprint", fingerprint,
+                    "--actor", args.actor,
+                    "--postgres-dsn", dsn,
+                ],
+            )
+            forecast_identity = (
+                f"forecast {run} / {materialized.get('version_id')}\n"
+                if run
+                else ""
+            )
+            print(f"\nserving inventory {inventory_run}\n{forecast_identity}")
+            # The API command, ready to run, because leaving it to be reconstructed
+            # is how the forecast screens end up dark. `-forecast-activation-scope`
+            # is not optional: without it every /api/v1/forecast/* route answers 503
+            # FORECAST_READ_MODEL_UNAVAILABLE while the inventory screens serve live
+            # data, which reads as missing forecast data rather than a missing flag.
+            # The scope is known here and nowhere more conveniently, so it is printed
+            # here rather than looked up from PostgreSQL afterwards.
+            evidence_dir = evidence.relative_to(REPO_ROOT)
+            curated_dir = curated.relative_to(REPO_ROOT)
+            print("Start the API with (it reads activation from PostgreSQL at boot):")
             print(
-                f"\nserving {run} / {materialized.get('version_id')}\n"
-                "Start the API separately; it reads the activation scope from "
-                "PostgreSQL at boot."
+                f"  cd api && go run ./cmd/server \\\n"
+                f"    -address 127.0.0.1:8080 \\\n"
+                f"    -gate-a-report ../{evidence_dir}/gate-a.json \\\n"
+                f"    -gate-b-report ../{evidence_dir}/gate-b.json \\\n"
+                f"    -publication-manifest ../{curated_dir}/publication-manifest.json \\\n"
+                f"    -execution-profiles "
+                f"../execution/src/retail_execution/data/v1/profiles.json \\\n"
+                f"    -execution-profile safe \\\n"
+                f"    -openapi-spec ../contracts/api/openapi.yaml \\\n"
+                + (
+                    f"    -forecast-activation-scope {scope}"
+                    if scope
+                    else "    -forecast-activation-scope <run the activate stage to "
+                    "learn this; the forecast screens stay dark without it>"
+                )
             )
     except _PipelineFailure as failure:
         print(
@@ -1295,8 +1661,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pipeline.add_argument("--from", dest="from_stage", choices=PIPELINE_STAGES,
                           default="land")
+    # Default to the LAST stage rather than the forecast activation: the chain now
+    # reaches the inventory half, and a default that stopped short would leave the
+    # four inventory commands to be remembered by hand -- which is the wiring this
+    # command exists to remove.
     pipeline.add_argument("--to", dest="to_stage", choices=PIPELINE_STAGES,
-                          default="activate")
+                          default=PIPELINE_STAGES[-1])
     pipeline.add_argument("--source-root", type=Path, default=None)
     pipeline.add_argument("--snapshot-root", type=Path, default=None)
     pipeline.add_argument("--work-root", type=Path, default=None)
@@ -1319,6 +1689,18 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--decision-as-of", default="2026-07-31T00:00:00Z")
     pipeline.add_argument("--tracking-uri", default="http://127.0.0.1:5000")
     pipeline.add_argument("--actor", default=os.environ.get("USER", "developer"))
+    pipeline.add_argument(
+        "--retire-other-scopes",
+        action="store_true",
+        help=(
+            "at activate, supersede every other active activation scope in the "
+            "same transaction. Needed when re-pinning onto a new publication: the "
+            "activation scope covers the input bundle, so a new publication mints "
+            "a new scope which supersedes nothing and decision #90 then refuses "
+            "two active forecasts. Off by default -- retiring a competing lineage "
+            "is a decision, not a step."
+        ),
+    )
     pipeline.add_argument(
         "--execution-profile", choices=("safe", "balanced", "performance", "ultra-performance"),
         default=None
@@ -1442,6 +1824,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     forecast_activate.add_argument("--actor", required=True)
+    closure_record = subparsers.add_parser(
+        "closure-record",
+        help="regenerate the forecast closure record from a bundle and live activation",
+    )
+    closure_record.add_argument("--forecast-run", type=Path, required=True)
+    entry_record = subparsers.add_parser(
+        "inventory-entry-record",
+        help="regenerate the inventory & replenishment entry record",
+    )
+    entry_record.add_argument("--check", action="store_true")
 
     for name in (
         "land",
@@ -1586,6 +1978,8 @@ def main(argv: list[str] | None = None) -> int:
         "ml-bench": command_ml,
         "forecast-materialize": command_ml,
         "forecast-activate": command_ml,
+        "closure-record": command_closure_record,
+        "inventory-entry-record": command_inventory_entry_record,
         "land": command_ingest_stage,
         "gate-a": command_ingest_stage,
         "stage": command_ingest_stage,

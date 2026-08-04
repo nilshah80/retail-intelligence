@@ -469,6 +469,64 @@ type InboundShipments struct {
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
 
+type ServiceLanes struct {
+	LaneID string `json:"lane_id"`
+	MarketID string `json:"market_id"`
+	LaneType string `json:"lane_type"`
+	DemandLocationID string `json:"demand_location_id"`
+	ChannelID *string `json:"channel_id"`
+	SupplyLocationID string `json:"supply_location_id"`
+	PriorityRank int32 `json:"priority_rank"`
+	TransitDays int32 `json:"transit_days"`
+	EffectiveFrom string `json:"effective_from"`
+	EffectiveTo *string `json:"effective_to,omitempty"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
+type InboundShipmentStatusEvents struct {
+	ShipmentID string `json:"shipment_id"`
+	SKUID string `json:"sku_id"`
+	FromLocation *string `json:"from_location,omitempty"`
+	ToLocation string `json:"to_location"`
+	Qty int64 `json:"qty"`
+	Status string `json:"status"`
+	StatusEffectiveAt string `json:"status_effective_at"`
+	ExpectedReceiptDate *string `json:"expected_receipt_date,omitempty"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
+type InventoryTransferEvents struct {
+	TransferID string `json:"transfer_id"`
+	SKUID string `json:"sku_id"`
+	FromLocationID string `json:"from_location_id"`
+	ToLocationID string `json:"to_location_id"`
+	Qty int64 `json:"qty"`
+	Status string `json:"status"`
+	StatusEffectiveAt string `json:"status_effective_at"`
+	UnitCostMinor *int64 `json:"unit_cost_minor,omitempty"`
+	CurrencyCode *string `json:"currency_code,omitempty"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
+type SupplyTerms struct {
+	DestinationLocationID string `json:"destination_location_id"`
+	OriginKind string `json:"origin_kind"`
+	OriginID string `json:"origin_id"`
+	MerchScopeType MerchScopeType `json:"merch_scope_type"`
+	MerchScopeID string `json:"merch_scope_id"`
+	EffectiveFrom string `json:"effective_from"`
+	EffectiveTo *string `json:"effective_to,omitempty"`
+	LeadTimeDays int32 `json:"lead_time_days"`
+	LeadTimeStdDays *string `json:"lead_time_std_days,omitempty"`
+	Moq int64 `json:"moq"`
+	PackQty int64 `json:"pack_qty"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
 type TransferOrders struct {
 	TransferID string `json:"transfer_id"`
 	SKUID string `json:"sku_id"`
@@ -524,6 +582,17 @@ type WmsInventoryComparisons struct {
 	ErpOnHandUnits int64 `json:"erp_on_hand_units"`
 	WmsOnHandUnits int64 `json:"wms_on_hand_units"`
 	DifferenceUnits int64 `json:"difference_units"`
+	KnownAsOf string `json:"known_as_of"`
+	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
+}
+
+type Suppliers struct {
+	SupplierID string `json:"supplier_id"`
+	MarketID string `json:"market_id"`
+	SupplierName string `json:"supplier_name"`
+	SupplierNumber string `json:"supplier_number"`
+	BrandName string `json:"brand_name"`
+	CurrencyCode string `json:"currency_code"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }

@@ -15,7 +15,24 @@ globalDefaults:
 # Absolute money, grid and ending conventions fail closed unless this exact
 # market + operating-currency pair exists.
 marketCurrencyRules:
+  # `india-mumbai` is the retired market id. It is retained because the resolved
+  # policy-v1 vectors and their fingerprints were computed against it, and
+  # deleting it would make those immutable artifacts unreproducible. It is not the
+  # live scope: `india-west` below is.
   - marketId: india-mumbai
+    currencyCode: INR
+    minorUnitExponent: 2
+    minimumPriceMinor: 500
+    maximumPriceMinor: 50000000
+    candidateStepMinor: 100
+    gridOriginMinor: 0
+    preferredEndingMinor: [0, 99]
+  # Added at P4-4. Its absence was an executable failure rather than vector
+  # staleness: `resolve_guardrails("india-west", "INR")` raised, so one of the two
+  # live supported markets could resolve no policy at all. Values match the
+  # retired Mumbai rule because the market's currency and price conventions did
+  # not change when the id did.
+  - marketId: india-west
     currencyCode: INR
     minorUnitExponent: 2
     minimumPriceMinor: 500

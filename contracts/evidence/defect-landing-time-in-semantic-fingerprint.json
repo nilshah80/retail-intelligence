@@ -1,0 +1,57 @@
+{
+  "consequence": "The publication fingerprint cannot answer the only question it is asked: did the data change? It moves on every re-land of byte-identical source, so `repin` is mandatory on any rebuild and a moved pin carries no information. Worse for governance: a publication selection record embeds the publication fingerprint, so re-landing the same snapshot makes every committed selection unreproducible. That is what silently rewrote the r5 records mid-rebuild before --no-clobber existed, and it is why a rebuild appears to demand a new selection generation for a decision nobody made.",
+  "decisionIds": [
+    89
+  ],
+  "defectId": "LANDING_TIME_IN_SEMANTIC_FINGERPRINT",
+  "evidence": {
+    "howItPropagates": "staging manifest semanticFingerprint -> transform manifest `stagingSemanticFingerprint` -> candidate semanticFingerprint -> publication semanticFingerprint. Each layer correctly excludes its OWN volatile fields and correctly inherits the layer above, so no single layer looks wrong.",
+    "measuredChain": {
+      "1_land": "same source run re-landed twice produced the same snapshot id cd20ca5a\u2026, so landing itself is content-addressed and correct",
+      "2_stage": "staging manifest carries landingTime 2026-08-04T13:21:36.689972Z, a wall clock, inside the fingerprinted payload",
+      "3_transform": "PROVEN DETERMINISTIC. Two transforms from one staging database produced identical semanticFingerprint 6eaa5684\u2026, identical entityCounts and identical entityControls, and that fingerprint equals the pipeline's own candidate.",
+      "4_publish": "PROVEN DETERMINISTIC. Two publishes from one candidate produced identical semanticFingerprint 894db90b\u2026, differing only in Parquet object count (1509 vs 1533) and DuckDB byte hash, both of which are correctly excluded as volatile.",
+      "5_conclusion": "Transform and publish are deterministic, so the run-to-run difference enters at staging, and landingTime is the only wall clock in its fingerprinted payload."
+    },
+    "observedDivergence": "Two full runs of the same landed snapshot, with no change to any code the transform reads, produced publication fingerprints f5c6ec3f\u2026 and 894db90b\u2026. Gate A (089df45d\u2026) and Gate B (0a3a6c0c\u2026) agreed across both, which they can do because neither fingerprints row-level controls.",
+    "theExcludedSet": "ingestion/src/retail_ingestion/staging/builder.py:771 declares volatile_pointers = ('/completedAt', '/executionProfile', '/databaseSha256'). `/landingTime` is absent, so it participates in identity."
+  },
+  "fix": {
+    "guardrail": "Add a determinism test that stages the same snapshot twice and asserts one staging semanticFingerprint. The absence of that test is why a wall clock survived in an identity field.",
+    "openQuestion": "Whether landingTime belongs in the payload at all. It is genuine provenance -- when the bytes were landed -- so the choice is between excluding it from identity while keeping it in the manifest (the same treatment /completedAt already gets, and the option this record favours) or moving it to a sibling provenance file. What must not happen is a fingerprint that silently means 'these bytes, landed at this instant'.",
+    "scope": "one line in the staging builder, then a full re-derivation: the pin, and every publication selection whose fingerprints would change",
+    "steps": [
+      "decide the open question below",
+      "if excluded: add '/landingTime' to the staging manifest's volatile_pointers",
+      "re-stage, re-transform, re-publish and confirm the publication fingerprint now reproduces across two independent runs of one snapshot",
+      "re-establish the pin, and author ONE new selection generation covering the fingerprint-definition change -- a real decision, unlike the churn it replaces",
+      "then verify a second rebuild leaves the pin and every selection record untouched, which is the actual acceptance criterion"
+    ]
+  },
+  "measuredOn": "run-adac9e85dccb56e8, two full pipeline runs plus isolated two-run transform and publish experiments",
+  "notFixedYet": false,
+  "resolution": {
+    "change": "'/landingTime' added to STAGING_VOLATILE_POINTERS in ingestion/src/retail_ingestion/staging/builder.py. The tuple was extracted to module level for the tests to assert against; a copy in the tests could drift from the code and would then prove nothing. The instant is still recorded in the manifest -- excluded from identity is not dropped.",
+    "dataUnchanged": "test_pinned_run passed unmodified against the rebuilt publication: 47 entities, sales 7,471,784, suppliers 280, inbound 197,368, activeSkus 573, asOfDate 2026-07-28. Backtest reported identical figures for a third consecutive run (708,708 forecast rows, 65,021,190 training rows). Identity semantics changed; content did not.",
+    "fingerprintsAfter": {
+      "candidate": "1ae41124921c6f3c650937b251493de1231182ba6625ca70ebfd93752a86208b",
+      "publication": "af41f60202348835af43f43c0db8d4a63650e6479fa6c74f9b21b21cf3199c24",
+      "staging": "3d28c01599ff670799dc327967c85191fb85ff445c88cfd415a7514449c7b33a"
+    },
+    "governanceCost": "None beyond a re-derivation. The r5 selection records were still untracked working state rather than committed history, so they were regenerated with reproducible fingerprints instead of minting an r6 generation to supersede a record nobody had committed. repin wrote exactly the 12 deleted records and left all 50 historical ones untouched.",
+    "guardrail": "ingestion/tests/test_staging_fingerprint_determinism.py asserts BOTH directions: that landingTime cannot move the fingerprint, and that sourceSnapshotId, tableCounts, stagingTables, extractBoundary and profileVersion still can. Without the second half a volatile set could grow until the fingerprint meant nothing while the first test still passed.",
+    "mutationTested": "The fix was reverted and the tests re-run: 2 failed with differing fingerprints and a missing exclusion, 2 correctly still passed. A guardrail that does not fail on the defect is decoration.",
+    "provenEndToEnd": {
+      "conclusion": "The only re-land variable was landingTime and it is now excluded; the only re-stage variables were already excluded. The staging fingerprint, and the candidate and publication fingerprints beneath it, therefore reproduce across both.",
+      "fact1_stagingIsDeterministic": "Two independent staging runs from one snapshot produced the identical fingerprint 3d28c015\u2026, and the ONLY manifest fields that differed were completedAt and databaseSha256 -- both already excluded. So no other run-varying field exists in the payload.",
+      "fact2_landingTimeIsExcluded": "Asserted directly against the real STAGING_VOLATILE_POINTERS tuple, and mutation tested.",
+      "howLandingTimeWasNotMutated": "The landed manifest is -r--r--r-- and the edit was refused, so immutability held. The proof was composed from two measured facts instead."
+    },
+    "status": "FIXED 2026-08-04",
+    "verified": "dev.py verify exits 0. contracts 202, ingestion 198, ml 343, datagen 77, boundaries 12, db-test 10, ui 37, Go all ok, pinned-run 3. All 16 API routes live."
+  },
+  "rootCause": "A wall-clock timestamp participates in a semantic fingerprint. `landingTime` is recorded by land, carried into the staging manifest, and not listed among that manifest's volatile pointers -- so every fingerprint derived from staging inherits the instant the snapshot was landed rather than only what it contains.",
+  "schemaVersion": "retail-defect-record/v1",
+  "severity": "high_governance_impact",
+  "summary": "The curated publication's semantic fingerprint is not reproducible for identical data, because the staging manifest fingerprints `landingTime` -- a wall clock. Transform and publish were each measured deterministic, which locates the leak precisely at staging."
+}

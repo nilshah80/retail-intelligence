@@ -19,11 +19,18 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0008_nullable_withheld_interval"
+	ForecastMigrationRevision = "0020_safety_stock_drivers"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
 	ForecastReasonUnmaterialized = "FORECAST_READ_MODEL_UNAVAILABLE"
+	// Decision #90 authority uniqueness is a property of the whole projection,
+	// not of one configured scope. Selecting by activation_scope_fingerprint
+	// alone returns one row per scope hash, so a second authority activated
+	// under a different legacy scope reads as healthy. This reason exists so
+	// that state is reported as an ambiguous authority rather than silently
+	// served, and it maps to 503 like the other governed unavailable reasons.
+	ForecastReasonAuthorityAmbiguous = "FORECAST_AUTHORITY_AMBIGUOUS"
 )
 
 type ForecastReadError struct {
@@ -148,6 +155,37 @@ func LoadForecast(ctx context.Context, config ForecastConfig) *ForecastStore {
 		return unavailableForecast(
 			ForecastReasonInvalid,
 			"The PostgreSQL forecast schema is not at the required migration.",
+		)
+	}
+
+	// Decision #90 / #93: prove the global authority count BEFORE resolving the
+	// configured fingerprint. Configuration may select the one proven row; it may
+	// never hide a competing one.
+	var activeAuthorities int
+	err = pool.QueryRow(
+		ctx,
+		"SELECT count(*) FROM retail_serving.active_forecast_versions",
+	).Scan(&activeAuthorities)
+	if err != nil {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonUnmaterialized,
+			"The active forecast authority count could not be verified.",
+		)
+	}
+	if activeAuthorities == 0 {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonUnmaterialized,
+			"The accepted forecast projection has not been activated.",
+		)
+	}
+	if activeAuthorities > 1 {
+		pool.Close()
+		return unavailableForecast(
+			ForecastReasonAuthorityAmbiguous,
+			"More than one forecast version is active; serving fails closed "+
+				"until exactly one authority remains.",
 		)
 	}
 
@@ -286,30 +324,44 @@ func (s *ForecastStore) Read(
 	if !s.Available() {
 		return nil, errors.New("forecast store is unavailable")
 	}
+	// Two facts are revalidated per request, and they are not the same fact.
+	// `activeAuthorities` is the decision-#90 global invariant across every
+	// activation scope hash; `stillActive` is this store's own lineage. A second
+	// authority activated mid-process is invisible to the second check alone,
+	// which is exactly the hole the configured-scope-only query left open.
+	var activeAuthorities int
 	var stillActive bool
 	err := s.pool.QueryRow(
 		ctx,
 		`
-		SELECT EXISTS (
-			SELECT 1
-			FROM retail_serving.active_forecast_versions
-			WHERE activation_scope_fingerprint = $1
-			  AND forecast_run_id = $2
-			  AND version_id = $3
-			  AND run_semantic_fingerprint = $4
-			  AND publication_semantic_fingerprint = $5
-		)
+		SELECT
+			(SELECT count(*) FROM retail_serving.active_forecast_versions),
+			EXISTS (
+				SELECT 1
+				FROM retail_serving.active_forecast_versions
+				WHERE activation_scope_fingerprint = $1
+				  AND forecast_run_id = $2
+				  AND version_id = $3
+				  AND run_semantic_fingerprint = $4
+				  AND publication_semantic_fingerprint = $5
+			)
 		`,
 		s.activationScopeFingerprint,
 		s.forecastRunID,
 		s.versionID,
 		s.semanticFingerprint,
 		s.publicationFingerprint,
-	).Scan(&stillActive)
+	).Scan(&activeAuthorities, &stillActive)
 	if err != nil {
 		return nil, forecastReadError(
 			ForecastReasonUnmaterialized,
 			"forecast activation could not be revalidated",
+		)
+	}
+	if activeAuthorities != 1 {
+		return nil, forecastReadError(
+			ForecastReasonAuthorityAmbiguous,
+			"forecast authority is not unique across activation scopes",
 		)
 	}
 	if !stillActive {
@@ -608,29 +660,53 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// "Demand at Risk" is a reference KPI on this page and a Phase 4 measure.
+	// Summed across locations here because the tile is the enterprise figure;
+	// the per-store split rides on the Store View.
+	risks := s.demandAtRisk(ctx)
+	var riskMinor int64
+	var riskUnits float64
+	var riskCells int64
+	var riskLocations int
+	for _, entry := range risks {
+		if entry.valueMinor != nil {
+			riskMinor += *entry.valueMinor
+		}
+		if entry.units != nil {
+			riskUnits += *entry.units
+		}
+		riskCells += entry.cells
+		if entry.cells > 0 {
+			riskLocations++
+		}
+	}
 	payload := s.envelope("retail-forecast-summary/v1")
 	payload["items"] = []map[string]any{{
-		"accuracy":            accuracy,
-		"bias":                bias,
-		"p90Coverage":         p90Coverage,
-		"baselineAccuracy":    baselineAccuracy,
-		"fvaVsMa13Pct":        fvaVsMA13,
-		"accuracyGrain":                  "series_key",
-		"baselineAccuracyGrain":          "series_key",
-		"fvaGrain":                       "series_key",
-		"portfolioAccuracy":              portfolio["accuracy"],
-		"portfolioBias":                  portfolio["bias"],
-		"portfolioBaselineAccuracy":      portfolio["baselineAccuracy"],
-		"portfolioFvaVsMa13Pct":          portfolio["fvaVsMa13Pct"],
-		"portfolioAccuracyGrain":         "market_portfolio",
-		"demandUnits":         demandUnits,
-		"seriesCount":         seriesCount,
-		"exceptionCount":      exceptionCount,
-		"exceptionCounts":     exceptionCounts,
-		"qualityCounts":       qualityCounts,
-		"forecastCoveragePct": forecastCoverage,
-		"backtestCoveragePct": backtestCoverage,
-		"categories":          categories,
+		"demandAtRiskMinor":         riskMinor,
+		"demandAtRiskUnits":         riskUnits,
+		"demandAtRiskCells":         riskCells,
+		"demandAtRiskLocations":     riskLocations,
+		"accuracy":                  accuracy,
+		"bias":                      bias,
+		"p90Coverage":               p90Coverage,
+		"baselineAccuracy":          baselineAccuracy,
+		"fvaVsMa13Pct":              fvaVsMA13,
+		"accuracyGrain":             "series_key",
+		"baselineAccuracyGrain":     "series_key",
+		"fvaGrain":                  "series_key",
+		"portfolioAccuracy":         portfolio["accuracy"],
+		"portfolioBias":             portfolio["bias"],
+		"portfolioBaselineAccuracy": portfolio["baselineAccuracy"],
+		"portfolioFvaVsMa13Pct":     portfolio["fvaVsMa13Pct"],
+		"portfolioAccuracyGrain":    "market_portfolio",
+		"demandUnits":               demandUnits,
+		"seriesCount":               seriesCount,
+		"exceptionCount":            exceptionCount,
+		"exceptionCounts":           exceptionCounts,
+		"qualityCounts":             qualityCounts,
+		"forecastCoveragePct":       forecastCoverage,
+		"backtestCoveragePct":       backtestCoverage,
+		"categories":                categories,
 	}}
 	return payload, nil
 }
@@ -785,13 +861,58 @@ func (s *ForecastStore) workbench(
 				stores.name AS store_name,
 				stores.city AS store_city,
 				SUM(series.yhat_p50) AS ai_forecast,
-				SUM(series.yhat_p90) AS ai_forecast_p90,
-				SUM(
-					series.confidence * GREATEST(series.yhat_p50, 1.0)
-				) / NULLIF(
-					SUM(GREATEST(series.yhat_p50, 1.0)),
+				-- Decision #92 withholds the cold-start interval beyond h4 while
+				-- retaining P50 at every horizon, so a selected window of 8, 13 or
+				-- 26 weeks mixes horizons that carry an interval with horizons that
+				-- do not. Both aggregates below were written when every row had an
+				-- interval, and SUM skips nulls, so both silently changed meaning.
+				--
+				-- Frozen by decision #64 Q19 / parity amendment P4-0P-A1.
+				COUNT(*) FILTER (WHERE NOT series.interval_available)
+					AS interval_withheld_weeks,
+				MIN(series.horizon_week) FILTER (WHERE series.interval_available)
+					AS interval_covered_from,
+				MAX(series.horizon_week) FILTER (WHERE series.interval_available)
+					AS interval_covered_through,
+				MAX(series.interval_unavailable_reason)
+					AS interval_unavailable_reason,
+				-- The interval total is absent whenever the window contains a
+				-- withheld week. Confining the sum to h1-h4 would remove the
+				-- population mismatch and still label a sum of weekly upper bounds
+				-- as an interval for a multi-week total: a sum of P90 bounds is not
+				-- the P90 of the sum, which predates #92 and is not made true by
+				-- scoping.
+				CASE
+					WHEN COUNT(*) FILTER (WHERE NOT series.interval_available) = 0
+					THEN SUM(series.yhat_p90)
+				END AS ai_forecast_p90,
+				-- Confidence is repaired in two steps, because correcting the
+				-- arithmetic and choosing the presentation are different problems.
+				--
+				-- Step one, the arithmetic: decision #12 defines slice confidence as
+				-- the max(P50,1)-weighted mean of per-row confidence, and the old
+				-- expression let a retained P50 weight sit in a denominator whose
+				-- numerator had skipped it. Restricting BOTH sides to the weeks that
+				-- carry an interval is that same formula applied to the population
+				-- where confidence exists. Over the 398 affected series at 26 weeks
+				-- this moves the figure from 0.0814 to 0.5817.
+				SUM(series.confidence * GREATEST(series.yhat_p50, 1.0))
+					FILTER (WHERE series.interval_available)
+				/ NULLIF(
+					SUM(GREATEST(series.yhat_p50, 1.0))
+						FILTER (WHERE series.interval_available),
 					0
-				) AS confidence,
+				) AS confidence_covered_window_mean,
+				-- Step two, the presentation: a correct h1-h4 number under a heading
+				-- reading "Confidence", beside forecast values covering the whole
+				-- selection, still states a scope the screen does not. Q19 freezes it
+				-- unavailable when the window is mixed. At a 4-week selection nothing
+				-- is withheld, so this is the unchanged full-window mean.
+				CASE
+					WHEN COUNT(*) FILTER (WHERE NOT series.interval_available) = 0
+					THEN SUM(series.confidence * GREATEST(series.yhat_p50, 1.0))
+					   / NULLIF(SUM(GREATEST(series.yhat_p50, 1.0)), 0)
+				END AS confidence,
 				CASE MAX(
 					CASE series.data_quality_class
 						WHEN 'Issue' THEN 3
@@ -964,6 +1085,11 @@ func (s *ForecastStore) workbench(
 				0
 			),
 			current_forecast.confidence,
+			current_forecast.confidence_covered_window_mean,
+			current_forecast.interval_covered_from,
+			current_forecast.interval_covered_through,
+			current_forecast.interval_withheld_weeks,
+			current_forecast.interval_unavailable_reason,
 			primary_drivers.driver,
 			current_forecast.data_quality_class,
 			COALESCE(primary_exceptions.severity, 'Low'),
@@ -1024,10 +1150,19 @@ func (s *ForecastStore) workbench(
 			lastActualWeek                                              *time.Time
 			accuracy, wape, bias, demandSharePct                        *float64
 			accuracyState                                               string
-			confidence                                                  float64
-			primaryDriver                                               *string
-			dataQuality, priority, status                               string
-			exceptionClass                                              *string
+			// Every aggregated interval value is scanned as nullable. The old
+			// non-pointer `confidence` survived only because the window is
+			// cumulative from h1 and therefore always contained a calibrated week;
+			// any horizon-range filter -- which the P4-1 truth table and Phase 4
+			// safety-stock work both invite -- turned it into a request-time scan
+			// error rather than a governed unavailable state.
+			confidence, confidenceCoveredWindowMean     *float64
+			intervalCoveredFrom, intervalCoveredThrough *int32
+			intervalWithheldWeeks                       int64
+			intervalUnavailableReason                   *string
+			primaryDriver                               *string
+			dataQuality, priority, status               string
+			exceptionClass                              *string
 		)
 		if err := rows.Scan(
 			&rowTotal,
@@ -1052,6 +1187,11 @@ func (s *ForecastStore) workbench(
 			&bias,
 			&demandSharePct,
 			&confidence,
+			&confidenceCoveredWindowMean,
+			&intervalCoveredFrom,
+			&intervalCoveredThrough,
+			&intervalWithheldWeeks,
+			&intervalUnavailableReason,
 			&primaryDriver,
 			&dataQuality,
 			&priority,
@@ -1065,6 +1205,23 @@ func (s *ForecastStore) workbench(
 		if lastActualWeek != nil {
 			lastActualDate = lastActualWeek.Format("2006-01-02")
 		}
+		// A mixed window is a governed unavailable state, not a missing value, so
+		// the reason travels with it. Without a state the consumer cannot tell an
+		// unavailable interval from an absent row, and "null means zero spread" is
+		// the coercion decision #92 exists to prevent.
+		intervalState := "available"
+		confidenceState := "measured"
+		if intervalWithheldWeeks > 0 {
+			intervalState = "unavailable_mixed_window"
+			confidenceState = "unavailable_mixed_window"
+		}
+		var coveredFrom, coveredThrough any
+		if intervalCoveredFrom != nil {
+			coveredFrom = int(*intervalCoveredFrom)
+		}
+		if intervalCoveredThrough != nil {
+			coveredThrough = int(*intervalCoveredThrough)
+		}
 		items = append(items, map[string]any{
 			"marketId": marketID, "skuId": skuID, "storeId": storeID,
 			"channelId": channelID, "departmentId": departmentID,
@@ -1077,10 +1234,24 @@ func (s *ForecastStore) workbench(
 			"accuracy": accuracy, "wape": wape,
 			"accuracyState": accuracyState, "accuracyGrain": "series_key",
 			"demandSharePct": demandSharePct,
-			"bias": bias, "confidence": confidence,
-			"primaryDriver": primaryDriver, "dataQuality": dataQuality,
-			"priority": priority, "exceptionClass": exceptionClass,
-			"status": status,
+			"bias":           bias, "confidence": confidence,
+			"confidenceState": confidenceState,
+			// Diagnostic, not the display value. The parity contract renders
+			// Confidence unavailable when the window is mixed; this is the
+			// arithmetically corrected covered-window mean that the regression
+			// asserts, exposed so an API consumer sees the honest figure rather
+			// than only its absence. It is rendered nowhere.
+			"confidenceCoveredWindowMean":   confidenceCoveredWindowMean,
+			"aiForecastP90State":            intervalState,
+			"intervalCoveredFromHorizon":    coveredFrom,
+			"intervalCoveredThroughHorizon": coveredThrough,
+			"intervalWithheldWeeks":         intervalWithheldWeeks,
+			"intervalUnavailableReason":     intervalUnavailableReason,
+			"primaryDriver":                 primaryDriver,
+			"dataQuality":                   dataQuality,
+			"priority":                      priority,
+			"exceptionClass":                exceptionClass,
+			"status":                        status,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1111,7 +1282,8 @@ func (s *ForecastStore) series(
 			COUNT(*) OVER(),
 			market_id, sku_id, store_id, channel_id, dept_id, category,
 			horizon_week, target_week_start, yhat_p50, yhat_p90,
-			confidence, interval_unavailable_reason, data_quality_class
+			confidence, interval_available, interval_unavailable_reason,
+			data_quality_class
 		FROM retail_serving.forecast_series
 		WHERE %s
 		ORDER BY market_id, store_id, sku_id, channel_id, horizon_week
@@ -1141,17 +1313,34 @@ func (s *ForecastStore) series(
 			// migration 0008 could not be adopted without this. A null must reach the
 			// client as null rather than as a zero: zero spread would be consumed
 			// arithmetically as certainty on the least predictable rows.
-			p90, confidence                                       *float64
-			intervalReason                                        *string
-			rowTotal                                              int64
+			p90, confidence *float64
+			// Read, never inferred. Migration 0009 stores availability explicitly
+			// and constrains it to agree with nullability, so deriving it here from
+			// `p90 != nil` would silently re-implement a rule the database already
+			// owns -- and would be unable to distinguish a governed withholding from
+			// a writer that lost the value.
+			intervalAvailable bool
+			intervalReason    *string
+			rowTotal          int64
 		)
 		if err := rows.Scan(
 			&rowTotal,
 			&marketID, &skuID, &storeID, &channelID, &deptID, &category,
-			&horizon, &targetWeek, &p50, &p90, &confidence, &intervalReason,
+			&horizon, &targetWeek, &p50, &p90, &confidence,
+			&intervalAvailable, &intervalReason,
 			&qualityClass,
 		); err != nil {
 			return nil, err
+		}
+		// Defence in depth against a projection written before 0009's constraints.
+		// The database refuses this combination now; a request-time refusal is
+		// still cheaper than serving a row whose availability disagrees with its
+		// own interval.
+		if intervalAvailable != (p90 != nil) {
+			return nil, forecastReadError(
+				ForecastReasonInvalid,
+				"interval availability disagrees with the stored interval",
+			)
 		}
 		total = rowTotal
 		items = append(items, map[string]any{
@@ -1161,9 +1350,9 @@ func (s *ForecastStore) series(
 			"p50": p50, "p90": p90, "confidence": confidence,
 			// Present so a client can distinguish "no interval was published, here is
 			// why" from "the field is missing", per decision #92.
-			"intervalAvailable": p90 != nil,
+			"intervalAvailable":         intervalAvailable,
 			"intervalUnavailableReason": intervalReason,
-			"dataQuality": qualityClass,
+			"dataQuality":               qualityClass,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1268,6 +1457,7 @@ func (s *ForecastStore) weeklyActuals(
 					evaluation.target_week_start,
 					evaluation.horizon,
 					evaluation.yhat_p50,
+					evaluation.yhat_p90,
 					evaluation.actual_units
 				FROM retail_serving.forecast_eval_predictions AS evaluation%s
 				WHERE %s
@@ -1280,6 +1470,7 @@ func (s *ForecastStore) weeklyActuals(
 			SELECT
 				scoped.target_week_start,
 				SUM(scoped.yhat_p50),
+				SUM(scoped.yhat_p90),
 				SUM(scoped.actual_units)
 			FROM scoped
 			JOIN freshest
@@ -1302,13 +1493,23 @@ func (s *ForecastStore) weeklyActuals(
 	items := []map[string]any{}
 	for rows.Next() {
 		var targetWeek time.Time
-		var forecast, actual float64
-		if err := rows.Scan(&targetWeek, &forecast, &actual); err != nil {
+		var forecast, forecastP90, actual float64
+		if err := rows.Scan(
+			&targetWeek, &forecast, &forecastP90, &actual,
+		); err != nil {
 			return nil, err
 		}
+		// P90 alongside P50 because the two answer different questions and the
+		// chart needs both to be honest. `forecast` is a MEDIAN, and this demand is
+		// heavily right-skewed -- mean 27.68 against median 6.00 -- so summing
+		// medians against realised totals must land low. It reads as a forecast
+		// that is always wrong in one direction when in fact P(actual <= P50) is
+		// 52.8 per cent, which is a median doing its job. Serving the interval lets
+		// the screen show the actual falling INSIDE it rather than above a point.
 		items = append(items, map[string]any{
 			"targetWeekStart": targetWeek.Format("2006-01-02"),
 			"forecast":        forecast,
+			"forecastP90":     forecastP90,
 			"actual":          actual,
 		})
 	}
@@ -1764,6 +1965,7 @@ func (s *ForecastStore) stores(
 		return nil, err
 	}
 	defer rows.Close()
+	risks := s.demandAtRisk(ctx)
 	items := []map[string]any{}
 	for rows.Next() {
 		var (
@@ -1778,12 +1980,23 @@ func (s *ForecastStore) stores(
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"storeId": storeID, "marketId": marketID, "name": name,
 			"city": city, "region": region, "timezone": timezone,
 			"currencyCode": currency, "format": format, "active": active,
 			"accuracy": accuracy, "bias": bias, "p90Coverage": coverage,
-		})
+		}
+		// The reference's Store View carries Demand at Risk and Stock-out Risk
+		// beside accuracy. Both are Phase 4 inventory measures, joined by
+		// location id -- a store's forecast identity and its inventory identity
+		// are the same node.
+		if entry, present := risks[storeID]; present {
+			item["demandAtRiskMinor"] = entry.valueMinor
+			item["demandAtRiskUnits"] = entry.units
+			item["demandAtRiskCells"] = entry.cells
+			item["stockoutRisk"] = entry.stockoutRisk
+		}
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1791,6 +2004,75 @@ func (s *ForecastStore) stores(
 	payload := s.envelope("retail-forecast-stores/v1")
 	payload["items"] = items
 	return payload, nil
+}
+
+// demandAtRisk reads the Phase 4 inventory projections the forecast screen has
+// always needed and never had.
+//
+// "Demand at Risk" is a forecast-page KPI in the reference and a per-store
+// column in its Store View, but the quantity is an INVENTORY measure -- forecast
+// demand the position cannot serve. Before Phase 4 nothing computed it, so the
+// screen withheld it. It is computed now, so withholding it would be reporting a
+// gap that has closed.
+//
+// Scoped to the active inventory version, and silently absent rather than fatal
+// when no inventory bundle is active: the forecast screen is a Phase 3 surface
+// and must not start failing because a Phase 4 activation is missing.
+type locationRisk struct {
+	valueMinor   *int64
+	units        *float64
+	cells        int64
+	stockoutRisk string
+}
+
+func (s *ForecastStore) demandAtRisk(ctx context.Context) map[string]locationRisk {
+	rows, err := s.pool.Query(ctx, `
+		WITH active AS (
+			SELECT inventory_version_id FROM retail_serving.active_inventory_versions
+		),
+		risk AS (
+			SELECT location_id,
+			       SUM(risk_value_minor) AS value_minor,
+			       SUM(risk_units) AS units,
+			       COUNT(*) FILTER (WHERE interval_available) AS cells
+			FROM retail_serving.inventory_demand_at_risk
+			WHERE inventory_version_id = (SELECT inventory_version_id FROM active)
+			GROUP BY location_id
+		),
+		health AS (
+			SELECT location_id,
+			       COUNT(*) FILTER (WHERE health_class = 'stockout') AS stockouts,
+			       COUNT(*) FILTER (WHERE health_class = 'understock') AS understocks
+			FROM retail_serving.inventory_stock_health
+			WHERE inventory_version_id = (SELECT inventory_version_id FROM active)
+			GROUP BY location_id
+		)
+		SELECT COALESCE(risk.location_id, health.location_id),
+		       risk.value_minor, risk.units, COALESCE(risk.cells, 0),
+		       CASE
+		           WHEN COALESCE(health.stockouts, 0) > 0 THEN 'High'
+		           WHEN COALESCE(health.understocks, 0) > 0 THEN 'Medium'
+		           ELSE 'Low'
+		       END
+		FROM risk FULL OUTER JOIN health USING (location_id)
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	byLocation := map[string]locationRisk{}
+	for rows.Next() {
+		var location, risk string
+		var entry locationRisk
+		if err := rows.Scan(
+			&location, &entry.valueMinor, &entry.units, &entry.cells, &risk,
+		); err != nil {
+			return byLocation
+		}
+		entry.stockoutRisk = risk
+		byLocation[location] = entry
+	}
+	return byLocation
 }
 
 func (s *ForecastStore) drivers(

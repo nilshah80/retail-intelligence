@@ -382,6 +382,60 @@ class InboundShipments(TypedDict):
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
+class ServiceLanes(TypedDict):
+    lane_id: str
+    market_id: str
+    lane_type: Literal["replenishment", "customer_fulfillment"]
+    demand_location_id: str
+    channel_id: str | None
+    supply_location_id: str
+    priority_rank: int
+    transit_days: int
+    effective_from: str
+    effective_to: NotRequired[str]
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
+class InboundShipmentStatusEvents(TypedDict):
+    shipment_id: str
+    sku_id: str
+    from_location: NotRequired[str]
+    to_location: str
+    qty: int
+    status: Literal["on_order", "in_transit", "received", "cancelled", "exception"]
+    status_effective_at: str
+    expected_receipt_date: NotRequired[str]
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
+class InventoryTransferEvents(TypedDict):
+    transfer_id: str
+    sku_id: str
+    from_location_id: str
+    to_location_id: str
+    qty: int
+    status: Literal["created", "dispatched", "in_transit", "received", "cancelled"]
+    status_effective_at: str
+    unit_cost_minor: NotRequired[int]
+    currency_code: NotRequired[str]
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
+class SupplyTerms(TypedDict):
+    destination_location_id: str
+    origin_kind: Literal["external_supplier", "internal_location"]
+    origin_id: str
+    merch_scope_type: MerchScopeType
+    merch_scope_id: str
+    effective_from: str
+    effective_to: NotRequired[str]
+    lead_time_days: int
+    lead_time_std_days: NotRequired[str]
+    moq: int
+    pack_qty: int
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
 class TransferOrders(TypedDict):
     transfer_id: str
     sku_id: str
@@ -433,6 +487,16 @@ class WmsInventoryComparisons(TypedDict):
     erp_on_hand_units: int
     wms_on_hand_units: int
     difference_units: int
+    known_as_of: str
+    known_as_of_evidence_grade: EvidenceGrade
+
+class Suppliers(TypedDict):
+    supplier_id: str
+    market_id: str
+    supplier_name: str
+    supplier_number: str
+    brand_name: str
+    currency_code: str
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 

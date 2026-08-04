@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-01T00:00:00Z",
+    "reason": "Adopted as the active source authority for the serving forecast fr_357575f586905b11 / fv_3d66e3bd9939430d."
+  },
+  "lifecycle": {
+    "reasonCode": "DECISION_93_ADOPTION",
+    "recordId": "rec_06f9b355b6738dfd",
+    "state": "active",
+    "supersedes": "rec_4e31878b58ff4edc"
+  },
+  "publication": {
+    "duckdbSha256": "a7e939957f184542361e100a66c90164083f4024e8a0dc296a21e42ef276b1a4",
+    "gateASemanticFingerprint": "594566312da4f81c2887b125f26778ead2045ee762ea1e95f5d1729ce89e1ec6",
+    "gateBSemanticFingerprint": "cdb41e026ee927ef2cd48de863875bcd5aa432795213a6de35445a1b654f94dd",
+    "logicalPath": "ingestion/data/curated/run-c5eb1506ecd4c550",
+    "objectCount": 2069,
+    "publicationSemanticFingerprint": "fa1bf8834ee9db3111be35ffde5d6b77d4af79c9b4523475e35e462b7a2b02a0",
+    "sourceSnapshotId": "e010c5499de1a53cb2d02edbed2c1b0fef350c12f1d30317f495415ecf7cdd09"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "cdb41e026ee927ef2cd48de863875bcd5aa432795213a6de35445a1b654f94dd"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_eeb6d9dfe7b201f8"
+}

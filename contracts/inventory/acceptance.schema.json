@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/inventory/acceptance.schema.json",
+  "title": "retail-inventory-acceptance/v1",
+  "description": "Replay and policy-holdout acceptance for one inventory/replenishment run. Every gate value is independently recomputable from the run's own artifacts: a stored boolean nothing can recompute is a claim, not evidence. The math is frozen by inventory-policy/2.0.0 `replayAcceptance` BEFORE any candidate runs; a threshold tuned after seeing a result is the failure mode this schema exists to prevent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "inventoryRunId",
+    "semanticFingerprint",
+    "passed",
+    "oracleReproduction",
+    "replayGates",
+    "policyHoldout",
+    "perMarket",
+    "sufficiency"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "retail-inventory-acceptance/v1"},
+    "inventoryRunId": {"type": "string", "pattern": "^ir_[0-9a-f]{16}$"},
+    "semanticFingerprint": {"$ref": "#/$defs/sha256"},
+    "passed": {"type": "boolean"},
+    "oracleReproduction": {
+      "description": "Replay must reproduce the observed weekly stock oracle within the frozen tolerance BEFORE any policy comparison is scored. A replay that cannot reproduce reality has no standing to compare policies against it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "toleranceMeanAbsUnitDeltaPerCell", "measuredMeanAbsUnitDeltaPerCell", "weeksCompared"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "toleranceMeanAbsUnitDeltaPerCell": {"type": "string"},
+        "measuredMeanAbsUnitDeltaPerCell": {"type": "string"},
+        "weeksCompared": {"type": "integer", "minimum": 1}
+      }
+    },
+    "replayGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stockoutPeriods", "lostUnits", "fillRate", "meanInventoryUnits"],
+      "properties": {
+        "stockoutPeriods": {"$ref": "#/$defs/comparativeGate"},
+        "lostUnits": {"$ref": "#/$defs/comparativeGate"},
+        "fillRate": {"$ref": "#/$defs/comparativeGate"},
+        "meanInventoryUnits": {"$ref": "#/$defs/comparativeGate"}
+      }
+    },
+    "policyHoldout": {
+      "description": "The untouched 95% cohort. A calibration pass can never compensate for a holdout fail, and the holdout is read exactly once after the candidate is frozen.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "calibrationCohortFingerprint", "holdoutCohortFingerprint", "cohortsDisjoint", "holdoutReadOnce"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "calibrationCohortFingerprint": {"$ref": "#/$defs/sha256"},
+        "holdoutCohortFingerprint": {"$ref": "#/$defs/sha256"},
+        "cohortsDisjoint": {"const": true},
+        "holdoutReadOnce": {"const": true}
+      }
+    },
+    "perMarket": {
+      "description": "One verdict per supported market. Pooled results may not hide a market failure: a candidate that wins globally while losing India West is a rejected candidate.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["passed", "stockoutPeriods", "lostUnits", "fillRate", "meanInventoryUnits"],
+        "properties": {
+          "passed": {"type": "boolean"},
+          "stockoutPeriods": {"$ref": "#/$defs/comparativeGate"},
+          "lostUnits": {"$ref": "#/$defs/comparativeGate"},
+          "fillRate": {"$ref": "#/$defs/comparativeGate"},
+          "meanInventoryUnits": {"$ref": "#/$defs/comparativeGate"}
+        }
+      }
+    },
+    "sufficiency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["insufficientCells", "insufficientCellBehavior"],
+      "properties": {
+        "insufficientCells": {"type": "integer", "minimum": 0},
+        "insufficientCellBehavior": {"const": "insufficient_evidence_never_pass"}
+      }
+    },
+    "intervalConsumerReconciliation": {
+      "description": "P4-D17. Per-consumer skipped-row shares reconciled against the forecast availability artifact. A market whose cold-start SeriesKeys or demand is 100% skipped is recorded unavailable here, not discovered on a screen.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["skippedRows", "skippedSeries", "skippedDemandShare", "marketSubCapabilityUnavailable"],
+        "properties": {
+          "skippedRows": {"type": "integer", "minimum": 0},
+          "skippedSeries": {"type": "integer", "minimum": 0},
+          "skippedDemandShare": {"type": "string"},
+          "marketSubCapabilityUnavailable": {"type": "boolean"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "comparativeGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "candidate", "incumbent", "rule"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "candidate": {"type": "string"},
+        "incumbent": {"type": "string"},
+        "rule": {
+          "enum": [
+            "fewer_than_incumbent",
+            "no_worse_than_incumbent",
+            "lower_than_incumbent"
+          ]
+        },
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

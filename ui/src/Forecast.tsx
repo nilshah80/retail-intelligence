@@ -99,6 +99,19 @@ function ratioPercentage(value: number | null | undefined, signed = false) {
   return percentage(value === null || value === undefined ? value : value * 100, signed);
 }
 
+/**
+ * Rupees in the reference's own notation: crore, then lakh. Minor units in,
+ * market-local out. The read model has already converted to the reporting
+ * currency, so nothing is converted here.
+ */
+function money(minor: number | null | undefined): string | null {
+  if (minor === null || minor === undefined) return null;
+  const major = minor / 100;
+  if (major >= 1e7) return `\u20B9${(major / 1e7).toFixed(2)} Cr`;
+  if (major >= 1e5) return `\u20B9${(major / 1e5).toFixed(2)}L`;
+  return `\u20B9${major.toLocaleString("en-IN", {maximumFractionDigits: 0})}`;
+}
+
 function storeLabel(name: string, city: string) {
   return name.toLocaleLowerCase().includes(city.toLocaleLowerCase())
     ? name
@@ -485,7 +498,36 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
     }),
     columnHelper.accessor("confidence", {
       header: "Confidence",
-      cell: (info) => ratioPercentage(info.getValue())
+      // Decision #64 Q19 / parity amendment P4-0P-A1.
+      //
+      // Confidence is derived from the P90 interval, and decision #92 publishes
+      // the cold-start interval only through h4 while P50 continues to h26. The
+      // selected window is cumulative from h1, so 8, 13 and 26 weeks mix
+      // horizons that carry an interval with horizons that do not, and only the
+      // 4-week default is clean.
+      //
+      // The server already restricts the weighted mean to the weeks that carry
+      // an interval, so the number reaching here is arithmetically correct. It is
+      // still not shown for a mixed window: an h1-h4 figure under a column headed
+      // "Confidence", beside forecast values covering the whole selection, states
+      // a scope this table never displays. That is the failure decision #78 exists
+      // to prevent, so the cell takes the approved unavailable state and names the
+      // window it would have covered.
+      cell: (info) => {
+        const row = info.row.original;
+        if (row.confidenceState === "unavailable_mixed_window") {
+          const covered = row.intervalCoveredThroughHorizon;
+          const scope = covered === null || covered === undefined
+            ? "the calibrated horizons only"
+            : `weeks 1-${covered} only`;
+          return unavailable(
+            `Confidence covers ${scope} of the selected ${row.horizonWeeks}-week ` +
+            `window; ${row.intervalWithheldWeeks} week(s) have no calibrated ` +
+            "interval, so a single figure would misstate its scope"
+          );
+        }
+        return ratioPercentage(info.getValue());
+      }
     }),
     columnHelper.accessor("primaryDriver", {
       header: "Primary Driver",
@@ -541,32 +583,71 @@ function Overview({
   data,
   healthGrain,
   granularity,
+  horizonWeeks,
+  windowMetrics,
   setModal
 }: {
   data: ReturnType<typeof useForecastData>;
   healthGrain: ForecastHealthGrain;
   granularity: string;
+  /** The selected window, so the health table can mark the rows the tile pools. */
+  horizonWeeks: number;
+  /** The pooled figure the Forecast Accuracy tile shows, passed rather than
+   *  recomputed: two derivations of one number is how they come to disagree. */
+  windowMetrics: {accuracy: number | null; bias: number | null};
   setModal: (modal: Modal) => void;
 }) {
   const summary = data.summary!.items[0];
+  // `forecast` is the P50 -- a MEDIAN. This demand is heavily right-skewed (mean
+  // 27.68 against median 6.00), so summing medians against realised totals lands
+  // below them by construction, and a two-bar chart reads as a forecast that is
+  // always wrong in one direction. It is not: P(actual <= P50) is 52.8 per cent,
+  // which is what a median should do. Carrying the P90 turns the forecast into
+  // the RANGE it actually is, so the week is read as covered or not covered
+  // rather than over or under.
   const chartData = granularity === "Monthly"
     ? Object.values(data.actuals!.items.reduce<Record<string, {
       week: string;
       forecast: number;
+      forecastP90: number;
       actual: number;
+      bandBase: number;
+      bandSpan: number;
     }>>((months, item) => {
       const month = item.targetWeekStart.slice(0, 7);
-      const existing = months[month] ?? {week: month, forecast: 0, actual: 0};
+      const existing = months[month]
+        ?? {week: month, forecast: 0, forecastP90: 0, actual: 0,
+            bandBase: 0, bandSpan: 0};
       existing.forecast += item.forecast;
+      existing.forecastP90 += item.forecastP90 ?? item.forecast;
       existing.actual += item.actual;
+      existing.bandBase = existing.forecast;
+      existing.bandSpan = Math.max(0, existing.forecastP90 - existing.forecast);
       months[month] = existing;
       return months;
     }, {}))
-    : data.actuals!.items.map((item) => ({
-      week: shortDate(item.targetWeekStart),
-      forecast: item.forecast,
-      actual: item.actual
-    }));
+    : data.actuals!.items.map((item) => {
+      const p90 = item.forecastP90 ?? item.forecast;
+      return {
+        week: shortDate(item.targetWeekStart),
+        forecast: item.forecast,
+        forecastP90: p90,
+        actual: item.actual,
+        // The band is drawn as two stacked segments: an invisible base up to P50,
+        // then a visible span from P50 to P90. Recharts has no floating-bar type,
+        // and a stack is the only way to start a bar off the axis.
+        bandBase: item.forecast,
+        bandSpan: Math.max(0, p90 - item.forecast)
+      };
+    });
+  // P50 is a MEDIAN, so it sits below the realised total whenever demand is
+  // right-skewed -- which it heavily is here (mean 27.68, median 6.00). Read on
+  // its own, the forecast bar looks permanently short. What actually matters is
+  // whether the week landed inside the published interval, so the card says so
+  // rather than leaving a reader to infer it from two bars that cannot show it.
+  const coveredWeeks = chartData.filter(
+    (row) => row.actual >= row.forecast && row.actual <= row.forecastP90
+  ).length;
   // Decision #80: exactly four exact-horizon rows in reference order, always
   // rendered. The operational horizon selector changes future scope, not which
   // diagnostic rows exist, so it must not filter this table.
@@ -600,7 +681,14 @@ function Overview({
   return (
     <>
       <div className="grid-2">
-        <Card title="Forecast vs Actual" link={`Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"}`}>
+        <Card
+          title="Forecast vs Actual"
+          link={
+            `Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"} · ` +
+            `actual inside the P50–P90 forecast range in ` +
+            `${coveredWeeks} of ${chartData.length}`
+          }
+        >
           <div className="chart-box" aria-label="Forecast versus actual chart">
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={chartData} margin={{top: 12, right: 8, bottom: 4, left: 0}}>
@@ -611,8 +699,47 @@ function Overview({
                 } />
                 <Tooltip formatter={(value) => count(Number(value))} />
                 <Legend />
-                <Bar dataKey="forecast" name="Forecast" fill="#2f80ed" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="actual" name="Actual" fill="#1fbf75" radius={[4, 4, 0, 0]} />
+                {/*
+                  The forecast column is stacked: solid blue to P50, then a light
+                  blue segment carrying the rest of the way to P90. So the whole
+                  column IS the forecast range, and the question a reader asks --
+                  did the week land inside it -- is answered by whether the green
+                  Actual bar's top falls within the column's height.
+
+                  Actual carries its own stackId rather than none, so every Bar is
+                  on the same layout path; a lone unstacked bar beside a stacked
+                  pair rendered Actual as an empty `inactive-bar`.
+
+                  isAnimationActive={false} on all three is required, not styling.
+                  Verified by A/B on this exact chart under Recharts 3.10 / React
+                  19: with animation left on, all three stacked groups render eight
+                  wrappers each containing an EMPTY `recharts-inactive-bar` and the
+                  chart draws no columns at all; with it off, all 24 shapes appear.
+                  Unstacked bars animate fine, so it is the combination that fails.
+                */}
+                <Bar
+                  dataKey="forecast"
+                  stackId="forecast"
+                  name="Forecast (P50)"
+                  fill="#2f80ed"
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="bandSpan"
+                  stackId="forecast"
+                  name="P50 → P90 range"
+                  fill="#9dc3f7"
+                  radius={[4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="actual"
+                  stackId="actual"
+                  name="Actual"
+                  fill="#1fbf75"
+                  radius={[4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -625,7 +752,12 @@ function Overview({
               </thead>
               <tbody>
                 {horizonRows.map((row) => (
-                  <tr key={row.checkpoint} data-horizon={row.checkpoint}>
+                  <tr
+                    key={row.checkpoint}
+                    data-horizon={row.checkpoint}
+                    data-in-window={row.checkpoint <= horizonWeeks}
+                    className={row.checkpoint <= horizonWeeks ? "in-window" : undefined}
+                  >
                     <td>{row.checkpoint === 1 ? "1 week" : `${row.checkpoint} weeks`}</td>
                     <td>{percentage(row.accuracy)}</td>
                     <td>{ratioPercentage(row.bias, true)}</td>
@@ -636,6 +768,26 @@ function Overview({
                   </tr>
                 ))}
               </tbody>
+              {/* The KPI tile above shows ONE number for the selected window and
+                  this table shows one per horizon, which reads as a
+                  contradiction until you can see they are the same arithmetic.
+                  They are: the tile pools the window rather than averaging it --
+                  sum the absolute errors, sum the actuals, divide once -- so it
+                  lands inside the range of the rows it pools and equals this
+                  footer exactly. Shown rather than explained in a tooltip,
+                  because the question the footer answers is "does the tile agree
+                  with the table". */}
+              <tfoot>
+                <tr data-testid="horizon-window-total">
+                  <td><strong>h1&ndash;h{horizonWeeks} pooled</strong></td>
+                  <td><strong>{percentage(windowMetrics.accuracy)}</strong></td>
+                  <td><strong>{percentage(windowMetrics.bias, true)}</strong></td>
+                  <td colSpan={2} className="muted">
+                    Volume-weighted across the highlighted rows &mdash; the figure
+                    the Forecast Accuracy tile shows
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </Card>
@@ -720,8 +872,14 @@ function StoreView({
                 <td><strong>{storeLabel(store.name, store.city)}</strong></td>
                 <td>{percentage(store.accuracy)}</td>
                 <td>{ratioPercentage(store.bias, true)}</td>
-                <td>{unavailable("Demand risk belongs to Phase 4")}</td>
-                <td>{unavailable("Stock-out risk belongs to Phase 4")}</td>
+                <td>{money(store.demandAtRiskMinor)
+                  ?? unavailable("No costed risk row for this store")}</td>
+                <td>{store.stockoutRisk
+                  ? <span className={`badge ${
+                      store.stockoutRisk === "High" ? "b-red"
+                        : store.stockoutRisk === "Medium" ? "b-amber" : "b-green"
+                    }`}>{store.stockoutRisk}</span>
+                  : unavailable("No health row for this store")}</td>
                 <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
                 <td>{unavailable("No priority-action business rule is frozen")}</td>
               </tr>
@@ -886,9 +1044,16 @@ export function DemandForecast({
 
   function exportWorkbench() {
     if (!data.workbench?.items.length) return;
+    // The export carries confidence too, so it inherits decision #64 Q19: a
+    // mixed-window row exports an empty confidence and states its scope in its
+    // own columns. Writing the h1-h4 figure into a column headed `confidence`
+    // beside a whole-window `ai_forecast` would reintroduce the defect in a file
+    // that outlives the screen and carries no tooltip to qualify it.
     const headings = [
       "sku_id", "product_name", "store", "channel", "category", "horizon_weeks",
       "baseline", "ai_forecast", "last_actual", "accuracy", "bias", "confidence",
+      "confidence_state", "interval_covered_through_horizon",
+      "interval_withheld_weeks",
       "primary_driver", "data_quality", "status"
     ];
     const rows = data.workbench.items.map((row) => [
@@ -903,7 +1068,10 @@ export function DemandForecast({
       row.lastActual,
       row.accuracy,
       row.bias,
-      row.confidence,
+      row.confidenceState === "unavailable_mixed_window" ? null : row.confidence,
+      row.confidenceState,
+      row.intervalCoveredThroughHorizon,
+      row.intervalWithheldWeeks,
       row.primaryDriver,
       row.dataQuality,
       row.status
@@ -991,7 +1159,17 @@ export function DemandForecast({
           <span className="delta unavailable">Delta: Not available</span>
           <p>Target range: ±5% · {metricScopeLabel}</p>
         </div>
-        <div className="kpi"><small>Demand at Risk</small><div className="value unavailable">Not available</div><p>Available in Phase 4</p></div>
+        <div className="kpi">
+          <small>Demand at Risk</small>
+          <div className="value">
+            {money(summary?.demandAtRiskMinor)
+              ?? <span className="unavailable">Not available</span>}
+          </div>
+          <span className="delta down">
+            {summary?.demandAtRiskCells?.toLocaleString("en-US") ?? "0"} SKU-store combinations
+          </span>
+          <p>Potential lost-sales exposure</p>
+        </div>
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
         <div className="kpi">
           <small>Forecast Value Add</small>
@@ -1019,7 +1197,16 @@ export function DemandForecast({
         ))}
       </div>
       <section className="forecast-panel" role="tabpanel">
-        {tab === "Overview" && <Overview data={data} healthGrain={healthGrain} granularity={granularity} setModal={setModal} />}
+        {tab === "Overview" && (
+          <Overview
+            data={data}
+            healthGrain={healthGrain}
+            granularity={granularity}
+            horizonWeeks={horizonWeeks}
+            windowMetrics={scopedMetrics}
+            setModal={setModal}
+          />
+        )}
         {tab === "Store View" && <StoreView data={data} setModal={setModal} />}
         {tab === "SKU View" && <SkuView data={data} />}
         {tab === "Demand Drivers" && <DriversView data={data} />}

@@ -449,6 +449,39 @@ button.filter {
   color: var(--red);
 }
 
+/* A withheld interval-derived value (P4-9 task 12). Amber rather than red: the
+   row is not an error and nothing failed -- the platform declined to compute a
+   value outside its calibrated range, and the decision passes to a person. Red
+   would send someone looking for a fault that does not exist. */
+.cell-unavailable {
+  color: var(--amber);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Marks the row without hiding it. A collapsed or greyed-out row reads as
+   "nothing here"; a partial row has real position, health and ageing values
+   beside the withheld ones and they are all still worth reading. */
+tr[data-partial="true"] {
+  background: rgba(255, 174, 26, .06);
+}
+
+/* The partial notice is informational, so it sits at content height rather than
+   filling the 220px empty-state box, which would push the table off screen. */
+.state-card[data-testid="partial-notice"] {
+  min-height: 0;
+  place-items: start;
+  align-content: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  text-align: left;
+}
+
+.state-card[data-testid="partial-notice"] strong {
+  color: var(--text);
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 1000;
@@ -924,4 +957,110 @@ button.filter {
     flex-direction: column;
     gap: 8px;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Inventory & replenishment destinations (P4-9).
+
+   Class names and visual treatment are taken from the reference document
+   `docs/ai_retail_intelligence_dashboard_multicurrency_v6.html` so the built
+   screens and the approved design stay one thing. Only what the reference uses
+   and this stylesheet lacked is added here; .kpi, .kpi-grid, .delta, .grid-2,
+   .grid-3, .card, .card-head, .table, .badge and .filter already existed and are
+   reused unchanged.
+   --------------------------------------------------------------------------- */
+
+.b-blue { background: rgba(47, 128, 237, .12); color: var(--blue); }
+.b-gray { background: rgba(107, 118, 140, .14); color: var(--muted); }
+.b-purple { background: rgba(124, 77, 255, .12); color: var(--purple); }
+
+/* The sub-caption under a KPI value. Carries the basis of the number -- what it
+   counts, what it excludes -- so a tile is never a figure without provenance. */
+.demo-note {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.inventory-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.alert:last-child { border-bottom: 0; }
+
+.alert-icon {
+  display: grid;
+  flex: 0 0 26px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(47, 128, 237, .12);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.alert strong { display: block; font-size: 12px; }
+.alert span { display: block; color: var(--muted); font-size: 11px; }
+
+.donut-wrap { display: flex; gap: 16px; align-items: center; }
+
+/* A conic gradient rather than a chart library: the reference draws a static
+   ring, and the slice values are set inline from live data. */
+.donut {
+  flex: 0 0 108px;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+}
+
+.donut::after {
+  display: block;
+  width: 62px;
+  height: 62px;
+  margin: 23px;
+  border-radius: 50%;
+  background: var(--card);
+  content: "";
+}
+
+.legend { display: grid; gap: 6px; font-size: 11px; color: var(--muted); }
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+
+/* An unavailable KPI keeps the tile's shape so the grid does not reflow, and
+   states the reason where the delta would be. */
+.kpi .value.unavailable {
+  color: var(--amber);
+  font-size: 17px;
+  font-style: italic;
+  letter-spacing: -.1px;
+}
+
+/* Rows inside the horizon window the Forecast Accuracy tile pools. Tinted so the
+   tile's single figure and the table's per-horizon rows are visibly the same
+   arithmetic rather than two numbers that look like they disagree. */
+.table tr.in-window > td {
+  background: rgba(43, 108, 224, 0.06);
+}
+.table tfoot td {
+  border-top: 2px solid var(--line, #e3e8f0);
 }

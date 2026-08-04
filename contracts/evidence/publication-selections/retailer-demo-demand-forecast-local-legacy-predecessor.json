@@ -1,0 +1,20 @@
+{
+  "bytesRetained": false,
+  "classification": "legacy_unselected_predecessor",
+  "equivalenceEvidence": "contracts/evidence/expected-pin-repin-2026-07-31.json",
+  "note": "Adopted by editing contracts/ml/expected-pin.json during the authorized clean-slate rebuild. No candidate/approved/active record was ever created for it and its bytes are gone, so it is disclosed as an unselected predecessor rather than back-dated into a supersession chain. Logical equivalence to this pin rests on the retained expected-pin repin record's control totals and ordered row digests, not on retained artifacts.",
+  "objectCount": 1509,
+  "publicationSemanticFingerprint": "db3784fdcc4cb8334c2e17d6ae7e0216d05597659df4e9565a99f2b21b8d6fff",
+  "recordType": "legacy_unselected_predecessor_disclosure",
+  "schemaVersion": "retail-publication-selection-predecessor/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionRecordExists": false,
+  "sourceSnapshotId": "681090eed03ae17263b31879e88adefbce0871aed5b12c6b36b1db59a3e4da0b",
+  "supersededByRecordId": "rec_06f9b355b6738dfd",
+  "supersededBySelectionId": "sel_eeb6d9dfe7b201f8"
+}

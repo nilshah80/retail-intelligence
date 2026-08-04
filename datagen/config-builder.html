@@ -1492,7 +1492,7 @@
 
 <script id="showcasePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v12",
+  "specVersion": "retail-source-config/v13",
   "identity": {
     "scenarioId": "multi-market-showcase",
     "scenarioVersion": "1.0.0",
@@ -1512,7 +1512,7 @@
   "markets": [
     {
       "marketId": "india-mumbai",
-      "name": "India — Mumbai",
+      "name": "India \u2014 Mumbai",
       "countryCode": "IN",
       "regionCode": "MH",
       "city": "Mumbai",
@@ -1575,7 +1575,7 @@
         "label": "India",
         "currency": {
           "code": "INR",
-          "symbol": "₹",
+          "symbol": "\u20b9",
           "minorUnitExponent": 2,
           "decimalSeparator": ".",
           "groupSeparator": ",",
@@ -2142,7 +2142,7 @@
     },
     {
       "marketId": "us-new-york",
-      "name": "United States — New York",
+      "name": "United States \u2014 New York",
       "countryCode": "US",
       "regionCode": "NY",
       "city": "New York",
@@ -2476,6 +2476,7 @@
   "stores": [
     {
       "storeId": "mumbai-bandra",
+      "businessCentralLocationCode": "MUM-BAN",
       "name": "Mumbai Bandra",
       "marketId": "india-mumbai",
       "legalEntityId": "northstar-india",
@@ -2494,6 +2495,7 @@
     },
     {
       "storeId": "ny-manhattan",
+      "businessCentralLocationCode": "NYC-MAN",
       "name": "New York Manhattan",
       "marketId": "us-new-york",
       "legalEntityId": "northstar-us",
@@ -3529,6 +3531,17 @@
       "fixtureSecret": "northstar-synthetic-fixture-secret",
       "invalidFixtureRate": 0.25
     },
+    "storeInventory": {
+      "snapshotCadenceDays": 7,
+      "reviewCycleDays": 7,
+      "targetDaysOfCover": 14,
+      "safetyStockUnits": 3,
+      "replenishmentPackSize": 6,
+      "openingDaysOfCover": 10,
+      "residualWorkoffWeeks": 26,
+      "primaryLaneTransitDays": 1,
+      "spillLaneTransitDays": 2
+    },
     "features": {
       "detailedFulfillment": true,
       "returnsAndRefunds": true,
@@ -3539,7 +3552,8 @@
       "transfers": true,
       "supplierPlanning": true,
       "promotionPlanning": true,
-      "allocationEvidence": true
+      "allocationEvidence": true,
+      "storeInventory": true
     }
   },
   "output": {
@@ -3558,7 +3572,7 @@
 
 <script id="historyPreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v12",
+  "specVersion": "retail-source-config/v13",
   "identity": {
     "scenarioId": "multi-market-20-year-history",
     "scenarioVersion": "1.0.0",
@@ -3578,7 +3592,7 @@
   "markets": [
     {
       "marketId": "india-mumbai",
-      "name": "India — Mumbai",
+      "name": "India \u2014 Mumbai",
       "countryCode": "IN",
       "regionCode": "MH",
       "city": "Mumbai",
@@ -3641,7 +3655,7 @@
         "label": "India",
         "currency": {
           "code": "INR",
-          "symbol": "₹",
+          "symbol": "\u20b9",
           "minorUnitExponent": 2,
           "decimalSeparator": ".",
           "groupSeparator": ",",
@@ -4208,7 +4222,7 @@
     },
     {
       "marketId": "us-new-york",
-      "name": "United States — New York",
+      "name": "United States \u2014 New York",
       "countryCode": "US",
       "regionCode": "NY",
       "city": "New York",
@@ -4542,6 +4556,7 @@
   "stores": [
     {
       "storeId": "mumbai-bandra",
+      "businessCentralLocationCode": "MUM-BAN",
       "name": "Mumbai Bandra",
       "marketId": "india-mumbai",
       "legalEntityId": "northstar-india",
@@ -4560,6 +4575,7 @@
     },
     {
       "storeId": "ny-manhattan",
+      "businessCentralLocationCode": "NYC-MAN",
       "name": "New York Manhattan",
       "marketId": "us-new-york",
       "legalEntityId": "northstar-us",
@@ -5781,7 +5797,7 @@
     {
       "eventId": "gfc-in",
       "type": "demand-shock",
-      "name": "Global financial crisis — India",
+      "name": "Global financial crisis \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2008-09-15",
       "endDate": "2009-06-30",
@@ -5798,7 +5814,7 @@
     {
       "eventId": "gfc-us",
       "type": "demand-shock",
-      "name": "Global financial crisis — US",
+      "name": "Global financial crisis \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2008-09-15",
       "endDate": "2009-06-30",
@@ -5815,7 +5831,7 @@
     {
       "eventId": "electronics-supply-2011-in",
       "type": "supply-disruption",
-      "name": "2011 electronics supply disruption — India",
+      "name": "2011 electronics supply disruption \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2011-03-11",
       "endDate": "2011-11-30",
@@ -5834,7 +5850,7 @@
     {
       "eventId": "electronics-supply-2011-us",
       "type": "supply-disruption",
-      "name": "2011 electronics supply disruption — US",
+      "name": "2011 electronics supply disruption \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2011-03-11",
       "endDate": "2011-11-30",
@@ -5853,7 +5869,7 @@
     {
       "eventId": "us-tariffs-2018",
       "type": "demand-shock",
-      "name": "2018–2019 electronics tariffs",
+      "name": "2018\u20132019 electronics tariffs",
       "marketId": "us-new-york",
       "startDate": "2018-07-06",
       "endDate": "2019-12-31",
@@ -5872,7 +5888,7 @@
     {
       "eventId": "inflation-in-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — India",
+      "name": "2021\u20132022 inflation \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -5889,7 +5905,7 @@
     {
       "eventId": "inflation-us-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — US",
+      "name": "2021\u20132022 inflation \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -5906,7 +5922,7 @@
     {
       "eventId": "global-supply-2022-in",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — India",
+      "name": "2022 global supply and energy shock \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -5923,7 +5939,7 @@
     {
       "eventId": "global-supply-2022-us",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — US",
+      "name": "2022 global supply and energy shock \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -5967,6 +5983,17 @@
       "fixtureSecret": "northstar-synthetic-fixture-secret",
       "invalidFixtureRate": 0.25
     },
+    "storeInventory": {
+      "snapshotCadenceDays": 7,
+      "reviewCycleDays": 7,
+      "targetDaysOfCover": 14,
+      "safetyStockUnits": 3,
+      "replenishmentPackSize": 6,
+      "openingDaysOfCover": 10,
+      "residualWorkoffWeeks": 26,
+      "primaryLaneTransitDays": 1,
+      "spillLaneTransitDays": 2
+    },
     "features": {
       "detailedFulfillment": true,
       "returnsAndRefunds": true,
@@ -5977,7 +6004,8 @@
       "transfers": true,
       "supplierPlanning": true,
       "promotionPlanning": true,
-      "allocationEvidence": true
+      "allocationEvidence": true,
+      "storeInventory": true
     }
   },
   "output": {
@@ -6398,7 +6426,7 @@
 
 <script id="volumePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v12",
+  "specVersion": "retail-source-config/v13",
   "identity": {
     "scenarioId": "multi-market-2021-current-volume",
     "scenarioVersion": "1.0.0",
@@ -6418,7 +6446,7 @@
   "markets": [
     {
       "marketId": "india-mumbai",
-      "name": "India — Mumbai",
+      "name": "India \u2014 Mumbai",
       "countryCode": "IN",
       "regionCode": "MH",
       "city": "Mumbai",
@@ -6481,7 +6509,7 @@
         "label": "India",
         "currency": {
           "code": "INR",
-          "symbol": "₹",
+          "symbol": "\u20b9",
           "minorUnitExponent": 2,
           "decimalSeparator": ".",
           "groupSeparator": ",",
@@ -7048,7 +7076,7 @@
     },
     {
       "marketId": "us-new-york",
-      "name": "United States — New York",
+      "name": "United States \u2014 New York",
       "countryCode": "US",
       "regionCode": "NY",
       "city": "New York",
@@ -7382,6 +7410,7 @@
   "stores": [
     {
       "storeId": "mumbai-bandra",
+      "businessCentralLocationCode": "MUM-BAN",
       "name": "Mumbai Bandra",
       "marketId": "india-mumbai",
       "legalEntityId": "northstar-india",
@@ -7400,6 +7429,7 @@
     },
     {
       "storeId": "ny-manhattan",
+      "businessCentralLocationCode": "NYC-MAN",
       "name": "New York Manhattan",
       "marketId": "us-new-york",
       "legalEntityId": "northstar-us",
@@ -9025,7 +9055,7 @@
     {
       "eventId": "inflation-in-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — India",
+      "name": "2021\u20132022 inflation \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -9042,7 +9072,7 @@
     {
       "eventId": "inflation-us-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — US",
+      "name": "2021\u20132022 inflation \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -9059,7 +9089,7 @@
     {
       "eventId": "global-supply-2022-in",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — India",
+      "name": "2022 global supply and energy shock \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -9076,7 +9106,7 @@
     {
       "eventId": "global-supply-2022-us",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — US",
+      "name": "2022 global supply and energy shock \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -9120,6 +9150,17 @@
       "fixtureSecret": "northstar-synthetic-fixture-secret",
       "invalidFixtureRate": 0.25
     },
+    "storeInventory": {
+      "snapshotCadenceDays": 7,
+      "reviewCycleDays": 7,
+      "targetDaysOfCover": 14,
+      "safetyStockUnits": 3,
+      "replenishmentPackSize": 6,
+      "openingDaysOfCover": 10,
+      "residualWorkoffWeeks": 26,
+      "primaryLaneTransitDays": 1,
+      "spillLaneTransitDays": 2
+    },
     "features": {
       "detailedFulfillment": true,
       "returnsAndRefunds": true,
@@ -9130,7 +9171,8 @@
       "transfers": true,
       "supplierPlanning": true,
       "promotionPlanning": true,
-      "allocationEvidence": true
+      "allocationEvidence": true,
+      "storeInventory": true
     }
   },
   "output": {
@@ -9300,7 +9342,7 @@
 
 <script id="demoDecadePreset" type="application/json">
 {
-  "specVersion": "retail-source-config/v12",
+  "specVersion": "retail-source-config/v13",
   "identity": {
     "scenarioId": "multi-market-10-year-demo",
     "scenarioVersion": "1.0.0",
@@ -9320,7 +9362,7 @@
   "markets": [
     {
       "marketId": "india-mumbai",
-      "name": "India — Mumbai",
+      "name": "India \u2014 Mumbai",
       "countryCode": "IN",
       "regionCode": "MH",
       "city": "Mumbai",
@@ -9383,7 +9425,7 @@
         "label": "India",
         "currency": {
           "code": "INR",
-          "symbol": "₹",
+          "symbol": "\u20b9",
           "minorUnitExponent": 2,
           "decimalSeparator": ".",
           "groupSeparator": ",",
@@ -9950,7 +9992,7 @@
     },
     {
       "marketId": "us-new-york",
-      "name": "United States — New York",
+      "name": "United States \u2014 New York",
       "countryCode": "US",
       "regionCode": "NY",
       "city": "New York",
@@ -10284,6 +10326,7 @@
   "stores": [
     {
       "storeId": "mumbai-bandra",
+      "businessCentralLocationCode": "MUM-BAN",
       "name": "Mumbai Bandra",
       "marketId": "india-mumbai",
       "legalEntityId": "northstar-india",
@@ -10302,6 +10345,7 @@
     },
     {
       "storeId": "pune-koregaon",
+      "businessCentralLocationCode": "PUN-KOR",
       "name": "Pune Koregaon Park",
       "marketId": "india-mumbai",
       "legalEntityId": "northstar-india",
@@ -10320,6 +10364,7 @@
     },
     {
       "storeId": "ny-manhattan",
+      "businessCentralLocationCode": "NYC-MAN",
       "name": "New York Manhattan",
       "marketId": "us-new-york",
       "legalEntityId": "northstar-us",
@@ -10337,6 +10382,7 @@
     },
     {
       "storeId": "ny-brooklyn",
+      "businessCentralLocationCode": "NYC-BKL",
       "name": "New York Brooklyn",
       "marketId": "us-new-york",
       "legalEntityId": "northstar-us",
@@ -12375,7 +12421,7 @@
     {
       "eventId": "us-tariffs-2018",
       "type": "demand-shock",
-      "name": "2018–2019 electronics tariffs",
+      "name": "2018\u20132019 electronics tariffs",
       "marketId": "us-new-york",
       "startDate": "2018-07-06",
       "endDate": "2019-12-31",
@@ -12394,7 +12440,7 @@
     {
       "eventId": "inflation-in-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — India",
+      "name": "2021\u20132022 inflation \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -12411,7 +12457,7 @@
     {
       "eventId": "inflation-us-2021",
       "type": "demand-shock",
-      "name": "2021–2022 inflation — US",
+      "name": "2021\u20132022 inflation \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2021-07-01",
       "endDate": "2022-12-31",
@@ -12428,7 +12474,7 @@
     {
       "eventId": "global-supply-2022-in",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — India",
+      "name": "2022 global supply and energy shock \u2014 India",
       "marketId": "india-mumbai",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -12445,7 +12491,7 @@
     {
       "eventId": "global-supply-2022-us",
       "type": "supply-disruption",
-      "name": "2022 global supply and energy shock — US",
+      "name": "2022 global supply and energy shock \u2014 US",
       "marketId": "us-new-york",
       "startDate": "2022-02-24",
       "endDate": "2022-12-31",
@@ -12489,6 +12535,17 @@
       "fixtureSecret": "northstar-synthetic-fixture-secret",
       "invalidFixtureRate": 0.25
     },
+    "storeInventory": {
+      "snapshotCadenceDays": 7,
+      "reviewCycleDays": 7,
+      "targetDaysOfCover": 7,
+      "safetyStockUnits": 1,
+      "replenishmentPackSize": 6,
+      "openingDaysOfCover": 5,
+      "residualWorkoffWeeks": 26,
+      "primaryLaneTransitDays": 2,
+      "spillLaneTransitDays": 3
+    },
     "features": {
       "detailedFulfillment": true,
       "returnsAndRefunds": true,
@@ -12499,7 +12556,8 @@
       "transfers": true,
       "supplierPlanning": true,
       "promotionPlanning": true,
-      "allocationEvidence": true
+      "allocationEvidence": true,
+      "storeInventory": true
     }
   },
   "output": {
