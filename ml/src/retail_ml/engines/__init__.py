@@ -23,6 +23,7 @@ from retail_ml.engines.primitives import (
     protection_period_days,
     reorder_point,
     round_up_to_pack,
+    SafetyStock,
     safety_stock_units,
     service_level_z,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "resolve_lane",
     "resolve_supply_term",
     "round_up_to_pack",
+    "SafetyStock",
     "safety_stock_units",
     "service_level_z",
     "split_cohorts",

@@ -1345,16 +1345,22 @@ def command_pipeline(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            inventory_command = [
-                str(ml), "-m", "retail_ml.cli", "inventory-activate",
-                "--inventory-run-id", inventory_run,
-                "--run-semantic-fingerprint", fingerprint,
-                "--actor", args.actor,
-                "--postgres-dsn", dsn,
-            ]
-            if args.retire_other_scopes:
-                inventory_command.append("--retire-other-scopes")
-            _pipeline_step("inventory-activate", inventory_command)
+            # --retire-other-scopes belongs to the FORECAST activation and only to
+            # it: `retail_ml.cli inventory-activate` takes no such flag, so
+            # appending it here made `pipeline --retire-other-scopes` fail at the
+            # sixteenth stage on an argparse error, after the bundle had already
+            # been built, verified and materialized. Inventory activation retires
+            # its own predecessor for the scope it activates.
+            _pipeline_step(
+                "inventory-activate",
+                [
+                    str(ml), "-m", "retail_ml.cli", "inventory-activate",
+                    "--inventory-run-id", inventory_run,
+                    "--run-semantic-fingerprint", fingerprint,
+                    "--actor", args.actor,
+                    "--postgres-dsn", dsn,
+                ],
+            )
             forecast_identity = (
                 f"forecast {run} / {materialized.get('version_id')}\n"
                 if run

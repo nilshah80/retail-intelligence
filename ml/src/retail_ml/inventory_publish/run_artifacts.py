@@ -232,6 +232,9 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "abc_class",
         "service_level",
         "safety_stock_units",
+        "safety_stock_demand_units",
+        "safety_stock_lead_time_units",
+        "lead_time_variability_reason_code",
         "interval_available",
         "reason_code",
     ),
@@ -410,7 +413,16 @@ INTERVAL_GATED: Final[dict[str, IntervalGate]] = {
     ),
     "replenishment_safety_stock": IntervalGate(
         "safety_stock_units",
-        ("service_level",),
+        # The two drivers are obliged with the total: they are the same closed-form
+        # function of the same interval, so a buffer without them would be a number
+        # whose composition is unaccountable. `lead_time_variability_reason_code` is
+        # deliberately NOT obliged -- it is null precisely when both drivers are
+        # real, which is the healthy case.
+        (
+            "service_level",
+            "safety_stock_demand_units",
+            "safety_stock_lead_time_units",
+        ),
         obliges_value=True,
     ),
     "replenishment_recommendations": IntervalGate(

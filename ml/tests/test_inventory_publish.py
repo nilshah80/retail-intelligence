@@ -281,6 +281,12 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "abc_class": "A",
                     "service_level": 0.98,
                     "safety_stock_units": 11.75,
+                    # The two drivers combine in quadrature: hypot(11, 4) = 11.70,
+                    # close to but under the total, which is what migration 0020's
+                    # check constraints require of any driver.
+                    "safety_stock_demand_units": 11.0,
+                    "safety_stock_lead_time_units": 4.0,
+                    "lead_time_variability_reason_code": None,
                     "interval_available": True,
                     "reason_code": None,
                 },
@@ -291,6 +297,11 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "abc_class": "C",
                     "service_level": None,
                     "safety_stock_units": None,
+                    # No buffer, so no drivers. Decision #92 forbids coercing a
+                    # withheld interval's outputs to zero.
+                    "safety_stock_demand_units": None,
+                    "safety_stock_lead_time_units": None,
+                    "lead_time_variability_reason_code": None,
                     "interval_available": False,
                     "reason_code": "COLD_START_INTERVAL_UNCALIBRATED",
                 },

@@ -77,7 +77,7 @@ def test_safety_stock_scales_with_service_class() -> None:
     c_class = safety_stock_units(
         weekly_spreads=spreads, protection_days=14, service_level="0.80"
     )
-    assert a_class > c_class > 0
+    assert a_class.total_units > c_class.total_units > 0
 
 
 def test_an_inverted_quantile_pair_is_refused_not_clamped() -> None:

@@ -489,7 +489,19 @@ def load_suppliers(
     return _frame(
         connection,
         """
-        WITH performance AS (
+        WITH observed AS (
+            -- How many periods this supplier is observed over, at the origin.
+            -- `leadTime.minimumObservations` is 8 and had no consumer, because the
+            -- count never left this query: the DISTINCT ON below keeps the latest
+            -- period and discards the evidence for how many there were. A standard
+            -- deviation over one period is not a variability estimate, and the
+            -- policy says so, so the count travels with the value.
+            SELECT supplier_id, COUNT(*) AS observation_periods
+            FROM supplier_performance
+            WHERE CAST(period AS DATE) <= ? AND known_as_of < ? + INTERVAL 1 DAY
+            GROUP BY supplier_id
+        ),
+        performance AS (
             SELECT DISTINCT ON (supplier_id)
                 supplier_id,
                 CAST(otd_pct AS DOUBLE) / 100.0 AS otd_rate,
@@ -533,9 +545,11 @@ def load_suppliers(
             performance.lead_time_mean_days,
             performance.lead_time_std_days,
             performance.capacity_confirmed_pct,
+            observed.observation_periods,
             scoped.merch_scope_id AS category,
             scoped.scope_count
         FROM performance
+        JOIN observed ON observed.supplier_id = performance.supplier_id
         JOIN suppliers_leadtimes AS terms
           ON terms.supplier_id = performance.supplier_id
         JOIN locations
@@ -546,7 +560,7 @@ def load_suppliers(
         LEFT JOIN suppliers ON suppliers.supplier_id = performance.supplier_id
         ORDER BY performance.supplier_id, locations.market_id
         """,
-        [as_of, as_of, as_of, as_of],
+        [as_of, as_of, as_of, as_of, as_of, as_of],
     )
 
 

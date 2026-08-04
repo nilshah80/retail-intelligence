@@ -156,19 +156,64 @@ def fractional_horizon_rss(values: tuple[float, ...], days: int) -> float:
     return math.sqrt(squared)
 
 
+@dataclass(frozen=True)
+class SafetyStock:
+    """A buffer and the two drivers policy v2 says it is made of.
+
+    Returned instead of a bare float so the Safety Stock screen's driver
+    decomposition has a source. The two components combine in QUADRATURE, so
+    `demand_units + lead_time_units` deliberately does not equal `total_units`;
+    presenting them as an additive split would be a different (and wrong) claim.
+    """
+
+    total_units: float
+    demand_units: float
+    lead_time_units: float
+    #: Set when the lead-time term could not be computed, so the total is the
+    #: demand driver alone. `None` means both drivers are real.
+    lead_time_reason_code: str | None
+
+    def __float__(self) -> float:
+        return self.total_units
+
+
 def safety_stock_units(
     *,
     weekly_spreads: tuple[float, ...],
     protection_days: int,
     service_level: str | float,
-) -> float:
-    """Safety stock from the accepted interval spread and service class.
+    weekly_p50: tuple[float, ...] = (),
+    lead_time_variance_weeks: float | None = None,
+    lead_time_reason_code: str | None = None,
+) -> SafetyStock:
+    """Safety stock from the accepted interval spread, and lead-time variability.
 
     `weekly_spreads` is (p90 - p50) per horizon week for ONE SeriesKey. Every
     element must be a real published interval: a withheld interval never reaches
     this function, because the interval guard skips the row first. A negative
     spread is an inverted quantile pair and is refused, not clamped -- clamping
     would hide upstream corruption inside a buffer.
+
+    Policy v2 declares
+
+        z * sqrt(protection_weeks * demand_variance_weekly
+                 + mean_weekly_demand^2 * lead_time_variance_weeks)
+
+    and until `P4-12g` only the first addend existed. The demand term is derived
+    from the accepted interval rather than from a variance estimate, which
+    `safetyStock.intervalSource` declares: dividing the P90-P50 spread by the 0.90
+    normal quantile converts it to a one-sigma equivalent, and the RSS across the
+    protection window is that window's sigma. The second addend was absent
+    entirely, so `leadTime.variabilityMethod`, `leadTime.minimumObservations` and
+    `leadTime.zeroVarianceBehavior` had no consumer and a supplier whose lead time
+    swung by nine days got the same buffer as a metronomic one.
+
+    `lead_time_variance_weeks` is None when the variability is not knowable -- an
+    internal lane has no supplier performance, and an under-observed supplier has
+    no admissible estimate. That is reason-coded rather than treated as zero
+    variance, because policy v2's `zeroVarianceBehavior` is
+    `reason_code_not_zero_buffer`: a zero-variance buffer is a misleading number
+    rather than a missing one.
     """
 
     for index, spread in enumerate(weekly_spreads):
@@ -177,9 +222,35 @@ def safety_stock_units(
                 f"weekly spread at h{index + 1} is negative; P50<=P90 must "
                 "hold for every available interval"
             )
-    return service_level_z(service_level) * fractional_horizon_rss(
-        weekly_spreads, protection_days
-    ) / NormalDist().inv_cdf(0.90)
+    if lead_time_variance_weeks is not None and lead_time_variance_weeks < 0:
+        raise ValueError(
+            "lead-time variance cannot be negative; a variance is a square"
+        )
+    z = service_level_z(service_level)
+    demand_sigma = (
+        fractional_horizon_rss(weekly_spreads, protection_days)
+        / NormalDist().inv_cdf(0.90)
+    )
+    lead_time_sigma = 0.0
+    if lead_time_variance_weeks:
+        # mean_weekly_demand^2 * lead_time_variance_weeks, under the same root.
+        # The mean is taken over the SAME protection window the demand term uses,
+        # so the two drivers describe one horizon rather than two.
+        weeks = protection_days / 7.0
+        mean_weekly_demand = (
+            fractional_horizon_sum(weekly_p50, protection_days) / weeks
+            if weeks > 0 and weekly_p50
+            else 0.0
+        )
+        lead_time_sigma = mean_weekly_demand * math.sqrt(lead_time_variance_weeks)
+    return SafetyStock(
+        total_units=z * math.sqrt(demand_sigma**2 + lead_time_sigma**2),
+        demand_units=z * demand_sigma,
+        lead_time_units=z * lead_time_sigma,
+        lead_time_reason_code=(
+            None if lead_time_variance_weeks else lead_time_reason_code
+        ),
+    )
 
 
 def reorder_point(
@@ -278,6 +349,7 @@ __all__ = [
     "reorder_point",
     "required_horizon_weeks",
     "round_up_to_pack",
+    "SafetyStock",
     "safety_stock_units",
     "service_level_z",
 ]

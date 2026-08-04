@@ -25,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0019_supplier_identity"
+	InventoryMigrationRevision = "0020_safety_stock_drivers"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -554,9 +554,16 @@ func (s *InventoryStore) Read(
 				"supplier_name, open_po_units",
 			rankBySupplierRisk)
 	case "/api/v1/replenishment/safety-stock":
+		// The two drivers policy v2's formula names. Until 0020 only the total
+		// existed, so the reference's driver decomposition had no source and was
+		// withheld -- not because the data was missing, but because the engine
+		// implemented one of the two terms.
 		return s.tableSlice(ctx, query, "replenishment_safety_stock",
 			"market_id, location_id, sku_id, abc_class, service_level, "+
-				"safety_stock_units, interval_available, reason_code",
+				"safety_stock_units, safety_stock_demand_units, "+
+				"safety_stock_lead_time_units, "+
+				"lead_time_variability_reason_code, interval_available, "+
+				"reason_code",
 			rankByBuffer)
 	case "/api/v1/replenishment/allocations":
 		return s.tableSlice(ctx, query, "replenishment_allocations",
@@ -2390,6 +2397,17 @@ var inventoryAggregates = map[string]map[string]string{
 			"> replenishment_safety_stock.safety_stock_units * 2)",
 		"comparedCells":    "COUNT(*) FILTER (WHERE position.on_hand_units IS NOT NULL)",
 		"meanServiceLevel": "AVG(service_level)",
+		// The two drivers policy v2's formula names. Withheld until migration 0020
+		// because the engine implemented only the demand term, so there was no
+		// lead-time contribution to publish -- not a missing column, a missing
+		// addend. `leadTimeVariabilityWithheldCells` is how many buffers carry no
+		// lead-time term and say why, which on this network is all of them: a cell
+		// only has a buffer if it has a forecast interval (stores), and only has
+		// measurable lead-time variability if an external supplier serves it (DCs).
+		"safetyStockDemandUnits":   "SUM(safety_stock_demand_units)",
+		"safetyStockLeadTimeUnits": "SUM(safety_stock_lead_time_units)",
+		"leadTimeVariabilityWithheldCells": "COUNT(*) FILTER (WHERE " +
+			"lead_time_variability_reason_code IS NOT NULL)",
 		"classACells":      "COUNT(*) FILTER (WHERE abc_class = 'A')",
 		"classBCells":      "COUNT(*) FILTER (WHERE abc_class = 'B')",
 		"classCCells":      "COUNT(*) FILTER (WHERE abc_class = 'C')",

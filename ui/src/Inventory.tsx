@@ -208,9 +208,12 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   // lead-time variability has no contribution to report -- lead time only sets
   // how many weeks of spread accumulate -- and promotion/seasonality is absent
   // from the expression entirely.
+  // Was the reason for the demand and lead-time drivers too, until migration 0020
+  // published both. What remains withheld is a driver the policy's formula does not
+  // contain at all, which is a different claim and needed its own reason.
   DRIVER_COMPONENTS_NOT_PUBLISHED: {
-    why: "the safety-stock artifact publishes the buffer the policy produced and the class it was sized under, not the demand and lead-time terms that went into it",
-    when: "when the engine emits its per-cell inputs alongside its output"
+    why: "the buffer is sized from the forecast interval and lead-time variability, and promotion or seasonality uplift is not a term in the policy's safety-stock formula, so no such contribution exists to report",
+    when: "when a policy revision adds an uplift term and the engine emits it per cell"
   },
 };
 
@@ -944,11 +947,18 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Needs a reproducing weekly replay"}
     ],
     breakdown: [
-      // "Safety Stock Drivers". The buffer is published; its terms are not.
-      {label: "Demand variability", field: null, format: "count",
-       unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"},
-      {label: "Lead-time variability", field: null, format: "count",
-       unavailableReason: "DRIVER_COMPONENTS_NOT_PUBLISHED"},
+      // "Safety Stock Drivers", now with a source. Policy v2's formula names two
+      // terms and the engine implemented only the first, so this was withheld for
+      // want of an addend rather than a column. The two combine in quadrature, so
+      // they deliberately do not sum to the buffer.
+      {label: "Demand variability", field: "safetyStockDemandUnits",
+       format: "count"},
+      // Zero on every row of THIS network, and the reason is structural rather
+      // than missing data: a cell has a buffer only if it has a forecast interval,
+      // which only stores do, and measurable lead-time variability only if an
+      // external supplier serves it, which only DCs have. The two never coincide.
+      {label: "Lead-time variability", field: "safetyStockLeadTimeUnits",
+       format: "count"},
       {label: "Service-level target", field: "meanServiceLevel",
        format: "percent"},
       {label: "Promotion / seasonality", field: null, format: "count",

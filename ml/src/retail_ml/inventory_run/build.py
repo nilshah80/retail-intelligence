@@ -85,6 +85,42 @@ UNRESOLVED_ROUTE_REASON: Final[str] = "SUPPLY_ROUTE_UNRESOLVED"
 NO_NODE_FORECAST_REASON: Final[str] = "FORECAST_ABSENT_FOR_NODE"
 NO_ABC_COST_REASON: Final[str] = "ABC_UNIT_COST_UNAVAILABLE"
 NO_NODE_INTERVAL_REASON: Final[str] = "NODE_INTERVAL_BASIS_UNAVAILABLE"
+#: Policy v2 `leadTime.zeroVarianceReasonCode`. Until `P4-12g` nothing could emit
+#: it, because the engine had no lead-time term to be missing.
+NO_LEAD_TIME_VARIANCE_REASON: Final[str] = "LEAD_TIME_VARIABILITY_UNAVAILABLE"
+
+
+def _lead_time_variance_weeks(
+    inputs: InventoryInputs,
+) -> dict[tuple[str, str], tuple[float | None, str | None]]:
+    """Lead-time variance in WEEKS squared per supplier, or why there is none.
+
+    Policy v2 declares `leadTime.variabilityMethod:
+    supplier_performance_mean_and_std` and `minimumObservations: 8`, and both had
+    no consumer. A standard deviation over fewer than eight periods is not an
+    admissible estimate, and `zeroVarianceBehavior: reason_code_not_zero_buffer`
+    says a zero-variance buffer is a misleading number rather than a missing one --
+    so both cases return a reason instead of a zero.
+
+    Squared because the formula's second addend takes a VARIANCE, and the source
+    publishes a standard deviation in DAYS: (std_days / 7) ** 2.
+    """
+
+    minimum = 8
+    index: dict[tuple[str, str], tuple[float | None, str | None]] = {}
+    for record in inputs.suppliers.itertuples(index=False):
+        row = record._asdict()
+        key = (str(row["market_id"]), str(row["supplier_id"]))
+        periods = row.get("observation_periods")
+        std_days = row.get("lead_time_std_days")
+        if periods is None or pd.isna(periods) or int(periods) < minimum:
+            index[key] = (None, NO_LEAD_TIME_VARIANCE_REASON)
+            continue
+        if std_days is None or pd.isna(std_days) or float(std_days) <= 0:
+            index[key] = (None, NO_LEAD_TIME_VARIANCE_REASON)
+            continue
+        index[key] = ((float(std_days) / 7.0) ** 2, None)
+    return index
 assert {
     COLD_START_REASON,
     UNRESOLVED_ROUTE_REASON,
@@ -1016,6 +1052,7 @@ def _replenishment_plan(
     recommendations: list[dict[str, Any]] = []
     safety_rows: list[dict[str, Any]] = []
     exceptions: list[dict[str, Any]] = []
+    lead_time_variance = _lead_time_variance_weeks(inputs)
 
     for record in emitted.itertuples(index=False):
         row = record._asdict()
@@ -1126,6 +1163,12 @@ def _replenishment_plan(
                     "abc_class": abc_class,
                     "service_level": None,
                     "safety_stock_units": None,
+                    # No buffer means no drivers. Zeros here would read as "demand
+                    # and lead time both contribute nothing", which is a
+                    # measurement this row does not have.
+                    "safety_stock_demand_units": None,
+                    "safety_stock_lead_time_units": None,
+                    "lead_time_variability_reason_code": None,
                     "interval_available": False,
                     "reason_code": governed,
                 }
@@ -1164,13 +1207,32 @@ def _replenishment_plan(
 
         assert protection is not None and cell.moq is not None
         assert cell.pack_qty is not None
+        # Lead-time variability is a SUPPLIER property, and only a DC's supply has
+        # one. A store is replenished over an internal service lane whose origin is
+        # our own DC, and no supplier-performance row exists for it -- the same
+        # reason Supplier Planning withholds a risk class for an internal warehouse.
+        # That is reason-coded rather than treated as zero variance, which would
+        # publish a confident buffer for a route whose variability nobody measured.
+        variance, variance_reason = (
+            lead_time_variance.get(
+                (market, str(cell.supply_location_id)),
+                (None, NO_LEAD_TIME_VARIANCE_REASON),
+            )
+            if str(row["location_kind"]) != "store"
+            else (None, NO_LEAD_TIME_VARIANCE_REASON)
+        )
         stock = safety_stock_units(
             weekly_spreads=spreads,
             protection_days=protection,
             service_level=service_level,
+            weekly_p50=centre,
+            lead_time_variance_weeks=variance,
+            lead_time_reason_code=variance_reason,
         )
         point = reorder_point(
-            weekly_p50=centre, protection_days=protection, safety_stock=stock
+            weekly_p50=centre,
+            protection_days=protection,
+            safety_stock=stock.total_units,
         )
         level = order_up_to_level(
             reorder_point_units=point,
@@ -1221,7 +1283,13 @@ def _replenishment_plan(
                 "sku_id": sku,
                 "abc_class": abc_class,
                 "service_level": float(Decimal(str(service_level))),
-                "safety_stock_units": float(stock),
+                "safety_stock_units": float(stock.total_units),
+                # The two drivers policy v2's formula names. They combine in
+                # quadrature, so they do not sum to the total -- the screen shows
+                # them as contributions, not as an additive split.
+                "safety_stock_demand_units": float(stock.demand_units),
+                "safety_stock_lead_time_units": float(stock.lead_time_units),
+                "lead_time_variability_reason_code": stock.lead_time_reason_code,
                 "interval_available": True,
                 "reason_code": None,
             }

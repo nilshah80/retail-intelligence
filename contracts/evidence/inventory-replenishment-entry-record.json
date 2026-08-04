@@ -225,7 +225,7 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0019_supplier_identity",
+  "servingMigration": "0020_safety_stock_drivers",
   "sourceSelection": {
     "activeRecordId": "rec_85988c3376cb77bc",
     "capabilityReadiness": "ready",
