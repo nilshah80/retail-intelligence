@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-05T00:00:00Z",
+    "reason": "The replay capability's reason codes are all absent from this run's Gate B mask, derived rather than read from the pipeline result."
+  },
+  "lifecycle": {
+    "reasonCode": "WINDOWS_HOST_REGENERATION",
+    "recordId": "rec_9072787558e8d1c6",
+    "state": "approved",
+    "supersedes": "rec_f49a4f48bbc0d98c"
+  },
+  "publication": {
+    "duckdbSha256": "f5cec9fa9093de8738ef6e5bba5a8ab9a2b63b9793a16add9c6ff1e2e29dbdc4",
+    "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
+    "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
+    "logicalPath": "ingestion/data/curated/run-adac9e85dccb56e8-r6",
+    "objectCount": 1306,
+    "publicationSemanticFingerprint": "e5d34f94c0a9fcd2f694a81e46b535ec99c3ef85f87c525414be3f42eacd1df5",
+    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_cd942d864a01357c"
+}

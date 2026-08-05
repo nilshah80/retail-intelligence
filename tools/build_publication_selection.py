@@ -114,6 +114,16 @@ PHASE_4R4_APPROVED_AT = "2026-08-03T00:00:00Z"
 PHASE_4R5_RUN = "run-adac9e85dccb56e8"
 PHASE_4R5_APPROVED_AT = "2026-08-04T00:00:00Z"
 
+#: The Windows-host regeneration, run to measure cross-platform stage timings
+#: against the macOS baseline in `docs/pipeline-stage-timings.md`. It carries the
+#: `-r6` suffix for the same reason `-r2` did: the source run id is deterministic
+#: and reproduced exactly, so a re-publication of it cannot share the curated and
+#: evidence roots of the generation it replaces without overwriting the artifacts
+#: those committed records attest to. That is what happened here before the rename,
+#: and it is what put r5 in EVIDENCE_RELEASED_RUNS below.
+PHASE_4R6_RUN = "run-adac9e85dccb56e8-r6"
+PHASE_4R6_APPROVED_AT = "2026-08-05T00:00:00Z"
+
 
 def _scope(capability: str) -> dict[str, str]:
     return {
@@ -183,6 +193,13 @@ EVIDENCE_RELEASED_RUNS: dict[str, str] = {
     "run-5bf9580d18d67e36-r2": "P4-10 re-ingest of the same snapshot",
     "run-ae5fcbcb9b8abb34": "P4-12 tightened store replenishment policy",
     "run-b847177c11ac724d": "P4-12c store_stockout_events and unit-cost fix",
+    # The r6 Windows regeneration republished the same deterministic run id, and
+    # before the `-r6` rename it wrote over this generation's curated and evidence
+    # roots. The bytes these records were derived FROM are therefore gone, so they
+    # are reproduced from their own committed blocks rather than re-derived. Listing
+    # it here is the disclosure, not a workaround: a run that is neither listed nor
+    # has retained evidence still refuses.
+    "run-adac9e85dccb56e8": "P4-12e per-lane transit publication",
 }
 
 #: Counted so `--check` can report how much of the ledger still rests on retained
@@ -806,6 +823,85 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         )
     }
 
+    # -- r6: the Windows-host regeneration ------------------------------------
+    #
+    # Approved by nilay.shah on 2026-08-05. This is NOT an equivalence re-pin in
+    # the sense of nothing having moved: the DATA reproduced and is provably the
+    # same, but the ARTIFACT is new, and decision #89 draws that line deliberately.
+    # Gate A and Gate B fingerprints are the evidence that the data reproduced;
+    # a selection record is the evidence of which artifact was chosen.
+    r6_reason = (
+        "Ten-year v13 regenerated on a Windows 11 host to measure cross-platform "
+        "stage timings against the macOS baseline in "
+        "`docs/pipeline-stage-timings.md`. The scenario is deterministic and it "
+        "showed: run id run-adac9e85dccb56e8 and the 9,938-object source snapshot "
+        "reproduced exactly, and both quality gates pass with all three required "
+        "capabilities available. What moved is the artifact, not the data -- "
+        "sourceSnapshotId hashes Parquet bytes, so it went from cd20ca5a to "
+        "4c205cd1, and the curated DuckDB's internal layout and partition split "
+        "moved with it (1,306 curated objects against 1,589). Under decision #89 "
+        "that is a new bundle needing a new governed selection rather than an edit "
+        "to the record of the old one."
+    )
+    r6_chains = {
+        capability: build_chain(
+            run=PHASE_4R6_RUN,
+            capability=capability,
+            approved_at=PHASE_4R6_APPROVED_AT,
+            reason_code="WINDOWS_HOST_REGENERATION",
+            candidate_reason=r6_reason,
+            approved_reason=approved,
+            active_reason=active,
+        )
+        for capability, approved, active in (
+            (
+                "demand_forecast_non_pit",
+                "Gate A, Gate B, the capability mask, the publication fingerprint "
+                "and the curated DuckDB hash all derived from this run's own "
+                "retained evidence rather than transcribed from a plan. Gate A "
+                "4999fa1a, Gate B 0817812c, publication e5d34f94, DuckDB "
+                "f5cec9fa.",
+                "Adopted as the active demand-forecast source authority. The r5 "
+                "selection over the same run id is superseded in the same change, "
+                "so exactly one selection is active for this scope.",
+            ),
+            (
+                "inventory_replenishment_current_snapshot",
+                "Gate B reports the capability available with no missing entities "
+                "and no reason code, read from this run's own retained mask.",
+                "Adopted as the active source authority for the current-state "
+                "half of the Phase 4 bundle, selected separately from the replay "
+                "capability because the two rest on different evidence.",
+            ),
+            (
+                "inventory_replenishment_replay",
+                "The replay capability's reason codes are all absent from this "
+                "run's Gate B mask, derived rather than read from the pipeline "
+                "result.",
+                "Adopted as the active source authority for the replay half. The "
+                "oracle is re-measured on this publication against the same "
+                "frozen 0.5 tolerance rather than a relaxed one.",
+            ),
+        )
+    }
+
+    r6_superseded = {
+        capability: _supersede(
+            r5_chains[capability][2], r6_chains[capability][2], capability,
+            PHASE_4R6_RUN,
+            "The curated and evidence roots this record selects were overwritten "
+            "by the r6 regeneration of the same deterministic run id, so the "
+            "artifact it names no longer exists on disk. It is retained as "
+            "evidence of what was selected, and reproduced from its own committed "
+            "block -- see EVIDENCE_RELEASED_RUNS.",
+        )
+        for capability in (
+            "demand_forecast_non_pit",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        )
+    }
+
     r5_superseded = {
         capability: _supersede(
             r4_chains[capability][2], r5_chains[capability][2], capability,
@@ -897,6 +993,8 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *(record for chain in r4_chains.values() for record in chain),
         *r5_superseded.values(),
         *(record for chain in r5_chains.values() for record in chain),
+        *r6_superseded.values(),
+        *(record for chain in r6_chains.values() for record in chain),
     ]
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
@@ -990,6 +1088,23 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
             )
             for state, record in zip(
                 ("candidate", "approved", "active"), r5_chains[capability]
+            )
+        ),
+        (f"{forecast_prefix}-r5-superseded.json",
+         r6_superseded["demand_forecast_non_pit"]),
+        (f"{current_prefix}-r5-superseded.json",
+         r6_superseded["inventory_replenishment_current_snapshot"]),
+        (f"{replay_prefix}-r5-superseded.json",
+         r6_superseded["inventory_replenishment_replay"]),
+        *(
+            (f"{prefix}-r6-{state}.json", record)
+            for prefix, capability in (
+                (forecast_prefix, "demand_forecast_non_pit"),
+                (current_prefix, "inventory_replenishment_current_snapshot"),
+                (replay_prefix, "inventory_replenishment_replay"),
+            )
+            for state, record in zip(
+                ("candidate", "approved", "active"), r6_chains[capability]
             )
         ),
     ]

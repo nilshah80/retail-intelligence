@@ -11,14 +11,34 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import venv
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
+
+#: Force UTF-8 stdio in every child process.
+#:
+#: Windows defaults `sys.stdout.encoding` to the ANSI code page -- cp1252 on this
+#: host, for a piped stream as well as a console -- and cp1252 cannot encode an
+#: emoji. MLflow's `set_terminated` writes "\U0001f3c3 View run ... at: ..." from
+#: inside the run context manager's `__exit__`, so a stage that had finished all of
+#: its real work still died, with the traceback pointing at contextlib rather than
+#: at anything the pipeline does. It cost a complete 3h20m backtest: all thirteen
+#: rolling origins were scored and logged, then the process raised on the print and
+#: the bundle -- written after the context exits -- was never created.
+#:
+#: `PYTHONUTF8=1` is read by any CPython at startup, so every venv subprocess picks
+#: it up by inheritance, and it changes nothing on macOS or Linux where stdio is
+#: already UTF-8. `setdefault` so an explicit host setting still wins.
+import os as _os_for_utf8  # noqa: E402  (must run before any subprocess is spawned)
+
+_os_for_utf8.environ.setdefault("PYTHONUTF8", "1")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INGESTION_ENV = REPO_ROOT / "ingestion" / ".venv"
@@ -52,6 +72,63 @@ def _run(
     env: dict[str, str] | None = None,
 ) -> int:
     return subprocess.run(args, cwd=cwd, env=env, check=False).returncode
+
+
+def _npm() -> str:
+    """Resolve ``npm`` to something ``CreateProcess`` can actually execute.
+
+    On Windows npm is ``npm.CMD``, a batch script rather than an executable, and
+    ``subprocess.run(["npm", ...])`` without a shell fails with
+    ``FileNotFoundError: [WinError 2]`` before running anything -- so every npm
+    step here was Windows-broken while working on macOS and Linux, where npm is an
+    ordinary file on PATH. ``shutil.which`` applies ``PATHEXT`` on Windows and
+    returns the plain path elsewhere, so one call serves all three targets without
+    a platform branch and without ``shell=True``.
+    """
+
+    resolved = shutil.which("npm")
+    if resolved is None:
+        raise RuntimeError(
+            "npm is not on PATH; install Node.js 22.12+ or 24 LTS and reopen the shell"
+        )
+    return resolved
+
+
+def _go_test_command(*flags: str) -> list[str]:
+    """``go test`` with the race detector when the host can actually run it.
+
+    ``-race`` requires cgo, and cgo requires a C compiler. macOS and Linux have
+    one through the Xcode command line tools or the distro toolchain, so the
+    detector stays on there and nothing about those runs changes. A stock Windows
+    host has none, and ``go test -race`` then fails with "-race requires cgo"
+    without executing a single test -- which is a false red rather than a finding.
+
+    The fallback is deliberately loud. A gate that quietly stops checking for data
+    races still reports success, and that is worse than a gate that says out loud
+    which check it dropped and how to restore it.
+    """
+
+    command = ["go", "test", *flags]
+    probe = subprocess.run(
+        ["go", "env", "CGO_ENABLED", "CC"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = probe.stdout.splitlines() if probe.returncode == 0 else []
+    enabled = lines[0].strip() if lines else "0"
+    compiler = lines[1].strip() if len(lines) > 1 else ""
+    if enabled == "1" and compiler and shutil.which(compiler):
+        return [*command, "-race", "./..."]
+    print(
+        "NOTICE: running go test WITHOUT -race. The race detector needs cgo and a C "
+        f"compiler; CGO_ENABLED={enabled or 'unset'} and CC={compiler or 'unset'} is "
+        "not resolvable on PATH. Install a C toolchain (mingw-w64 on Windows, Xcode "
+        "command line tools on macOS) and set CGO_ENABLED=1 to restore it.",
+        file=sys.stderr,
+        flush=True,
+    )
+    return [*command, "./..."]
 
 
 def _require_python(root: Path, label: str) -> Path:
@@ -477,13 +554,13 @@ def command_verify(_: argparse.Namespace) -> int:
             integration_environment,
         ),
         (
-            ["go", "test", "-count=1", "-race", "./..."],
+            _go_test_command("-count=1"),
             REPO_ROOT / "api",
             integration_environment,
         ),
-        (["npm", "test"], REPO_ROOT / "ui", None),
-        (["npm", "run", "typecheck"], REPO_ROOT / "ui", None),
-        (["npm", "run", "build"], REPO_ROOT / "ui", None),
+        ([_npm(), "test"], REPO_ROOT / "ui", None),
+        ([_npm(), "run", "typecheck"], REPO_ROOT / "ui", None),
+        ([_npm(), "run", "build"], REPO_ROOT / "ui", None),
     ]
     for command, cwd, environment in commands:
         result = _run(command, cwd=cwd, env=environment)
@@ -730,6 +807,36 @@ def _host_execution_profile() -> str:
             ) // (1024**3)
         except (OSError, ValueError):
             memory_gb = 0
+    if memory_gb == 0 and os.name == "nt":
+        # Neither probe above exists on Windows: os.sysconf is POSIX-only and
+        # sysctl is macOS. So memory_gb stayed 0 there and every Windows host fell
+        # through to `safe` no matter its size -- a 32 GB / 8-core box was throttled
+        # to the profile the docstring above reserves for a 16 GB machine, which is
+        # hours on the backtest rather than a preference. GlobalMemoryStatusEx is
+        # the stdlib answer via ctypes; guarded by os.name so ctypes.windll -- which
+        # does not exist off Windows -- is never touched on macOS or Linux.
+        try:
+            import ctypes
+
+            class _MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = _MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(_MemoryStatusEx)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                memory_gb = int(status.ullTotalPhys) // (1024**3)
+        except (ImportError, AttributeError, OSError, ValueError):
+            memory_gb = 0
     if memory_gb >= 32 and cores >= 8:
         return "performance"
     if memory_gb >= 16 and cores >= 4:
@@ -768,6 +875,7 @@ def command_datagen(args: argparse.Namespace) -> int:
         )
         return 1
 
+    started = time.monotonic()
     code = _run(
         [
             str(datagen),
@@ -782,6 +890,11 @@ def command_datagen(args: argparse.Namespace) -> int:
             profile,
         ]
     )
+    # Timed like a pipeline stage even though it deliberately is not one: generation
+    # is the single largest cost in a from-scratch rebuild -- 79 min of the ~2h20m
+    # macOS baseline -- so a rebuild comparison without it is missing most of its mass.
+    _STAGE_TIMINGS.append((f"datagen ({profile})", time.monotonic() - started))
+    _report_stage_timings()
     if code:
         return code
     promoted = sorted(output.glob("*/run-*"))
@@ -836,17 +949,75 @@ def _stage_slice(start: str, end: str) -> tuple[str, ...]:
     return tuple(order[order.index(start) : order.index(end) + 1])
 
 
+#: Wall clock per stage, in execution order, appended by `_pipeline_step` and
+#: reported as a table when the chain ends. Exists so a run on one host can be
+#: compared line by line against `docs/pipeline-stage-timings.md`, which records a
+#: macOS baseline: a total alone cannot tell you whether a slower host is slower
+#: everywhere or just on the backtest. Populated even when a stage raises, because
+#: knowing how far a failed run got is most of diagnosing it.
+_STAGE_TIMINGS: list[tuple[str, float]] = []
+
+
+def _format_duration(seconds: float) -> str:
+    """Format to match `docs/pipeline-stage-timings.md` so the tables can be diffed."""
+
+    if seconds < 1:
+        return "<1s"
+    minutes, remainder = divmod(seconds, 60)
+    hours, minutes = divmod(int(minutes), 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {remainder:04.1f}s"
+    if minutes:
+        return f"{minutes} min {remainder:04.1f} s"
+    return f"{remainder:.1f} s"
+
+
+def _report_stage_timings() -> None:
+    """Print the per-stage table. Called on success and on failure alike."""
+
+    if not _STAGE_TIMINGS:
+        return
+    width = max(len(label) for label, _ in _STAGE_TIMINGS)
+    total = sum(elapsed for _, elapsed in _STAGE_TIMINGS)
+    print("\n===== stage timings =====", flush=True)
+    print(f"host: {platform.system()} {platform.release()} ({platform.machine()})")
+    for index, (label, elapsed) in enumerate(_STAGE_TIMINGS, start=1):
+        print(f"{index:>3}. {label:<{width}}  {_format_duration(elapsed)}")
+    print(f"{'':>3}  {'TOTAL':<{width}}  {_format_duration(total)}", flush=True)
+
+
 def _pipeline_step(label: str, command: list[str], *, cwd: Path = REPO_ROOT) -> dict:
     """Run one stage, capturing stdout so later stages can read its identities."""
 
     print(f"\n===== {label} =====", flush=True)
+    # monotonic, not time(): a clock adjustment mid-run must not be able to make a
+    # stage look negative or free. This measures elapsed wall clock for the stage,
+    # which is what the baseline table records and what a user actually waits.
+    started = time.monotonic()
     completed = subprocess.run(
-        command, cwd=cwd, check=False, capture_output=True, text=True
+        command,
+        cwd=cwd,
+        check=False,
+        capture_output=True,
+        # Explicit UTF-8 rather than `text=True`. `text=True` decodes with the
+        # PARENT's locale encoding, which is cp1252 on Windows, and PYTHONUTF8 set
+        # above cannot change that -- an interpreter fixes its own stdio encoding at
+        # startup, so the variable only reaches children. The result was a decode
+        # mirror of the encode bug: the child now correctly WROTE MLflow's emoji as
+        # UTF-8, the reader thread could not DECODE those bytes, `completed.stdout`
+        # came back None, and the stage died on `.index("{")` after 3h21m of work
+        # that had in fact succeeded. errors="replace" so a stray undecodable byte
+        # degrades one character instead of discarding a completed stage's output.
+        encoding="utf-8",
+        errors="replace",
     )
+    elapsed = time.monotonic() - started
+    _STAGE_TIMINGS.append((label, elapsed))
     if completed.stdout:
         print(completed.stdout, end="")
     if completed.stderr:
         print(completed.stderr, end="", file=sys.stderr)
+    print(f"----- {label}: {_format_duration(elapsed)} -----", flush=True)
     if completed.returncode:
         raise _PipelineFailure(label, completed.returncode)
     try:
@@ -1395,6 +1566,9 @@ def command_pipeline(args: argparse.Namespace) -> int:
                 )
             )
     except _PipelineFailure as failure:
+        # Timings before the message: a failed run's per-stage costs are how you tell
+        # "the backtest is slow on this host" from "the backtest died immediately".
+        _report_stage_timings()
         print(
             f"\npipeline failed at stage {failure.stage!r} (exit {failure.code})\n"
             f"resume with: tools/dev.py pipeline --from {failure.stage.split()[0]} "
@@ -1404,6 +1578,7 @@ def command_pipeline(args: argparse.Namespace) -> int:
         if "expected pin" in str(failure.stage):
             pass
         return failure.code
+    _report_stage_timings()
     return 0
 
 
@@ -1446,7 +1621,7 @@ def command_api_test(_: argparse.Namespace) -> int:
         str(Path(tempfile.gettempdir()) / "retail-intelligence-go-cache"),
     )
     return _run(
-        ["go", "test", "-race", "./..."],
+        _go_test_command(),
         cwd=REPO_ROOT / "api",
         env=environment,
     )
@@ -1479,14 +1654,14 @@ def command_services(args: argparse.Namespace) -> int:
 
 
 def command_ui_test(_: argparse.Namespace) -> int:
-    return _run(["npm", "test"], cwd=REPO_ROOT / "ui")
+    return _run([_npm(), "test"], cwd=REPO_ROOT / "ui")
 
 
 def command_ui_build(_: argparse.Namespace) -> int:
-    result = _run(["npm", "run", "typecheck"], cwd=REPO_ROOT / "ui")
+    result = _run([_npm(), "run", "typecheck"], cwd=REPO_ROOT / "ui")
     if result:
         return result
-    return _run(["npm", "run", "build"], cwd=REPO_ROOT / "ui")
+    return _run([_npm(), "run", "build"], cwd=REPO_ROOT / "ui")
 
 
 def command_ml(args: argparse.Namespace) -> int:

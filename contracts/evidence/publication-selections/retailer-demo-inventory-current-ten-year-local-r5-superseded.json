@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-04T00:00:00Z",
+    "reason": "Superseded by selection sel_358139579ca0d22f over publication run-adac9e85dccb56e8-r6. The curated and evidence roots this record selects were overwritten by the r6 regeneration of the same deterministic run id, so the artifact it names no longer exists on disk. It is retained as evidence of what was selected, and reproduced from its own committed block -- see EVIDENCE_RELEASED_RUNS. Scope: inventory_replenishment_current_snapshot."
+  },
+  "lifecycle": {
+    "reasonCode": "PHASE_4_TIGHTENED_REPLENISHMENT",
+    "recordId": "rec_8b924d5f3ad1ec2b",
+    "state": "superseded",
+    "supersedes": "rec_74673b179cf3f03d"
+  },
+  "publication": {
+    "duckdbSha256": "98db9ee6cf4d661ce700425bbb784670002eb2b7c06d2f687d074af1f7d8d537",
+    "gateASemanticFingerprint": "089df45da83de6db7b34a9d50a84660f233becd23c7fc82d32ea138bf3c10ad1",
+    "gateBSemanticFingerprint": "0a3a6c0c39556c9e1037053f1251e8043aaa2ff26fc30599f88bbf43b86b0505",
+    "logicalPath": "ingestion/data/curated/run-adac9e85dccb56e8",
+    "objectCount": 1589,
+    "publicationSemanticFingerprint": "af41f60202348835af43f43c0db8d4a63650e6479fa6c74f9b21b21cf3199c24",
+    "sourceSnapshotId": "cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0a3a6c0c39556c9e1037053f1251e8043aaa2ff26fc30599f88bbf43b86b0505"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_current_snapshot",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_9d622257e81a582c"
+}

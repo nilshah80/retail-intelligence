@@ -53,7 +53,7 @@ SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 #: Pass `--run` to move it. The constant remains the record of what is pinned NOW,
 #: so `--check` stays reproducible from the file alone, but advancing the pin no
 #: longer requires editing source -- which is how the mistake above happened.
-RUN = "run-b847177c11ac724d"
+RUN = "run-adac9e85dccb56e8-r6"
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
 #: joins the list at P4-3 because the Phase 4 bundle consumes it, and a pin that

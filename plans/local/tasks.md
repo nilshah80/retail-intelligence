@@ -101,6 +101,36 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       Go race/unit/build and Node typecheck/test/build checks exist. Decision #61 and
       `contracts/validation-policy.yaml` prohibit adding those checks to repository CI now or
       later; future layers add portable developer commands when they land.
+- [~] Prove the delivered layers actually run on a Windows host, as ongoing capability evidence
+      rather than release hardening — the Phase-7/8 acceptance matrix below is a separate, unstarted
+      gate and this row does not satisfy it.
+      **Done 2026-08-05 on Windows 11 Pro 10.0.26200** (8 logical cores, 31.7 GiB, NTFS, Python
+      3.12.10, Go 1.26.5, Node 24.19.0, Docker 29.6.2 / Compose v5.3.1), `performance` profile,
+      against the regenerated ten-year pin: `datagen` plus all sixteen `tools/dev.py pipeline`
+      stages from `land` to `inventory-activate`, exit 0. The forecast passed every acceptance gate
+      — A1 established **53.48%**, A2 coverage **0.9029**, per-cohort **0.8991** cold-start /
+      **0.9047** established against the hard `[0.85, 0.95]` band, A3–A5 pass, champion WAPE
+      **0.27686** over 708,708 rows. Cold-start coverage reproduced the accepted macOS run to all
+      sixteen digits, which is the substantive result: **the platform changed the clock, not the
+      numbers.** Also exercised: contract validation and codegen `--check`, the 74-record selection
+      ledger and expected-pin re-derivation, all 20 migrations to head `0020_safety_stock_drivers`,
+      `go build` / `go vet` / `go test ./...`, `npm ci` + typecheck + 37/37 vitest + `vite build`,
+      and the live API and UI serving the accepted publication.
+      **Seven Windows-only defects were found and fixed doing it**, every one invisible to the
+      earlier static audit: absent `tzdata` (generation impossible), `npm.CMD` process creation,
+      `-race`/cgo, POSIX-only profile memory detection that silently forced `safe` on every Windows
+      host, no orchestrator stage timing, and an encode/decode pair of cp1252 stdio failures that
+      cost two complete 3h20m backtests. Details in the rows they belong to.
+      **Open on Windows:** `tools/dev.py test` has never completed, `tools/dev.py verify` cannot
+      pass until the `-race` row below is closed, and `tools/dev.py wheels --offline` is unrun.
+      Linux is untouched.
+- [ ] Install a C toolchain (mingw-w64) on the Windows host and set `CGO_ENABLED=1` so
+      `go test -race` runs there. **This is the single reason `tools/dev.py verify` cannot pass on
+      Windows**, since `verify` includes the race step. `_go_test_command()` now degrades to plain
+      `go test` with a loud notice naming the missing compiler rather than failing outright, so the
+      gap is disclosed at every invocation instead of reading as a green run — but a disclosed gap is
+      still a gap, and a race detector is not optional evidence for a concurrent API. As of
+      2026-08-05 the host had no `gcc`, `clang` or `cc` on PATH and `CGO_ENABLED=0`.
 - [ ] At Phase-7/8 hardening, collect manual supported-OS evidence for every completed layer using
       `tools/dev.py` and component commands. Do not add GitHub Actions or another repository CI
       system. Evidence covers datagen and Config Builder tests, contract/code generation,
@@ -115,6 +145,21 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       expansion; close files/readers/DuckDB connections before same-volume atomic replacement.
       ML and database serving code follow the same contract locally; manual supported-OS evidence
       and future layers remain.
+      **Exercised for real on Windows/NTFS 2026-08-05 and the contract held.** Every atomic
+      promotion completed on a case-insensitive filesystem with open handles closed first — the
+      source run's `.run-<id>.staging-<hex>` directory, `source-run.duckdb.tmp` plus its WAL,
+      `.staging.duckdb.staging-<hex>` and the curated publication all promoted cleanly under their
+      hidden-sibling-then-rename discipline. `LongPathsEnabled=1` on the host; no `/tmp`, `fork`,
+      `flock`, symlink or mode-bit dependency was hit; the publication manifest proved fully
+      path-relative (0 absolute paths, 0 run-name references), which is what let the curated and
+      evidence roots be renamed to the `-r6` generation without invalidating a single fingerprint.
+      **Two cp1252 stdio defects were NOT covered by this contract and should be.** It normalises
+      fingerprinted *file* text to UTF-8/LF but says nothing about *stream* encoding, so a
+      completed 3h20m backtest died when MLflow wrote U+1F3C3 to a cp1252 stdout, and the repaired
+      child then produced UTF-8 the parent decoded as cp1252 — `text=True` uses the parent's locale
+      and `PYTHONUTF8` cannot reach an already-started interpreter. Both fixed in `tools/dev.py`
+      (`PYTHONUTF8=1` before any spawn; explicit `encoding="utf-8"` on captured output). Extend the
+      written contract to require UTF-8 on subprocess pipes, not only on fingerprinted files.
 - [x] Add and validate a root `.gitattributes` policy before more generated/API/UI code lands:
       contract/vector/generated source files use deterministic UTF-8/LF on every checkout, while
       Windows-native scripts are explicitly CRLF. Developer-run cross-platform checks verify code
@@ -123,6 +168,17 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       and output bytes in every layer. Datagen telemetry and its disposable safe/performance/
       ultra-performance benchmark are complete; ingestion and ML record stage evidence, while
       complete API saturation telemetry and future-layer benchmarks remain.
+      **Orchestrator-level stage timing added 2026-08-05, because it did not exist.** Each layer
+      recorded its own evidence but `tools/dev.py pipeline` reported nothing, so a slow host could
+      only be measured as one total — useless for locating *which* stage a platform penalises.
+      `_pipeline_step` now records wall clock per stage from `time.monotonic` and prints a table
+      formatted to match `docs/pipeline-stage-timings.md` so the two diff line by line; it prints on
+      failure too, since knowing how far a failed run got is most of diagnosing it. `datagen` is
+      timed as well despite deliberately not being a pipeline stage, because it is 79 of the 140
+      minutes in the macOS baseline and a rebuild comparison without it is missing most of its mass.
+      This is what made the Windows/macOS ratio table measurable rather than anecdotal.
+      Still open: peak RSS, CPU utilization and spill bytes are not captured per stage by the
+      orchestrator — only wall clock — so RSS figures in the Windows pass were sampled externally.
 
 ## Phase 1 — Config Builder and synthetic source generation `[FIRST]`
 
@@ -160,6 +216,24 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       **STILL OPEN — a static audit is not a run.** It cannot catch behavioural divergence, and
       decision #61 forbids repository CI, so actual Windows and Linux suite runs stay open. Same
       blocker as the Phase 3 manual Windows/Linux portability rows.
+      **Windows generation third done 2026-08-05, and the static audit's limits were exactly the
+      point.** A real run on Windows 11 Pro 10.0.26200 (8 logical cores, 31.7 GiB, NTFS, Python
+      3.12.10) generated the full ten-year demo under `performance` in **5h 42m 09.6s**, reproducing
+      `run-adac9e85dccb56e8`, all 9,938 source objects and every control total to the cent
+      (INR gross 97,238,216,662.69 / 4,590,902 orders; USD 1,261,917,926.25 / 4,209,420). Bounded
+      spools held memory flat near 650 MB per market process and DuckDB spilled rather than growing,
+      so the profile's ceiling behaved as designed.
+      **One hard Windows blocker the audit could not see:** `datagen` declared no `tzdata`
+      dependency. Windows ships no IANA time zone database, so every `ZoneInfo()` call in
+      `config.py`, `customers.py`, `generator.py` and `extensions.py` raised
+      `ZoneInfoNotFoundError` — all 49 datagen tests failed at import and generation was impossible,
+      not merely untested. `ingestion`/`ml`/`db` only worked by accident, inheriting `tzdata`
+      through pandas. Fixed with a `sys_platform == 'win32'` marker in `datagen/pyproject.toml`.
+      This is the second import-time-only Windows blocker in this package after the `resource`
+      module, which is evidence about the class of defect a static pass misses.
+      **The datagen pytest suite itself is still NOT run to completion on Windows** — it was started
+      and abandoned once it began exercising real 20-year generation, so the macOS 52-test figure
+      has no Windows counterpart yet. Linux remains entirely open.
 - [x] Redesign the old `RunContext`/run identity, domain checkpoint state, writer dataset
       contract, controller orchestration and CLI commands against the new generator-owned
       config and source-data specification. Replace wall-clock-derived run identity with the
@@ -826,7 +900,19 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       feature/run semantics. The old feature-schema-v3 safe/performance builds were byte-identical
       at semantic fingerprint `1edd93f17b01fa8b…`, and its 16-GB spike passed at 7.148 GiB peak
       RSS, but neither is feature-schema-v6 acceptance evidence. Full v6 pinned-data
-      safe/high-performance comparison and Windows/Linux evidence remain open.
+      safe/high-performance comparison and Linux evidence remain open.
+      **Windows evidence collected 2026-08-05 under `performance` only.** The full forecast chain
+      ran on Windows 11 and produced an accepted run, so the platform half of this row is answered
+      for that profile: `features` 51.5 s, `characterize` 7.9 s, `backtest` **3h 21m 09.3 s**,
+      `score-current` 14m 56.1 s, `publish` 14m 24.9 s, `materialize` 7m 01.5 s. Determinism is
+      strong evidence rather than assumption — all 13 rolling origins reproduced to four decimals
+      across a full process restart (WAPE 0.2570–0.3089, P90 coverage 0.8746–0.9171, every origin
+      inside the gate band), and cold-start coverage matched the accepted macOS run to sixteen
+      digits. **The safe-vs-performance invariance comparison is still NOT done on this host**: only
+      `performance` was run, deliberately, to keep the numbers comparable to the macOS baseline.
+      Note the profile resolver would have silently chosen `safe` here before this pass — see the
+      POSIX-only memory-probe defect — so any earlier Windows profile claim would have been
+      mislabelled.
 - [x] Implement decision #82 as immutable acceptance-v3/verifier-v4 and v4-only migration 0006
       rather than mutating acceptance-v2/verifier-v3 or migration 0005. Contracts are implemented:
       acceptance-v3, `cohorted-seasonal-cold-start-recomputation/v4`, verifier-v4, migration
@@ -1514,6 +1600,14 @@ tied its incumbent rather than beat it.
       Fourteen independent human sign-offs, plus manual Windows/Linux developer
       evidence. Not performable from a macOS host by the implementer; accepted as
       outstanding.
+      **The host half of that excuse is gone as of 2026-08-05.** A Windows 11 host now
+      runs the full chain and serves the accepted bundle, so "not performable from a
+      macOS host" no longer blocks the Windows evidence — the API and UI came up
+      against a live activation there. What remains is the part a host cannot supply:
+      the fourteen independent human sign-offs, and per-page screenshot/DOM/data
+      parity for the Inventory and Replenishment destinations. Only Demand Forecast
+      was read back on Windows, and reading one screen is explicitly not evidence for
+      the others under this row's own rule. Linux evidence is still untouched.
 - [~] **Demo checkpoint 4 / exit:** replay and policy holdout pass; Inventory and Replenishment
       screens preserve the original HTML and render live market/location-scoped outputs.
       The screen half is met: all fourteen destinations render the reference
