@@ -103,7 +103,17 @@ PHASE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
     "phase_4_inventory": {
         "goal": "reorder, safety stock, transfers, allocation, inventory replay",
-        "capabilities": ["replenishment"],
+        # The two split capabilities, not the retired umbrella. `replenishment` is
+        # marked `supersededBy: [inventory_replenishment_current_snapshot,
+        # inventory_replenishment_replay]` in the mask itself, and policy v2's
+        # retiredReason says why: one flag could not distinguish serviceable
+        # current-position analytics from unavailable origin-safe replay. Checking it
+        # meant Phase 4 read as unblocked with current-snapshot false, because the
+        # legacy flag was still true.
+        "capabilities": [
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        ],
         "evidence": "replay and policy holdout pass",
         "alsoRequiresForecastServing": True,
     },
@@ -129,6 +139,84 @@ PHASE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
 }
 
+#: Capability names this scorecard must never require, derived from the committed
+#: policy rather than from evidence.
+#:
+#: The obvious source -- the Gate-B mask's own `supersededBy` -- lives under
+#: `ingestion/data/`, which is gitignored, so a test reading it verifies only on a
+#: host that still holds the bytes. That is the same "passes where the data is" shape
+#: the selection ledger was fixed for, and it must not come back in the guard written
+#: to stop a class of bug from recurring.
+#:
+#: `temporal-evidence-policy-v2.json` IS committed and carries the retirement, but
+#: under a different spelling: the policy retires `inventory_replenishment` while the
+#: mask emits `replenishment`. The alias is declared here, once, so the tool and its
+#: test share one definition instead of the test inventing a second.
+_POLICY_PATH = (
+    REPO_ROOT / "contracts" / "onboarding" / "temporal-evidence-policy-v2.json"
+)
+
+#: Mask spelling -> policy spelling, for names that differ between the two.
+RETIRED_CAPABILITY_ALIASES: dict[str, str] = {
+    "replenishment": "inventory_replenishment",
+}
+
+
+def retired_capabilities(root: Path = REPO_ROOT) -> set[str]:
+    """Names no phase may require, under either spelling.
+
+    Fails CLOSED. `_load(...) or {}` turned "I could not read the authority" into "the
+    authority retires nothing", which silently disabled the guard and let Phase 4
+    measure the retired flag again -- reported as unblocked. That is the same
+    unreadable-versus-empty collapse this file fixes for masks, one level up on the
+    policy document, and the argument for moving the guard out of a test applies to
+    its own input: a runtime that can go quiet is not guarded.
+
+    Resolved beneath `root`, not the module's own REPO_ROOT, so `build(other_root)`
+    reads that repository's policy rather than this checkout's.
+    """
+
+    path = root / "contracts" / "onboarding" / "temporal-evidence-policy-v2.json"
+    if not path.is_file():
+        raise SystemExit(f"the retirement authority is absent: {path}")
+    try:
+        policy = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as broken:
+        raise SystemExit(f"the retirement authority could not be read: {path}: {broken}")
+    except UnicodeDecodeError as broken:
+        raise SystemExit(
+            f"the retirement authority is not valid UTF-8: {path}: {broken}"
+        )
+    except json.JSONDecodeError as broken:
+        raise SystemExit(f"the retirement authority is not valid JSON: {path}: {broken}")
+    if not isinstance(policy, dict):
+        raise SystemExit(
+            f"the retirement authority is {type(policy).__name__}, expected an object: "
+            f"{path}"
+        )
+    capabilities = policy.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise SystemExit(f"{path}: 'capabilities' is missing or not an object")
+    # Absent key versus empty value, kept apart as everywhere else here: no
+    # `retiredDefinitions` is a malformed policy, while `{}` is a policy that
+    # legitimately retires nothing.
+    if "retiredDefinitions" not in capabilities:
+        raise SystemExit(f"{path}: 'capabilities.retiredDefinitions' is missing")
+    declared = capabilities["retiredDefinitions"]
+    if not isinstance(declared, dict):
+        raise SystemExit(
+            f"{path}: 'capabilities.retiredDefinitions' is "
+            f"{type(declared).__name__}, expected an object"
+        )
+    retired = set(declared)
+    aliases = {
+        mask_name
+        for mask_name, policy_name in RETIRED_CAPABILITY_ALIASES.items()
+        if policy_name in retired
+    }
+    return retired | aliases
+
+
 #: Capabilities that unlock more than one phase, so blocking them is expensive.
 LEVERAGE_NOTE = (
     "A capability blocking more than one phase is higher leverage than any "
@@ -137,22 +225,68 @@ LEVERAGE_NOTE = (
 
 
 def _load(path: Path) -> dict[str, Any] | None:
+    """Read a JSON object for the scorecard, returning None for unusable evidence."""
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
+    return document if isinstance(document, dict) else None
 
 
 def gate_b_evidence(root: Path) -> tuple[dict[str, Any] | None, Path | None]:
-    """Return the accepted Gate-B evidence, preferring retained evidence."""
+    """Return Gate B for the governed publication, never a hash-order winner."""
 
     candidates = sorted((root / "ingestion/data/evidence").glob("*/gate-b.json"))
-    best: tuple[dict[str, Any], Path] | None = None
+    passing: list[tuple[dict[str, Any], Path]] = []
     for path in candidates:
         payload = _load(path)
         if payload and payload.get("status") == "pass":
-            best = (payload, path)
-    return (best[0], best[1]) if best else (None, None)
+            passing.append((payload, path))
+
+    # Production has a committed pin, so bind the evidence to its publication and
+    # Gate-B fingerprints. Test/scratch repositories without a pin may use their only
+    # passing candidate, but several candidates are ambiguity, never "last hash wins".
+    pin_path = root / "contracts" / "ml" / "expected-pin.json"
+    if pin_path.is_file():
+        pin = _load(pin_path)
+        if pin is None:
+            raise SystemExit(f"the governed expected pin is unreadable: {pin_path}")
+        publication = pin.get("publication")
+        gate_b = pin.get("gateB")
+        if not isinstance(publication, dict) or not isinstance(gate_b, dict):
+            raise SystemExit(f"the governed expected pin is malformed: {pin_path}")
+        publication_fingerprint = publication.get("semanticFingerprint")
+        gate_b_fingerprint = gate_b.get("semanticFingerprint")
+        if not isinstance(publication_fingerprint, str) or not isinstance(
+            gate_b_fingerprint, str
+        ):
+            raise SystemExit(
+                f"the governed expected pin has no publication/Gate-B fingerprint: "
+                f"{pin_path}"
+            )
+        governed: list[tuple[dict[str, Any], Path]] = []
+        for payload, path in passing:
+            manifest = _load(path.with_name("publication-manifest.json"))
+            if (
+                manifest is not None
+                and manifest.get("semanticFingerprint") == publication_fingerprint
+                and payload.get("semanticFingerprint") == gate_b_fingerprint
+            ):
+                governed.append((payload, path))
+        if len(governed) > 1:
+            raise SystemExit(
+                "more than one retained Gate-B document matches the governed pin: "
+                + ", ".join(str(path) for _, path in governed)
+            )
+        return governed[0] if governed else (None, None)
+
+    if len(passing) > 1:
+        raise SystemExit(
+            "more than one passing Gate-B document exists and no expected pin names "
+            "the governed publication: " + ", ".join(str(path) for _, path in passing)
+        )
+    return passing[0] if passing else (None, None)
 
 
 def forecast_state(root: Path) -> dict[str, Any]:
@@ -167,13 +301,20 @@ def forecast_state(root: Path) -> dict[str, Any]:
         manifest = _load(manifest_path)
         if not manifest:
             continue
-        governed = (
-            manifest.get("modelPolicy", {}).get("acceptanceEvaluation") == from_policy
+        model_policy = manifest.get("modelPolicy")
+        governed = isinstance(model_policy, dict) and (
+            model_policy.get("acceptanceEvaluation") == from_policy
         )
         if not governed:
             continue
+        run_id = manifest.get("forecastRunId")
+        if not isinstance(run_id, str) or not run_id.strip():
+            # A lifecycle word without the identity it applies to is malformed
+            # evidence, not an accepted forecast. Converting None to the string
+            # "None" made that shape truthy and opened every serving-dependent phase.
+            continue
         target = accepted if manifest.get("lifecycleStatus") == "accepted" else rejected
-        target.append(str(manifest.get("forecastRunId")))
+        target.append(run_id)
     return {
         "requiredAcceptanceEvaluation": from_policy,
         "governedAcceptedRuns": sorted(accepted),
@@ -192,9 +333,12 @@ def phase_3_closure(root: Path) -> dict[str, Any]:
     """
 
     record = _load(root / "contracts/evidence/forecast-closure-record.json") or {}
-    verdict = (record.get("verdict") or {}).get("status")
-    outstanding = list(record.get("openEvidence") or [])
-    gate = (record.get("statefulLocalGate") or {}).get("result")
+    verdict_block = record.get("verdict")
+    gate_block = record.get("statefulLocalGate")
+    open_evidence = record.get("openEvidence")
+    verdict = verdict_block.get("status") if isinstance(verdict_block, dict) else None
+    outstanding = list(open_evidence) if isinstance(open_evidence, list) else []
+    gate = gate_block.get("result") if isinstance(gate_block, dict) else None
     return {
         "recordPresent": bool(record),
         "verdict": verdict,
@@ -211,28 +355,92 @@ def phase_3_closure(root: Path) -> dict[str, Any]:
 
 def build(root: Path = REPO_ROOT) -> dict[str, Any]:
     gate_b, gate_b_path = gate_b_evidence(root)
-    mask = (gate_b or {}).get("capabilityMask", {})
+    raw_mask = gate_b.get("capabilityMask") if gate_b is not None else None
+    # A mask that is null, a list or a string reached `.get()` below and crashed. The
+    # entry-level guard added last round did not cover the container holding them --
+    # the same one-level-up miss.
+    #
+    # Normalising to `{}` alone would report NOT_EVALUATED, which says the gate ran
+    # and skipped the capability. It did not: the mask could not be read at all, and
+    # those are different facts about the evidence. The flag keeps them apart.
+    # Refuse to MEASURE a retired capability, not merely to have one configured.
+    # Phase 4 required `replenishment` -- retired and superseded -- so it reported no
+    # missing capability while current-snapshot was false. A scorecard that quietly
+    # measures the wrong flag is worse than one that stops.
+    retired = retired_capabilities(root)
+    offenders = sorted(
+        f"{phase}:{capability}"
+        for phase, spec in PHASE_REQUIREMENTS.items()
+        for capability in spec["capabilities"]
+        if capability in retired
+    )
+    if offenders:
+        raise SystemExit(
+            "these phases require capabilities the committed policy retires: "
+            f"{', '.join(offenders)}"
+        )
+
+    mask_unreadable = gate_b is None or not isinstance(raw_mask, dict)
+    mask = raw_mask if isinstance(raw_mask, dict) else {}
     forecast = forecast_state(root)
 
     blockers: dict[str, dict[str, Any]] = {}
     phases: dict[str, Any] = {}
+
+    def record_blocker(reason: str, capability: str, phase: str) -> None:
+        blockers.setdefault(
+            reason,
+            {"reasonCode": reason, "capabilities": [], "phasesBlocked": []},
+        )
+        if capability not in blockers[reason]["capabilities"]:
+            blockers[reason]["capabilities"].append(capability)
+        if phase not in blockers[reason]["phasesBlocked"]:
+            blockers[reason]["phasesBlocked"].append(phase)
+
     for name, spec in PHASE_REQUIREMENTS.items():
         missing: list[dict[str, str]] = []
         for capability in spec["capabilities"]:
+            # Key membership, not `.get()`: an ABSENT key means the gate did not
+            # evaluate this capability, while a key present with an explicit null is
+            # malformed evidence. `.get()` returns None for both and collapsed the
+            # same distinction this file draws everywhere else.
+            evaluated = capability in mask
             entry = mask.get(capability)
-            if entry is None:
-                missing.append({"capability": capability, "reasonCode": "NOT_EVALUATED"})
-            elif not entry.get("available"):
-                reason = str(entry.get("reasonCode", "UNAVAILABLE"))
+            # The fourth reader of this field, and it had the same truthiness defect
+            # as the three in the repin path: `{"available": "false"}` is a non-empty
+            # string, so it read as AVAILABLE. The consequence here is different in
+            # kind -- this tool prints a scorecard and writes no committed artifact,
+            # so the failure is a phase shown as unblocked, not an authorization --
+            # which is why it does not import the raising helper the other three
+            # share: turning a report into a crash would be the wrong trade.
+            #
+            # Strict without raising: anything that is not a real boolean `True` is
+            # not available, and says which of the two reasons applies. A non-dict
+            # entry also used to reach `.get()` and raise AttributeError.
+            if entry is None and not evaluated and not mask_unreadable:
+                reason = "NOT_EVALUATED"
                 missing.append({"capability": capability, "reasonCode": reason})
-                blockers.setdefault(
-                    reason,
-                    {"reasonCode": reason, "capabilities": [], "phasesBlocked": []},
+                record_blocker(reason, capability, name)
+            elif mask_unreadable or not isinstance(entry, dict) or not isinstance(
+                entry.get("available"), bool
+            ):
+                # MASK_UNREADABLE names a container-level fact; an unusable single
+                # entry in an otherwise readable mask is a different one, and this
+                # file's own standard is different facts, different codes.
+                code = (
+                    "MASK_UNREADABLE" if mask_unreadable else "ENTRY_UNREADABLE"
                 )
-                if capability not in blockers[reason]["capabilities"]:
-                    blockers[reason]["capabilities"].append(capability)
-                if name not in blockers[reason]["phasesBlocked"]:
-                    blockers[reason]["phasesBlocked"].append(name)
+                missing.append({"capability": capability, "reasonCode": code})
+                record_blocker(code, capability, name)
+            elif not entry["available"]:
+                raw_reason = entry.get("reasonCode")
+                reason = (
+                    raw_reason.strip()
+                    if isinstance(raw_reason, str) and raw_reason.strip()
+                    else "UNAVAILABLE"
+                )
+                missing.append({"capability": capability, "reasonCode": reason})
+                record_blocker(reason, capability, name)
         forecast_blocked = bool(
             spec.get("alsoRequiresForecastServing") and not forecast["servingAuthorized"]
         )

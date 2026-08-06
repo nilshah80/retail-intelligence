@@ -6,6 +6,13 @@ requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.4,<2",
     "PyYAML>=6,<7",
+    # Windows ships no IANA time zone database, so every ZoneInfo() call in this
+    # package -- market timezones, local end-of-day observation stamps -- raises
+    # ZoneInfoNotFoundError there. macOS and Linux read /usr/share/zoneinfo, which
+    # is why the marker is win32-only rather than an unconditional dependency.
+    # The other environments get this transitively through pandas; datagen has no
+    # pandas, so it has to declare it.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

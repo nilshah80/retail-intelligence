@@ -35,25 +35,88 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from build_publication_selection import current_records  # noqa: E402
+from build_publication_selection import (  # noqa: E402
+    atomic_write_bytes,
+    assert_repin_transaction_readable,
+    capability_is_available,
+    current_records,
+    load_generations,
+)
 
 PIN_PATH = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
 SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
-#: The currently pinned publication. Named rather than discovered: there is no
-#: newest-wins here, and a caller changing the pin should have to say so.
-#:
-#: This value is the ONLY thing the ML chain consults to find its curated root --
-#: `features` takes no source argument at all -- so advancing the
-#: publication-selection records without advancing this leaves every ML stage
-#: silently reading the previous publication while `--source-root` is ignored. That
-#: cost a full features-and-backtest run: the feature manifest recorded
-#: sourceSnapshotId d43fd302 when the intent was 0634b079.
-#:
-#: Pass `--run` to move it. The constant remains the record of what is pinned NOW,
-#: so `--check` stays reproducible from the file alone, but advancing the pin no
-#: longer requires editing source -- which is how the mistake above happened.
-RUN = "run-b847177c11ac724d"
+#: `contracts/ml/expected-pin.json` is the ONLY thing the ML chain consults to find
+#: its curated root -- `features` takes no source argument at all -- so a pin naming
+#: the wrong publication makes every ML stage read the previous one while
+#: `--source-root` is silently ignored. That cost a full features-and-backtest run
+#: once: the feature manifest recorded sourceSnapshotId d43fd302 when the intent was
+#: 0634b079. Hence the derivation below, and hence `build_pin` cross-checking the
+#: active decision-#73 selection before it writes anything.
+
+
+def _fallback_run() -> str | None:
+    """The run the committed ledger last adopted, for a checkout with no data.
+
+    Derived, because a hardcoded fallback goes stale exactly as fast as the constant
+    it replaced: it said r6 while the committed pin named r2, one commit later, so a
+    fresh clone's `--list` reported a run nothing pinned. The newest ledger
+    generation is the same authority `--check` verifies against, so the two cannot
+    disagree.
+    """
+
+    try:
+        generations = load_generations()
+    except (OSError, ValueError):
+        return None
+    if not generations:
+        return None
+
+    # Highest tag, not last-in-file. `next_generation_tag()` next door already picks
+    # the maximum, and two different rules for "newest" in adjacent functions is how
+    # they eventually disagree about the same ledger.
+    def _tag_number(entry: dict[str, Any]) -> int:
+        tag = str(entry.get("tag") or "")
+        return int(tag[1:]) if tag.startswith("r") and tag[1:].isdigit() else -1
+
+    newest = max(generations, key=_tag_number)
+    return str(newest.get("run") or "") or None
+
+
+def _pinned_run() -> str:
+    """The run this pin names, derived rather than transcribed.
+
+    Retained evidence is the authority: a publication may only be pinned while its
+    gate and manifest files are present, which is what `build_pin` reads. Exactly one
+    run has them after a completed pipeline -- the rest are evidence-released -- so
+    the derivation is unambiguous. Ambiguity is refused rather than tie-broken,
+    because a newest-wins glob over content hashes is exactly the arbitrary choice
+    decision #89 exists to prevent.
+    """
+
+    # The LEDGER decides what is pinned; retained evidence only decides whether the
+    # pin can be derived. Those are different questions and conflating them gave a
+    # wrong answer in an ordinary case: publish a new run without adopting it and the
+    # single retained evidence directory made `--list` report that unadopted run as
+    # "currently pinned", when the pin and every active selection still named the
+    # previous one. Authority is a governed choice, not a side effect of which bytes
+    # happen to be on this disk.
+    adopted = _fallback_run()
+    if adopted is not None:
+        return adopted
+    promoted = _promoted_runs()
+    if len(promoted) == 1:
+        return promoted[0]
+    if not promoted:
+        raise SystemExit(
+            "no run has retained evidence and the ledger names none; "
+            "pass --run to state which publication is pinned"
+        )
+    raise SystemExit(
+        f"{len(promoted)} runs have retained evidence ({', '.join(promoted)}) and "
+        "the ledger names none; pass --run to state which one is pinned rather "
+        "than letting this guess"
+    )
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
 #: joins the list at P4-3 because the Phase 4 bundle consumes it, and a pin that
@@ -99,7 +162,11 @@ def _active_selections() -> dict[str, dict[str, Any]]:
     return active
 
 
-def build_pin(run: str = RUN) -> dict[str, Any]:
+def build_pin(run: str | None = None) -> dict[str, Any]:
+    assert_repin_transaction_readable()
+    # Resolved here rather than as a default argument value, so the derivation runs
+    # at call time against the evidence on disk instead of at import time.
+    run = run or _pinned_run()
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
     curated = REPO_ROOT / "ingestion" / "data" / "curated" / run
     for path in (
@@ -146,8 +213,10 @@ def build_pin(run: str = RUN) -> dict[str, Any]:
                 f"the active {capability} selection names a different publication "
                 "fingerprint than the retained manifest"
             )
-        mask = gate_b["capabilityMask"].get(capability) or {}
-        if not mask.get("available"):
+        if not capability_is_available(
+            gate_b.get("capabilityMask"), capability, subject=run
+        ):
+            mask = (gate_b.get("capabilityMask") or {}).get(capability) or {}
             raise SystemExit(
                 f"{capability} is required by the pin but unavailable in the "
                 f"retained capability mask: {mask.get('reasonCodes') or mask}"
@@ -242,7 +311,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         available = _promoted_runs()
-        print(f"currently pinned: {RUN}")
+        # Guarded for the same reason the --check comparison is: `_pinned_run()`
+        # refuses to guess between several retained runs, and a LISTING is exactly
+        # when a caller needs to see those runs rather than be told to disambiguate
+        # them. Raising here made the command that answers "which runs are there?"
+        # fail because there was more than one.
+        try:
+            print(f"currently pinned: {_pinned_run()}")
+        except SystemExit as ambiguity:
+            print(f"currently pinned: undetermined -- {ambiguity}")
         if available:
             for run in available:
                 print(f"  retained evidence: {run}")
@@ -250,14 +327,27 @@ def main(argv: list[str] | None = None) -> int:
             print("  no run has retained publication evidence")
         return 0
 
-    run = args.run or RUN
-    if args.check and args.run and args.run != RUN:
-        print(
-            f"--check verifies the committed pin, which names {RUN}; "
-            f"--run {args.run} would verify a different derivation",
-            file=sys.stderr,
-        )
-        return 2
+    run = args.run or _pinned_run()
+    # The guard exists to stop `--check --run X` quietly verifying a derivation other
+    # than the committed pin's. It must not itself fail when the caller has already
+    # supplied the answer: `_pinned_run()` refuses to guess between several retained
+    # runs, so calling it unconditionally made `--check --run X` die telling the
+    # caller to "pass --run" with --run right there on the command line. When the run
+    # cannot be derived there is nothing to contradict, and `--check` compares the
+    # derived pin against the committed file regardless -- so skipping the guard
+    # loses no safety.
+    if args.check and args.run:
+        try:
+            committed = _pinned_run()
+        except SystemExit:
+            committed = None
+        if committed is not None and args.run != committed:
+            print(
+                f"--check verifies the committed pin, which names {committed}; "
+                f"--run {args.run} would verify a different derivation",
+                file=sys.stderr,
+            )
+            return 2
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
     if not (evidence / "publication-manifest.json").is_file():
         available = _promoted_runs()
@@ -293,7 +383,9 @@ def main(argv: list[str] | None = None) -> int:
     # whichever `python3` is on PATH -- which on macOS is still 3.9. The point of the
     # keyword was to keep the file LF on every platform, and encoding the bytes here
     # does that unconditionally.
-    PIN_PATH.write_bytes((json.dumps(pin, indent=2) + "\n").encode("utf-8"))
+    atomic_write_bytes(
+        PIN_PATH, (json.dumps(pin, indent=2) + "\n").encode("utf-8")
+    )
     print(
         f"wrote {PIN_PATH.relative_to(REPO_ROOT)}\n"
         f"  snapshot:    {pin['sourceSnapshotId']}\n"

@@ -50,8 +50,12 @@ own governed selection.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
+import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +67,7 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
     assert_one_active_per_scope,
     derive_record_id,
     derive_selection_id,
+    scope_key,
     transition,
     validate_selection,
     verify_against_publication,
@@ -113,6 +118,51 @@ PHASE_4R4_APPROVED_AT = "2026-08-03T00:00:00Z"
 #: than a rebuild on the old one.
 PHASE_4R5_RUN = "run-adac9e85dccb56e8"
 PHASE_4R5_APPROVED_AT = "2026-08-04T00:00:00Z"
+
+#: The Windows-host regeneration, run to measure cross-platform stage timings
+#: against the macOS baseline in `docs/pipeline-stage-timings.md`. It carries the
+#: `-r6` suffix for the same reason `-r2` did: the source run id is deterministic
+#: and reproduced exactly, so a re-publication of it cannot share the curated and
+#: evidence roots of the generation it replaces without overwriting the artifacts
+#: those committed records attest to. That is what happened here before the rename,
+#: and it is what put r5 in EVIDENCE_RELEASED_RUNS below.
+PHASE_4R6_RUN = "run-adac9e85dccb56e8-r6"
+PHASE_4R6_APPROVED_AT = "2026-08-05T00:00:00Z"
+
+
+def capability_is_available(
+    mask: Any, capability: str, *, subject: str
+) -> bool:
+    """Interpret one capability-mask entry strictly. Shared by all three readers.
+
+    Three call sites decide whether a capability is available -- `build_candidate`
+    here, `build_pin`, and `_repin_facts` in `tools/dev.py` -- and all three had the
+    same defect: `if not mask.get("available")` tests truthiness, so
+    `{"available": "false"}` and `{"available": "no"}` both read as AVAILABLE because
+    a non-empty string is truthy. Only a float 0.0 happened to be caught.
+
+    The first fix went to `_repin_facts`, which is the PROPOSAL gate -- the least
+    consequential of the three. These two are the gates that write committed
+    artifacts: a mask reading `"false"` produced a governance record asserting the
+    capability was sufficient, and a pin naming it required. Both are reachable
+    without `repin` at all, so the earlier refusal shielded neither.
+
+    Hence one function rather than three corrected copies, because three copies of a
+    check is how the next one drifts.
+
+    Malformed raises rather than returning False: "this cannot be interpreted" and
+    "the gate says no" need different responses, and collapsing them sends the reader
+    to the wrong file.
+    """
+
+    entry = (mask or {}).get(capability) if isinstance(mask, dict) else None
+    if not isinstance(entry, dict) or not isinstance(entry.get("available"), bool):
+        raise SystemExit(
+            f"{subject}: capability mask entry for {capability} is not "
+            f"{{'available': <bool>}}, it is {entry!r}. A verdict this tool cannot "
+            "interpret must not be read as a verdict."
+        )
+    return entry["available"]
 
 
 def _scope(capability: str) -> dict[str, str]:
@@ -183,6 +233,20 @@ EVIDENCE_RELEASED_RUNS: dict[str, str] = {
     "run-5bf9580d18d67e36-r2": "P4-10 re-ingest of the same snapshot",
     "run-ae5fcbcb9b8abb34": "P4-12 tightened store replenishment policy",
     "run-b847177c11ac724d": "P4-12c store_stockout_events and unit-cost fix",
+    # The r6 Windows regeneration republished the same deterministic run id, and
+    # before the `-r6` rename it wrote over this generation's curated and evidence
+    # roots. The bytes these records were derived FROM are therefore gone, so they
+    # are reproduced from their own committed blocks rather than re-derived. Listing
+    # it here is the disclosure, not a workaround: a run that is neither listed nor
+    # has retained evidence still refuses.
+    "run-adac9e85dccb56e8": "P4-12e per-lane transit publication",
+    # The Windows regeneration's own publication. Released when the derived data was
+    # wiped for a clean ingestion-onward rebuild, which is the ordinary end of a
+    # publication's life rather than an incident: `ingestion/data/evidence/<run>` is
+    # run data and gets deleted, while the record that selected it is a committed
+    # contract and does not. This is the same disclosure r5 carries, arrived at the
+    # same way, and it is why the two things called "evidence" must not be confused.
+    "run-adac9e85dccb56e8-r6": "Windows-host regeneration publication",
 }
 
 #: Counted so `--check` can report how much of the ledger still rests on retained
@@ -250,6 +314,7 @@ def build_candidate(
     approved_at: str,
     reason_code: str,
     candidate_reason: str,
+    actor: str = ACTOR,
 ) -> dict[str, Any]:
     """Derive one candidate record from retained evidence, or refuse.
 
@@ -263,11 +328,28 @@ def build_candidate(
     if not (evidence / "publication-manifest.json").is_file():
         # No retained evidence. Reproduce the record that was derived when the
         # evidence existed, or refuse -- never invent one.
-        if run not in EVIDENCE_RELEASED_RUNS:
+        # A run named by a committed ledger generation is released implicitly.
+        #
+        # `ingestion/data/` is gitignored, so the bytes behind an adopted publication
+        # exist only on the machine that produced them. Requiring a hand-added
+        # EVIDENCE_RELEASED_RUNS entry meant every automated adoption produced a
+        # ledger that verified on exactly one host: r7 named run-adac9e85dccb56e8-r2
+        # and `--check` failed on a Mac, on a fresh clone, and on this host the moment
+        # it wiped derived data. An adoption IS the declaration, so it counts as one.
+        #
+        # This cannot mint a selection nobody verified. `_recorded_blocks` below still
+        # requires a committed record carrying the publication block to reproduce
+        # from, and a run with neither retained bytes nor a committed record still
+        # refuses. On the host that does hold the bytes, the on-disk manifest is
+        # preferred, so nothing stops being verified while the data is present.
+        if run not in EVIDENCE_RELEASED_RUNS and run not in {
+            str(entry.get("run")) for entry in load_generations()
+        }:
             raise SystemExit(
-                f"{run}: no retained evidence at {evidence} and the run is not a "
-                "declared evidence-released run. A selection cannot be derived "
-                "without the gate and manifest files it is derived FROM."
+                f"{run}: no retained evidence at {evidence}, no declared "
+                "evidence-released entry and no ledger generation naming it. A "
+                "selection cannot be derived without the gate and manifest files it "
+                "is derived FROM."
             )
         blocks = _recorded_blocks(run, capability)
         if blocks is None:
@@ -293,7 +375,7 @@ def build_candidate(
                 "capabilitySufficiency": "sufficient",
             },
             "approval": {
-                "actor": ACTOR,
+                "actor": actor,
                 "approvedAt": approved_at,
                 "reason": candidate_reason,
             },
@@ -315,8 +397,10 @@ def build_candidate(
             f"{run}: both gates must pass; gate A = {gate_a.get('status')}, "
             f"gate B = {gate_b.get('status')}"
         )
-    mask = gate_b["capabilityMask"].get(capability) or {}
-    if not mask.get("available"):
+    if not capability_is_available(
+        gate_b.get("capabilityMask"), capability, subject=run
+    ):
+        mask = (gate_b.get("capabilityMask") or {}).get(capability) or {}
         reasons = mask.get("reasonCodes") or [mask.get("reasonCode")]
         raise SystemExit(
             f"{run}: {capability} is not available in the retained capability "
@@ -349,7 +433,7 @@ def build_candidate(
             "capabilitySufficiency": "sufficient",
         },
         "approval": {
-            "actor": ACTOR,
+            "actor": actor,
             "approvedAt": approved_at,
             "reason": candidate_reason,
         },
@@ -370,6 +454,7 @@ def build_chain(
     candidate_reason: str,
     approved_reason: str,
     active_reason: str,
+    actor: str = ACTOR,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """candidate -> approved -> active, chained and self-checked."""
 
@@ -379,18 +464,19 @@ def build_chain(
         approved_at=approved_at,
         reason_code=reason_code,
         candidate_reason=candidate_reason,
+        actor=actor,
     )
     approved = transition(
         candidate,
         "approved",
-        actor=ACTOR,
+        actor=actor,
         reason=approved_reason,
         reason_code=reason_code,
     )
     active = transition(
         approved,
         "active",
-        actor=ACTOR,
+        actor=actor,
         reason=active_reason,
         reason_code=reason_code,
     )
@@ -413,6 +499,387 @@ def build_chain(
     if active["lifecycle"]["supersedes"] != approved["lifecycle"]["recordId"]:
         raise SystemExit(f"{capability}: active does not chain to approved")
     return chain
+
+
+#: Generations added after r6, as data rather than source. Appended by
+#: `tools/dev.py repin --approve`; derived into records by `_derived_generations`.
+GENERATIONS_PATH = (
+    REPO_ROOT / "contracts" / "evidence" / "publication-selection-generations.json"
+)
+
+#: The actor recorded when no human supplied one. Deliberately not a person's name:
+#: an auto-adopted publication is a real, defensible event, but a record claiming a
+#: human approved something nobody read is worse than no record at all, because every
+#: reader downstream treats the ledger as evidence that someone looked.
+AUTOMATED_ACTOR = "automated/repin-policy/v1"
+
+#: The three capabilities every generation covers. A publication is adopted for
+#: all of them or none: they rest on different evidence and fail independently,
+#: which is why temporal-evidence policy v2 split them in the first place.
+_GENERATION_CAPABILITIES = (
+    "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
+    "inventory_replenishment_replay",
+)
+
+
+GENERATION_LEDGER_SCHEMA_VERSION = "retail-publication-selection-generations/v1"
+GENERATION_LEDGER_RECORD_TYPE = "publication_selection_generation_ledger"
+REPIN_TRANSACTION_ENV = "RETAIL_REPIN_TRANSACTION"
+_REASON_CODE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+_RUN_ID = re.compile(r"^run-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_GENERATION_FIELDS = {
+    "tag": str,
+    "run": str,
+    "supersedesTag": str,
+    "approvedAt": str,
+    "reasonCode": str,
+    "actor": str,
+    "approvalMode": str,
+    "candidateReason": str,
+    "approvedReason": str,
+    "activeReason": str,
+    "supersedeReason": str,
+}
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Replace ``path`` atomically without ever truncating the live file.
+
+    The temporary file lives beside the destination because ``os.replace`` is only
+    guaranteed to be atomic within one filesystem. Flushing it before the replace
+    keeps a successful return from depending on buffered Python writes. The helper is
+    shared by the ledger, its derived records, the expected pin, and rollback so the
+    recovery path is not weaker than the write path it repairs.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination_mode = path.stat().st_mode & 0o777
+    except OSError:
+        destination_mode = 0o644
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # mkstemp intentionally creates 0600. Preserve an existing file's mode (or
+        # use the ordinary read-only-to-others mode for a new contract) so atomic
+        # publication does not make committed evidence unreadable to other users.
+        if os.name != "nt":
+            os.chmod(temporary, destination_mode)
+        os.replace(temporary, path)
+    finally:
+        # If writing or replacing failed, the destination is still untouched and the
+        # private staging file is the only cleanup needed.
+        temporary.unlink(missing_ok=True)
+
+
+def _approval_mode(actor: str, reason_code: str, *, where: str) -> str:
+    """Derive and cross-check the attribution mode from normalized evidence."""
+
+    if not actor.strip():
+        raise SystemExit(f"{where} actor is blank")
+    if not _REASON_CODE.fullmatch(reason_code):
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} is not 3-64 character "
+            "UPPER_SNAKE_CASE"
+        )
+    mode = "automatic" if actor == AUTOMATED_ACTOR else "human"
+    names_automation = reason_code.startswith("AUTOMATED_")
+    if mode == "automatic" and not names_automation:
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} does not name an automatic "
+            f"decision, but actor is {AUTOMATED_ACTOR!r}"
+        )
+    if mode == "human" and names_automation:
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} names an automatic decision, "
+            f"but actor {actor!r} is human"
+        )
+    return mode
+
+
+def validate_generations(generations: list[Any]) -> list[dict[str, Any]]:
+    """Refuse a ledger that cannot be trusted to mean what it says.
+
+    `load_generations` returned the raw array, so nothing checked it. The sharpest
+    consequence: `approvalMode` was never CONSUMED anywhere, so flipping an entry from
+    `automatic` to `human` changed no derived record and both `--check` and contract
+    validation still passed. A field that records whether a person approved something,
+    which nothing reads, is decoration -- and this ledger's whole purpose is to be
+    trustworthy about exactly that.
+
+    So the mode is now derived from the actor and cross-checked against the stored
+    value, and the structural invariants the tag arithmetic assumes -- unique tags and
+    runs, contiguous generations, a predecessor that is genuinely the previous tag --
+    are asserted rather than hoped for.
+    """
+
+    if not isinstance(generations, list):
+        raise SystemExit(
+            f"{GENERATIONS_PATH}: 'generations' is "
+            f"{type(generations).__name__}, expected a list"
+        )
+    seen_tags: set[str] = set()
+    seen_runs: set[str] = set()
+    validated: list[dict[str, Any]] = []
+    for index, entry in enumerate(generations):
+        where = f"{GENERATIONS_PATH.name} generations[{index}]"
+        if not isinstance(entry, dict):
+            raise SystemExit(f"{where} is {type(entry).__name__}, expected an object")
+        for field, kind in _GENERATION_FIELDS.items():
+            if field not in entry:
+                raise SystemExit(f"{where} has no {field!r}")
+            if not isinstance(entry[field], kind):
+                raise SystemExit(
+                    f"{where} field {field!r} is {type(entry[field]).__name__}, "
+                    f"expected {kind.__name__}"
+                )
+        tag, run = entry["tag"], entry["run"]
+        if not (tag.startswith("r") and tag[1:].isdigit()):
+            raise SystemExit(f"{where} tag {tag!r} is not of the form r<number>")
+        if tag in seen_tags:
+            raise SystemExit(f"{where} repeats tag {tag!r}")
+        if run in seen_runs:
+            raise SystemExit(f"{where} repeats run {run!r}")
+        if not _RUN_ID.fullmatch(run):
+            raise SystemExit(
+                f"{where} run {run!r} is not one portable run-... path component"
+            )
+        seen_tags.add(tag)
+        seen_runs.add(run)
+        expected_tag = f"r{7 + index}"
+        expected_predecessor = f"r{6 + index}"
+        if tag != expected_tag:
+            raise SystemExit(
+                f"{where} is tagged {tag!r}, expected {expected_tag!r}; generations "
+                "must start at r7 and be stored in contiguous order"
+            )
+        if entry["supersedesTag"] != expected_predecessor:
+            raise SystemExit(
+                f"{where} tag {tag} declares supersedesTag "
+                f"{entry['supersedesTag']!r}, expected {expected_predecessor!r}; "
+                "generations must be contiguous"
+            )
+        try:
+            datetime.datetime.strptime(
+                entry["approvedAt"], "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            raise SystemExit(
+                f"{where} approvedAt {entry['approvedAt']!r} is not RFC 3339 UTC "
+                "(YYYY-MM-DDTHH:MM:SSZ)"
+            )
+        for field in (
+            "run",
+            "candidateReason",
+            "approvedReason",
+            "activeReason",
+            "supersedeReason",
+        ):
+            if not entry[field].strip():
+                raise SystemExit(f"{where} field {field!r} is blank")
+        expected_mode = _approval_mode(
+            entry["actor"], entry["reasonCode"], where=where
+        )
+        if entry["approvalMode"] != expected_mode:
+            raise SystemExit(
+                f"{where} records approvalMode {entry['approvalMode']!r} with actor "
+                f"{entry['actor']!r}, which is {expected_mode!r}. The mode is derived "
+                "from the actor; a record whose two halves disagree cannot be evidence "
+                "of either."
+            )
+        validated.append(entry)
+    return validated
+
+
+def validate_generation_document(document: Any) -> dict[str, Any]:
+    """Validate the ledger envelope and every generation it contains."""
+
+    if not isinstance(document, dict):
+        raise SystemExit(
+            f"{GENERATIONS_PATH} is {type(document).__name__}, expected an object"
+        )
+    required = {
+        "schemaVersion": str,
+        "recordType": str,
+        "approvalModes": dict,
+        "generations": list,
+        "note": str,
+    }
+    for field, kind in required.items():
+        if field not in document:
+            raise SystemExit(f"{GENERATIONS_PATH} has no {field!r}")
+        if not isinstance(document[field], kind):
+            raise SystemExit(
+                f"{GENERATIONS_PATH} field {field!r} is "
+                f"{type(document[field]).__name__}, expected {kind.__name__}"
+            )
+    if document["schemaVersion"] != GENERATION_LEDGER_SCHEMA_VERSION:
+        raise SystemExit(
+            f"{GENERATIONS_PATH} has unsupported schemaVersion "
+            f"{document['schemaVersion']!r}"
+        )
+    if document["recordType"] != GENERATION_LEDGER_RECORD_TYPE:
+        raise SystemExit(
+            f"{GENERATIONS_PATH} has unsupported recordType "
+            f"{document['recordType']!r}"
+        )
+    modes = document["approvalModes"]
+    for mode in ("automatic", "human"):
+        if not isinstance(modes.get(mode), str) or not modes[mode].strip():
+            raise SystemExit(
+                f"{GENERATIONS_PATH} approvalModes.{mode} is missing or blank"
+            )
+    if not document["note"].strip():
+        raise SystemExit(f"{GENERATIONS_PATH} field 'note' is blank")
+    validate_generations(document["generations"])
+    return document
+
+
+def assert_repin_transaction_readable() -> None:
+    """Refuse readers outside the adoption that owns a prepared journal."""
+
+    transaction = GENERATIONS_PATH.with_suffix(".transaction.json")
+    if transaction.exists():
+        authorized = os.environ.get(REPIN_TRANSACTION_ENV)
+        if (
+            not authorized
+            or os.path.normcase(str(Path(authorized).resolve()))
+            != os.path.normcase(str(transaction.resolve()))
+        ):
+            raise SystemExit(
+                f"publication adoption is incomplete: {transaction}. Run "
+                "tools/dev.py repin so the crash journal is recovered before "
+                "reading the generation ledger."
+            )
+
+
+def load_generations() -> list[dict[str, Any]]:
+    assert_repin_transaction_readable()
+    if not GENERATIONS_PATH.is_file():
+        return []
+    document = validate_generation_document(_load(GENERATIONS_PATH))
+    return list(document["generations"])
+
+
+def next_generation_tag() -> str:
+    """`r7`, `r8`, ... -- the tag the next adopted publication will carry.
+
+    Derived from the ledger rather than passed in, because a caller guessing the tag
+    is a caller who can collide with a committed record.
+    """
+
+    highest = 6  # r6 is the last hand-written generation.
+    for entry in load_generations():
+        tag = str(entry.get("tag") or "")
+        if tag.startswith("r") and tag[1:].isdigit():
+            highest = max(highest, int(tag[1:]))
+    return f"r{highest + 1}"
+
+
+def _derived_generations(
+    *,
+    previous_actives: dict[str, dict[str, Any]],
+    prefixes: dict[str, str],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Build candidate/approved/active plus the predecessor's supersession.
+
+    One entry in the ledger becomes ten records: three states per capability plus one
+    supersession per capability. That ten-for-one ratio is the whole reason this is
+    data now -- it is exactly the boilerplate that made a hand-edited generation a
+    five-file change, and none of it carries information a human chose.
+    """
+
+    out: list[tuple[str, dict[str, Any]]] = []
+    active = dict(previous_actives)
+    for entry in load_generations():
+        run = entry["run"]
+        tag = entry["tag"]
+        actor = entry.get("actor") or AUTOMATED_ACTOR
+        reason_code = entry["reasonCode"]
+        for capability in _GENERATION_CAPABILITIES:
+            chain = build_chain(
+                run=run,
+                capability=capability,
+                approved_at=entry["approvedAt"],
+                reason_code=reason_code,
+                candidate_reason=entry["candidateReason"],
+                approved_reason=entry["approvedReason"],
+                active_reason=entry["activeReason"],
+                actor=actor,
+            )
+            superseded = transition(
+                active[capability],
+                "superseded",
+                actor=actor,
+                reason=(
+                    f"Superseded by selection {chain[2]['selectionId']} over "
+                    f"publication {run}. {entry['supersedeReason']} "
+                    f"Scope: {capability}."
+                ),
+                reason_code=reason_code,
+            )
+            validate_selection(superseded)
+            prefix = prefixes[capability]
+            out.append((f"{prefix}-{entry['supersedesTag']}-superseded.json", superseded))
+            for state, record in zip(("candidate", "approved", "active"), chain):
+                out.append((f"{prefix}-{tag}-{state}.json", record))
+            active[capability] = chain[2]
+    return out
+
+
+def append_generation(
+    *,
+    run: str,
+    approved_at: str,
+    reason_code: str,
+    candidate_reason: str,
+    approved_reason: str,
+    active_reason: str,
+    supersede_reason: str,
+    actor: str | None,
+) -> dict[str, Any]:
+    """Append one generation to the ledger and return it.
+
+    `actor=None` records the automated actor. There is no path here that writes a
+    human name the caller did not supply.
+    """
+
+    document = validate_generation_document(_load(GENERATIONS_PATH))
+    generations = list(document["generations"])
+    tag = next_generation_tag()
+    supersedes_tag = f"r{int(tag[1:]) - 1}"
+    entry = {
+        "tag": tag,
+        "run": run,
+        "supersedesTag": supersedes_tag,
+        "approvedAt": approved_at,
+        "reasonCode": reason_code,
+        "actor": actor or AUTOMATED_ACTOR,
+        "approvalMode": "human" if actor else "automatic",
+        "candidateReason": candidate_reason,
+        "approvedReason": approved_reason,
+        "activeReason": active_reason,
+        "supersedeReason": supersede_reason,
+    }
+    generations.append(entry)
+    document["generations"] = generations
+    validate_generation_document(document)
+    # write_bytes, not write_text(newline=...): that keyword is 3.10+ and this is
+    # reachable from an orchestrator running whichever python3 is on PATH, which on
+    # macOS is still 3.9. Encoding here keeps the file LF unconditionally -- the same
+    # reasoning, and the same call, `build_expected_pin` already uses for the pin.
+    atomic_write_bytes(
+        GENERATIONS_PATH,
+        (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+    )
+    return entry
 
 
 def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
@@ -806,6 +1273,85 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         )
     }
 
+    # -- r6: the Windows-host regeneration ------------------------------------
+    #
+    # Approved by nilay.shah on 2026-08-05. This is NOT an equivalence re-pin in
+    # the sense of nothing having moved: the DATA reproduced and is provably the
+    # same, but the ARTIFACT is new, and decision #89 draws that line deliberately.
+    # Gate A and Gate B fingerprints are the evidence that the data reproduced;
+    # a selection record is the evidence of which artifact was chosen.
+    r6_reason = (
+        "Ten-year v13 regenerated on a Windows 11 host to measure cross-platform "
+        "stage timings against the macOS baseline in "
+        "`docs/pipeline-stage-timings.md`. The scenario is deterministic and it "
+        "showed: run id run-adac9e85dccb56e8 and the 9,938-object source snapshot "
+        "reproduced exactly, and both quality gates pass with all three required "
+        "capabilities available. What moved is the artifact, not the data -- "
+        "sourceSnapshotId hashes Parquet bytes, so it went from cd20ca5a to "
+        "4c205cd1, and the curated DuckDB's internal layout and partition split "
+        "moved with it (1,306 curated objects against 1,589). Under decision #89 "
+        "that is a new bundle needing a new governed selection rather than an edit "
+        "to the record of the old one."
+    )
+    r6_chains = {
+        capability: build_chain(
+            run=PHASE_4R6_RUN,
+            capability=capability,
+            approved_at=PHASE_4R6_APPROVED_AT,
+            reason_code="WINDOWS_HOST_REGENERATION",
+            candidate_reason=r6_reason,
+            approved_reason=approved,
+            active_reason=active,
+        )
+        for capability, approved, active in (
+            (
+                "demand_forecast_non_pit",
+                "Gate A, Gate B, the capability mask, the publication fingerprint "
+                "and the curated DuckDB hash all derived from this run's own "
+                "retained evidence rather than transcribed from a plan. Gate A "
+                "4999fa1a, Gate B 0817812c, publication e5d34f94, DuckDB "
+                "f5cec9fa.",
+                "Adopted as the active demand-forecast source authority. The r5 "
+                "selection over the same run id is superseded in the same change, "
+                "so exactly one selection is active for this scope.",
+            ),
+            (
+                "inventory_replenishment_current_snapshot",
+                "Gate B reports the capability available with no missing entities "
+                "and no reason code, read from this run's own retained mask.",
+                "Adopted as the active source authority for the current-state "
+                "half of the Phase 4 bundle, selected separately from the replay "
+                "capability because the two rest on different evidence.",
+            ),
+            (
+                "inventory_replenishment_replay",
+                "The replay capability's reason codes are all absent from this "
+                "run's Gate B mask, derived rather than read from the pipeline "
+                "result.",
+                "Adopted as the active source authority for the replay half. The "
+                "oracle is re-measured on this publication against the same "
+                "frozen 0.5 tolerance rather than a relaxed one.",
+            ),
+        )
+    }
+
+    r6_superseded = {
+        capability: _supersede(
+            r5_chains[capability][2], r6_chains[capability][2], capability,
+            PHASE_4R6_RUN,
+            "The curated and evidence roots this record selects were overwritten "
+            "by the r6 regeneration of the same deterministic run id, so the "
+            "artifact it names no longer exists on disk. It is retained as "
+            "evidence of what was selected, and reproduced from its own committed "
+            "block -- see EVIDENCE_RELEASED_RUNS.",
+        )
+        for capability in (
+            "demand_forecast_non_pit",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        )
+    }
+
     r5_superseded = {
         capability: _supersede(
             r4_chains[capability][2], r5_chains[capability][2], capability,
@@ -897,7 +1443,37 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *(record for chain in r4_chains.values() for record in chain),
         *r5_superseded.values(),
         *(record for chain in r5_chains.values() for record in chain),
+        *r6_superseded.values(),
+        *(record for chain in r6_chains.values() for record in chain),
     ]
+
+    # Built HERE, before the invariant, not spliced into the returned filename list
+    # after it. The r4 comment above records this exact bug being fixed once already;
+    # it came back with the derived path and would have stayed, because every future
+    # generation flows through it. The assertion was reading a ledger that stopped at
+    # r6 while the directory held r7 -- "the check verifies a subset and reports on
+    # the whole", again.
+    # Hoisted above `derived` because the derivation needs them. They used to sit
+    # beside the returned filename list, which was fine while the derived
+    # generations were spliced in there too.
+    legacy_prefix = f"{RETAILER_ID}-demand-forecast-{ENVIRONMENT}"
+    forecast_prefix = f"{RETAILER_ID}-demand-forecast-ten-year-{ENVIRONMENT}"
+    current_prefix = f"{RETAILER_ID}-inventory-current-ten-year-{ENVIRONMENT}"
+    replay_prefix = f"{RETAILER_ID}-inventory-replay-ten-year-{ENVIRONMENT}"
+
+    derived = _derived_generations(
+        previous_actives={
+            capability: r6_chains[capability][2]
+            for capability in _GENERATION_CAPABILITIES
+        },
+        prefixes={
+            "demand_forecast_non_pit": forecast_prefix,
+            "inventory_replenishment_current_snapshot": current_prefix,
+            "inventory_replenishment_replay": replay_prefix,
+        },
+    )
+    everything.extend(record for _, record in derived)
+
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
     # by filename or by mtime would be the arbitrary tie-break decision #90 was
@@ -906,14 +1482,31 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
     # must be active.
     assert_one_active_per_scope(_current(everything))
 
+    # ...and EXACTLY one, which the call above does not check. It raises on a SECOND
+    # active for a scope but is silent on zero, and zero is the shape the duplicate
+    # it guards against actually takes: a repeated generation shares its
+    # predecessor's recordIds, so the second chain supersedes ITSELF and every scope
+    # ends up with no active selection at all. The whole set then passes, `--check`
+    # passes against the written records, and the first thing to notice is
+    # `build_expected_pin` reporting no active selection for demand_forecast_non_pit
+    # -- a true message pointing at the wrong file.
+    current_actives = {
+        scope_key(record)[2]
+        for record in _current(everything)
+        if record["lifecycle"]["state"] == "active"
+    }
+    missing = set(_GENERATION_CAPABILITIES) - current_actives
+    if missing:
+        raise SystemExit(
+            "no active selection remains for "
+            f"{', '.join(sorted(missing))}. A generation that supersedes its own "
+            "chain does this: check the ledger for a duplicated run."
+        )
+
     predecessor = dict(LEGACY_UNSELECTED_PREDECESSOR)
     predecessor["supersededBySelectionId"] = phase_3_active["selectionId"]
     predecessor["supersededByRecordId"] = phase_3_active["lifecycle"]["recordId"]
 
-    legacy_prefix = f"{RETAILER_ID}-demand-forecast-{ENVIRONMENT}"
-    forecast_prefix = f"{RETAILER_ID}-demand-forecast-ten-year-{ENVIRONMENT}"
-    current_prefix = f"{RETAILER_ID}-inventory-current-ten-year-{ENVIRONMENT}"
-    replay_prefix = f"{RETAILER_ID}-inventory-replay-ten-year-{ENVIRONMENT}"
     return [
         (f"{legacy_prefix}-candidate.json", phase_3_candidate),
         (f"{legacy_prefix}-approved.json", phase_3_approved),
@@ -992,6 +1585,30 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
                 ("candidate", "approved", "active"), r5_chains[capability]
             )
         ),
+        (f"{forecast_prefix}-r5-superseded.json",
+         r6_superseded["demand_forecast_non_pit"]),
+        (f"{current_prefix}-r5-superseded.json",
+         r6_superseded["inventory_replenishment_current_snapshot"]),
+        (f"{replay_prefix}-r5-superseded.json",
+         r6_superseded["inventory_replenishment_replay"]),
+        *(
+            (f"{prefix}-r6-{state}.json", record)
+            for prefix, capability in (
+                (forecast_prefix, "demand_forecast_non_pit"),
+                (current_prefix, "inventory_replenishment_current_snapshot"),
+                (replay_prefix, "inventory_replenishment_replay"),
+            )
+            for state, record in zip(
+                ("candidate", "approved", "active"), r6_chains[capability]
+            )
+        ),
+        # Everything after r6 is DATA, not source. See the note in the generations
+        # ledger: the six hand-written chains above are why adopting one publication
+        # took five coordinated edits, and they stay hand-written because they are
+        # already committed and verified. `derived` is computed above so the
+        # one-active-per-scope invariant sees it; the SAME list is emitted here
+        # rather than a second call, because two calls could disagree.
+        *derived,
     ]
 
 
@@ -1074,10 +1691,23 @@ def main(argv: list[str] | None = None) -> int:
                 f"({len(_reproduced_runs)} of "
                 f"{len(_reproduced_runs) + len(_derived_runs)} runs reproduced "
                 "from their committed records; retained evidence for them is gone "
-                "-- see EVIDENCE_RELEASED_RUNS)"
+                "-- see EVIDENCE_RELEASED_RUNS or the generations ledger)"
             )
             for run in sorted(_reproduced_runs):
-                print(f"  reproduced: {run} ({EVIDENCE_RELEASED_RUNS[run]})")
+                # A run may be released by the hand-written map OR implicitly by a
+                # ledger generation naming it, so the label must cover both.
+                # Indexing the map directly raised KeyError for every automated
+                # adoption -- after the check had already printed that all 86
+                # records matched, which is the worst possible order to fail in.
+                label = EVIDENCE_RELEASED_RUNS.get(run) or next(
+                    (
+                        f"ledger generation {entry.get('tag')}"
+                        for entry in load_generations()
+                        if entry.get("run") == run
+                    ),
+                    "declared by the generations ledger",
+                )
+                print(f"  reproduced: {run} ({label})")
             for run in sorted(_derived_runs):
                 print(f"  derived from retained evidence: {run}")
         else:
@@ -1117,7 +1747,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        path.write_text(rendered, encoding="utf-8")
+        atomic_write_bytes(path, rendered.encode("utf-8"))
         written += 1
     if args.no_clobber:
         print(

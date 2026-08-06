@@ -1,0 +1,24 @@
+{
+  "approvalModes": {
+    "automatic": "No actor was supplied, so the policy adopted the publication on derived evidence. `approval.actor` is `automated/repin-policy/v1` -- never a person's name, because a record that says a human approved something nobody read is worse than no record. The reason states which facts the policy checked.",
+    "human": "A person supplied --actor and --reason. `approval.actor` is that person."
+  },
+  "generations": [
+    {
+      "activeReason": "Adopted as the active source authority for this scope. The preceding generation is superseded in the same change, so exactly one selection is active per scope (decision #90).",
+      "actor": "automated/repin-policy/v1",
+      "approvalMode": "automatic",
+      "approvedAt": "2026-08-05T22:43:10Z",
+      "approvedReason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash were all derived from this run's own retained evidence rather than transcribed: Gate A 4999fa1a, Gate B 0817812c, publication 8e7c1f16, DuckDB d4af26c5, 1302 curated objects.",
+      "candidateReason": "Adopted automatically by the repin policy: no actor was supplied, so this record asserts a POLICY decision on derived evidence and not a human review. Anyone relying on it should read the facts below, not the fact that it was approved. Publication for run-adac9e85dccb56e8-r2 passed Gate A (pass) and Gate B with all three required capabilities available. Relative to the previous pin: publication fingerprint, curated DuckDB hash. Business controls present for 11 group(s) in this run's own manifest: activeSkus, asOfDate, channels, currencies, dateRange, forecastCoveragePct, fx, markets, modelAccuracyPct, stores, totalSkus.",
+      "reasonCode": "AUTOMATED_REPIN_ADOPTION",
+      "run": "run-adac9e85dccb56e8-r2",
+      "supersedeReason": "Replaced as source authority by the publication for run-adac9e85dccb56e8-r2. Compared with the pin this record's publication carried: publication fingerprint, curated DuckDB hash.",
+      "supersedesTag": "r6",
+      "tag": "r7"
+    }
+  ],
+  "note": "Generations added after r6. Source code stopped being the ledger here: every generation up to and including r6 is a hand-written chain in build_lifecycle(), which is why adopting one publication took five coordinated edits across two files. Entries below are data, appended by `tools/dev.py repin --approve`, and build_lifecycle() derives their candidate/approved/active/superseded records the same way it does the hand-written ones. The historical chains are deliberately NOT migrated into this file: they are committed and verified, and rewriting them to prove a new mechanism risks the one thing the ledger exists to protect.",
+  "recordType": "publication_selection_generation_ledger",
+  "schemaVersion": "retail-publication-selection-generations/v1"
+}

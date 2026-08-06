@@ -154,6 +154,34 @@ def _selection() -> dict[str, Any]:
         raise SystemExit(
             "no active decision-#73 selection exists; P4-0 cannot exit without one"
         )
+    # The one thing this position CAN check: that the recordId it is about to write
+    # is unique across the committed directory.
+    #
+    # An earlier version of this guard also compared selectionId, scope and state --
+    # and all three were self-comparisons. `active` comes from `current_records(
+    # records)` above, so filtering `records` for its own recordId returns `active`
+    # itself, and the checks asserted a record equals itself. Only a duplicate
+    # recordId across two files could ever fire.
+    #
+    # The defect that motivated the guard -- a COMMITTED entry record whose
+    # activeRecordId had drifted from the ledger -- cannot be caught here at all,
+    # because this function writes a fresh value and never reads the old one. What
+    # closes that is `TestEntryRecordPointer` in
+    # `contracts/python/tests/test_repin_automation.py`, which reads the committed
+    # record from disk and resolves it against the committed chain heads. That test
+    # is the load-bearing check; this is a uniqueness assertion, and saying so keeps
+    # the next reader from trusting the wrong one.
+    duplicates = [
+        record
+        for record in records
+        if (record.get("lifecycle") or {}).get("recordId")
+        == active["lifecycle"]["recordId"]
+    ]
+    if len(duplicates) != 1:
+        raise SystemExit(
+            f"activeRecordId {active['lifecycle']['recordId']} appears in "
+            f"{len(duplicates)} committed records; a lifecycle recordId must be unique"
+        )
     return {
         "selectionId": active["selectionId"],
         "activeRecordId": active["lifecycle"]["recordId"],
@@ -185,7 +213,9 @@ def _parity_amendment() -> dict[str, Any]:
         "decisionAmendment": amendment["decisionAmendment"],
         "frozenBehavior": amendment["frozenBehavior"],
         "approval": amendment["approval"],
-        "amendedContractPath": str(PARITY_CONTRACT.relative_to(REPO_ROOT)),
+        # as_posix for the same reason as bundlePath: a committed logical path
+        # must not carry the separator of whichever host wrote it.
+        "amendedContractPath": PARITY_CONTRACT.relative_to(REPO_ROOT).as_posix(),
         "amendedContractSha256": _sha256(PARITY_CONTRACT),
         "resolvedDecisionQuestions": sorted(
             contract["reviewGate"]["resolvedDecision"],

@@ -76,6 +76,57 @@ Stage 2's 10 s is a cold land. The single-command run measured under a second th
 probe had already landed that snapshot and `land` correctly detected the idempotent replay — worth
 knowing before reading a fast land as a fast pipeline.
 
+## Second host: Windows, same profile, same scenario
+
+Measured 2026-08-05 on **Windows 11 Pro 10.0.26200**, 8 logical cores, 31.7 GiB RAM, repo on NTFS,
+Python 3.12.10 / Go 1.26.5 / Node 24.19.0, PostgreSQL and MLflow in Docker Desktop on the same
+machine. Execution profile `performance`, chosen explicitly rather than auto-detected so the two
+columns are comparable — the resolver would have picked `balanced` here, and before the Windows
+memory-probe fix it would have silently picked `safe`.
+
+Same scenario, same seed, same 9,938-object source run. These numbers come from the per-stage table
+`tools/dev.py pipeline` now prints, which is why they line up row for row.
+
+| # | Stage | macOS (Apple silicon) | Windows 11 (8 core) | Ratio |
+| --- | --- | --- | --- | --- |
+| 1 | datagen | 79 min 44 s | **5 h 42 m 09.6 s** | 4.3× |
+| 2 | land | 10 s | 2 min 42.5 s | 16× |
+| 3–7 | ingest (gate-a → publish) | ~4 min 48 s | 40 min 05.0 s | 8.4× |
+| 7 | finalize | <1 s | <1 s | — |
+| 8 | repin (ledger, verify, pin) | 1 s | 3.1 s | 3× |
+| 9 | features | 8 s | 51.5 s | 6.4× |
+| 10 | characterize | 1 s | 7.9 s | 8× |
+| 11 | backtest | 40 min 10 s | **3 h 21 m 09.3 s** | 5.0× |
+| 12 | score-current | 3 min 16 s | 14 min 56.1 s | 4.6× |
+| 13 | classify | 1 s | 7.9 s | 8× |
+| 14 | forecast publish | 3 min 49 s | 14 min 24.9 s | 3.8× |
+| 15 | forecast materialize | 2 min 3 s | 7 min 01.5 s | 3.4× |
+| 16 | forecast activate | 3 s | 13.5 s | 4.5× |
+| 17 | inventory build | 8 s | 34.3 s | 4.3× |
+| 18 | inventory verify | 2 s | 8.4 s | 4.2× |
+| 19 | inventory materialize | 1 s | 9.6 s | 9.6× |
+| 20 | inventory activate | 1 s | 7.8 s | 7.8× |
+| | **Pipeline total (stages 2–20)** | **53 min 36 s** | **~4 h 40 m** | 5.2× |
+| | **Total including datagen** | **~2 h 20 min** | **~10 h 22 m** | 4.4× |
+
+**A consistent 4–5×, with two outliers worth reading.** `land` at 16× is the worst and is pure I/O —
+copying a 15 GB snapshot onto NTFS with per-object SHA-256 verification. `ingest` at 8.4× is the
+next, and staging is most of it. Neither is CPU-bound, so a faster disk would close more of this gap
+than more cores. The short stages' large ratios (`classify` 8×, `inventory materialize` 9.6×) are
+process-startup dominated and not meaningful at one-second scale.
+
+**The results did not move.** Champion WAPE 0.27686 against this host's own publication versus
+0.2818 on the macOS run's, A1 established 53.48%, A2 coverage 0.9029, per-cohort 0.8991 / 0.9047 —
+and cold-start coverage `0.8991239207719655` matches the accepted macOS run to all sixteen digits.
+All 13 rolling origins also reproduced to four decimals across a full process restart mid-stage.
+The platform changes the clock, not the numbers.
+
+**Two caveats on this column.** The staging peak reached 62–64 GB here against the 54 GB recorded
+above, so budget disk accordingly. And `backtest` was run twice on this host — the first completed
+all 13 origins and then died writing MLflow's progress emoji to a cp1252 stdout, losing the whole
+stage; the 3 h 21 m figure is the second, successful run. Seven Windows-only defects were found and
+fixed to get this column at all; they are recorded in `plans/local/tasks.md`.
+
 ## Disk
 
 | Stage | Footprint |
