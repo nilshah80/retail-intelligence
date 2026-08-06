@@ -11,15 +11,28 @@ _Data authority: `contracts/retail_v2/schema.yaml`, `contracts/staging/staging-v
 explicitly selected immutable publication._
 _Validation authority: `contracts/validation-policy.yaml`; repository CI remains prohibited._
 
-**Revision 1 — 2026-08-06. DRAFT FOR REVIEW. NO WORK PACKAGE IS AUTHORIZED UNTIL `GOI-0` PASSES.
+**Revision 2 — 2026-08-06. DRAFT FOR REVIEW. NO WORK PACKAGE IS AUTHORIZED UNTIL `GOI-0` PASSES.
 `GOI-0` IS A CLIENT-EVIDENCE GATE, NOT AN ENGINEERING PACKAGE.**
 
-This plan adds a second tenant scenario — Gulf Oil Lubricants India — to the existing generator and
-ingestion stack. It is deliberately narrower than Phase 4 or Phase 5: no new engine, no new model,
-no new screen, no new canonical entity. The whole deliverable is one catalog-vocabulary extension
-inside `datagen/`, one Gulf scenario configuration, one ingestion source profile, and the evidence
-that the resulting publication passes the same Gate A/Gate B contract the Northstar retail tenant
-passes today.
+This plan runs the Gulf Oil Lubricants India tenant through the **whole existing stack** — datagen,
+ingestion, ML, API and the two existing screens — on a clean slate, then restores the retail
+tenant. It is narrower than Phase 4 or Phase 5 in one specific sense: no new engine, model, screen,
+canonical entity or migration. Gulf runs on what exists, changed only by tenant-scoped
+configuration.
+
+Revision 2 corrects Revision 1 on two points and adds what it left out:
+
+- **Correction.** Revision 1 claimed a Gulf forecast was undeliverable because Phase 3 was NO-GO.
+  That came from a stale `README.md` status block. An accepted, activated forecast exists — see
+  §0.3. ML, API and UI are in scope.
+- **Correction.** Revision 1 said no downstream contract change was needed beyond the pin and
+  selection records. The guardrail contracts enumerate market/currency pairs and **fail closed** on
+  unknown ones — see §1.2.1. `GOI-9` owns it.
+- **Added.** `GOI-4T` clean-slate teardown with a tested restore point; `GOI-9` guardrails;
+  `GOI-10` ML pipeline; `GOI-11` API and UI; `GOI-12` retail restore.
+
+The tenant model is **one at a time**: empty the stack, run Gulf, put retail back. Retail *code* is
+never deleted, and git-tracked retail evidence is branch-isolated rather than removed.
 
 The plan exists because the naive framing — "it is only a config change" — is false in two specific
 places, and both were verified against the code rather than assumed:
@@ -82,18 +95,30 @@ from a Northstar publication in every respect except its data. If any package he
 editing `ml/`, `api/`, `db/`, or `ui/` code, that is a signal the isolation boundary has been
 breached and the package must stop and escalate, not work around it.
 
-### 0.3 Inherited gates from the retail track
+### 0.3 Inherited state from the retail track
 
-Gulf work does not clear, bypass, or inherit the retail track's open gates:
+Revision 1 of this plan asserted that Phase 3 forecast authorization was NO-GO and that a Gulf
+forecast was therefore undeliverable. **That was wrong**, and it is corrected here. It was taken
+from the root `README.md:24` status block, which is stale relative to the implementation:
 
-- Phase 3 forecast authorization is NO-GO after Review #2; no accepted forecast exists under the
-  repaired authority.
-- Phase 5 is a draft plan; `P5-0`, the temporal-evidence gates, and `P5-1P` are unpassed.
+- `contracts/evidence/forecast-closure-record.json` records an accepted run
+  (`fr_b2ed1a914b059e93` / `fv_0be7…`) with `coverageGateMode: hard`, `A1_cold_start: true`, a
+  `liveActivation`, and a populated authority ledger.
+- `plans/local/tasks.md` records Decision #92 closed end to end on 2026-08-01 with
+  `tools/dev.py verify` exit 0.
+- The r7 source selections adopted on 2026-08-05 report `demand_forecast_non_pit` and both
+  inventory capabilities as `ready` + `sufficient`.
 
-Therefore: a Gulf **source publication** is achievable under this plan. A Gulf **forecast** or
-**pricing recommendation** is not, and must not be represented as achievable, until the retail
-track's own authorization is repaired. If the Gulf requirement is pricing intelligence, that
-dependency sits on the critical path and belongs to Phase 5, not here.
+So the forecast and inventory pipelines are runnable today, and a Gulf tenant can legitimately go
+all the way to a served forecast and inventory plan. What genuinely remains open:
+
+- **Phase 5 pricing is still a draft plan.** `P5-0`, the temporal-evidence gates and `P5-1P` are
+  unpassed, and no pricing engine exists. A Gulf **pricing recommendation** is not deliverable.
+- **The UI is three screens, not a dashboard.** `ui/src` contains the shell, `Forecast.tsx` and
+  `Inventory.tsx`; `contracts/screens/` holds three matrices. Gulf inherits exactly those.
+
+The root `README.md` status block should be corrected as part of `GOI-0` so the next reader does
+not repeat this error.
 
 ### 0.4 Workstream states
 
@@ -106,7 +131,12 @@ dependency sits on the critical path and belongs to Phase 5, not here.
 | Gulf scenario configuration | ready after vocabulary extension |
 | Gulf ingestion profile | ready after scenario ids are frozen |
 | Publication and selection | ready after fixture proof |
-| Forecast/ML on Gulf data | **out of scope** — see §0.3 |
+| Clean-slate teardown and retail restore point | **undecided** — `GOI-D11` |
+| Market-scoped guardrail extension | **required** — fails closed otherwise, see §1.2 |
+| Forecast/ML on Gulf data | in scope — `GOI-10` |
+| API and 3-screen UI on Gulf data | in scope — `GOI-11` |
+| Pricing recommendations | **out of scope** — Phase 5 is an unapproved draft |
+| Return to the retail tenant | in scope — `GOI-12` |
 
 ### 0.5 Non-negotiable invariants
 
@@ -118,9 +148,12 @@ dependency sits on the critical path and belongs to Phase 5, not here.
 3. **Catalog-pack version is the change carrier.** Any change to `_OPTION_VALUES`,
    `_FAMILY_BEHAVIOUR`, `PACK_COUNTS`, or `FAMILY_MEASUREMENTS` bumps `CATALOG_PACK_VERSION`
    (`catalog_packs.py:21`) and is recorded in the resolved config the run embeds.
-4. **Two lineages, never merged.** Gulf and Northstar publications are separate immutable lineages
-   with separate selections. No Gulf artifact supersedes a retail artifact and no shared pin file
-   is repointed in place.
+4. **One tenant at a time, on a clean slate, reversibly.** The stack runs a single active tenant:
+   Gulf work begins by tearing all retail runtime state down to empty (`GOI-4T`) and ends by
+   restoring it (`GOI-12`). Code for the retail tenant is never deleted — it stays intact on
+   `main` and on this branch. Git-tracked retail evidence is branch-isolated rather than deleted,
+   so `git switch main` restores it instantly; only the untracked ~38 GB of data and the
+   PostgreSQL schema must be rebuilt. No teardown starts without a recorded, tested restore path.
 5. **Brands are reference identities only.** Gulf product-line names are used exactly as Castrol,
    Shell, Mobil, and Valvoline already are at `catalog_packs.py:471`: recognizable catalog
    identities attached to wholly synthetic prices, costs, volumes, and demand
@@ -171,8 +204,35 @@ Confirmed by search across `ingestion/`, `ml/`, `api/`, `db/`, `ui/`:
   `measurementUnit`/`measurementValue`, already covered by the profile's `quantityPolicy`
   derivation rule.
 - **Migration 0013 is generic.** It adds display-name columns; the values come from canonical data.
-- **UI scenario values are test-only.** `india-west`/`us-new-york` appear solely in `.test.tsx`
-  fixtures.
+- **Market ids appear only in comments.** Across `ml/src`, `api/internal` and `ui/src`, every
+  `india-west`/`us-new-york` occurrence outside tests is prose in a comment
+  (`ml/src/retail_ml/inventory_run/replay_driver.py:144`,
+  `api/internal/readmodel/inventory.go:1875`, and five others). No branch reads them.
+- **Forecast policies are market-agnostic.** `contracts/ml/forecast-improvement-policy.json:61`
+  scopes per-market non-regression as `"appliesTo": "every supported market"`;
+  `forecast-health-policy.json` works at the `market_portfolio` grain. Neither enumerates markets.
+- **API and UI are data-driven on markets.** `api/internal` has no market allowlist, and
+  `ui/src/api.ts:147` types markets as `z.array(z.string())` supplied by the API.
+
+### 1.2.1 One downstream surface is NOT generic: market-scoped guardrails
+
+Revision 1 said the only downstream artifacts needing work were the ML pin and the selection
+records. That was incomplete. The guardrail contracts enumerate live market/currency pairs and
+**fail closed** on anything else:
+
+| File | Coupling |
+|---|---|
+| `contracts/guardrails/inventory-policy-v2.yaml:332` | `marketCurrencyRules` for `india-west`/INR and `us-new-york`/USD, carrying per-market budget ceilings in market-local minor units |
+| `contracts/guardrails/pricing_rules.yaml:35`, `:43` | the same two pairs |
+| `contracts/guardrails/resolved-inventory-policy-v2.json`, `resolved-policy-v1.json` | resolved, fingerprinted snapshots of the above |
+
+`inventory-policy-v2.yaml:11` records the failure mode explicitly from a past incident:
+`resolve_guardrails("india-west", "INR")` **raised** when the vector still named a retired market
+id, and `contracts/python/tests/test_guardrails.py:114` asserts that mismatched pairs must raise.
+
+A Gulf market id therefore cannot resolve a guardrail until the pairs are added and the resolved
+snapshots and fingerprints are regenerated. This blocks the inventory engine, not the source
+publication — which is why Revision 1 missed it while stopping at publication. `GOI-9` owns it.
 - **CLI already parameterized.** `--source-profile` is a flag on `gate-a`, `stage`, `transform`,
   `gate-b`, `publish`, `run`, and `bench` (`ingestion/src/retail_ingestion/cli.py:98` onward) and is
   plumbed through `tools/dev.py:3541` onward. `tools/dev.py datagen --config` accepts an override
@@ -317,17 +377,28 @@ amended.
 - One Gulf ingestion source profile.
 - Fixture proof, short-horizon publication, then long-horizon publication.
 - Gate A, Gate B, readiness, publication, selection, and pin for the Gulf lineage.
-- Regression evidence that the Northstar lineage is unmoved.
+- **Clean-slate teardown** of all retail runtime state, with a recorded and tested restore path.
+- **Market-scoped guardrail extension** so Gulf market/currency pairs resolve instead of raising.
+- **The ML pipeline on Gulf data:** features → train → backtest → publish → verify → materialize →
+  activate, plus the inventory/replenishment run.
+- **The Go API and the three existing React screens** serving Gulf data from PostgreSQL.
+- **Restoring the retail tenant** afterwards, with evidence it returns to its accepted state.
+- Regression evidence that retail *code* is unmoved throughout.
 
 ### 2.3 Explicit non-goals
 
-- Any forecast, price-response, elasticity, replenishment, or allocation **result** on Gulf data.
+- **Pricing recommendations, price-response, or elasticity on Gulf data.** Phase 5 is an unapproved
+  draft and no pricing engine exists; this is a Phase 5 dependency, not a Gulf one.
 - New channel types, secondary-sales grain, distributor schemes, rebates, or claim settlement.
 - A SAP-shaped source profile or adapter.
-- Any new canonical entity, staging envelope, or Gate rule.
-- Any change to `ml/`, `api/`, `db/`, or `ui/` code.
-- Any new screen, or any change to an approved screen matrix.
-- Superseding, retiring, or repointing the Northstar retail lineage.
+- Any new canonical entity, staging envelope, Gate rule, or database migration.
+- **Any change to `ml/`, `api/`, `db/`, or `ui/` source code.** Gulf runs on the existing engines
+  with tenant-scoped *configuration* only. A required code change means the tenant boundary is not
+  where this plan claims it is; stop and escalate.
+- Any new screen, or any change to an approved screen matrix. Gulf inherits the three screens that
+  exist (`ui/src/Forecast.tsx`, `ui/src/Inventory.tsx`, shell) and nothing more.
+- Permanently deleting retail code, contracts, or git-tracked evidence. Teardown removes runtime
+  state only, and only against a tested restore path.
 
 ### 2.4 Artifact retention
 
@@ -354,9 +425,18 @@ client catalog evidence (GOI-0)
   → retail_v2 candidate → Gate B → readiness
   → curated Parquet/DuckDB publication
   → Decision-#73 candidate → approved → active selection
-  → expected-pin (Gulf lineage)
-  ┈┈ stop. ML/API/UI consumption is out of scope (§0.3).
+  → expected-pin (Gulf tenant)
+  → guardrails resolve for the Gulf market/currency pair          [GOI-9]
+  → ml: features → train → backtest → publish → verify
+       → forecast-materialize → forecast-activate                 [GOI-10]
+       → inventory run → inventory-verify → materialize → activate
+  → Go API reads PostgreSQL only
+  → Forecast + Inventory screens render Gulf data                 [GOI-11]
+  ┈┈ then restore the retail tenant                               [GOI-12]
 ```
+
+The whole chain runs on **one tenant at a time**. `GOI-4T` empties the stack before Gulf
+generation; `GOI-12` puts retail back.
 
 ### 3.2 Tenant topology mapping
 
@@ -516,13 +596,65 @@ undecided; blocks `GOI-3`.
 retail track's ten-year run costs roughly 90 minutes and 15 GB; a Gulf run of similar horizon
 should be budgeted equivalently. **Status:** requires approval at `GOI-5`.
 
-### GOI-D8 · Lineage separation
+### GOI-D8 · Tenant isolation model — clean slate, not coexistence
 
-**Proposed:** Gulf publications carry their own selection records and their own expected-pin
-document; no shared pin file is repointed in place, and no Gulf artifact supersedes a retail
-artifact. **Rationale:** Decision #90's single-active-authority rule is scoped per lineage;
-conflating tenants would make "exactly one active version" ambiguous. **Status:** requires approval
-at `GOI-6`.
+**Superseded within this revision.** Revision 1 proposed two lineages coexisting side by side.
+The delivery requirement is instead **one tenant at a time on a clean slate**, returning to the
+retail tenant afterwards.
+
+**Proposed:** Gulf runs alone. `GOI-4T` empties every runtime store; Gulf occupies the stack; then
+`GOI-12` restores retail. Isolation is achieved by *time and branch*, not by parallel lineages.
+
+**Why this is the better fit:** Decision #90 requires exactly one active version per scope.
+Coexistence would have needed either a tenant axis added to the activation scope — a database and
+Go change, forbidden by §2.3 — or a convention that no test enforces. Clean-slate needs neither.
+
+**What it costs:** the retail runtime state is not reproducible from git. Untracked data is
+~38 GB (datagen output 15 GB, ingestion raw 15 GB, work 6.5 GB, curated 2.1 GB, ML artifacts and
+features) plus the PostgreSQL `retail_serving` schema. Restoring retail means regenerating it, not
+copying a file back. `GOI-D11` decides whether that is a rebuild or a backup.
+
+**Status:** requires approval at `GOI-4T`.
+
+### GOI-D11 · Teardown scope and restore strategy
+
+**What must be emptied before the Gulf run:**
+
+| Store | Size | In git? |
+|---|---|---|
+| `datagen/output/` | ~15 GB | no — gitignored |
+| `ingestion/data/{raw,work,curated,evidence}` | ~23.6 GB | no — `ingestion/.gitignore` excludes `data/` |
+| `ml/data/{features,artifacts}` | 5 bundles | no — `ml/.gitignore` excludes both |
+| PostgreSQL `retail_serving` schema | — | no — migrations are in git, rows are not |
+| `contracts/ml/expected-pin.json`, `contracts/evidence/publication-selections/`, closure and entry records | small | **yes — tracked** |
+
+**Proposed:** treat the two classes differently.
+- *Untracked runtime state* is deleted outright — that is the clean slate, and git cannot lose it
+  because git never had it.
+- *Tracked evidence* is *never deleted*. It is superseded on this branch by Gulf equivalents, so
+  `git switch main` restores the retail records intact. This is what makes "don't delete earlier
+  work" and "clean slate" both true at once.
+
+**Restore options for `GOI-12`:**
+(a) **Rebuild** — re-run retail datagen + pipeline + train + activate from `main`. No extra storage;
+    costs a full cycle. (b) **Backup** — `pg_dump` the schema and archive the curated publication
+    plus ML bundles before teardown; fast restore, needs roughly 20 GB of free space and a verified
+    restore drill.
+
+**Recommendation:** (b), with the restore drill executed at `GOI-4T` rather than trusted at
+`GOI-12`. A backup that has never been restored is not a restore path. **Status:** requires
+approval at `GOI-4T`; blocks any teardown.
+
+### GOI-D12 · Guardrail extension versus replacement
+
+**Proposed:** add Gulf market/currency pairs to `inventory-policy-v2.yaml` and `pricing_rules.yaml`
+alongside the retail pairs, then regenerate the resolved snapshots and fingerprints — rather than
+replacing the retail pairs. **Rationale:** additive keeps `GOI-12` restore cheap and keeps the
+existing negative tests meaningful. It does change the policy fingerprint, which enters run
+identity, so the Gulf and retail policy generations must be distinguishable.
+**Alternative:** a separate Gulf policy document selected by generation, if additive editing
+disturbs the retail fingerprint in a way `GOI-12` cannot undo. **Status:** requires approval at
+`GOI-9`.
 
 ### GOI-D9 · Trademark and presentation
 
@@ -768,6 +900,39 @@ volume the client would not recognize, return to `GOI-1`.
 **Stop:** if any stage requires a code edit outside `datagen/`, halt and escalate. That result
 falsifies the plan's central premise and the plan must be revised before continuing.
 
+### GOI-4T · Clean-slate teardown and retail restore point
+
+**Entry:** `GOI-4` complete — the Gulf profile is fixture-proven, so teardown is not speculative.
+`GOI-D8` and `GOI-D11` approved.
+
+This is the only destructive package in the plan. It runs once, deliberately, and never as a
+side effect of another package.
+
+**Tasks:**
+
+1. Take the retail restore point per `GOI-D11`: `pg_dump` the `retail_serving` schema, and archive
+   the accepted curated publication, retained evidence, and ML bundles.
+2. **Execute a restore drill now, not at `GOI-12`.** Restore the dump into a scratch database and
+   confirm the active forecast and inventory versions come back with matching fingerprints. An
+   unrestored backup is not a restore path, and `GOI-12` is too late to discover that.
+3. Record the retail baseline that `GOI-12` must reproduce: the accepted run and version ids from
+   `contracts/evidence/forecast-closure-record.json`, the active selection record ids, the
+   expected-pin fingerprints, and the publication control totals.
+4. Delete the untracked runtime state: `datagen/output/`, `ingestion/data/{raw,work,curated,
+   evidence}`, `ml/data/features/`, `ml/data/artifacts/`.
+5. Drop and recreate the PostgreSQL `retail_serving` schema, then run `tools/dev.py db-upgrade` to
+   the current head and confirm with `db-current`. Migrations come from git; only rows are lost.
+6. Confirm the git working tree is clean of deletions: no retail code, contract, migration, or
+   tracked evidence file is removed. `git status` shows no deleted tracked files.
+7. Record what was deleted, its measured size, the restore-point location, and the drill result.
+
+**Exit:** an empty stack, a restore point proven by an executed drill, and a written retail
+baseline.
+
+**Stop:** do not begin teardown without the drill passing in step 2. Do not delete any tracked
+file. If disk space blocks the backup, resolve that first — `GOI-D11` option (a), rebuild, is a
+legitimate fallback but must be an explicit approved decision, not a consequence of a full disk.
+
 ### GOI-5 · Short-horizon publication and sizing evidence
 
 **Entry:** `GOI-4` complete.
@@ -828,19 +993,118 @@ readiness verdict is unproven, and do not infer readiness from a global Gate B p
 
 **Exit:** a green suite, an unmoved retail lineage, and retained portability evidence.
 
+### GOI-9 · Extend market-scoped guardrails for the Gulf tenant
+
+**Entry:** `GOI-6` complete — the Gulf market ids are final. `GOI-D12` approved.
+
+**Tasks:**
+
+1. Add the Gulf market/currency pair(s) to `contracts/guardrails/inventory-policy-v2.yaml`
+   `marketCurrencyRules` and to `contracts/guardrails/pricing_rules.yaml`.
+2. Set Gulf budget ceilings in market-local minor units. Do not copy the retail INR ceiling — it
+   was sized for a retail assortment, and `inventory-policy-v2.yaml:336` records what happens when
+   a placeholder is off by a factor of 34.
+3. Regenerate `resolved-inventory-policy-v2.json` and `resolved-policy-v1.json`, and record the new
+   policy fingerprints.
+4. Prove `resolve_guardrails(<gulf-market>, "INR")` resolves, and that a wrong-currency pair still
+   raises. Extend `contracts/python/tests/test_guardrails.py` positive and negative cases.
+5. Confirm the retail pairs still resolve unchanged, and record whether the retail policy
+   fingerprint moved — it enters run identity, and `GOI-12` must restore it.
+6. Prove Python and Go resolve the same policy vectors for the Gulf pair.
+
+**Exit:** Gulf guardrails resolve; retail guardrails are unchanged or their movement is recorded.
+
+**Stop:** no inventory or pricing engine runs before this passes. The failure mode is a raise, not
+a wrong number, so it will not be missed — but it will waste a full engine run.
+
+### GOI-10 · Run the ML pipeline on Gulf data
+
+**Entry:** `GOI-9` complete; the Gulf publication is selected and pinned; PostgreSQL is at head.
+
+**Tasks:**
+
+1. Build features against the Gulf pin (`tools/dev.py features`) and verify the feature manifest
+   binds the Gulf publication fingerprint.
+2. Characterize the Gulf series population before training: intermittency, cold-start share, and
+   segment counts against `MIN_SEGMENT_SERIES`. Lubricant demand at distributor grain is likely
+   more intermittent than retail — expect heavier Croston routing and a larger cold-start cohort,
+   and record that expectation *before* the run so the result can be judged against it.
+3. Train, backtest, and publish a Gulf forecast bundle (`train`, `backtest`, `ml-publish`).
+4. Run the acceptance gates unchanged. `forecast-improvement-policy.json` applies per-market
+   non-regression to "every supported market", so a single Gulf market is scored on its own.
+5. Independently verify the bundle, then `forecast-materialize` and `forecast-activate`.
+6. Run the inventory/replenishment pipeline through `inventory-verify`, materialize, and activate.
+7. Record every gate outcome, including failures. A Gulf forecast that fails acceptance is a valid,
+   reportable result — it is not a reason to relax a gate.
+
+**Exit:** an accepted, verified, activated Gulf forecast and inventory run, or a recorded,
+reason-coded failure to accept.
+
+**Stop:** do not weaken, re-scope, or bypass an acceptance gate to make Gulf pass. If Gulf data
+cannot clear a gate the retail tenant clears, that is a finding about the scenario — return to
+`GOI-3` and resize, or report it.
+
+### GOI-11 · Serve the Gulf API and UI
+
+**Entry:** `GOI-10` complete with an active Gulf forecast and inventory version.
+
+**Tasks:**
+
+1. Start the stack (`tools/dev.py serve --with-ui`) and confirm the API reads PostgreSQL only.
+2. Confirm the API's market list, location list, and category labels come back as Gulf values with
+   no code change — markets are data-driven (`ui/src/api.ts:147`) and the API holds no allowlist.
+3. Exercise the three existing screens — shell, Forecast, Inventory — against Gulf data. Confirm
+   display names resolve (`inventory_sku_dimension` display columns from migration 0013) so the
+   UI shows "Gulf Superfleet XLD 15W-40, 20 L" and a depot name, not slugs and ids.
+4. Run `api-test`, `ui-test`, and the inventory API smoke checks.
+5. Capture screenshots of both screens on Gulf data for the handover.
+6. Record any screen element that renders empty, unavailable, or reason-coded under Gulf data, and
+   whether that is correct behaviour or a gap. Do not add or restyle a screen to hide it.
+
+**Exit:** both screens render live Gulf evidence, with unavailable states behaving as specified.
+
+**Stop:** if a screen needs a code change to display Gulf data, stop. That contradicts §2.3 and
+means the tenant boundary is not where this plan claims — escalate rather than patch the UI.
+
+### GOI-12 · Restore the retail tenant
+
+**Entry:** `GOI-11` complete and the Gulf demo delivered. This package is not optional; the branch
+is not done until retail is back.
+
+**Tasks:**
+
+1. Capture the Gulf state first, applying `GOI-D11` to Gulf in reverse: back up the Gulf
+   publication, bundles, and schema so the demo is reproducible without a full regeneration.
+2. Restore retail per the approved `GOI-D11` option — restore the dump and archives, or rebuild
+   from `main`.
+3. Restore the git-tracked evidence by switching off this branch; confirm the retail selection
+   records, expected-pin, and closure record are the ones `main` carries.
+4. Revert the guardrail extension if `GOI-9` moved the retail policy fingerprint, and confirm the
+   restored fingerprint matches the `GOI-4T` baseline.
+5. Verify against the `GOI-4T` baseline: accepted run and version ids, active selection ids,
+   expected-pin fingerprints, publication control totals.
+6. Run `tools/dev.py verify` and the full suite; confirm exit 0 and that the retail screens serve
+   their accepted values again.
+
+**Exit:** the retail tenant is measurably back to its `GOI-4T` baseline, and the Gulf work is
+preserved as a reproducible archive rather than a state the stack must keep holding.
+
+**Stop:** "it looks right" is not the exit. The baseline comparison in step 5 is the exit.
+
 ### GOI-8 · Demo framing and handover
 
-**Entry:** `GOI-7` complete.
+**Entry:** `GOI-11` complete. Runs before `GOI-12` so the demo is delivered from a live stack.
 
 **Tasks:**
 
 1. Write the demo narrative stating plainly: which data is synthetic; that Shopify and Business
    Central are source shapes rather than claims about Gulf's estate; that "store" denotes a
    distributor; and which client-confirmed catalog facts underpin the assortment.
-2. Record the §0.3 dependency in the handover: no Gulf forecast or pricing result exists or is
-   authorized under this plan.
+2. State what the demo does **not** include: pricing recommendations (Phase 5 is an unapproved
+   draft) and any screen beyond Forecast and Inventory.
 3. Record the escalation path to `GOI-D1` option B and `GOI-D2` option B, with their scope.
-4. Update `plans/local/tasks.md` and this plan's status header.
+4. Update `plans/local/tasks.md`, this plan's status header, and the stale `README.md:24` status
+   block flagged in §0.3.
 
 **Exit:** a handover a reviewer can act on without reading the code.
 
@@ -951,6 +1215,31 @@ not defaults to be assumed.
 - Supplier terms are origin-safe, varied, and precedence-complete.
 - One immutable curated publication exists with retained evidence and Decision-#73 selections.
 
+### 9.4a Teardown and restore gates
+
+- A `pg_dump` and archive of the retail publication, evidence, and ML bundles exists **and has been
+  restored once** into a scratch database with matching fingerprints.
+- The retail baseline is recorded: accepted run/version ids, active selection ids, expected-pin
+  fingerprints, publication control totals.
+- Teardown removed untracked runtime state only; `git status` shows no deleted tracked file.
+- PostgreSQL is recreated and at the current migration head.
+- At `GOI-12`, every recorded baseline value is reproduced and `tools/dev.py verify` exits 0.
+
+### 9.4b ML, API, and UI gates
+
+- `resolve_guardrails` returns a policy for the Gulf market/currency pair, and wrong-currency pairs
+  still raise; Python and Go agree on the resolved vectors.
+- Gulf features bind the Gulf publication fingerprint; the series characterization is recorded
+  before training, not after.
+- The Gulf forecast clears the unmodified acceptance gates, or its failure is reason-coded and
+  reported. No gate is weakened, re-scoped, or bypassed for Gulf.
+- Exactly one Gulf forecast version and one inventory version are active per scope; serving fails
+  closed otherwise.
+- The API reads PostgreSQL only and returns Gulf markets, locations, and categories with no code
+  change.
+- Forecast and Inventory screens render live Gulf values with resolved display names rather than
+  slugs, and any empty or unavailable element is explained rather than hidden.
+
 ### 9.5 Isolation and regression gates
 
 - No executable file under `ml/`, `api/`, `db/`, or `ui/` differs from `main`.
@@ -968,10 +1257,14 @@ Any one of these stops the work:
 3. Any stage requires a code change outside `datagen/` — the plan's premise is falsified and must be
    revised before continuing.
 4. Gate B passes globally while the required Gulf capabilities are unready or insufficient.
-5. A Gulf artifact would supersede, retire, or repoint a retail artifact.
-6. A Gulf forecast or pricing number is requested for demonstration while §0.3 remains open.
-7. Segment counts fall below `MIN_SEGMENT_SERIES` for the intended analysis and the scenario is not
+5. Teardown is proposed without a restore point whose drill has actually been executed.
+6. Any deletion touches a tracked file — retail code, contract, migration, or evidence.
+7. An acceptance gate is weakened, re-scoped, or bypassed to make Gulf data pass.
+8. A Gulf pricing recommendation is requested for demonstration while Phase 5 remains an
+   unapproved draft.
+9. Segment counts fall below `MIN_SEGMENT_SERIES` for the intended analysis and the scenario is not
    resized.
+10. The branch is treated as finished before `GOI-12` restores the retail tenant to its baseline.
 
 ---
 
@@ -1044,7 +1337,12 @@ Any one of these stops the work:
 
 ### 12.1 Default sequence
 
-`GOI-0` → `GOI-1` → `GOI-2` → `GOI-3` → `GOI-4` → `GOI-5` → `GOI-6` → `GOI-7` → `GOI-8`.
+`GOI-0` → `GOI-1` → `GOI-2` → `GOI-3` → `GOI-4` → **`GOI-4T`** → `GOI-5` → `GOI-6` → `GOI-7` →
+`GOI-9` → `GOI-10` → `GOI-11` → `GOI-8` → **`GOI-12`**.
+
+Two placements are deliberate. `GOI-4T` runs *after* the fixture proof, so the stack is never
+emptied for a profile that turns out not to work. `GOI-8` (handover) runs *before* `GOI-12`
+(restore), so the demo is delivered from a live Gulf stack rather than from screenshots.
 
 `GOI-1` and the Config Builder portion of `GOI-2` may overlap once the vocabulary specification is
 frozen. Nothing else may overlap: each package's exit is the next package's entry evidence.
@@ -1083,6 +1381,12 @@ plan with their own Gate A/Gate B and capability analysis. They are not amendmen
 | Four-dimension category truncated silently | Missing variant axis, undetected | Explicit budget check in `GOI-3`; test in `GOI-2` |
 | Config Builder embedded contracts drift from `catalog_packs.py` | Builder rejects the very Gulf categories the extension enabled, while Python passes; today nothing fails | Hand edit at `:13498`, `sync_presets.py` run, and the net-new drift test — all three in `GOI-2` |
 | `sync_presets.py` rewrites the embedded retail presets | Silent movement of the Northstar authoring surface | Retail preset scripts are part of the `GOI-2` byte-stability proof |
+| Teardown destroys ~38 GB of retail state that git never held | Retail return costs a full rebuild, or is impossible if the backup is bad | `GOI-D11` backup with a drill **executed at `GOI-4T`**, not trusted at `GOI-12` |
+| Guardrails raise on the Gulf market/currency pair | Inventory engine fails after a long run | `GOI-9` precedes `GOI-10`; positive and negative resolver tests |
+| Guardrail edit moves the retail policy fingerprint | Retail run identity changes; `GOI-12` cannot restore cleanly | Additive edit per `GOI-D12`; fingerprint recorded at `GOI-9`, reverted at `GOI-12` |
+| Lubricant demand is more intermittent than retail | Cold-start cohort and Croston routing dominate; gates may not clear | Characterize and record the expectation at `GOI-10` step 2, before training |
+| Pressure to relax a gate so the Gulf demo has numbers | Accepted-evidence model is compromised for both tenants | §9.6 no-go 7; a reason-coded failure is a valid deliverable |
+| `GOI-12` skipped once the demo lands | Retail tenant left unrestorable and the branch silently abandoned | `GOI-12` is a required package with a baseline-comparison exit, not a cleanup step |
 | Gulf and retail lineages conflated | Ambiguous single-active-authority semantics | `GOI-D8` separation and the `GOI-6` coexistence proof |
 
 ---
@@ -1151,14 +1455,26 @@ The Gulf Oil India tenant onboarding is complete only when all are true:
    retained evidence.
 10. Decision-#73 candidate → approved → active selections exist for the Gulf lineage, and a separate
     Gulf expected-pin document is generated.
-11. The Northstar publication, selections, and pin are provably unchanged and still active; exactly
-    one version is active per scope within each lineage.
+11. Teardown removed untracked runtime state only, against a restore point whose drill was executed
+    at `GOI-4T`; no tracked retail file was deleted at any point.
 12. Repeated generation is deterministic under the same pinned writer and profile; safe and
     performance profiles match on canonical schemas, control totals, and ordered row digests.
 13. Segment counts for every intended analysis clear `MIN_SEGMENT_SERIES`, or the shortfall is
     recorded and accepted.
-14. Per-stage timings and peak memory for the Gulf run are retained, and manual Windows, macOS, and
+14. Guardrails resolve for the Gulf market/currency pair, wrong pairs still raise, and Python and
+    Go agree on the resolved vectors.
+15. A Gulf forecast and inventory run are accepted, independently verified, materialized and
+    activated under **unmodified** gates — or their failure is reason-coded, reported, and
+    explained. Exactly one version is active per scope.
+16. The Go API serves Gulf data from PostgreSQL only, and the Forecast and Inventory screens render
+    live Gulf evidence with resolved display names, with no `ml/`, `api/`, `db/` or `ui/` source
+    change anywhere in the branch.
+17. Per-stage timings and peak memory for the Gulf run are retained, and manual Windows, macOS, and
     Linux evidence exists.
-15. The demo narrative states the synthetic boundary, the source-shape framing, and the
-    distributor-as-store vocabulary, and records that no Gulf forecast or pricing result is
-    authorized under this plan.
+18. The demo narrative states the synthetic boundary, the source-shape framing, and the
+    distributor-as-store vocabulary, and records that pricing is out of scope and only two screens
+    exist.
+19. **`GOI-12` has run:** the retail tenant is restored and measurably matches its `GOI-4T`
+    baseline — accepted run and version ids, active selection ids, expected-pin fingerprints,
+    publication control totals — with `tools/dev.py verify` exit 0; and the Gulf work is preserved
+    as a reproducible archive.
