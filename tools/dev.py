@@ -2132,6 +2132,31 @@ def _host_execution_profile() -> str:
     return "safe"
 
 
+def _scenario_id(config_path: Path) -> str:
+    """Read `identity.scenarioId` without importing the datagen package.
+
+    `tools/` runs on the repo interpreter and datagen lives in its own isolated
+    environment, so this parses the one field it needs rather than taking a
+    dependency across that boundary.
+    """
+
+    try:
+        for line in Path(config_path).read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("scenarioId:"):
+                return stripped.split(":", 1)[1].strip().strip("'\"")
+    except OSError:
+        return ""
+    return ""
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def command_datagen(args: argparse.Namespace) -> int:
     """Generate a source run. Deliberately NOT part of `pipeline`.
 
@@ -2148,11 +2173,19 @@ def command_datagen(args: argparse.Namespace) -> int:
         print(f"selected execution profile {profile!r} from host resources")
     output = args.output.resolve()
 
-    existing = sorted(output.glob("*/run-*"))
+    # Scoped to the scenario being generated, not the whole output root. The
+    # guard exists to stop a pointless ~90-minute rebuild of a run we already
+    # have; it is not a claim that the stack may hold only one scenario. Glob
+    # everything and a second tenant can never be generated at all while the
+    # first one's run is on disk, which pushes the work somewhere it does not
+    # belong.
+    scenario_id = _scenario_id(args.config)
+    existing = sorted((output / scenario_id).glob("run-*")) if scenario_id else []
     if existing and not args.regenerate:
         print(
-            "a promoted source run already exists; generation refused:\n  "
-            + "\n  ".join(str(path.relative_to(REPO_ROOT)) for path in existing)
+            f"a promoted source run for {scenario_id!r} already exists; generation "
+            "refused:\n  "
+            + "\n  ".join(_display_path(path) for path in existing)
             + "\n\nThe pinned scenario reproduces its business data exactly, so "
             "regenerating usually costs ~90 minutes for no change. Pass --regenerate "
             "to do it anyway.\n\nNote decision #89: a regeneration DOES move "
@@ -2185,7 +2218,7 @@ def command_datagen(args: argparse.Namespace) -> int:
     _report_stage_timings()
     if code:
         return code
-    promoted = sorted(output.glob("*/run-*"))
+    promoted = sorted((output / scenario_id).glob("run-*")) if scenario_id else []
     if promoted:
         print("\npromoted source run:")
         for path in promoted:
@@ -2437,6 +2470,18 @@ def _command_pipeline(args: argparse.Namespace) -> int:
             return 2
         source_root = promoted[-1]
         print(f"source run: {source_root.relative_to(REPO_ROOT)}")
+    # The profile is scenario-bound, not generic: it names its source instances,
+    # their market mapping and its own extract window. A second tenant therefore
+    # needs its own profile, and hard-coding the retail one here made the whole
+    # pipeline single-tenant no matter which source run was passed in.
+    source_profile = args.source_profile or (
+        REPO_ROOT / "ingestion" / "src" / "retail_ingestion" / "profiles"
+        / "retail_datagen.yaml"
+    )
+    if "ingest" in stages and not Path(source_profile).is_file():
+        print(f"source profile not found: {source_profile}", file=sys.stderr)
+        return 2
+
     run_id = (source_root or Path(args.run_id or "run-unknown")).name
     if run_id == "run-unknown":
         # Resuming mid-chain with no --source-root: `curated` and `work` are built
@@ -2651,9 +2696,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 [
                     str(ingestion), "-m", "retail_ingestion.cli", "run",
                     "--snapshot-root", str(snapshot),
-                    "--source-profile",
-                    str(REPO_ROOT / "ingestion" / "src" / "retail_ingestion"
-                        / "profiles" / "retail_datagen.yaml"),
+                    "--source-profile", str(source_profile),
                     "--work-root", str(work),
                     "--publication-root", str(curated),
                     "--execution-profile", profile,
@@ -3325,6 +3368,12 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--to", dest="to_stage", choices=PIPELINE_STAGES,
                           default=PIPELINE_STAGES[-1])
     pipeline.add_argument("--source-root", type=Path, default=None)
+    pipeline.add_argument(
+        "--source-profile",
+        type=Path,
+        default=None,
+        help="tenant source profile; defaults to the retail datagen profile",
+    )
     pipeline.add_argument("--snapshot-root", type=Path, default=None)
     pipeline.add_argument("--work-root", type=Path, default=None)
     pipeline.add_argument("--publication-root", type=Path, default=None)

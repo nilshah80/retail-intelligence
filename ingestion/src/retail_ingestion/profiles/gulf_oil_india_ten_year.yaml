@@ -1,0 +1,978 @@
+# Gulf Oil India source profile -- gulf-oil-india-ten-year.
+#
+# GOI-4. The retail profile is scenario-bound, not generic: it names the six
+# Northstar source instances, their market mapping and its own extract window,
+# so a Gulf run under it fails Gate A. Everything tenant-specific is replaced
+# here; the `datasets` block carries over unchanged because the same generator
+# emits the same dataset ids.
+#
+# One profile PER SCENARIO, not per tenant: Gate A rule A03 requires
+# extractWindow to equal the run's logical window exactly. This one matches
+# datagen/configs/gulf-oil-india-ten-year.yaml (2016-08-01 .. 2026-07-31).
+#
+# Shopify and Business Central are SOURCE SHAPES, not a claim about Gulf's
+# real estate (GOI-D2 option A). A single gulf-india market maps 1:1 from
+# source to canonical; distributors arrive as stores and plants/depots as DCs
+# (GOI-D1 option A).
+schemaVersion: retail-source-profile/v1
+profileId: gulf-oil-india-ten-year
+profileVersion: 1.0.0
+sourceSystem: generator
+sourceSchemaVersion: retail-source-config/v13
+businessTimezone: source_location_timezone
+extractWindow:
+  start: '2016-08-01'
+  end: '2026-07-31'
+channelPolicy:
+  mode: native
+assortmentPolicy:
+  mode: native_store_assortment
+money:
+  sourceUnit: major_decimal
+  taxBasis: source_field
+  currencyField: currencyCode
+  taxBasisField: taxesIncluded_or_companyMarketConfiguration.taxBasis
+quantityPolicy:
+  mode: entity_semantics
+  derivationRule: Transaction quantities are item counts; measurementUnit/measurementValue and Business
+    Central unitOfMeasureCode preserve pack, weight and volume semantics.
+mappingReferences:
+- companyMarketConfiguration.marketCode
+- locations.marketCode
+- companion.marketKey
+- Shopify.locationId
+- BusinessCentral.locationCode
+sourceInstances:
+- sourceSystem: shopify
+  sourceInstance: gulf-in
+  logicalPathPrefix: shopify/gulf-in/
+  sourceMarketId: gulf-india
+  marketId: gulf-india
+  currencyCode: INR
+  timezone: Asia/Kolkata
+  capabilities:
+  - commerce
+- sourceSystem: businessCentral
+  sourceInstance: bc-gulf-in
+  logicalPathPrefix: business-central/bc-gulf-in/
+  sourceMarketId: gulf-india
+  marketId: gulf-india
+  currencyCode: INR
+  timezone: Asia/Kolkata
+  capabilities:
+  - operations
+- sourceSystem: companion
+  sourceInstance: gulf-india
+  logicalPathPrefix: companion/gulf-india/
+  sourceMarketId: gulf-india
+  marketId: gulf-india
+  currencyCode: INR
+  timezone: Asia/Kolkata
+  capabilities:
+  - external_signals
+publicationRequirements:
+  requiredCapabilities:
+  - commerce
+  - operations
+  - external_signals
+authenticity:
+  mode: not_required_for_snapshot
+datasets:
+- sourceSystem: businessCentral
+  datasetId: companyMarketConfiguration
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - companyId
+  grainFields:
+  - companyId
+  columnPolicies: &id001 []
+- sourceSystem: businessCentral
+  datasetId: customers
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: inboundShipments
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - shipmentId
+  grainFields:
+  - shipmentId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: inboundStatusEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - shipmentId
+  - sku
+  - status
+  grainFields:
+  - shipmentId
+  - sku
+  - status
+  - statusEffectiveAt
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: supplyTerms
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - vendorId
+  - destinationLocationCode
+  - merchScopeType
+  - merchScopeId
+  grainFields:
+  - vendorId
+  - destinationLocationCode
+  - merchScopeType
+  - merchScopeId
+  - effectiveFrom
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: storeInventorySnapshots
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - locationCode
+  - sku
+  - observedAt
+  grainFields:
+  - locationCode
+  - sku
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: storeTransferEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - transferId
+  - status
+  grainFields:
+  - transferId
+  - sku
+  - status
+  - statusEffectiveAt
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: storeWasteEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - eventId
+  grainFields:
+  - eventId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: storeStockoutEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - eventId
+  grainFields:
+  - eventId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: inventorySnapshots
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - locationCode
+  - sku
+  - observedAt
+  grainFields:
+  - locationCode
+  - sku
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: itemBatches
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - batchId
+  grainFields:
+  - batchId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: itemCostLayers
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - costLayerId
+  grainFields:
+  - costLayerId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: itemLedgerEntries
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: itemLifecycleEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - eventKey
+  grainFields:
+  - eventKey
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: itemVariants
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: items
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: locations
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: purchaseOrderLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: purchaseOrders
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: purchasingBudgets
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketCode
+  - periodMonth
+  grainFields:
+  - marketCode
+  - periodMonth
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: salesInvoiceLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: salesInvoices
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: supplierCapacityConfirmations
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - vendorId
+  - marketCode
+  - periodMonth
+  grainFields:
+  - vendorId
+  - marketCode
+  - periodMonth
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: supplierPerformance
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - receiptLineId
+  grainFields:
+  - receiptLineId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: transferOrderLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: transferOrders
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: transferShipments
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: vendorItemTerms
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - vendorId
+  - marketCode
+  - categoryId
+  grainFields:
+  - vendorId
+  - marketCode
+  - categoryId
+  columnPolicies: *id001
+  nullableSourceKeys:
+  - categoryId
+- sourceSystem: businessCentral
+  datasetId: vendors
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: warehouseCapacity
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - warehouseId
+  - observedAt
+  grainFields:
+  - warehouseId
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: warehouseReceiptLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: warehouseReceipts
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: wasteEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - wasteEventId
+  grainFields:
+  - wasteEventId
+  columnPolicies: *id001
+- sourceSystem: businessCentral
+  datasetId: wmsInventoryComparisons
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - warehouseId
+  - sku
+  - observedAt
+  grainFields:
+  - warehouseId
+  - sku
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: allocationDemandRequests
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - requestKey
+  grainFields:
+  - requestKey
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: allocationSupplyPools
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - poolKey
+  grainFields:
+  - poolKey
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: competitorMatches
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - matchKey
+  grainFields:
+  - matchKey
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: competitorPrices
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - competitorId
+  - competitorSku
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  grainFields:
+  - marketKey
+  - competitorId
+  - competitorSku
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: customerSegments
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - segmentId
+  grainFields:
+  - segmentId
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: fxRates
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - baseCurrency
+  - quoteCurrency
+  - rateType
+  - rateDate
+  grainFields:
+  - marketKey
+  - baseCurrency
+  - quoteCurrency
+  - rateType
+  - rateDate
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: holidays
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - date
+  - name
+  grainFields:
+  - marketKey
+  - date
+  - name
+  - targetType
+  - targetId
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: localEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - eventId
+  grainFields:
+  - eventId
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: macroIndex
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - indexName
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  grainFields:
+  - marketKey
+  - indexName
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: serviceLanes
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - laneKey
+  grainFields:
+  - laneKey
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: pandemicSignals
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - validDate
+  - observedAt
+  grainFields:
+  - marketKey
+  - validDate
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: pandemicTimeline
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - pandemicId
+  - phaseId
+  grainFields:
+  - marketKey
+  - pandemicId
+  - phaseId
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: promotionSkus
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - promotionId
+  - sku
+  - categoryId
+  - departmentId
+  grainFields:
+  - marketKey
+  - promotionId
+  - sku
+  - categoryId
+  - departmentId
+  columnPolicies: *id001
+  nullableSourceKeys:
+  - sku
+  - categoryId
+  - departmentId
+- sourceSystem: companion
+  datasetId: promotions
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - promotionId
+  grainFields:
+  - marketKey
+  - promotionId
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: storeAssortment
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - storeKey
+  - sku
+  - validFrom
+  - observedAt
+  grainFields:
+  - marketKey
+  - storeKey
+  - sku
+  - validFrom
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: weatherActuals
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  grainFields:
+  - marketKey
+  - targetType
+  - targetId
+  - validDate
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: companion
+  datasetId: weatherForecasts
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - marketKey
+  - targetType
+  - targetId
+  - validDate
+  - issuedAt
+  - provider
+  grainFields:
+  - marketKey
+  - targetType
+  - targetId
+  - validDate
+  - issuedAt
+  - provider
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: catalogEvents
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - eventKey
+  grainFields:
+  - eventKey
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: customers
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: fulfillmentLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: fulfillmentOrderLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: fulfillmentOrders
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: fulfillmentStatusHistory
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - fulfillmentId
+  - sequence
+  grainFields:
+  - fulfillmentId
+  - sequence
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: fulfillments
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: inventoryItems
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: inventoryLevels
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - inventoryItemId
+  - locationId
+  grainFields:
+  - inventoryItemId
+  - locationId
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: inventoryQuantities
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - inventoryItemId
+  - locationId
+  - name
+  - observedAt
+  grainFields:
+  - inventoryItemId
+  - locationId
+  - name
+  - observedAt
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: locations
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: orderLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: orders
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: priceHistory
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - variantId
+  - effectiveDate
+  grainFields:
+  - variantId
+  - effectiveDate
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: productVariants
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: products
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: refundTransactions
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: refunds
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: returnLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: returns
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - id
+  grainFields:
+  - id
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: taxLines
+  classification: staged
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - orderId
+  - orderLineId
+  - title
+  - rate
+  grainFields:
+  - orderId
+  - orderLineId
+  - title
+  - rate
+  columnPolicies: *id001
+- sourceSystem: shopify
+  datasetId: webhookHmacFixtures
+  classification: fixture_only
+  permissionLane: public
+  format: parquet
+  sourceKeys:
+  - fixtureId
+  grainFields:
+  - fixtureId
+  columnPolicies: *id001
+- sourceSystem: generator
+  datasetId: resolvedConfig
+  classification: control_only
+  permissionLane: public
+  format: yaml
+  sourceKeys: &id002 []
+  grainFields: &id003 []
+  columnPolicies: &id004 []
+- sourceSystem: generator
+  datasetId: resolvedConfigJsonCompatibility
+  classification: control_only
+  permissionLane: public
+  format: json
+  sourceKeys: *id002
+  grainFields: *id003
+  columnPolicies: *id004
+- sourceSystem: generator
+  datasetId: sourceSchema
+  classification: control_only
+  permissionLane: public
+  format: json
+  sourceKeys: *id002
+  grainFields: *id003
+  columnPolicies: *id004
