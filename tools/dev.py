@@ -40,6 +40,29 @@ import os as _os_for_utf8  # noqa: E402  (must run before any subprocess is spaw
 
 _os_for_utf8.environ.setdefault("PYTHONUTF8", "1")
 
+#: ...and fix THIS process's own streams, which the variable above cannot reach.
+#:
+#: The same defect appeared three times because each fix addressed one leg of a
+#: round trip instead of the stream underneath it:
+#:
+#:   1. the child WROTE the emoji to cp1252            -> PYTHONUTF8 above
+#:   2. the parent DECODED the child's UTF-8 as cp1252 -> encoding="utf-8" on capture
+#:   3. the parent RE-PRINTED it to its own cp1252 stdout  <- here
+#:
+#: An interpreter fixes its stdio encoding at startup, so setting PYTHONUTF8 in
+#: os.environ only ever helped children; this process kept the ANSI code page it was
+#: born with. Reconfiguring the streams closes the whole class at the source rather
+#: than at each print site, which is why the first two fixes did not hold.
+#: errors="replace" because a stage's output is worth more than a glyph -- the third
+#: failure discarded a 3-hour backtest's result block over one character.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        # Not a reconfigurable text stream (redirected to a pipe wrapper, or already
+        # detached). Nothing to do: the capture-side fix still applies.
+        pass
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INGESTION_ENV = REPO_ROOT / "ingestion" / ".venv"
 ML_ENV = REPO_ROOT / "ml" / ".venv"
@@ -604,6 +627,314 @@ def command_contracts(_: argparse.Namespace) -> int:
     return 0
 
 
+def _selection_module():
+    """Import the selection builder as a module so repin can read its ledger."""
+
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    sys.path.insert(0, str(REPO_ROOT / "ingestion" / "src"))
+    import build_publication_selection as selection  # noqa: PLC0415
+
+    return selection
+
+
+def _repin_facts(run_id: str) -> dict[str, object]:
+    """The facts an adoption rests on, read from retained evidence only.
+
+    Everything here comes from the run's own `gate-a.json`, `gate-b.json` and
+    `publication-manifest.json`. Nothing is transcribed from a plan, a constant or a
+    prior record, because the point of an adoption record is to name what THIS
+    publication is -- and a value copied from the thing being replaced would make the
+    two indistinguishable.
+    """
+
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
+    gate_a = json.loads((evidence / "gate-a.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (evidence / "publication-manifest.json").read_text(encoding="utf-8")
+    )
+    mask = manifest.get("capabilityMask") or {}
+    required = (
+        "demand_forecast_non_pit",
+        "inventory_replenishment_current_snapshot",
+        "inventory_replenishment_replay",
+    )
+    missing = [
+        name for name in required if not (mask.get(name) or {}).get("available")
+    ]
+    return {
+        "run": run_id,
+        "sourceSnapshotId": manifest["sourceSnapshotId"],
+        "gateAStatus": gate_a.get("status"),
+        "gateASemanticFingerprint": gate_a["semanticFingerprint"],
+        "gateBSemanticFingerprint": manifest["gateBSemanticFingerprint"],
+        "publicationSemanticFingerprint": manifest["semanticFingerprint"],
+        "objectCount": len(manifest["objects"]),
+        "duckdbSha256": manifest["duckdb"]["sha256"],
+        "missingRequiredCapabilities": missing,
+        # Summarised, not embedded. The raw block carries the full store topology and
+        # made a proposal unreadable, which defeats the purpose of showing a human the
+        # facts before they approve them.
+        "businessControlKeys": sorted(
+            (manifest.get("businessControls") or {}).keys()
+        ),
+    }
+
+
+def _repin_previous() -> dict[str, object]:
+    """What the pin currently names, so a proposal can show the delta."""
+
+    pin_path = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
+    if not pin_path.is_file():
+        return {}
+    pin = json.loads(pin_path.read_text(encoding="utf-8"))
+    return {
+        "sourceSnapshotId": pin.get("sourceSnapshotId"),
+        "publicationSemanticFingerprint": (pin.get("publication") or {}).get(
+            "semanticFingerprint"
+        ),
+        "objectCount": (pin.get("publication") or {}).get("objectCount"),
+        "duckdbSha256": ((pin.get("publication") or {}).get("duckdb") or {}).get(
+            "sha256"
+        ),
+    }
+
+
+def _repin_reasons(facts: dict, previous: dict, automatic: bool) -> dict[str, str]:
+    """Compose the four reason strings from measured deltas.
+
+    A derived reason is worth more than a typed one precisely because it cannot be
+    vague: it names which fingerprints moved and which controls did not. What it
+    cannot supply is judgement, which is why the automatic variant says so in its
+    own text rather than reading like a person wrote it.
+    """
+
+    moved = [
+        name
+        for name, new_key in (
+            ("sourceSnapshotId", "sourceSnapshotId"),
+            ("publication fingerprint", "publicationSemanticFingerprint"),
+            ("curated DuckDB hash", "duckdbSha256"),
+        )
+        if previous.get(new_key) and previous.get(new_key) != facts.get(new_key)
+    ]
+    controls = facts.get("businessControlKeys") or []
+    control_note = (
+        f"Business controls present for {len(controls)} group(s) in this run's own "
+        f"manifest: {', '.join(controls)}."
+        if controls
+        else "No business-control block was present in this manifest."
+    )
+    origin = (
+        "Adopted automatically by the repin policy: no actor was supplied, so this "
+        "record asserts a POLICY decision on derived evidence and not a human "
+        "review. Anyone relying on it should read the facts below, not the fact that "
+        "it was approved."
+        if automatic
+        else "Adopted on explicit human approval."
+    )
+    delta = (
+        ", ".join(moved)
+        if moved
+        else (
+            "nothing the pin names moved, so this publication is byte-equivalent to "
+            "the one it replaces at every pinned field"
+        )
+    )
+    return {
+        "candidate": (
+            f"{origin} Publication for {facts['run']} passed Gate A "
+            f"({facts['gateAStatus']}) and Gate B with all three required "
+            f"capabilities available. Relative to the previous pin: {delta}. "
+            f"{control_note}"
+        ),
+        "approved": (
+            "Gate A, Gate B, the capability mask, the publication fingerprint and "
+            "the curated DuckDB hash were all derived from this run's own retained "
+            f"evidence rather than transcribed: Gate A "
+            f"{facts['gateASemanticFingerprint'][:8]}, Gate B "
+            f"{facts['gateBSemanticFingerprint'][:8]}, publication "
+            f"{facts['publicationSemanticFingerprint'][:8]}, DuckDB "
+            f"{facts['duckdbSha256'][:8]}, {facts['objectCount']} curated objects."
+        ),
+        "active": (
+            "Adopted as the active source authority for this scope. The preceding "
+            "generation is superseded in the same change, so exactly one selection "
+            "is active per scope (decision #90)."
+        ),
+        "supersede": (
+            f"Replaced as source authority by the publication for {facts['run']}. "
+            f"Compared with the pin this record's publication carried: {delta}."
+        ),
+    }
+
+
+def command_repin(args: argparse.Namespace) -> int:
+    """Propose or approve the adoption of a publication as source authority.
+
+    Decision #89 makes moving the pin a governed act. This does not weaken that: it
+    removes the five coordinated file edits that expressing one decision used to
+    take, and keeps the decision itself an explicit, separately-invoked step whose
+    record states honestly whether a human made it.
+    """
+
+    ingestion = _require_python(INGESTION_ENV, "ingestion")
+    selection = _selection_module()
+    run_id = args.run_id or _newest_published_run()
+    if run_id is None:
+        print(
+            "no published run found under ingestion/data/evidence with a "
+            "publication-manifest.json",
+            file=sys.stderr,
+        )
+        return 2
+
+    facts = _repin_facts(run_id)
+    previous = _repin_previous()
+    if facts["missingRequiredCapabilities"]:
+        print(
+            "refusing: this publication does not offer every required capability: "
+            f"{', '.join(facts['missingRequiredCapabilities'])}",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(json.dumps({"proposal": facts, "currentPin": previous}, indent=2,
+                     sort_keys=True))
+    if not args.approve:
+        print(
+            f"\nProposal only. Nothing was written.\n"
+            f"Approve with:\n"
+            f"  tools/dev.py repin --approve --run-id {run_id} "
+            f"[--actor <name> --reason <why>]\n"
+            f"Omitting --actor records the automated policy actor "
+            f"({selection.AUTOMATED_ACTOR}) rather than a person.",
+            file=sys.stderr,
+        )
+        return 0
+
+    if args.actor and not args.reason:
+        print("--actor requires --reason", file=sys.stderr)
+        return 2
+    reasons = _repin_reasons(facts, previous, automatic=not args.actor)
+    entry = selection.append_generation(
+        run=run_id,
+        approved_at=args.approved_at,
+        reason_code=args.reason_code,
+        candidate_reason=(args.reason or reasons["candidate"]),
+        approved_reason=reasons["approved"],
+        active_reason=reasons["active"],
+        supersede_reason=reasons["supersede"],
+        actor=args.actor,
+    )
+    print(
+        f"appended generation {entry['tag']} for {run_id} "
+        f"(actor={entry['actor']}, mode={entry['approvalMode']})"
+    )
+    builder = REPO_ROOT / "tools" / "build_publication_selection.py"
+    for label, command in (
+        ("selection ledger", [str(ingestion), str(builder), "--no-clobber"]),
+        ("selection ledger verified", [str(ingestion), str(builder), "--check"]),
+        (
+            "expected pin",
+            [
+                str(ingestion),
+                str(REPO_ROOT / "tools" / "build_expected_pin.py"),
+                "--run",
+                run_id,
+            ],
+        ),
+    ):
+        result = _run(command)
+        if result:
+            print(f"repin failed at {label}", file=sys.stderr)
+            return result
+    return 0
+
+
+def command_serve(args: argparse.Namespace) -> int:
+    """Start the API against the live activation, resolving its scope from the database.
+
+    This automates the LOOKUP, not the authority. The API still requires an explicit
+    `-forecast-activation-scope` and still fails closed without one: a scope names the
+    exact activation a reader is entitled to, and making the read model self-resolve
+    would be a governance change rather than a convenience. What was manual here was
+    copying a fingerprint out of psql by hand, which is not a decision anyone makes.
+    """
+
+    run_id = args.run_id or _newest_published_run()
+    if run_id is None:
+        print("no published run under ingestion/data/evidence", file=sys.stderr)
+        return 2
+    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
+    curated = REPO_ROOT / "ingestion" / "data" / "curated" / run_id
+    scope = subprocess.run(
+        [
+            "docker", "exec", "retail-intelligence-postgres-1",
+            "psql", "-U", "retail", "-d", "retail_intelligence", "-tAc",
+            "select activation_scope_fingerprint from "
+            "retail_serving.active_forecast_versions "
+            "order by recorded_at desc limit 1",
+        ],
+        capture_output=True, encoding="utf-8", errors="replace", check=False,
+    )
+    fingerprint = (scope.stdout or "").strip()
+    if not fingerprint:
+        print(
+            "no active forecast activation in retail_serving; materialize and "
+            "activate a forecast before serving",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"resolved activation scope {fingerprint[:16]}… for {run_id}")
+    environment = dict(os.environ)
+    environment.setdefault("RETAIL_POSTGRES_DSN", _local_postgres_dsn(sqlalchemy=False))
+    profile = args.execution_profile or _host_execution_profile()
+    api = [
+        "go", "run", "./cmd/server",
+        "-address", args.address,
+        "-gate-a-report", str(evidence / "gate-a.json"),
+        "-gate-b-report", str(evidence / "gate-b.json"),
+        "-publication-manifest", str(curated / "publication-manifest.json"),
+        "-execution-profiles",
+        str(REPO_ROOT / "execution" / "src" / "retail_execution" / "data" / "v1"
+            / "profiles.json"),
+        "-execution-profile", profile,
+        "-openapi-spec", str(REPO_ROOT / "contracts" / "api" / "openapi.yaml"),
+        "-forecast-activation-scope", fingerprint,
+    ]
+    if not args.with_ui:
+        return _run(api, cwd=REPO_ROOT / "api", env=environment)
+    # Both in the foreground would each block, so the UI is a child and the API owns
+    # the terminal; Ctrl-C stops the API and the finally clause stops the UI with it.
+    ui = subprocess.Popen(  # noqa: S603
+        [_npm(), "run", "dev"], cwd=REPO_ROOT / "ui"
+    )
+    try:
+        return _run(api, cwd=REPO_ROOT / "api", env=environment)
+    finally:
+        ui.terminate()
+        try:
+            ui.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            ui.kill()
+
+
+def _newest_published_run() -> str | None:
+    """The published run with the newest manifest, never a sorted glob over hashes."""
+
+    candidates = [
+        path
+        for path in (REPO_ROOT / "ingestion" / "data" / "evidence").glob("run-*")
+        if (path / "publication-manifest.json").is_file()
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda path: (path / "publication-manifest.json").stat().st_mtime,
+    ).name
+
+
 def command_closure_record(args: argparse.Namespace) -> int:
     """Regenerate the forecast closure record from the bundle and live activation.
 
@@ -941,6 +1272,14 @@ PIPELINE_STAGES: tuple[str, ...] = (
     "inventory-verify",
     "inventory-materialize",
     "inventory-activate",
+    # The two evidence records. Previously outside the chain as "a governed step",
+    # which in practice meant forgotten: a complete run left both naming the PREVIOUS
+    # authority, and `tools/dev.py verify` compares them against the Alembic graph, so
+    # a rebuild that skipped them failed a gate for a reason nothing pointed at. They
+    # derive entirely from the bundle and the live activation -- there is no decision
+    # in either -- so being outside the chain bought nothing.
+    "closure-record",
+    "inventory-entry-record",
 )
 
 
@@ -984,6 +1323,39 @@ def _report_stage_timings() -> None:
     for index, (label, elapsed) in enumerate(_STAGE_TIMINGS, start=1):
         print(f"{index:>3}. {label:<{width}}  {_format_duration(elapsed)}")
     print(f"{'':>3}  {'TOTAL':<{width}}  {_format_duration(total)}", flush=True)
+
+
+def _generation_names_run(run_id: str) -> bool:
+    """Is this publication already adopted by some committed selection record?
+
+    Read from the committed records rather than only the generations ledger, because
+    the six hand-written generations predate that ledger and a run named by one of
+    them is already adopted.
+    """
+
+    target = f"ingestion/data/curated/{run_id}"
+    directory = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+    for path in directory.glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (record.get("publication") or {}).get("logicalPath") == target:
+            return True
+    return False
+
+
+def _pipeline_step_inline(label: str, action) -> None:
+    """Time and label an in-process stage the way `_pipeline_step` does a subprocess."""
+
+    print(f"\n===== {label} =====", flush=True)
+    started = time.monotonic()
+    code = action()
+    elapsed = time.monotonic() - started
+    _STAGE_TIMINGS.append((label, elapsed))
+    print(f"----- {label}: {_format_duration(elapsed)} -----", flush=True)
+    if code:
+        raise _PipelineFailure(label, code)
 
 
 def _pipeline_step(label: str, command: list[str], *, cwd: Path = REPO_ROOT) -> dict:
@@ -1084,6 +1456,34 @@ def command_pipeline(args: argparse.Namespace) -> int:
                 key=lambda path: (path / "publication-manifest.json").stat().st_mtime,
             ).name
             print(f"resolved run: {run_id}")
+
+    # A re-publication of a run some committed record already selects must NOT reuse
+    # that record's curated and evidence roots. The source run id is deterministic, so
+    # a regenerated run reproduces it exactly and lands on the same paths -- which
+    # overwrites the artifacts those records attest to and is only discovered later,
+    # when repin refuses because a fingerprint it names has stopped existing. That
+    # cost a rename of two multi-gigabyte trees mid-run.
+    #
+    # The existing preflight cannot catch this: it checks whether the curated root
+    # EXISTS, and on a fresh clone it does not. Six of seven runs are
+    # evidence-released, so "the ledger names a path whose bytes are absent" is the
+    # normal state, not an edge case. Suffix instead of refuse, matching the `-r2`
+    # convention already in the ledger.
+    if (
+        args.publication_root is None
+        and "ingest" in stages
+        and _generation_names_run(run_id)
+    ):
+        base = run_id
+        suffix = 2
+        while _generation_names_run(f"{base}-r{suffix}"):
+            suffix += 1
+        superseded_run, run_id = run_id, f"{base}-r{suffix}"
+        print(
+            f"a committed selection record already names "
+            f"ingestion/data/curated/{superseded_run}; publishing this run as "
+            f"{run_id} so that record's artifact is not overwritten"
+        )
 
     work = args.work_root or REPO_ROOT / "ingestion" / "data" / "work" / run_id
     curated = (
@@ -1292,6 +1692,25 @@ def command_pipeline(args: argparse.Namespace) -> int:
             # that can never fail, because the thing it checks was just re-aligned to
             # it. A build command may CREATE a governance record whose derivation is
             # deterministic; it must not restate one whose subject has changed.
+            #
+            # If no generation names this run yet, adopt it first. Previously the
+            # chain stopped here and expressing one decision took five coordinated
+            # edits across two files; now it is one appended ledger entry. The
+            # decision is not weakened -- `repin --approve` still refuses a
+            # publication missing a required capability, and it records the automated
+            # actor rather than a person's name when no human supplied one, so a
+            # reader can always tell which kind of approval they are looking at.
+            if not _generation_names_run(run_id):
+                repin_args = argparse.Namespace(
+                    run_id=run_id,
+                    approve=True,
+                    actor=args.repin_actor,
+                    reason=args.repin_reason,
+                    reason_code=args.repin_reason_code,
+                    approved_at=args.repin_approved_at,
+                )
+                _pipeline_step_inline("repin (adopt publication)",
+                                      lambda: command_repin(repin_args))
             _pipeline_step(
                 "repin (selection ledger)",
                 [str(ingestion), str(selection), "--no-clobber"],
@@ -1565,6 +1984,34 @@ def command_pipeline(args: argparse.Namespace) -> int:
                     "learn this; the forecast screens stay dark without it>"
                 )
             )
+            print(
+                "\nOr let the scope be resolved for you:\n"
+                "  tools/dev.py serve --with-ui"
+            )
+
+        if "closure-record" in stages:
+            # Positional bundle path, and the system interpreter -- matching
+            # command_closure_record rather than inventing a second calling
+            # convention for the same script.
+            _pipeline_step(
+                "closure-record",
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "tools" / "build_closure_record.py"),
+                    str(bundle),
+                ],
+            )
+
+        if "inventory-entry-record" in stages:
+            # The ingestion interpreter, not sys.executable: this one imports
+            # retail_contracts and psycopg, which the system Python does not have.
+            _pipeline_step(
+                "inventory-entry-record",
+                [
+                    str(ingestion),
+                    str(REPO_ROOT / "tools" / "build_inventory_entry_record.py"),
+                ],
+            )
     except _PipelineFailure as failure:
         # Timings before the message: a failed run's per-stage costs are how you tell
         # "the backtest is slow on this host" from "the backtest died immediately".
@@ -1808,6 +2255,41 @@ def build_parser() -> argparse.ArgumentParser:
     wheels.add_argument("--offline", action="store_true")
 
     subparsers.add_parser("contracts", help="validate machine-readable contracts")
+    repin = subparsers.add_parser(
+        "repin",
+        help="propose or approve adopting a publication as the source authority",
+    )
+    repin.add_argument("--run-id", default=None,
+                       help="published run to adopt; defaults to the newest")
+    repin.add_argument(
+        "--approve", action="store_true",
+        help=(
+            "write the adoption. Without this the command only PROPOSES: it prints "
+            "the facts and the current pin and writes nothing."
+        ),
+    )
+    repin.add_argument(
+        "--actor", default=None,
+        help=(
+            "the person approving. Omit to record the automated policy actor "
+            "instead -- never a person's name the caller did not supply."
+        ),
+    )
+    repin.add_argument("--reason", default=None,
+                       help="required with --actor; replaces the derived reason")
+    repin.add_argument("--reason-code", default="AUTOMATED_REPIN_ADOPTION")
+    repin.add_argument("--approved-at", default="1970-01-01T00:00:00Z",
+                       help="approval timestamp recorded in the ledger entry")
+    serve = subparsers.add_parser(
+        "serve",
+        help="start the API (and optionally the UI) against the active activation",
+    )
+    serve.add_argument("--run-id", default=None,
+                       help="published run whose evidence the API reads")
+    serve.add_argument("--address", default="127.0.0.1:8080")
+    serve.add_argument("--execution-profile", default=None)
+    serve.add_argument("--with-ui", action="store_true",
+                       help="also start the Vite dev server")
     datagen = subparsers.add_parser(
         "datagen",
         help="generate a source run (separate from pipeline: ~90 min, ~15 GB)",
@@ -1858,6 +2340,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="current",
         help="names the ML ARTIFACT directories for this cycle, not the feature set",
     )
+    # Adoption inputs for the `repin` stage. All optional: with none of them the stage
+    # adopts an unadopted publication under the automated policy actor, which is what
+    # makes an unattended rebuild possible. Supplying --repin-actor with
+    # --repin-reason records a human approval instead.
+    pipeline.add_argument("--repin-actor", default=None,
+                          help="record a human approver for the repin stage")
+    pipeline.add_argument("--repin-reason", default=None,
+                          help="required with --repin-actor")
+    pipeline.add_argument("--repin-reason-code", default="AUTOMATED_REPIN_ADOPTION")
+    pipeline.add_argument("--repin-approved-at", default="1970-01-01T00:00:00Z")
     pipeline.add_argument("--horizons", type=int, default=26,
                           help="horizon COUNT; the comma list is derived")
     pipeline.add_argument("--origin-count", type=int, default=13)
@@ -2153,6 +2645,8 @@ def main(argv: list[str] | None = None) -> int:
         "ml-bench": command_ml,
         "forecast-materialize": command_ml,
         "forecast-activate": command_ml,
+        "repin": command_repin,
+        "serve": command_serve,
         "closure-record": command_closure_record,
         "inventory-entry-record": command_inventory_entry_record,
         "land": command_ingest_stage,

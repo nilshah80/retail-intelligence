@@ -200,6 +200,13 @@ EVIDENCE_RELEASED_RUNS: dict[str, str] = {
     # it here is the disclosure, not a workaround: a run that is neither listed nor
     # has retained evidence still refuses.
     "run-adac9e85dccb56e8": "P4-12e per-lane transit publication",
+    # The Windows regeneration's own publication. Released when the derived data was
+    # wiped for a clean ingestion-onward rebuild, which is the ordinary end of a
+    # publication's life rather than an incident: `ingestion/data/evidence/<run>` is
+    # run data and gets deleted, while the record that selected it is a committed
+    # contract and does not. This is the same disclosure r5 carries, arrived at the
+    # same way, and it is why the two things called "evidence" must not be confused.
+    "run-adac9e85dccb56e8-r6": "Windows-host regeneration publication",
 }
 
 #: Counted so `--check` can report how much of the ledger still rests on retained
@@ -267,6 +274,7 @@ def build_candidate(
     approved_at: str,
     reason_code: str,
     candidate_reason: str,
+    actor: str = ACTOR,
 ) -> dict[str, Any]:
     """Derive one candidate record from retained evidence, or refuse.
 
@@ -310,7 +318,7 @@ def build_candidate(
                 "capabilitySufficiency": "sufficient",
             },
             "approval": {
-                "actor": ACTOR,
+                "actor": actor,
                 "approvedAt": approved_at,
                 "reason": candidate_reason,
             },
@@ -366,7 +374,7 @@ def build_candidate(
             "capabilitySufficiency": "sufficient",
         },
         "approval": {
-            "actor": ACTOR,
+            "actor": actor,
             "approvedAt": approved_at,
             "reason": candidate_reason,
         },
@@ -387,6 +395,7 @@ def build_chain(
     candidate_reason: str,
     approved_reason: str,
     active_reason: str,
+    actor: str = ACTOR,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """candidate -> approved -> active, chained and self-checked."""
 
@@ -396,18 +405,19 @@ def build_chain(
         approved_at=approved_at,
         reason_code=reason_code,
         candidate_reason=candidate_reason,
+        actor=actor,
     )
     approved = transition(
         candidate,
         "approved",
-        actor=ACTOR,
+        actor=actor,
         reason=approved_reason,
         reason_code=reason_code,
     )
     active = transition(
         approved,
         "active",
-        actor=ACTOR,
+        actor=actor,
         reason=active_reason,
         reason_code=reason_code,
     )
@@ -430,6 +440,143 @@ def build_chain(
     if active["lifecycle"]["supersedes"] != approved["lifecycle"]["recordId"]:
         raise SystemExit(f"{capability}: active does not chain to approved")
     return chain
+
+
+#: Generations added after r6, as data rather than source. Appended by
+#: `tools/dev.py repin --approve`; derived into records by `_derived_generations`.
+GENERATIONS_PATH = (
+    REPO_ROOT / "contracts" / "evidence" / "publication-selection-generations.json"
+)
+
+#: The actor recorded when no human supplied one. Deliberately not a person's name:
+#: an auto-adopted publication is a real, defensible event, but a record claiming a
+#: human approved something nobody read is worse than no record at all, because every
+#: reader downstream treats the ledger as evidence that someone looked.
+AUTOMATED_ACTOR = "automated/repin-policy/v1"
+
+#: Suffix on the ledger tag, so `-r7-active.json` follows `-r6-active.json` and the
+#: committed filenames stay sortable and obviously sequential.
+_GENERATION_CAPABILITIES = (
+    "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
+    "inventory_replenishment_replay",
+)
+
+
+def load_generations() -> list[dict[str, Any]]:
+    if not GENERATIONS_PATH.is_file():
+        return []
+    return list(_load(GENERATIONS_PATH).get("generations") or [])
+
+
+def next_generation_tag() -> str:
+    """`r7`, `r8`, ... -- the tag the next adopted publication will carry.
+
+    Derived from the ledger rather than passed in, because a caller guessing the tag
+    is a caller who can collide with a committed record.
+    """
+
+    highest = 6  # r6 is the last hand-written generation.
+    for entry in load_generations():
+        tag = str(entry.get("tag") or "")
+        if tag.startswith("r") and tag[1:].isdigit():
+            highest = max(highest, int(tag[1:]))
+    return f"r{highest + 1}"
+
+
+def _derived_generations(
+    *,
+    previous_actives: dict[str, dict[str, Any]],
+    prefixes: dict[str, str],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Build candidate/approved/active plus the predecessor's supersession.
+
+    One entry in the ledger becomes ten records: three states per capability plus one
+    supersession per capability. That ten-for-one ratio is the whole reason this is
+    data now -- it is exactly the boilerplate that made a hand-edited generation a
+    five-file change, and none of it carries information a human chose.
+    """
+
+    out: list[tuple[str, dict[str, Any]]] = []
+    active = dict(previous_actives)
+    for entry in load_generations():
+        run = entry["run"]
+        tag = entry["tag"]
+        actor = entry.get("actor") or AUTOMATED_ACTOR
+        reason_code = entry["reasonCode"]
+        for capability in _GENERATION_CAPABILITIES:
+            chain = build_chain(
+                run=run,
+                capability=capability,
+                approved_at=entry["approvedAt"],
+                reason_code=reason_code,
+                candidate_reason=entry["candidateReason"],
+                approved_reason=entry["approvedReason"],
+                active_reason=entry["activeReason"],
+                actor=actor,
+            )
+            superseded = transition(
+                active[capability],
+                "superseded",
+                actor=actor,
+                reason=(
+                    f"Superseded by selection {chain[2]['selectionId']} over "
+                    f"publication {run}. {entry['supersedeReason']} "
+                    f"Scope: {capability}."
+                ),
+                reason_code=reason_code,
+            )
+            validate_selection(superseded)
+            prefix = prefixes[capability]
+            out.append((f"{prefix}-{entry['supersedesTag']}-superseded.json", superseded))
+            for state, record in zip(("candidate", "approved", "active"), chain):
+                out.append((f"{prefix}-{tag}-{state}.json", record))
+            active[capability] = chain[2]
+    return out
+
+
+def append_generation(
+    *,
+    run: str,
+    approved_at: str,
+    reason_code: str,
+    candidate_reason: str,
+    approved_reason: str,
+    active_reason: str,
+    supersede_reason: str,
+    actor: str | None,
+) -> dict[str, Any]:
+    """Append one generation to the ledger and return it.
+
+    `actor=None` records the automated actor. There is no path here that writes a
+    human name the caller did not supply.
+    """
+
+    document = _load(GENERATIONS_PATH)
+    generations = list(document.get("generations") or [])
+    tag = next_generation_tag()
+    supersedes_tag = f"r{int(tag[1:]) - 1}"
+    entry = {
+        "tag": tag,
+        "run": run,
+        "supersedesTag": supersedes_tag,
+        "approvedAt": approved_at,
+        "reasonCode": reason_code,
+        "actor": actor or AUTOMATED_ACTOR,
+        "approvalMode": "human" if actor else "automatic",
+        "candidateReason": candidate_reason,
+        "approvedReason": approved_reason,
+        "activeReason": active_reason,
+        "supersedeReason": supersede_reason,
+    }
+    generations.append(entry)
+    document["generations"] = generations
+    GENERATIONS_PATH.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return entry
 
 
 def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
@@ -1106,6 +1253,26 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
             for state, record in zip(
                 ("candidate", "approved", "active"), r6_chains[capability]
             )
+        ),
+        # Everything after r6 is DATA, not source. See the note in the generations
+        # ledger: the six hand-written chains above are why adopting one publication
+        # took five coordinated edits, and they stay hand-written because they are
+        # already committed and verified.
+        *_derived_generations(
+            previous_actives={
+                "demand_forecast_non_pit": r6_chains["demand_forecast_non_pit"][2],
+                "inventory_replenishment_current_snapshot": r6_chains[
+                    "inventory_replenishment_current_snapshot"
+                ][2],
+                "inventory_replenishment_replay": r6_chains[
+                    "inventory_replenishment_replay"
+                ][2],
+            },
+            prefixes={
+                "demand_forecast_non_pit": forecast_prefix,
+                "inventory_replenishment_current_snapshot": current_prefix,
+                "inventory_replenishment_replay": replay_prefix,
+            },
         ),
     ]
 

@@ -40,20 +40,44 @@ from build_publication_selection import current_records  # noqa: E402
 PIN_PATH = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
 SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
-#: The currently pinned publication. Named rather than discovered: there is no
-#: newest-wins here, and a caller changing the pin should have to say so.
+#: `contracts/ml/expected-pin.json` is the ONLY thing the ML chain consults to find
+#: its curated root -- `features` takes no source argument at all -- so a pin naming
+#: the wrong publication makes every ML stage read the previous one while
+#: `--source-root` is silently ignored. That cost a full features-and-backtest run
+#: once: the feature manifest recorded sourceSnapshotId d43fd302 when the intent was
+#: 0634b079. Hence the derivation below, and hence `build_pin` cross-checking the
+#: active decision-#73 selection before it writes anything.
 #:
-#: This value is the ONLY thing the ML chain consults to find its curated root --
-#: `features` takes no source argument at all -- so advancing the
-#: publication-selection records without advancing this leaves every ML stage
-#: silently reading the previous publication while `--source-root` is ignored. That
-#: cost a full features-and-backtest run: the feature manifest recorded
-#: sourceSnapshotId d43fd302 when the intent was 0634b079.
-#:
-#: Pass `--run` to move it. The constant remains the record of what is pinned NOW,
-#: so `--check` stays reproducible from the file alone, but advancing the pin no
-#: longer requires editing source -- which is how the mistake above happened.
-RUN = "run-adac9e85dccb56e8-r6"
+#: Kept only as the fallback for a repository with no retained evidence at all --
+#: `_pinned_run()` below is the real answer. It was a hand-edited constant, and the
+#: automated repin made that untenable: `repin` rewrites the pin FILE for whichever
+#: run it adopted but cannot rewrite a literal in this source, so after one automated
+#: adoption the constant named r6 while the pin named r2 and `--check` failed against
+#: a pin that was itself correct. A value that must be edited by hand after every
+#: automated step is a value that will be stale.
+_FALLBACK_RUN = "run-adac9e85dccb56e8-r6"
+
+
+def _pinned_run() -> str:
+    """The run this pin names, derived rather than transcribed.
+
+    Retained evidence is the authority: a publication may only be pinned while its
+    gate and manifest files are present, which is what `build_pin` reads. Exactly one
+    run has them after a completed pipeline -- the rest are evidence-released -- so
+    the derivation is unambiguous. Ambiguity is refused rather than tie-broken,
+    because a newest-wins glob over content hashes is exactly the arbitrary choice
+    decision #89 exists to prevent.
+    """
+
+    promoted = _promoted_runs()
+    if len(promoted) == 1:
+        return promoted[0]
+    if not promoted:
+        return _FALLBACK_RUN
+    raise SystemExit(
+        f"{len(promoted)} runs have retained evidence ({', '.join(promoted)}); "
+        "pass --run to state which one is pinned rather than letting this guess"
+    )
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`
 #: joins the list at P4-3 because the Phase 4 bundle consumes it, and a pin that
@@ -99,7 +123,10 @@ def _active_selections() -> dict[str, dict[str, Any]]:
     return active
 
 
-def build_pin(run: str = RUN) -> dict[str, Any]:
+def build_pin(run: str | None = None) -> dict[str, Any]:
+    # Resolved here rather than as a default argument value, so the derivation runs
+    # at call time against the evidence on disk instead of at import time.
+    run = run or _pinned_run()
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
     curated = REPO_ROOT / "ingestion" / "data" / "curated" / run
     for path in (
@@ -242,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         available = _promoted_runs()
-        print(f"currently pinned: {RUN}")
+        print(f"currently pinned: {_pinned_run()}")
         if available:
             for run in available:
                 print(f"  retained evidence: {run}")
@@ -250,10 +277,10 @@ def main(argv: list[str] | None = None) -> int:
             print("  no run has retained publication evidence")
         return 0
 
-    run = args.run or RUN
-    if args.check and args.run and args.run != RUN:
+    run = args.run or _pinned_run()
+    if args.check and args.run and args.run != _pinned_run():
         print(
-            f"--check verifies the committed pin, which names {RUN}; "
+            f"--check verifies the committed pin, which names {_pinned_run()}; "
             f"--run {args.run} would verify a different derivation",
             file=sys.stderr,
         )

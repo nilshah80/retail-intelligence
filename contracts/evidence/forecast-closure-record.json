@@ -13,34 +13,34 @@
     "passed": true,
     "perCohortCoverage": {
       "cold_start": 0.8991239207719655,
-      "established_history": 0.9046994243312472
+      "established_history": 0.9047027251841876
     },
     "schemaVersion": "retail-forecast-acceptance/v5"
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_953a83f76576103d",
-    "forecastVersionId": "fv_ff2c77dce6410035",
+    "forecastRunId": "fr_b2ed1a914b059e93",
+    "forecastVersionId": "fv_0be7039af25e247d",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "0fab02dbba25ac45c02d6ab5595ba82cacbd8d7d0f68f692702c2f1beea3e743"
+    "runSemanticFingerprint": "0e2750efcbd98f4c96d32f5318ca7bd21626b0481d8a284ab328f13f681c62ae"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "a33836d6c8f83037fb61d4e09ddb0ab8002245317231744d5b5b2adcc2cbbbf4",
-    "forecast_acceptance.json": "fbbe3b93b00be57171f0ce7e4b57122f9b8ffca2cb65c1be4434103909e8dd4e"
+    "forecast-run-manifest.json": "8cba50bc254c4407bc67e038df991d312ab58d0f5d1e2190d1b8351f552c0c8d",
+    "forecast_acceptance.json": "20df3bde230953fc85d02538e54faafb912f5547565ee56561e6af6690395054"
   },
   "authorityLedger": {
     "currentEventId": 1,
     "currentPriorEventId": null,
     "events": [
       {
-        "activationScopeFingerprint": "650f3c5c2b7edbe3aa79a2560a8e86297a6ed706effe2629f80a11d657c0c511",
-        "actor": "nilayshah",
+        "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
+        "actor": "developer",
         "eventId": 1,
         "eventType": "active",
-        "forecastRunId": "fr_953a83f76576103d",
+        "forecastRunId": "fr_b2ed1a914b059e93",
         "priorEventId": null,
-        "recordedAt": "2026-08-04 16:01:39.611007+00",
-        "versionId": "fv_ff2c77dce6410035"
+        "recordedAt": "2026-08-06 02:37:17.905243+00",
+        "versionId": "fv_0be7039af25e247d"
       }
     ],
     "nullPredecessorEventIds": [
@@ -49,7 +49,7 @@
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": []
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_current",
+  "bundlePath": "ml\\data\\artifacts\\forecast_run_current",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -166,10 +166,10 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "089df45da83de6db7b34a9d50a84660f233becd23c7fc82d32ea138bf3c10ad1",
-    "gateBSemanticFingerprint": "0a3a6c0c39556c9e1037053f1251e8043aaa2ff26fc30599f88bbf43b86b0505",
-    "publicationSemanticFingerprint": "af41f60202348835af43f43c0db8d4a63650e6479fa6c74f9b21b21cf3199c24",
-    "sourceSnapshotId": "cd20ca5a6ae40ec820af5cda58e246efff3fb958bfb85d9c37137981720b5d05"
+    "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
+    "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
+    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
+    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
@@ -187,7 +187,7 @@
     "servedRows": 52884,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0019_supplier_identity",
+      "servingMigration": "0020_safety_stock_drivers",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -195,9 +195,9 @@
     "withheldShareOfServed": "0.16557"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "650f3c5c2b7edbe3aa79a2560a8e86297a6ed706effe2629f80a11d657c0c511",
-    "forecastRunId": "fr_953a83f76576103d",
-    "forecastVersionId": "fv_ff2c77dce6410035"
+    "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
+    "forecastRunId": "fr_b2ed1a914b059e93",
+    "forecastVersionId": "fv_0be7039af25e247d"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
