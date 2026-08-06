@@ -35,6 +35,17 @@ selection = _load("build_publication_selection")
 dev = _load("dev")
 
 
+def _copy_policy(root: Path) -> None:
+    """The retirement guard fails closed, so a temp repo needs the committed policy."""
+
+    import shutil
+
+    target = root / "contracts" / "onboarding"
+    target.mkdir(parents=True, exist_ok=True)
+    name = "temporal-evidence-policy-v2.json"
+    shutil.copyfile(REPO_ROOT / "contracts" / "onboarding" / name, target / name)
+
+
 class TestApprovalAttribution:
     def test_automated_actor_is_not_a_person(self) -> None:
         """The sentinel must be obviously non-human at a glance."""
@@ -54,7 +65,7 @@ class TestApprovalAttribution:
             entry = selection.append_generation(
                 run="run-test",
                 approved_at="1970-01-01T00:00:00Z",
-                reason_code="TEST",
+                reason_code="AUTOMATED_REPIN_ADOPTION",
                 candidate_reason="c",
                 approved_reason="a",
                 active_reason="v",
@@ -77,7 +88,7 @@ class TestApprovalAttribution:
             entry = selection.append_generation(
                 run="run-test",
                 approved_at="1970-01-01T00:00:00Z",
-                reason_code="TEST",
+                reason_code="AUTOMATED_REPIN_ADOPTION",
                 candidate_reason="c",
                 approved_reason="a",
                 active_reason="v",
@@ -146,7 +157,7 @@ class TestAdoptionRefusals:
                     approve=True,
                     actor=None,
                     reason=None,
-                    reason_code="TEST",
+                    reason_code="AUTOMATED_REPIN_ADOPTION",
                     approved_at="1970-01-01T00:00:00Z",
                 )
             )
@@ -174,14 +185,142 @@ class TestAdoptionRefusals:
                     approve=True,
                     actor="a.person",
                     reason=None,
-                    reason_code="TEST",
+                    reason_code="AUTOMATED_REPIN_ADOPTION",
                     approved_at="1970-01-01T00:00:00Z",
                 )
             )
         finally:
             dev._repin_facts = original
         assert code == 2
-        assert "--actor requires --reason" in capsys.readouterr().err
+        assert "must be supplied together" in capsys.readouterr().err
+
+
+class TestAttributionSymmetry:
+    def test_a_reason_without_an_actor_is_refused(self, capsys) -> None:
+        """Prose could claim a review the metadata denied.
+
+        The check was one-sided: `--actor` required `--reason`, but a reason alone was
+        accepted -- so `--reason "Alice reviewed and approved this"` was stored while
+        actor stayed `automated/repin-policy/v1` and approvalMode stayed `automatic`.
+        """
+
+        import argparse
+
+        code = dev.command_repin(
+            argparse.Namespace(
+                run_id="run-x", approve=True, actor=None,
+                reason="Alice reviewed and approved this",
+                reason_code="AUTOMATED_REPIN_ADOPTION", approved_at=None,
+            )
+        )
+        assert code == 2
+        assert "must be supplied together" in capsys.readouterr().err
+
+    def test_a_human_actor_cannot_carry_the_automatic_reason_code(self) -> None:
+        """A human approval labelled AUTOMATED_REPIN_ADOPTION is contradictory."""
+
+        import argparse
+        import inspect
+
+        # The derivation, asserted on the source rather than by reaching the write
+        # path, which needs real evidence.
+        source = inspect.getsource(dev.command_repin)
+        assert "HUMAN_REPIN_ADOPTION" in source
+
+    def test_a_human_reason_code_without_an_actor_is_refused(self, capsys) -> None:
+        import argparse
+
+        code = dev.command_repin(
+            argparse.Namespace(
+                run_id="run-x", approve=True, actor=None, reason=None,
+                reason_code="HUMAN_REPIN_ADOPTION", approved_at=None,
+            )
+        )
+        assert code == 2
+        assert "names a human decision" in capsys.readouterr().err
+
+
+class TestLedgerValidation:
+    def test_a_flipped_approval_mode_is_refused(self) -> None:
+        """approvalMode was never consumed, so flipping it changed nothing."""
+
+        import copy
+
+        good = json.loads(
+            selection.GENERATIONS_PATH.read_text(encoding="utf-8")
+        )["generations"]
+        bad = copy.deepcopy(good)
+        bad[0]["approvalMode"] = "human"
+        with pytest.raises(SystemExit, match="derived from the actor"):
+            selection.validate_generations(bad)
+
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        [
+            ("approvedAt", "yesterday", "not RFC 3339"),
+            ("reasonCode", "lowercase", "UPPER_SNAKE_CASE"),
+            ("supersedesTag", "r3", "contiguous"),
+            ("tag", "seven", "not of the form"),
+        ],
+    )
+    def test_malformed_entries_are_refused(self, field, value, expected) -> None:
+        import copy
+
+        good = json.loads(
+            selection.GENERATIONS_PATH.read_text(encoding="utf-8")
+        )["generations"]
+        bad = copy.deepcopy(good)
+        bad[0][field] = value
+        with pytest.raises(SystemExit, match=expected):
+            selection.validate_generations(bad)
+
+    def test_a_duplicate_generation_is_refused(self) -> None:
+        import copy
+
+        good = json.loads(
+            selection.GENERATIONS_PATH.read_text(encoding="utf-8")
+        )["generations"]
+        bad = copy.deepcopy(good) + copy.deepcopy(good)
+        with pytest.raises(SystemExit, match="repeats"):
+            selection.validate_generations(bad)
+
+    def test_the_committed_ledger_validates(self) -> None:
+        assert selection.load_generations()
+
+
+class TestScorecardFailsClosed:
+    def test_a_missing_retirement_authority_refuses(self, tmp_path) -> None:
+        """`_load(...) or {}` turned unreadable into "retires nothing"."""
+
+        scorecard = _load("direction_scorecard")
+        with pytest.raises(SystemExit, match="authority is absent"):
+            scorecard.retired_capabilities(tmp_path)
+
+    def test_the_callers_root_is_honoured(self, tmp_path) -> None:
+        """`build(root)` read evidence from root and policy from this checkout."""
+
+        scorecard = _load("direction_scorecard")
+        policy = tmp_path / "contracts" / "onboarding"
+        policy.mkdir(parents=True)
+        (policy / "temporal-evidence-policy-v2.json").write_text(
+            json.dumps(
+                {"capabilities": {"retiredDefinitions": {"data_management": {}}}}
+            ),
+            encoding="utf-8",
+        )
+        assert scorecard.retired_capabilities(tmp_path) == {"data_management"}
+
+    @pytest.mark.parametrize("payload", ["[]", "null", "42", "{}", '{"capabilities": 1}'])
+    def test_a_malformed_authority_refuses(self, tmp_path, payload) -> None:
+        scorecard = _load("direction_scorecard")
+        root = tmp_path / payload.replace('"', "").replace(":", "").replace(" ", "")
+        policy = root / "contracts" / "onboarding"
+        policy.mkdir(parents=True)
+        (policy / "temporal-evidence-policy-v2.json").write_text(
+            payload, encoding="utf-8"
+        )
+        with pytest.raises(SystemExit):
+            scorecard.retired_capabilities(root)
 
 
 class TestReRunSafety:
@@ -203,7 +342,7 @@ class TestReRunSafety:
                 approve=True,
                 actor=None,
                 reason=None,
-                reason_code="TEST",
+                reason_code="AUTOMATED_REPIN_ADOPTION",
                 approved_at=None,
             )
         )
@@ -316,7 +455,7 @@ class TestGateRefusal:
                     approve=True,
                     actor=None,
                     reason=None,
-                    reason_code="TEST",
+                    reason_code="AUTOMATED_REPIN_ADOPTION",
                     approved_at=None,
                 )
             )
@@ -358,7 +497,7 @@ class TestEvidenceIsRead:
             code = dev.command_repin(
                 argparse.Namespace(
                     run_id="run-test", approve=True, actor=None, reason=None,
-                    reason_code="TEST", approved_at=None,
+                    reason_code="AUTOMATED_REPIN_ADOPTION", approved_at=None,
                 )
             )
         finally:
@@ -847,6 +986,7 @@ class TestScorecardMaskReader:
         scorecard = _load("direction_scorecard")
         evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
         evidence.mkdir(parents=True)
+        _copy_policy(tmp_path)
         capabilities = sorted(
             {
                 capability
@@ -877,8 +1017,9 @@ class TestScorecardMaskReader:
                 entry["reasonCode"]
                 for entry in result["phases"][name].get("missingCapabilities") or []
             }
-            assert codes == {"MASK_UNREADABLE"}, (
-                f"{name} did not flag the unreadable mask: {codes}"
+            # ENTRY level: the mask itself was readable, one entry was not.
+            assert codes == {"ENTRY_UNREADABLE"}, (
+                f"{name} did not flag the unreadable entry: {codes}"
             )
 
 
@@ -993,6 +1134,7 @@ class TestScorecardContainer:
         root = tmp_path / str(id(shape))
         evidence = root / "ingestion" / "data" / "evidence" / "r"
         evidence.mkdir(parents=True)
+        _copy_policy(root)
         (evidence / "gate-b.json").write_text(
             json.dumps(
                 {
@@ -1113,6 +1255,7 @@ class TestScorecardNullEntry:
         scorecard = _load("direction_scorecard")
         evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
         evidence.mkdir(parents=True)
+        _copy_policy(tmp_path)
         capabilities = sorted(
             {
                 capability
@@ -1138,12 +1281,13 @@ class TestScorecardNullEntry:
             for phase in scorecard.build(tmp_path)["phases"].values()
             for entry in (phase.get("missingCapabilities") or [])
         }
-        assert codes == {"MASK_UNREADABLE"}, codes
+        assert codes == {"ENTRY_UNREADABLE"}, codes
 
     def test_an_absent_key_is_still_not_evaluated(self, tmp_path) -> None:
         scorecard = _load("direction_scorecard")
         evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
         evidence.mkdir(parents=True)
+        _copy_policy(tmp_path)
         (evidence / "gate-b.json").write_text(
             json.dumps(
                 {

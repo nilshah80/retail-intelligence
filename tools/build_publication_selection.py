@@ -51,6 +51,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -519,10 +521,103 @@ _GENERATION_CAPABILITIES = (
 )
 
 
+_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_REASON_CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_GENERATION_FIELDS = {
+    "tag": str,
+    "run": str,
+    "supersedesTag": str,
+    "approvedAt": str,
+    "reasonCode": str,
+    "actor": str,
+    "approvalMode": str,
+    "candidateReason": str,
+    "approvedReason": str,
+    "activeReason": str,
+    "supersedeReason": str,
+}
+
+
+def validate_generations(generations: list[Any]) -> list[dict[str, Any]]:
+    """Refuse a ledger that cannot be trusted to mean what it says.
+
+    `load_generations` returned the raw array, so nothing checked it. The sharpest
+    consequence: `approvalMode` was never CONSUMED anywhere, so flipping an entry from
+    `automatic` to `human` changed no derived record and both `--check` and contract
+    validation still passed. A field that records whether a person approved something,
+    which nothing reads, is decoration -- and this ledger's whole purpose is to be
+    trustworthy about exactly that.
+
+    So the mode is now derived from the actor and cross-checked against the stored
+    value, and the structural invariants the tag arithmetic assumes -- unique tags and
+    runs, contiguous generations, a predecessor that is genuinely the previous tag --
+    are asserted rather than hoped for.
+    """
+
+    if not isinstance(generations, list):
+        raise SystemExit(
+            f"{GENERATIONS_PATH}: 'generations' is "
+            f"{type(generations).__name__}, expected a list"
+        )
+    seen_tags: set[str] = set()
+    seen_runs: set[str] = set()
+    validated: list[dict[str, Any]] = []
+    for index, entry in enumerate(generations):
+        where = f"{GENERATIONS_PATH.name} generations[{index}]"
+        if not isinstance(entry, dict):
+            raise SystemExit(f"{where} is {type(entry).__name__}, expected an object")
+        for field, kind in _GENERATION_FIELDS.items():
+            if field not in entry:
+                raise SystemExit(f"{where} has no {field!r}")
+            if not isinstance(entry[field], kind):
+                raise SystemExit(
+                    f"{where} field {field!r} is {type(entry[field]).__name__}, "
+                    f"expected {kind.__name__}"
+                )
+        tag, run = entry["tag"], entry["run"]
+        if not (tag.startswith("r") and tag[1:].isdigit()):
+            raise SystemExit(f"{where} tag {tag!r} is not of the form r<number>")
+        if tag in seen_tags:
+            raise SystemExit(f"{where} repeats tag {tag!r}")
+        if run in seen_runs:
+            raise SystemExit(f"{where} repeats run {run!r}")
+        seen_tags.add(tag)
+        seen_runs.add(run)
+        if entry["supersedesTag"] != f"r{int(tag[1:]) - 1}":
+            raise SystemExit(
+                f"{where} tag {tag} declares supersedesTag "
+                f"{entry['supersedesTag']!r}; generations must be contiguous"
+            )
+        if not _TIMESTAMP.match(entry["approvedAt"]):
+            raise SystemExit(
+                f"{where} approvedAt {entry['approvedAt']!r} is not RFC 3339 UTC "
+                "(YYYY-MM-DDTHH:MM:SSZ)"
+            )
+        if not _REASON_CODE.match(entry["reasonCode"]):
+            raise SystemExit(
+                f"{where} reasonCode {entry['reasonCode']!r} is not UPPER_SNAKE_CASE"
+            )
+        expected_mode = "automatic" if entry["actor"] == AUTOMATED_ACTOR else "human"
+        if entry["approvalMode"] != expected_mode:
+            raise SystemExit(
+                f"{where} records approvalMode {entry['approvalMode']!r} with actor "
+                f"{entry['actor']!r}, which is {expected_mode!r}. The mode is derived "
+                "from the actor; a record whose two halves disagree cannot be evidence "
+                "of either."
+            )
+        validated.append(entry)
+    return validated
+
+
 def load_generations() -> list[dict[str, Any]]:
     if not GENERATIONS_PATH.is_file():
         return []
-    return list(_load(GENERATIONS_PATH).get("generations") or [])
+    document = _load(GENERATIONS_PATH)
+    if not isinstance(document, dict):
+        raise SystemExit(
+            f"{GENERATIONS_PATH} is {type(document).__name__}, expected an object"
+        )
+    return validate_generations(document.get("generations") or [])
 
 
 def next_generation_tag() -> str:

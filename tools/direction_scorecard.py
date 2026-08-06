@@ -162,13 +162,49 @@ RETIRED_CAPABILITY_ALIASES: dict[str, str] = {
 }
 
 
-def retired_capabilities() -> set[str]:
-    """Names no phase may require, under either spelling."""
+def retired_capabilities(root: Path = REPO_ROOT) -> set[str]:
+    """Names no phase may require, under either spelling.
 
-    policy = _load(_POLICY_PATH) or {}
-    retired = set(
-        (policy.get("capabilities") or {}).get("retiredDefinitions") or {}
-    )
+    Fails CLOSED. `_load(...) or {}` turned "I could not read the authority" into "the
+    authority retires nothing", which silently disabled the guard and let Phase 4
+    measure the retired flag again -- reported as unblocked. That is the same
+    unreadable-versus-empty collapse this file fixes for masks, one level up on the
+    policy document, and the argument for moving the guard out of a test applies to
+    its own input: a runtime that can go quiet is not guarded.
+
+    Resolved beneath `root`, not the module's own REPO_ROOT, so `build(other_root)`
+    reads that repository's policy rather than this checkout's.
+    """
+
+    path = root / "contracts" / "onboarding" / "temporal-evidence-policy-v2.json"
+    if not path.is_file():
+        raise SystemExit(f"the retirement authority is absent: {path}")
+    try:
+        policy = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as broken:
+        raise SystemExit(f"the retirement authority could not be read: {path}: {broken}")
+    except json.JSONDecodeError as broken:
+        raise SystemExit(f"the retirement authority is not valid JSON: {path}: {broken}")
+    if not isinstance(policy, dict):
+        raise SystemExit(
+            f"the retirement authority is {type(policy).__name__}, expected an object: "
+            f"{path}"
+        )
+    capabilities = policy.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise SystemExit(f"{path}: 'capabilities' is missing or not an object")
+    # Absent key versus empty value, kept apart as everywhere else here: no
+    # `retiredDefinitions` is a malformed policy, while `{}` is a policy that
+    # legitimately retires nothing.
+    if "retiredDefinitions" not in capabilities:
+        raise SystemExit(f"{path}: 'capabilities.retiredDefinitions' is missing")
+    declared = capabilities["retiredDefinitions"]
+    if not isinstance(declared, dict):
+        raise SystemExit(
+            f"{path}: 'capabilities.retiredDefinitions' is "
+            f"{type(declared).__name__}, expected an object"
+        )
+    retired = set(declared)
     aliases = {
         mask_name
         for mask_name, policy_name in RETIRED_CAPABILITY_ALIASES.items()
@@ -271,7 +307,7 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
     # Phase 4 required `replenishment` -- retired and superseded -- so it reported no
     # missing capability while current-snapshot was false. A scorecard that quietly
     # measures the wrong flag is worse than one that stops.
-    retired = retired_capabilities()
+    retired = retired_capabilities(root)
     offenders = sorted(
         f"{phase}:{capability}"
         for phase, spec in PHASE_REQUIREMENTS.items()
@@ -316,21 +352,21 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
             elif mask_unreadable or not isinstance(entry, dict) or not isinstance(
                 entry.get("available"), bool
             ):
-                missing.append(
-                    {"capability": capability, "reasonCode": "MASK_UNREADABLE"}
+                # MASK_UNREADABLE names a container-level fact; an unusable single
+                # entry in an otherwise readable mask is a different one, and this
+                # file's own standard is different facts, different codes.
+                code = (
+                    "MASK_UNREADABLE" if mask_unreadable else "ENTRY_UNREADABLE"
                 )
+                missing.append({"capability": capability, "reasonCode": code})
                 blockers.setdefault(
-                    "MASK_UNREADABLE",
-                    {
-                        "reasonCode": "MASK_UNREADABLE",
-                        "capabilities": [],
-                        "phasesBlocked": [],
-                    },
+                    code,
+                    {"reasonCode": code, "capabilities": [], "phasesBlocked": []},
                 )
-                if capability not in blockers["MASK_UNREADABLE"]["capabilities"]:
-                    blockers["MASK_UNREADABLE"]["capabilities"].append(capability)
-                if name not in blockers["MASK_UNREADABLE"]["phasesBlocked"]:
-                    blockers["MASK_UNREADABLE"]["phasesBlocked"].append(name)
+                if capability not in blockers[code]["capabilities"]:
+                    blockers[code]["capabilities"].append(capability)
+                if name not in blockers[code]["phasesBlocked"]:
+                    blockers[code]["phasesBlocked"].append(name)
             elif not entry["available"]:
                 reason = str(entry.get("reasonCode", "UNAVAILABLE"))
                 missing.append({"capability": capability, "reasonCode": reason})

@@ -116,7 +116,7 @@ def _npm() -> str:
     return resolved
 
 
-def _go_test_command(*flags: str) -> list[str]:
+def _go_test_command(*flags: str, require_race: bool = True) -> list[str]:
     """``go test`` with the race detector when the host can actually run it.
 
     ``-race`` requires cgo, and cgo requires a C compiler. macOS and Linux have
@@ -142,6 +142,19 @@ def _go_test_command(*flags: str) -> list[str]:
     compiler = lines[1].strip() if len(lines) > 1 else ""
     if enabled == "1" and compiler and shutil.which(compiler):
         return [*command, "-race", "./..."]
+    if require_race:
+        # tasks.md states plainly that `verify` cannot pass until the race detector
+        # runs, and that race evidence is not optional for a concurrent API. A loud
+        # notice followed by exit 0 contradicted both: the gate reported success while
+        # skipping the check. Degrading is now opt-in per command, never silent.
+        raise SystemExit(
+            "go test -race cannot run here: the race detector needs cgo and a C "
+            f"compiler; CGO_ENABLED={enabled or 'unset'} and CC={compiler or 'unset'} "
+            "is not resolvable on PATH. Install a C toolchain (mingw-w64 on Windows, "
+            "Xcode command line tools on macOS) and set CGO_ENABLED=1. To run the Go "
+            "tests without the detector -- which is NOT race evidence -- use "
+            "`tools/dev.py api-test --allow-missing-race`."
+        )
     print(
         "NOTICE: running go test WITHOUT -race. The race detector needs cgo and a C "
         f"compiler; CGO_ENABLED={enabled or 'unset'} and CC={compiler or 'unset'} is "
@@ -918,6 +931,27 @@ def command_repin(args: argparse.Namespace) -> int:
     record states honestly whether a human made it.
     """
 
+    # Argument validation first: cheaper than reading evidence, and previously
+    # unreachable for a run whose evidence was absent.
+    if bool(args.actor) != bool(args.reason):
+        print(
+            "--actor and --reason must be supplied together: an actor without a "
+            "reason is a rubber stamp, and a reason without an actor is prose that "
+            "can claim a review the metadata denies",
+            file=sys.stderr,
+        )
+        return 2
+    reason_code = args.reason_code
+    if args.actor and reason_code == "AUTOMATED_REPIN_ADOPTION":
+        reason_code = "HUMAN_REPIN_ADOPTION"
+    if not args.actor and reason_code != "AUTOMATED_REPIN_ADOPTION":
+        print(
+            f"--reason-code {reason_code} names a human decision, but no --actor was "
+            "supplied, so this adoption is automatic",
+            file=sys.stderr,
+        )
+        return 2
+
     ingestion = _require_python(INGESTION_ENV, "ingestion")
     selection = _selection_module()
     run_id = args.run_id or _newest_published_run()
@@ -988,9 +1022,6 @@ def command_repin(args: argparse.Namespace) -> int:
         )
         return 0
 
-    if args.actor and not args.reason:
-        print("--actor requires --reason", file=sys.stderr)
-        return 2
     reasons = _repin_reasons(facts, previous, automatic=not args.actor)
 
     # An adoption is one act, so a failed one must leave nothing behind. The ledger
@@ -1037,15 +1068,59 @@ def command_repin(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # An exclusive lock for the whole adoption. Two concurrent repins could read the
+    # same ledger, derive the same next tag, and lose one update -- or one could
+    # restore its snapshot over the other's committed work.
+    lock_path = selection.GENERATIONS_PATH.with_suffix(".lock")
+    try:
+        lock = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        print(
+            f"another adoption holds {lock_path.name}; if no repin is running, remove "
+            "it and retry",
+            file=sys.stderr,
+        )
+        return 1
+
+    # try/finally around EVERYTHING that writes. Rollback previously ran only when a
+    # child returned nonzero, so an OSError from `_run`, or any exception between the
+    # ledger write and the last builder, left a half-adoption committed.
+    try:
+        return _repin_apply(
+            selection=selection,
+            ingestion=ingestion,
+            run_id=run_id,
+            facts=facts,
+            reasons=reasons,
+            reason_code=reason_code,
+            actor=args.actor,
+            reason=args.reason,
+            approved_at=args.approved_at or _utc_now(),
+            roll_back=_roll_back,
+        )
+    except BaseException as failure:
+        _roll_back(f"an unhandled {type(failure).__name__}")
+        raise
+    finally:
+        os.close(lock)
+        lock_path.unlink(missing_ok=True)
+
+
+def _repin_apply(
+    *, selection, ingestion, run_id, facts, reasons, reason_code, actor, reason,
+    approved_at, roll_back,
+) -> int:
+    """Write the generation, derive its records, then move the pin."""
+
     entry = selection.append_generation(
         run=run_id,
-        approved_at=args.approved_at or _utc_now(),
-        reason_code=args.reason_code,
-        candidate_reason=(args.reason or reasons["candidate"]),
+        approved_at=approved_at,
+        reason_code=reason_code,
+        candidate_reason=(reason or reasons["candidate"]),
         approved_reason=reasons["approved"],
         active_reason=reasons["active"],
         supersede_reason=reasons["supersede"],
-        actor=args.actor,
+        actor=actor,
     )
     print(
         f"appended generation {entry['tag']} for {run_id} "
@@ -1068,7 +1143,7 @@ def command_repin(args: argparse.Namespace) -> int:
     ):
         result = _run(command)
         if result:
-            _roll_back(label)
+            roll_back(label)
             return result
     return 0
 
@@ -1083,7 +1158,12 @@ def command_serve(args: argparse.Namespace) -> int:
     copying a fingerprint out of psql by hand, which is not a decision anyone makes.
     """
 
-    run_id = args.run_id or _newest_published_run()
+    # The active row first, newest-on-disk only as a fallback. Selecting by manifest
+    # mtime repeated the defect already fixed in `_pinned_run`: produce a publication
+    # without adopting it and `serve` picked the unadopted one, then reported no
+    # active forecast while a perfectly good authority was live. --run-id stays an
+    # explicit override.
+    run_id = args.run_id or _active_authority_run() or _newest_published_run()
     if run_id is None:
         print("no published run under ingestion/data/evidence", file=sys.stderr)
         return 2
@@ -1173,8 +1253,13 @@ def command_serve(args: argparse.Namespace) -> int:
         return _run(api, cwd=REPO_ROOT / "api", env=environment)
     # Both in the foreground would each block, so the UI is a child and the API owns
     # the terminal; Ctrl-C stops the API and the finally clause stops the UI with it.
+    # The address goes to Vite too. Its proxy targeted 127.0.0.1:8080 literally, so
+    # `--with-ui --address 127.0.0.1:9090` started both processes and every UI request
+    # still went to 8080 -- two healthy servers and a dead screen.
+    ui_environment = dict(os.environ)
+    ui_environment["RETAIL_API_ADDRESS"] = args.address
     ui = subprocess.Popen(  # noqa: S603
-        [_npm(), "run", "dev"], cwd=REPO_ROOT / "ui"
+        [_npm(), "run", "dev"], cwd=REPO_ROOT / "ui", env=ui_environment
     )
     try:
         return _run(api, cwd=REPO_ROOT / "api", env=environment)
@@ -1184,6 +1269,52 @@ def command_serve(args: argparse.Namespace) -> int:
             ui.wait(timeout=10)
         except subprocess.TimeoutExpired:
             ui.kill()
+
+
+def _active_authority_run() -> str | None:
+    """The run whose publication the live activation names, or None.
+
+    Asks PostgreSQL which publication is actually serving, then finds the retained
+    evidence directory whose manifest carries that fingerprint. Governed authority
+    rather than filesystem recency.
+    """
+
+    try:
+        ml_python = _require_python(ML_ENV, "ml")
+    except RuntimeError:
+        return None
+    probe_env = dict(os.environ)
+    probe_env["RETAIL_PROBE_DSN"] = _local_postgres_dsn(sqlalchemy=False)
+    probe = subprocess.run(
+        [
+            str(ml_python),
+            "-c",
+            "import os, psycopg\n"
+            "with psycopg.connect(os.environ['RETAIL_PROBE_DSN']) as c:\n"
+            "    row = c.execute(\n"
+            "        'select publication_semantic_fingerprint from '\n"
+            "        'retail_serving.active_forecast_versions'\n"
+            "    ).fetchone()\n"
+            "print(row[0] if row else '')\n",
+        ],
+        capture_output=True, encoding="utf-8", errors="replace", check=False,
+        env=probe_env,
+    )
+    fingerprint = (probe.stdout or "").strip()
+    if not fingerprint:
+        return None
+    evidence_root = REPO_ROOT / "ingestion" / "data" / "evidence"
+    for path in sorted(evidence_root.glob("run-*")):
+        manifest = path / "publication-manifest.json"
+        if not manifest.is_file():
+            continue
+        try:
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if document.get("semanticFingerprint") == fingerprint:
+            return path.name
+    return None
 
 
 def _newest_published_run() -> str | None:
@@ -1640,25 +1771,29 @@ def _pipeline_step(label: str, command: list[str], *, cwd: Path = REPO_ROOT) -> 
     # stage look negative or free. This measures elapsed wall clock for the stage,
     # which is what the baseline table records and what a user actually waits.
     started = time.monotonic()
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        check=False,
-        capture_output=True,
-        # Explicit UTF-8 rather than `text=True`. `text=True` decodes with the
-        # PARENT's locale encoding, which is cp1252 on Windows, and PYTHONUTF8 set
-        # above cannot change that -- an interpreter fixes its own stdio encoding at
-        # startup, so the variable only reaches children. The result was a decode
-        # mirror of the encode bug: the child now correctly WROTE MLflow's emoji as
-        # UTF-8, the reader thread could not DECODE those bytes, `completed.stdout`
-        # came back None, and the stage died on `.index("{")` after 3h21m of work
-        # that had in fact succeeded. errors="replace" so a stray undecodable byte
-        # degrades one character instead of discarding a completed stage's output.
-        encoding="utf-8",
-        errors="replace",
-    )
-    elapsed = time.monotonic() - started
-    _STAGE_TIMINGS.append((label, elapsed))
+    # Explicit UTF-8 rather than `text=True`. `text=True` decodes with the PARENT's
+    # locale encoding, which is cp1252 on Windows, and PYTHONUTF8 cannot change that
+    # -- an interpreter fixes its own stdio encoding at startup, so the variable only
+    # reaches children. The result was a decode mirror of the encode bug: the child
+    # correctly WROTE MLflow's emoji as UTF-8, the reader thread could not DECODE
+    # those bytes, `completed.stdout` came back None, and the stage died on
+    # `.index("{")` after 3h21m of work that had in fact succeeded. errors="replace"
+    # so a stray undecodable byte degrades one character instead of discarding a
+    # completed stage's output.
+    #
+    # finally, so a stage that RAISES still contributes its elapsed time.
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    finally:
+        elapsed = time.monotonic() - started
+        _STAGE_TIMINGS.append((label, elapsed))
     if completed.stdout:
         print(completed.stdout, end="")
     if completed.stderr:
@@ -1681,6 +1816,21 @@ class _PipelineFailure(RuntimeError):
 
 
 def command_pipeline(args: argparse.Namespace) -> int:
+    """Report stage timings on EVERY exit, then return the inner result.
+
+    The report used to sit on the success path and in the _PipelineFailure handler, so
+    a direct `return 2` after completed stages -- a missing activation identity, for
+    instance -- and any unexpected exception skipped it. One finally covers all three,
+    which matters most for the failure modes that happen hours in.
+    """
+
+    try:
+        return _command_pipeline(args)
+    finally:
+        _report_stage_timings()
+
+
+def _command_pipeline(args: argparse.Namespace) -> int:
     """Chain land through activate. Everything after datagen, in one command.
 
     Before this, `tools/dev.py run` covered only gate-a..publish and the ML half had no
@@ -2287,9 +2437,9 @@ def command_pipeline(args: argparse.Namespace) -> int:
                 ],
             )
     except _PipelineFailure as failure:
-        # Timings before the message: a failed run's per-stage costs are how you tell
-        # "the backtest is slow on this host" from "the backtest died immediately".
-        _report_stage_timings()
+        # Timings come from the finally below now, so every exit path reports them:
+        # a _PipelineFailure, a direct `return 2` after completed stages (a missing
+        # activation identity, say), and an unexpected exception all used to skip it.
         print(
             f"\npipeline failed at stage {failure.stage!r} (exit {failure.code})\n"
             f"resume with: tools/dev.py pipeline --from {failure.stage.split()[0]} "
@@ -2299,7 +2449,6 @@ def command_pipeline(args: argparse.Namespace) -> int:
         if "expected pin" in str(failure.stage):
             pass
         return failure.code
-    _report_stage_timings()
     return 0
 
 
@@ -2335,14 +2484,14 @@ def command_run_status(_: argparse.Namespace) -> int:
     return 0
 
 
-def command_api_test(_: argparse.Namespace) -> int:
+def command_api_test(args: argparse.Namespace) -> int:
     environment = dict(os.environ)
     environment.setdefault(
         "GOCACHE",
         str(Path(tempfile.gettempdir()) / "retail-intelligence-go-cache"),
     )
     return _run(
-        _go_test_command(),
+        _go_test_command(require_race=not args.allow_missing_race),
         cwd=REPO_ROOT / "api",
         env=environment,
     )
@@ -2655,7 +2804,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("config-hash", help="validate the pinned datagen config")
     subparsers.add_parser("run-status", help="show promoted/staging source runs")
-    subparsers.add_parser("api-test", help="run portable Go API race tests")
+    api_test = subparsers.add_parser(
+        "api-test", help="run portable Go API race tests"
+    )
+    api_test.add_argument(
+        "--allow-missing-race", action="store_true",
+        help=(
+            "run go test WITHOUT the race detector when cgo is unavailable. This is "
+            "not race evidence; `verify` never accepts it."
+        ),
+    )
     subparsers.add_parser("ui-test", help="run the UI unit tests")
     subparsers.add_parser("ui-build", help="typecheck and build the UI")
     subparsers.add_parser("ml-test", help="run the isolated ML tests")
