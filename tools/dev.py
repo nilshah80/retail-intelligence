@@ -674,7 +674,13 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     # from the manifest's copy of them, so a missing, failing or inconsistent
     # `gate-b.json` still produced a confident proposal claiming Gate B passed.
     # Only `--approve` found out, one step later, via the rollback.
-    gate_b = json.loads((evidence / "gate-b.json").read_text(encoding="utf-8"))
+    gate_b_path = evidence / "gate-b.json"
+    if not gate_b_path.is_file():
+        # A clean refusal, matching what `build_pin` gives for the same four files.
+        # A bare read_text here produced a FileNotFoundError traceback for missing
+        # evidence, which reads like a crash rather than the governed stop it is.
+        raise SystemExit(f"retained evidence is absent: {gate_b_path}")
+    gate_b = json.loads(gate_b_path.read_text(encoding="utf-8"))
     if gate_b.get("semanticFingerprint") != manifest.get(
         "gateBSemanticFingerprint"
     ):
@@ -685,9 +691,18 @@ def _repin_facts(run_id: str) -> dict[str, object]:
             f"{str(manifest.get('gateBSemanticFingerprint'))[:12]}…; the evidence "
             "for this run is inconsistent with itself"
         )
-    # The mask from Gate B itself, not the manifest's transcription of it, so the
-    # capability verdict rests on the gate that produced it.
-    mask = gate_b.get("capabilityMask") or manifest.get("capabilityMask") or {}
+    # The mask from Gate B itself, with NO fallback to the manifest. The fallback was
+    # a residue of the very thing this was fixing: a Gate B carrying no mask silently
+    # handed the capability verdict back to the transcription, so the proposal passed
+    # while nothing had actually read a mask from the gate. Absent or malformed is
+    # refused, because "I could not find the evidence" and "the evidence says yes"
+    # must never produce the same outcome.
+    mask = gate_b.get("capabilityMask")
+    if not isinstance(mask, dict) or not mask:
+        raise SystemExit(
+            f"{run_id}: gate-b.json carries no usable capabilityMask, so no "
+            "capability verdict can be derived from the gate that produced it"
+        )
     required = (
         "demand_forecast_non_pit",
         "inventory_replenishment_current_snapshot",
@@ -839,7 +854,17 @@ def command_repin(args: argparse.Namespace) -> int:
         )
         return 0
 
-    facts = _repin_facts(run_id)
+    # `_repin_facts` refuses inconsistent or absent evidence by raising SystemExit,
+    # which would propagate straight past `command_pipeline`'s `_PipelineFailure`
+    # handler and skip `_report_stage_timings()`. Nothing is written either way --
+    # this runs before the ledger snapshot -- but the cost is the timing table on a
+    # stage that can be hours into a run, which is precisely the case the
+    # instrumentation exists for. Converted to a return code so it stays in reach.
+    try:
+        facts = _repin_facts(run_id)
+    except SystemExit as refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
+        return 1
     previous = _repin_previous()
     # Gate A is interpolated into the candidate reason as "passed Gate A (...)",
     # so a non-pass run would produce a governance record asserting it passed while

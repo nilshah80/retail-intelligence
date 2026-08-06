@@ -154,40 +154,33 @@ def _selection() -> dict[str, Any]:
         raise SystemExit(
             "no active decision-#73 selection exists; P4-0 cannot exit without one"
         )
-    # Resolve the ids back against the committed directory before writing them.
+    # The one thing this position CAN check: that the recordId it is about to write
+    # is unique across the committed directory.
     #
-    # This record shipped once naming `rec_3955dd35e0b6d9e3`, a lifecycle record that
-    # exists in no committed file -- the selection records had moved and this had not.
-    # The only assertion on the field is `startswith("rec_")`, which cannot see that,
-    # so a governance record pointed at nothing for a whole commit. A pointer into a
-    # committed set should be checked against that set.
-    resolved = [
+    # An earlier version of this guard also compared selectionId, scope and state --
+    # and all three were self-comparisons. `active` comes from `current_records(
+    # records)` above, so filtering `records` for its own recordId returns `active`
+    # itself, and the checks asserted a record equals itself. Only a duplicate
+    # recordId across two files could ever fire.
+    #
+    # The defect that motivated the guard -- a COMMITTED entry record whose
+    # activeRecordId had drifted from the ledger -- cannot be caught here at all,
+    # because this function writes a fresh value and never reads the old one. What
+    # closes that is `TestEntryRecordPointer` in
+    # `contracts/python/tests/test_repin_automation.py`, which reads the committed
+    # record from disk and resolves it against the committed chain heads. That test
+    # is the load-bearing check; this is a uniqueness assertion, and saying so keeps
+    # the next reader from trusting the wrong one.
+    duplicates = [
         record
         for record in records
         if (record.get("lifecycle") or {}).get("recordId")
         == active["lifecycle"]["recordId"]
     ]
-    if len(resolved) != 1:
+    if len(duplicates) != 1:
         raise SystemExit(
-            f"activeRecordId {active['lifecycle']['recordId']} matches "
-            f"{len(resolved)} committed records; it must match exactly one"
-        )
-    resolved_record = resolved[0]
-    if resolved_record["selectionId"] != active["selectionId"]:
-        raise SystemExit(
-            "the record named by activeRecordId carries selectionId "
-            f"{resolved_record['selectionId']} but this record would claim "
-            f"{active['selectionId']}"
-        )
-    if scope_key(resolved_record)[2] != "demand_forecast_non_pit":
-        raise SystemExit(
-            "activeRecordId names a record for scope "
-            f"{scope_key(resolved_record)[2]}, not demand_forecast_non_pit"
-        )
-    if (resolved_record.get("lifecycle") or {}).get("state") != "active":
-        raise SystemExit(
-            "activeRecordId names a record whose state is "
-            f"{(resolved_record.get('lifecycle') or {}).get('state')!r}, not 'active'"
+            f"activeRecordId {active['lifecycle']['recordId']} appears in "
+            f"{len(duplicates)} committed records; a lifecycle recordId must be unique"
         )
     return {
         "selectionId": active["selectionId"],

@@ -404,30 +404,132 @@ class TestPinAuthority:
 
 
 class TestEntryRecordPointer:
-    def test_active_record_id_resolves_to_a_committed_active_record(self) -> None:
-        """The field shipped once naming a record that existed nowhere."""
+    def test_active_record_id_is_the_current_head_not_merely_state_active(
+        self,
+    ) -> None:
+        """The pointer must name the CURRENT chain head for the scope.
 
-        record = json.loads(
+        `state == "active"` is not currency and cannot be: supersession writes a NEW
+        record, so every superseded generation's own file still reads "active" --
+        eight of them do for `demand_forecast_non_pit` alone. An earlier version of
+        this test asserted only that field, and would have accepted a pointer to r2.
+        Currency is derived from the supersedes chain, which is what
+        `current_records` computes.
+
+        This is the load-bearing check for the drift that shipped at c368512: the
+        builder writes a fresh value and never reads the committed one, so only a
+        test that reads from disk can see a stale pointer.
+        """
+
+        source = json.loads(
             (
                 REPO_ROOT / "contracts" / "evidence"
                 / "inventory-replenishment-entry-record.json"
             ).read_text(encoding="utf-8")
-        )
-        source = record["sourceSelection"]
+        )["sourceSelection"]
         directory = (
             REPO_ROOT / "contracts" / "evidence" / "publication-selections"
         )
-        matches = [
+        records = [
             json.loads(path.read_text(encoding="utf-8"))
-            for path in directory.glob("*.json")
-            if (
-                json.loads(path.read_text(encoding="utf-8")).get("lifecycle") or {}
-            ).get("recordId") == source["activeRecordId"]
+            for path in sorted(directory.glob("*.json"))
         ]
-        assert len(matches) == 1, (
-            f"activeRecordId {source['activeRecordId']} matches {len(matches)} "
-            "committed records"
+        records = [
+            record
+            for record in records
+            if record.get("schemaVersion") == selection.SELECTION_SCHEMA_VERSION
+        ]
+        heads = [
+            record
+            for record in selection.current_records(records)
+            if record["lifecycle"]["state"] == "active"
+            and record["scope"]["capability"] == "demand_forecast_non_pit"
+        ]
+        assert len(heads) == 1, f"expected one current head, found {len(heads)}"
+        head = heads[0]
+        assert source["activeRecordId"] == head["lifecycle"]["recordId"], (
+            f"entry record names {source['activeRecordId']} but the current head "
+            f"is {head['lifecycle']['recordId']}"
         )
-        assert matches[0]["selectionId"] == source["selectionId"]
-        assert matches[0]["lifecycle"]["state"] == "active"
-        assert matches[0]["scope"]["capability"] == "demand_forecast_non_pit"
+        assert source["selectionId"] == head["selectionId"]
+        assert source["scope"]["capability"] == "demand_forecast_non_pit"
+
+
+class TestGateBMaskIsRequired:
+    def test_a_gate_b_without_a_mask_is_refused_not_backfilled(
+        self, tmp_path
+    ) -> None:
+        """"Could not find the evidence" must not resolve to "the evidence says yes".
+
+        The mask previously fell back to the publication manifest's transcription, so
+        a Gate B carrying no mask silently handed the capability verdict back to the
+        copy -- inside the very change whose point was to read the gate itself.
+        """
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "gate-b.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "b" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps(
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": {"sha256": "d" * 64},
+                    # A mask here must NOT rescue a Gate B that carries none.
+                    "capabilityMask": {
+                        name: {"available": True}
+                        for name in (
+                            "demand_forecast_non_pit",
+                            "inventory_replenishment_current_snapshot",
+                            "inventory_replenishment_replay",
+                        )
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="no usable capabilityMask"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+    def test_absent_gate_b_refuses_cleanly(self, tmp_path) -> None:
+        """Missing evidence should read as a governed stop, not a traceback."""
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps(
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": {"sha256": "d" * 64},
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="retained evidence is absent"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
