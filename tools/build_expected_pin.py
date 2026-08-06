@@ -36,6 +36,8 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from build_publication_selection import (  # noqa: E402
+    atomic_write_bytes,
+    assert_repin_transaction_readable,
     capability_is_available,
     current_records,
     load_generations,
@@ -161,6 +163,7 @@ def _active_selections() -> dict[str, dict[str, Any]]:
 
 
 def build_pin(run: str | None = None) -> dict[str, Any]:
+    assert_repin_transaction_readable()
     # Resolved here rather than as a default argument value, so the derivation runs
     # at call time against the evidence on disk instead of at import time.
     run = run or _pinned_run()
@@ -380,7 +383,9 @@ def main(argv: list[str] | None = None) -> int:
     # whichever `python3` is on PATH -- which on macOS is still 3.9. The point of the
     # keyword was to keep the file LF on every platform, and encoding the bytes here
     # does that unconditionally.
-    PIN_PATH.write_bytes((json.dumps(pin, indent=2) + "\n").encode("utf-8"))
+    atomic_write_bytes(
+        PIN_PATH, (json.dumps(pin, indent=2) + "\n").encode("utf-8")
+    )
     print(
         f"wrote {PIN_PATH.relative_to(REPO_ROOT)}\n"
         f"  snapshot:    {pin['sourceSnapshotId']}\n"

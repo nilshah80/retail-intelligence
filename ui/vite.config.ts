@@ -2,10 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// The API address, from the launcher rather than hard-coded. `tools/dev.py serve
-// --with-ui --address 127.0.0.1:9090` started the API on 9090 while this proxy still
-// pointed at 8080, so both processes were healthy and every screen was empty.
-const apiTarget = `http://${process.env.RETAIL_API_ADDRESS ?? "127.0.0.1:8080"}`;
+// The complete dialable API URL comes from the launcher. `tools/dev.py serve
+// --with-ui --address 127.0.0.1:9090` starts the API on 9090; keeping the proxy at
+// 8080 would leave both processes healthy while every screen stayed empty.
+const apiTarget = process.env.RETAIL_API_TARGET ?? "http://127.0.0.1:8080";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

@@ -50,10 +50,12 @@ own governed selection.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -521,8 +523,11 @@ _GENERATION_CAPABILITIES = (
 )
 
 
-_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-_REASON_CODE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+GENERATION_LEDGER_SCHEMA_VERSION = "retail-publication-selection-generations/v1"
+GENERATION_LEDGER_RECORD_TYPE = "publication_selection_generation_ledger"
+REPIN_TRANSACTION_ENV = "RETAIL_REPIN_TRANSACTION"
+_REASON_CODE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+_RUN_ID = re.compile(r"^run-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _GENERATION_FIELDS = {
     "tag": str,
     "run": str,
@@ -536,6 +541,67 @@ _GENERATION_FIELDS = {
     "activeReason": str,
     "supersedeReason": str,
 }
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Replace ``path`` atomically without ever truncating the live file.
+
+    The temporary file lives beside the destination because ``os.replace`` is only
+    guaranteed to be atomic within one filesystem. Flushing it before the replace
+    keeps a successful return from depending on buffered Python writes. The helper is
+    shared by the ledger, its derived records, the expected pin, and rollback so the
+    recovery path is not weaker than the write path it repairs.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination_mode = path.stat().st_mode & 0o777
+    except OSError:
+        destination_mode = 0o644
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # mkstemp intentionally creates 0600. Preserve an existing file's mode (or
+        # use the ordinary read-only-to-others mode for a new contract) so atomic
+        # publication does not make committed evidence unreadable to other users.
+        if os.name != "nt":
+            os.chmod(temporary, destination_mode)
+        os.replace(temporary, path)
+    finally:
+        # If writing or replacing failed, the destination is still untouched and the
+        # private staging file is the only cleanup needed.
+        temporary.unlink(missing_ok=True)
+
+
+def _approval_mode(actor: str, reason_code: str, *, where: str) -> str:
+    """Derive and cross-check the attribution mode from normalized evidence."""
+
+    if not actor.strip():
+        raise SystemExit(f"{where} actor is blank")
+    if not _REASON_CODE.fullmatch(reason_code):
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} is not 3-64 character "
+            "UPPER_SNAKE_CASE"
+        )
+    mode = "automatic" if actor == AUTOMATED_ACTOR else "human"
+    names_automation = reason_code.startswith("AUTOMATED_")
+    if mode == "automatic" and not names_automation:
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} does not name an automatic "
+            f"decision, but actor is {AUTOMATED_ACTOR!r}"
+        )
+    if mode == "human" and names_automation:
+        raise SystemExit(
+            f"{where} reasonCode {reason_code!r} names an automatic decision, "
+            f"but actor {actor!r} is human"
+        )
+    return mode
 
 
 def validate_generations(generations: list[Any]) -> list[dict[str, Any]]:
@@ -581,23 +647,46 @@ def validate_generations(generations: list[Any]) -> list[dict[str, Any]]:
             raise SystemExit(f"{where} repeats tag {tag!r}")
         if run in seen_runs:
             raise SystemExit(f"{where} repeats run {run!r}")
+        if not _RUN_ID.fullmatch(run):
+            raise SystemExit(
+                f"{where} run {run!r} is not one portable run-... path component"
+            )
         seen_tags.add(tag)
         seen_runs.add(run)
-        if entry["supersedesTag"] != f"r{int(tag[1:]) - 1}":
+        expected_tag = f"r{7 + index}"
+        expected_predecessor = f"r{6 + index}"
+        if tag != expected_tag:
+            raise SystemExit(
+                f"{where} is tagged {tag!r}, expected {expected_tag!r}; generations "
+                "must start at r7 and be stored in contiguous order"
+            )
+        if entry["supersedesTag"] != expected_predecessor:
             raise SystemExit(
                 f"{where} tag {tag} declares supersedesTag "
-                f"{entry['supersedesTag']!r}; generations must be contiguous"
+                f"{entry['supersedesTag']!r}, expected {expected_predecessor!r}; "
+                "generations must be contiguous"
             )
-        if not _TIMESTAMP.match(entry["approvedAt"]):
+        try:
+            datetime.datetime.strptime(
+                entry["approvedAt"], "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
             raise SystemExit(
                 f"{where} approvedAt {entry['approvedAt']!r} is not RFC 3339 UTC "
                 "(YYYY-MM-DDTHH:MM:SSZ)"
             )
-        if not _REASON_CODE.match(entry["reasonCode"]):
-            raise SystemExit(
-                f"{where} reasonCode {entry['reasonCode']!r} is not UPPER_SNAKE_CASE"
-            )
-        expected_mode = "automatic" if entry["actor"] == AUTOMATED_ACTOR else "human"
+        for field in (
+            "run",
+            "candidateReason",
+            "approvedReason",
+            "activeReason",
+            "supersedeReason",
+        ):
+            if not entry[field].strip():
+                raise SystemExit(f"{where} field {field!r} is blank")
+        expected_mode = _approval_mode(
+            entry["actor"], entry["reasonCode"], where=where
+        )
         if entry["approvalMode"] != expected_mode:
             raise SystemExit(
                 f"{where} records approvalMode {entry['approvalMode']!r} with actor "
@@ -609,15 +698,74 @@ def validate_generations(generations: list[Any]) -> list[dict[str, Any]]:
     return validated
 
 
-def load_generations() -> list[dict[str, Any]]:
-    if not GENERATIONS_PATH.is_file():
-        return []
-    document = _load(GENERATIONS_PATH)
+def validate_generation_document(document: Any) -> dict[str, Any]:
+    """Validate the ledger envelope and every generation it contains."""
+
     if not isinstance(document, dict):
         raise SystemExit(
             f"{GENERATIONS_PATH} is {type(document).__name__}, expected an object"
         )
-    return validate_generations(document.get("generations") or [])
+    required = {
+        "schemaVersion": str,
+        "recordType": str,
+        "approvalModes": dict,
+        "generations": list,
+        "note": str,
+    }
+    for field, kind in required.items():
+        if field not in document:
+            raise SystemExit(f"{GENERATIONS_PATH} has no {field!r}")
+        if not isinstance(document[field], kind):
+            raise SystemExit(
+                f"{GENERATIONS_PATH} field {field!r} is "
+                f"{type(document[field]).__name__}, expected {kind.__name__}"
+            )
+    if document["schemaVersion"] != GENERATION_LEDGER_SCHEMA_VERSION:
+        raise SystemExit(
+            f"{GENERATIONS_PATH} has unsupported schemaVersion "
+            f"{document['schemaVersion']!r}"
+        )
+    if document["recordType"] != GENERATION_LEDGER_RECORD_TYPE:
+        raise SystemExit(
+            f"{GENERATIONS_PATH} has unsupported recordType "
+            f"{document['recordType']!r}"
+        )
+    modes = document["approvalModes"]
+    for mode in ("automatic", "human"):
+        if not isinstance(modes.get(mode), str) or not modes[mode].strip():
+            raise SystemExit(
+                f"{GENERATIONS_PATH} approvalModes.{mode} is missing or blank"
+            )
+    if not document["note"].strip():
+        raise SystemExit(f"{GENERATIONS_PATH} field 'note' is blank")
+    validate_generations(document["generations"])
+    return document
+
+
+def assert_repin_transaction_readable() -> None:
+    """Refuse readers outside the adoption that owns a prepared journal."""
+
+    transaction = GENERATIONS_PATH.with_suffix(".transaction.json")
+    if transaction.exists():
+        authorized = os.environ.get(REPIN_TRANSACTION_ENV)
+        if (
+            not authorized
+            or os.path.normcase(str(Path(authorized).resolve()))
+            != os.path.normcase(str(transaction.resolve()))
+        ):
+            raise SystemExit(
+                f"publication adoption is incomplete: {transaction}. Run "
+                "tools/dev.py repin so the crash journal is recovered before "
+                "reading the generation ledger."
+            )
+
+
+def load_generations() -> list[dict[str, Any]]:
+    assert_repin_transaction_readable()
+    if not GENERATIONS_PATH.is_file():
+        return []
+    document = validate_generation_document(_load(GENERATIONS_PATH))
+    return list(document["generations"])
 
 
 def next_generation_tag() -> str:
@@ -703,8 +851,8 @@ def append_generation(
     human name the caller did not supply.
     """
 
-    document = _load(GENERATIONS_PATH)
-    generations = list(document.get("generations") or [])
+    document = validate_generation_document(_load(GENERATIONS_PATH))
+    generations = list(document["generations"])
     tag = next_generation_tag()
     supersedes_tag = f"r{int(tag[1:]) - 1}"
     entry = {
@@ -722,12 +870,14 @@ def append_generation(
     }
     generations.append(entry)
     document["generations"] = generations
+    validate_generation_document(document)
     # write_bytes, not write_text(newline=...): that keyword is 3.10+ and this is
     # reachable from an orchestrator running whichever python3 is on PATH, which on
     # macOS is still 3.9. Encoding here keeps the file LF unconditionally -- the same
     # reasoning, and the same call, `build_expected_pin` already uses for the pin.
-    GENERATIONS_PATH.write_bytes(
-        (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write_bytes(
+        GENERATIONS_PATH,
+        (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8"),
     )
     return entry
 
@@ -1597,7 +1747,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        path.write_text(rendered, encoding="utf-8")
+        atomic_write_bytes(path, rendered.encode("utf-8"))
         written += 1
     if args.no_clobber:
         print(

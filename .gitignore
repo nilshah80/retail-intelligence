@@ -22,6 +22,12 @@ venv/
 htmlcov/
 coverage.xml
 
+# Runtime coordination for governed publication adoption. The lock file is a
+# persistent inode; whether it is held is an OS lock, not its presence on disk.
+contracts/evidence/publication-selection-generations.lock
+contracts/evidence/publication-selection-generations.transaction.json
+.serve-runtime/
+
 # Local service credentials and overrides. Commit only *.example templates.
 .env
 deploy/.env

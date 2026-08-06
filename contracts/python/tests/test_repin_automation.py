@@ -46,6 +46,21 @@ def _copy_policy(root: Path) -> None:
     shutil.copyfile(REPO_ROOT / "contracts" / "onboarding" / name, target / name)
 
 
+def _empty_generation_document() -> dict:
+    """A valid ledger envelope with no post-r6 generation yet."""
+
+    document = json.loads(
+        (
+            REPO_ROOT
+            / "contracts"
+            / "evidence"
+            / "publication-selection-generations.json"
+        ).read_text(encoding="utf-8")
+    )
+    document["generations"] = []
+    return document
+
+
 class TestApprovalAttribution:
     def test_automated_actor_is_not_a_person(self) -> None:
         """The sentinel must be obviously non-human at a glance."""
@@ -58,7 +73,7 @@ class TestApprovalAttribution:
         original = selection.GENERATIONS_PATH
         scratch = tmp_path / "generations.json"
         scratch.write_text(
-            json.dumps({"generations": []}) + "\n", encoding="utf-8"
+            json.dumps(_empty_generation_document()) + "\n", encoding="utf-8"
         )
         selection.GENERATIONS_PATH = scratch
         try:
@@ -82,13 +97,15 @@ class TestApprovalAttribution:
     def test_supplied_actor_is_recorded_verbatim(self, tmp_path) -> None:
         original = selection.GENERATIONS_PATH
         scratch = tmp_path / "generations.json"
-        scratch.write_text(json.dumps({"generations": []}) + "\n", encoding="utf-8")
+        scratch.write_text(
+            json.dumps(_empty_generation_document()) + "\n", encoding="utf-8"
+        )
         selection.GENERATIONS_PATH = scratch
         try:
             entry = selection.append_generation(
                 run="run-test",
                 approved_at="1970-01-01T00:00:00Z",
-                reason_code="AUTOMATED_REPIN_ADOPTION",
+                reason_code="HUMAN_REPIN_ADOPTION",
                 candidate_reason="c",
                 approved_reason="a",
                 active_reason="v",
@@ -237,7 +254,33 @@ class TestAttributionSymmetry:
             )
         )
         assert code == 2
-        assert "names a human decision" in capsys.readouterr().err
+        assert "not valid for an automatic adoption" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "actor,reason,reason_code",
+        [
+            ("   ", "reviewed", "AUTOMATED_REPIN_ADOPTION"),
+            ("Alice", "   ", "AUTOMATED_REPIN_ADOPTION"),
+            ("Alice", "reviewed", "AUTOMATED_CUSTOM_APPROVAL"),
+        ],
+    )
+    def test_blank_attribution_and_automatic_human_codes_are_refused(
+        self, actor, reason, reason_code, capsys
+    ) -> None:
+        import argparse
+
+        code = dev.command_repin(
+            argparse.Namespace(
+                run_id="run-x",
+                approve=True,
+                actor=actor,
+                reason=reason,
+                reason_code=reason_code,
+                approved_at=None,
+            )
+        )
+        assert code == 2
+        assert capsys.readouterr().err
 
 
 class TestLedgerValidation:
@@ -261,6 +304,7 @@ class TestLedgerValidation:
             ("reasonCode", "lowercase", "UPPER_SNAKE_CASE"),
             ("supersedesTag", "r3", "contiguous"),
             ("tag", "seven", "not of the form"),
+            ("run", "../outside", "portable run-... path component"),
         ],
     )
     def test_malformed_entries_are_refused(self, field, value, expected) -> None:
@@ -286,6 +330,240 @@ class TestLedgerValidation:
 
     def test_the_committed_ledger_validates(self) -> None:
         assert selection.load_generations()
+
+    def test_a_gap_and_out_of_order_entries_are_refused(self) -> None:
+        import copy
+
+        r7 = copy.deepcopy(selection.load_generations()[0])
+        r8 = copy.deepcopy(r7)
+        r8.update(tag="r8", supersedesTag="r7", run="run-r8-test")
+        r9 = copy.deepcopy(r7)
+        r9.update(tag="r9", supersedesTag="r8", run="run-r9-test")
+        with pytest.raises(SystemExit, match="expected 'r8'"):
+            selection.validate_generations([r7, r9])
+        with pytest.raises(SystemExit, match="expected 'r7'"):
+            selection.validate_generations([r8, r7])
+
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        [
+            ("approvedAt", "2026-99-99T99:99:99Z", "not RFC 3339"),
+            ("reasonCode", "A", "3-64 character"),
+            ("actor", "   ", "actor is blank"),
+            ("candidateReason", "   ", "candidateReason.*blank"),
+        ],
+    )
+    def test_well_typed_but_unusable_audit_values_are_refused(
+        self, field, value, expected
+    ) -> None:
+        import copy
+
+        bad = copy.deepcopy(selection.load_generations())
+        bad[0][field] = value
+        if field == "actor":
+            bad[0]["approvalMode"] = "human"
+            bad[0]["reasonCode"] = "HUMAN_REPIN_ADOPTION"
+        with pytest.raises(SystemExit, match=expected):
+            selection.validate_generations(bad)
+
+    @pytest.mark.parametrize(
+        "mutation,expected",
+        [
+            (lambda document: document.update(generations=None), "expected list"),
+            (lambda document: document.pop("recordType"), "has no 'recordType'"),
+            (
+                lambda document: document.update(schemaVersion="other/v1"),
+                "unsupported schemaVersion",
+            ),
+        ],
+    )
+    def test_the_ledger_envelope_is_validated(self, mutation, expected) -> None:
+        document = _empty_generation_document()
+        mutation(document)
+        with pytest.raises(SystemExit, match=expected):
+            selection.validate_generation_document(document)
+
+    def test_append_validates_before_replacing_the_ledger(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        scratch = tmp_path / "generations.json"
+        scratch.write_text(
+            json.dumps(_empty_generation_document()) + "\n", encoding="utf-8"
+        )
+        before = scratch.read_bytes()
+        monkeypatch.setattr(selection, "GENERATIONS_PATH", scratch)
+        with pytest.raises(SystemExit, match="not RFC 3339"):
+            selection.append_generation(
+                run="run-test",
+                approved_at="2026-99-99T99:99:99Z",
+                reason_code="AUTOMATED_REPIN_ADOPTION",
+                candidate_reason="candidate",
+                approved_reason="approved",
+                active_reason="active",
+                supersede_reason="superseded",
+                actor=None,
+            )
+        assert scratch.read_bytes() == before
+        assert not list(tmp_path.glob("*.tmp"))
+
+
+class TestAtomicAdoptionWrites:
+    def test_a_failed_replace_leaves_the_destination_intact(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        destination = tmp_path / "ledger.json"
+        destination.write_bytes(b"before")
+
+        def fail_replace(source, target):
+            raise OSError("injected replace failure")
+
+        monkeypatch.setattr(selection.os, "replace", fail_replace)
+        with pytest.raises(OSError, match="injected"):
+            selection.atomic_write_bytes(destination, b"after")
+        assert destination.read_bytes() == b"before"
+        assert not list(tmp_path.glob("*.tmp"))
+
+    def test_lock_precedes_the_authoritative_recheck_and_snapshots(self) -> None:
+        import inspect
+
+        source = inspect.getsource(dev.command_repin)
+        lock = source.rindex("_acquire_repin_lock")
+        recheck = source.index("_generation_names_run(run_id)", lock)
+        snapshot = source.index("_repin_snapshot(selection)", lock)
+        assert lock < recheck < snapshot
+
+    def test_the_process_lock_is_released_by_closing_its_handle(
+        self, tmp_path
+    ) -> None:
+        lock_path = tmp_path / "repin.lock"
+        first = dev._acquire_repin_lock(lock_path)
+        try:
+            with pytest.raises(BlockingIOError):
+                dev._acquire_repin_lock(lock_path)
+        finally:
+            dev._release_repin_lock(first)
+        second = dev._acquire_repin_lock(lock_path)
+        dev._release_repin_lock(second)
+
+    @staticmethod
+    def _transaction_fixture(tmp_path, monkeypatch):
+        root = tmp_path / "repo"
+        ledger = (
+            root / "contracts" / "evidence" /
+            "publication-selection-generations.json"
+        )
+        pin = root / "contracts" / "ml" / "expected-pin.json"
+        records = root / "contracts" / "evidence" / "publication-selections"
+        ledger.parent.mkdir(parents=True)
+        pin.parent.mkdir(parents=True)
+        records.mkdir(parents=True)
+        ledger.write_bytes(b"ledger-before")
+        pin.write_bytes(b"pin-before")
+        (records / "existing.json").write_bytes(b"record-before")
+        monkeypatch.setattr(dev, "REPO_ROOT", root)
+        monkeypatch.setattr(selection, "GENERATIONS_PATH", ledger)
+        _, journal = dev._repin_state_paths(selection)
+        snapshot = dev._repin_snapshot(selection)
+        return ledger, pin, records, journal, snapshot
+
+    def test_a_prepared_crash_journal_restores_the_complete_before_image(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        ledger, pin, records, journal, snapshot = self._transaction_fixture(
+            tmp_path, monkeypatch
+        )
+        dev._write_repin_transaction(
+            selection, journal, snapshot, state="prepared"
+        )
+        ledger.write_bytes(b"ledger-after")
+        pin.write_bytes(b"pin-after")
+        (records / "existing.json").write_bytes(b"record-after")
+        (records / "new.json").write_bytes(b"new-record")
+
+        assert dev._recover_repin_transaction(selection, journal) == "prepared"
+        assert ledger.read_bytes() == b"ledger-before"
+        assert pin.read_bytes() == b"pin-before"
+        assert (records / "existing.json").read_bytes() == b"record-before"
+        assert not (records / "new.json").exists()
+        assert not journal.exists()
+
+    def test_a_committed_crash_journal_preserves_the_verified_adoption(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        ledger, pin, records, journal, snapshot = self._transaction_fixture(
+            tmp_path, monkeypatch
+        )
+        ledger.write_bytes(b"ledger-after")
+        pin.write_bytes(b"pin-after")
+        (records / "existing.json").write_bytes(b"record-after")
+        dev._write_repin_transaction(
+            selection, journal, snapshot, state="committed"
+        )
+
+        assert dev._recover_repin_transaction(selection, journal) == "committed"
+        assert ledger.read_bytes() == b"ledger-after"
+        assert pin.read_bytes() == b"pin-after"
+        assert (records / "existing.json").read_bytes() == b"record-after"
+        assert not journal.exists()
+
+    def test_an_incomplete_crash_journal_refuses_before_mutating_files(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        ledger, _, _, journal, snapshot = self._transaction_fixture(
+            tmp_path, monkeypatch
+        )
+        dev._write_repin_transaction(
+            selection, journal, snapshot, state="prepared"
+        )
+        document = json.loads(journal.read_text(encoding="utf-8"))
+        document["before"].pop("ledger")
+        journal.write_text(json.dumps(document), encoding="utf-8")
+        ledger.write_bytes(b"live-state")
+
+        with pytest.raises(RuntimeError, match="missing ledger"):
+            dev._recover_repin_transaction(selection, journal)
+        assert ledger.read_bytes() == b"live-state"
+        assert journal.exists()
+
+    def test_other_readers_fail_closed_while_a_transaction_is_prepared(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        ledger, _, _, journal, _ = self._transaction_fixture(
+            tmp_path, monkeypatch
+        )
+        ledger.write_text(
+            json.dumps(_empty_generation_document()), encoding="utf-8"
+        )
+        snapshot = dev._repin_snapshot(selection)
+        dev._write_repin_transaction(
+            selection, journal, snapshot, state="prepared"
+        )
+
+        with pytest.raises(SystemExit, match="adoption is incomplete"):
+            selection.load_generations()
+        pin_builder = _load("build_expected_pin")
+        with pytest.raises(SystemExit, match="adoption is incomplete"):
+            pin_builder.build_pin("run-x")
+        monkeypatch.setenv(
+            selection.REPIN_TRANSACTION_ENV, str(journal.resolve())
+        )
+        assert selection.load_generations() == []
+
+
+class TestPipelineTimingFailures:
+    def test_a_raising_inline_stage_still_records_its_timing(self) -> None:
+        dev._STAGE_TIMINGS.clear()
+        try:
+            with pytest.raises(RuntimeError, match="probe"):
+                dev._pipeline_step_inline(
+                    "raising inline stage",
+                    lambda: (_ for _ in ()).throw(RuntimeError("probe")),
+                )
+            assert [label for label, _ in dev._STAGE_TIMINGS] == [
+                "raising inline stage"
+            ]
+        finally:
+            dev._STAGE_TIMINGS.clear()
 
 
 class TestScorecardFailsClosed:
@@ -431,6 +709,18 @@ class TestCollisionAvoidance:
 
         assert dev._generation_names_run("run-adac9e85dccb56e8-r6")
         assert not dev._generation_names_run("run-does-not-exist")
+
+    def test_an_unreadable_selection_cannot_make_the_collision_check_skip_it(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        directory = (
+            tmp_path / "contracts" / "evidence" / "publication-selections"
+        )
+        directory.mkdir(parents=True)
+        (directory / "broken.json").write_text("[]", encoding="utf-8")
+        monkeypatch.setattr(dev, "REPO_ROOT", tmp_path)
+        with pytest.raises(SystemExit, match="expected an object"):
+            dev._generation_names_run("run-x")
 
 
 class TestGateRefusal:
@@ -627,9 +917,9 @@ class TestGateBMaskIsRequired:
         (evidence / "publication-manifest.json").write_text(
             json.dumps(
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": {"sha256": "d" * 64},
                     # A mask here must NOT rescue a Gate B that carries none.
@@ -665,9 +955,9 @@ class TestGateBMaskIsRequired:
         (evidence / "publication-manifest.json").write_text(
             json.dumps(
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": {"sha256": "d" * 64},
                 }
@@ -705,9 +995,9 @@ class TestMaskIsInterpretedStrictly:
         (evidence / "publication-manifest.json").write_text(
             json.dumps(
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": {"sha256": "d" * 64},
                 }
@@ -776,9 +1066,9 @@ class TestEvidenceReadsAreUniform:
                 "capabilityMask": {},
             },
             "publication-manifest.json": {
-                "sourceSnapshotId": "s" * 64,
+                "sourceSnapshotId": "c" * 64,
                 "gateBSemanticFingerprint": "b" * 64,
-                "semanticFingerprint": "p" * 64,
+                "semanticFingerprint": "e" * 64,
                 "objects": [],
                 "duckdb": {"sha256": "d" * 64},
             },
@@ -903,9 +1193,9 @@ class TestEvidenceFieldsAreRequired:
                 "capabilityMask": mask,
             },
             "publication-manifest.json": {
-                "sourceSnapshotId": "s" * 64,
+                "sourceSnapshotId": "c" * 64,
                 "gateBSemanticFingerprint": "b" * 64,
-                "semanticFingerprint": "p" * 64,
+                "semanticFingerprint": "e" * 64,
                 "objects": [],
                 "duckdb": {"sha256": "d" * 64},
             },
@@ -924,9 +1214,9 @@ class TestEvidenceFieldsAreRequired:
             (
                 "publication-manifest.json",
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "duckdb": {"sha256": "d" * 64},
                 },
                 "has no 'objects'",
@@ -934,9 +1224,9 @@ class TestEvidenceFieldsAreRequired:
             (
                 "publication-manifest.json",
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": "nope",
                 },
@@ -962,9 +1252,9 @@ class TestEvidenceFieldsAreRequired:
             tmp_path,
             {
                 "publication-manifest.json": {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": {},
                 }
@@ -974,6 +1264,24 @@ class TestEvidenceFieldsAreRequired:
         dev.REPO_ROOT = root
         try:
             with pytest.raises(SystemExit, match="duckdb.sha256"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+    def test_a_typed_but_invalid_fingerprint_is_refused(self, tmp_path) -> None:
+        root = self._write(
+            tmp_path,
+            {
+                "gate-a.json": {
+                    "status": "pass",
+                    "semanticFingerprint": "z" * 64,
+                }
+            },
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = root
+        try:
+            with pytest.raises(SystemExit, match="lowercase SHA-256"):
                 dev._repin_facts("run-x")
         finally:
             dev.REPO_ROOT = original
@@ -1007,7 +1315,7 @@ class TestScorecardMaskReader:
             encoding="utf-8",
         )
         (evidence / "publication-manifest.json").write_text(
-            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+            json.dumps({"sourceSnapshotId": "c" * 64}), encoding="utf-8"
         )
         result = scorecard.build(tmp_path)
         for name, spec in scorecard.PHASE_REQUIREMENTS.items():
@@ -1040,9 +1348,9 @@ class TestAbsentMaskField:
         (evidence / "publication-manifest.json").write_text(
             json.dumps(
                 {
-                    "sourceSnapshotId": "s" * 64,
+                    "sourceSnapshotId": "c" * 64,
                     "gateBSemanticFingerprint": "b" * 64,
-                    "semanticFingerprint": "p" * 64,
+                    "semanticFingerprint": "e" * 64,
                     "objects": [],
                     "duckdb": {"sha256": "d" * 64},
                 }
@@ -1092,9 +1400,9 @@ class TestOptionalFieldsAreTypedToo:
             (evidence / "publication-manifest.json").write_text(
                 json.dumps(
                     {
-                        "sourceSnapshotId": "s" * 64,
+                        "sourceSnapshotId": "c" * 64,
                         "gateBSemanticFingerprint": "b" * 64,
-                        "semanticFingerprint": "p" * 64,
+                        "semanticFingerprint": "e" * 64,
                         "objects": [],
                         "duckdb": {"sha256": "d" * 64},
                         "businessControls": value,
@@ -1146,7 +1454,7 @@ class TestScorecardContainer:
             encoding="utf-8",
         )
         (evidence / "publication-manifest.json").write_text(
-            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+            json.dumps({"sourceSnapshotId": "c" * 64}), encoding="utf-8"
         )
         result = scorecard.build(root)
         codes = {
@@ -1274,7 +1582,7 @@ class TestScorecardNullEntry:
             encoding="utf-8",
         )
         (evidence / "publication-manifest.json").write_text(
-            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+            json.dumps({"sourceSnapshotId": "c" * 64}), encoding="utf-8"
         )
         codes = {
             entry["reasonCode"]
@@ -1299,11 +1607,299 @@ class TestScorecardNullEntry:
             encoding="utf-8",
         )
         (evidence / "publication-manifest.json").write_text(
-            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+            json.dumps({"sourceSnapshotId": "c" * 64}), encoding="utf-8"
         )
+        report = scorecard.build(tmp_path)
         codes = {
             entry["reasonCode"]
-            for phase in scorecard.build(tmp_path)["phases"].values()
+            for phase in report["phases"].values()
             for entry in (phase.get("missingCapabilities") or [])
         }
         assert codes == {"NOT_EVALUATED"}, codes
+        assert "NOT_EVALUATED" in {
+            blocker["reasonCode"] for blocker in report["blockersByLeverage"]
+        }
+
+    def test_an_unavailable_entry_without_a_reason_uses_a_stable_code(
+        self, tmp_path
+    ) -> None:
+        scorecard = _load("direction_scorecard")
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
+        evidence.mkdir(parents=True)
+        _copy_policy(tmp_path)
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "capabilityMask": {
+                        "pricing_elasticity": {
+                            "available": False,
+                            "reasonCode": None,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"semanticFingerprint": "publication"}), encoding="utf-8"
+        )
+        phase = scorecard.build(tmp_path)["phases"]["phase_5_pricing"]
+        assert phase["missingCapabilities"] == [
+            {"capability": "pricing_elasticity", "reasonCode": "UNAVAILABLE"}
+        ]
+
+
+class TestScorecardAuthorityBoundary:
+    @staticmethod
+    def _write_gate(root: Path, run: str, *, gate: object, manifest: object) -> Path:
+        evidence = root / "ingestion" / "data" / "evidence" / run
+        evidence.mkdir(parents=True)
+        (evidence / "gate-b.json").write_text(json.dumps(gate), encoding="utf-8")
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        return evidence / "gate-b.json"
+
+    def test_multiple_unpinned_gate_documents_are_refused(self, tmp_path) -> None:
+        scorecard = _load("direction_scorecard")
+        for run in ("run-a", "run-z"):
+            self._write_gate(
+                tmp_path,
+                run,
+                gate={"status": "pass", "capabilityMask": {}},
+                manifest={"semanticFingerprint": run},
+            )
+        with pytest.raises(SystemExit, match="more than one passing"):
+            scorecard.gate_b_evidence(tmp_path)
+
+    def test_an_accepted_lifecycle_without_a_run_identity_does_not_authorize(
+        self, tmp_path
+    ) -> None:
+        scorecard = _load("direction_scorecard")
+        artifact = (
+            tmp_path / "ml" / "data" / "artifacts" / "broken" /
+            "forecast-run-manifest.json"
+        )
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text(
+            json.dumps(
+                {
+                    "forecastRunId": None,
+                    "lifecycleStatus": "accepted",
+                    "modelPolicy": {
+                        "acceptanceEvaluation": (
+                            "cohorted-seasonal-cold-start-recomputation/v4"
+                        )
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        state = scorecard.forecast_state(tmp_path)
+        assert state["governedAcceptedRuns"] == []
+        assert state["servingAuthorized"] is False
+
+    def test_the_expected_pin_selects_its_gate_not_the_last_hash(self, tmp_path) -> None:
+        scorecard = _load("direction_scorecard")
+        pin_dir = tmp_path / "contracts" / "ml"
+        pin_dir.mkdir(parents=True)
+        (pin_dir / "expected-pin.json").write_text(
+            json.dumps(
+                {
+                    "publication": {"semanticFingerprint": "publication-a"},
+                    "gateB": {"semanticFingerprint": "gate-a"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        expected = self._write_gate(
+            tmp_path,
+            "run-a",
+            gate={
+                "status": "pass",
+                "semanticFingerprint": "gate-a",
+                "capabilityMask": {},
+            },
+            manifest={"semanticFingerprint": "publication-a"},
+        )
+        self._write_gate(
+            tmp_path,
+            "run-z",
+            gate={
+                "status": "pass",
+                "semanticFingerprint": "gate-z",
+                "capabilityMask": {},
+            },
+            manifest={"semanticFingerprint": "publication-z"},
+        )
+        _, actual = scorecard.gate_b_evidence(tmp_path)
+        assert actual == expected
+
+    @pytest.mark.parametrize("gate", [None, 42, [1], "text"])
+    def test_a_non_object_gate_is_mask_unreadable(self, tmp_path, gate) -> None:
+        scorecard = _load("direction_scorecard")
+        root = tmp_path / str(id(gate))
+        _copy_policy(root)
+        self._write_gate(
+            root,
+            "run-a",
+            gate=gate,
+            manifest={"semanticFingerprint": "publication-a"},
+        )
+        report = scorecard.build(root)
+        codes = {
+            entry["reasonCode"]
+            for phase in report["phases"].values()
+            for entry in (phase.get("missingCapabilities") or [])
+        }
+        assert codes == {"MASK_UNREADABLE"}, codes
+
+    def test_a_missing_mask_field_is_not_an_empty_evaluated_mask(
+        self, tmp_path
+    ) -> None:
+        scorecard = _load("direction_scorecard")
+        _copy_policy(tmp_path)
+        self._write_gate(
+            tmp_path,
+            "run-a",
+            gate={"status": "pass", "semanticFingerprint": "gate-a"},
+            manifest={"semanticFingerprint": "publication-a"},
+        )
+        report = scorecard.build(tmp_path)
+        codes = {
+            entry["reasonCode"]
+            for phase in report["phases"].values()
+            for entry in (phase.get("missingCapabilities") or [])
+        }
+        assert codes == {"MASK_UNREADABLE"}, codes
+
+    def test_invalid_utf8_retirement_policy_refuses_cleanly(self, tmp_path) -> None:
+        scorecard = _load("direction_scorecard")
+        policy = tmp_path / "contracts" / "onboarding"
+        policy.mkdir(parents=True)
+        (policy / "temporal-evidence-policy-v2.json").write_bytes(b"\xff")
+        with pytest.raises(SystemExit, match="not valid UTF-8"):
+            scorecard.retired_capabilities(tmp_path)
+
+
+class TestServeAuthorityResolution:
+    @staticmethod
+    def _authority(scope: str, publication: str) -> dict[str, str]:
+        return {
+            "activationScopeFingerprint": scope,
+            "publicationSemanticFingerprint": publication,
+        }
+
+    def test_multiple_active_rows_are_refused_not_fetchone_tiebroken(self) -> None:
+        rows = [
+            self._authority("scope-a", "publication-a"),
+            self._authority("scope-b", "publication-b"),
+        ]
+        with pytest.raises(SystemExit, match="2 active forecast authorities"):
+            dev._active_authority_run(rows)
+
+    def test_a_probe_failure_is_not_a_silent_newest_run_fallback(
+        self, monkeypatch
+    ) -> None:
+        import types
+
+        monkeypatch.setattr(dev, "_require_python", lambda *args: Path("python"))
+        monkeypatch.setattr(
+            dev,
+            "_local_postgres_dsn",
+            lambda **kwargs: "postgresql://example",
+        )
+        monkeypatch.setattr(
+            dev.subprocess,
+            "run",
+            lambda *args, **kwargs: types.SimpleNamespace(
+                returncode=1, stdout="", stderr="connection refused"
+            ),
+        )
+        with pytest.raises(SystemExit, match="connection refused"):
+            dev._active_forecast_authorities()
+
+    def test_an_authority_probe_timeout_refuses_cleanly(self, monkeypatch) -> None:
+        monkeypatch.setattr(dev, "_require_python", lambda *args: Path("python"))
+        monkeypatch.setattr(
+            dev,
+            "_local_postgres_dsn",
+            lambda **kwargs: "postgresql://example",
+        )
+
+        def time_out(*args, **kwargs):
+            raise dev.subprocess.TimeoutExpired(args[0], timeout=15)
+
+        monkeypatch.setattr(dev.subprocess, "run", time_out)
+        with pytest.raises(SystemExit, match="timed out after 15 seconds"):
+            dev._active_forecast_authorities()
+
+    def test_one_active_publication_maps_to_exactly_one_retained_run(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-a"
+        evidence.mkdir(parents=True)
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"semanticFingerprint": "publication-a"}), encoding="utf-8"
+        )
+        monkeypatch.setattr(dev, "REPO_ROOT", tmp_path)
+        assert dev._active_authority_run(
+            [self._authority("scope-a", "publication-a")]
+        ) == "run-a"
+
+    def test_duplicate_retained_runs_for_one_active_fingerprint_are_refused(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        for run in ("run-a", "run-b"):
+            evidence = tmp_path / "ingestion" / "data" / "evidence" / run
+            evidence.mkdir(parents=True)
+            (evidence / "publication-manifest.json").write_text(
+                json.dumps({"semanticFingerprint": "publication-a"}),
+                encoding="utf-8",
+            )
+        monkeypatch.setattr(dev, "REPO_ROOT", tmp_path)
+        with pytest.raises(SystemExit, match="2 retained run directories"):
+            dev._active_authority_run(
+                [self._authority("scope-a", "publication-a")]
+            )
+
+    @pytest.mark.parametrize(
+        "address,target",
+        [
+            (":9090", "http://127.0.0.1:9090"),
+            ("0.0.0.0:8080", "http://127.0.0.1:8080"),
+            ("127.0.0.1:7070", "http://127.0.0.1:7070"),
+            ("[::1]:6060", "http://[::1]:6060"),
+        ],
+    )
+    def test_go_listen_addresses_become_dialable_proxy_urls(
+        self, address, target
+    ) -> None:
+        assert dev._api_proxy_target(address) == target
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "http://127.0.0.1:8080",
+            "user@127.0.0.1:8080",
+            "localhost",
+            ":0",
+            "localhost:8080/",
+        ],
+    )
+    def test_non_listen_addresses_are_refused(self, address) -> None:
+        with pytest.raises(ValueError, match="host:port"):
+            dev._api_proxy_target(address)
+
+    def test_vite_consumes_the_normalized_target(self) -> None:
+        source = (REPO_ROOT / "ui" / "vite.config.ts").read_text(encoding="utf-8")
+        assert "RETAIL_API_TARGET" in source
+        assert "http://${process.env.RETAIL_API_ADDRESS" not in source
+
+    def test_serve_uses_workspace_go_runtime_paths(self) -> None:
+        import inspect
+
+        source = inspect.getsource(dev.command_serve)
+        assert 'environment.setdefault("GOCACHE"' in source
+        assert 'environment.setdefault("GOTMPDIR"' in source
