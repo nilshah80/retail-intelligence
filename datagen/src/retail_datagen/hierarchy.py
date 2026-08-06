@@ -106,7 +106,7 @@ HIERARCHY = {
 def default_departments() -> list[dict[str, Any]]:
     """Materialize hierarchy rows with behavioral defaults from the catalog pack."""
 
-    reference = CATALOG_PACKS["US"]["families"]
+    reference = CATALOG_PACKS["real-retail-US"]["families"]
     departments: list[dict[str, Any]] = []
     for department_id, (department_name, categories) in HIERARCHY.items():
         category_rows = []

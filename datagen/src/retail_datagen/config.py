@@ -18,6 +18,7 @@ from .catalog_packs import (
     CATALOG_PACK_METADATA,
     CATALOG_PACKS,
     CATALOG_PACK_VERSION,
+    market_pack_id,
     SUPPORTED_CATALOG_MODES,
     SUPPORTED_LAUNCH_PROFILES,
     SUPPORTED_OPTION_DIMENSIONS,
@@ -31,6 +32,24 @@ SUPPORTED_COMPRESSION = {"none", "snappy", "zstd"}
 SUPPORTED_CHANNEL_TYPES = {"store", "online", "marketplace"}
 SUPPORTED_EVENT_TYPES = {"local-event", "supply-disruption", "demand-shock"}
 SUPPORTED_COSTING_METHODS = {"FIFO", "WAC"}
+#: Retail tax classes a category may declare. The Config Builder renders this
+#: same vocabulary as a dropdown; a value missing there silently resolves to
+#: the first option on export, which is why a drift test pins the two together.
+SUPPORTED_TAX_CATEGORIES = (
+    "apparel",
+    "automotive",
+    "baby",
+    "beauty",
+    "books",
+    "electronics",
+    "grocery",
+    "health",
+    "home",
+    "lubricants",
+    "sports",
+    "stationery",
+    "toys",
+)
 SUPPORTED_FEATURES = {
     "detailedFulfillment",
     "returnsAndRefunds",
@@ -268,13 +287,23 @@ def _validate_catalog_pack(
     errors: list[str],
 ) -> None:
     country = market.get("countryCode")
-    if country not in CATALOG_PACK_METADATA:
+    pack_id = market_pack_id(market)
+    if pack_id not in CATALOG_PACK_METADATA:
+        errors.append(
+            f"{path}.catalogPack.id {pack_id!r} is not a supported catalog pack"
+        )
         return
-    expected = CATALOG_PACK_METADATA[country]
+    expected = CATALOG_PACK_METADATA[pack_id]
+    if expected["countryCode"] != country:
+        errors.append(
+            f"{path}.catalogPack {pack_id!r} belongs to country "
+            f"{expected['countryCode']!r}, not {country!r}"
+        )
+        return
     actual = market.get("catalogPack")
     if actual != expected:
         errors.append(
-            f"{path}.catalogPack must equal the {country} catalog pack metadata "
+            f"{path}.catalogPack must equal the {pack_id} catalog pack metadata "
             f"version {CATALOG_PACK_VERSION}"
         )
 
@@ -866,10 +895,10 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     category_ids: set[str] = set()
     department_by_category: dict[str, str] = {}
     configured_family_sets = [
-        set(CATALOG_PACK_METADATA[market["countryCode"]]["familyIds"])
+        set(CATALOG_PACK_METADATA[market_pack_id(market)]["familyIds"])
         for market in markets or []
         if isinstance(market, dict)
-        and market.get("countryCode") in CATALOG_PACK_METADATA
+        and market_pack_id(market) in CATALOG_PACK_METADATA
     ]
     supported_families = (
         set.intersection(*configured_family_sets) if configured_family_sets else set()
@@ -897,21 +926,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                         department_by_category[category_id] = department.get(
                             "departmentId", ""
                         )
-                    if category.get("taxCategory") not in {
-                        "apparel",
-                        "automotive",
-                        "baby",
-                        "beauty",
-                        "books",
-                        "electronics",
-                        "grocery",
-                        "health",
-                        "home",
-                        "lubricants",
-                        "sports",
-                        "stationery",
-                        "toys",
-                    }:
+                    if category.get("taxCategory") not in SUPPORTED_TAX_CATEGORIES:
                         errors.append(
                             f"{category_path}.taxCategory is not a supported retail tax class"
                         )
@@ -1079,9 +1094,9 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                     )
                 seen_option_sets: set[tuple[tuple[str, str], ...]] = set()
                 allowed_values = (
-                    CATALOG_PACKS[market["countryCode"]]["optionValues"]
+                    CATALOG_PACKS[market_pack_id(market)]["optionValues"]
                     if market
-                    and market.get("countryCode") in CATALOG_PACKS
+                    and market_pack_id(market) in CATALOG_PACKS
                     else {}
                 )
                 for variant_index, variant_definition in enumerate(

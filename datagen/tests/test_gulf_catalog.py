@@ -1,12 +1,16 @@
 """Lubricant catalog vocabulary for the Gulf Oil India tenant.
 
-Catalog pack 2026.7 adds the grade and fill dimensions a lubricant SKU needs.
-A lubricant SKU is grade x pack, and neither axis existed: `packSize` held
+The `gulf-lubricants-IN` pack adds the grade and fill dimensions a lubricant SKU
+needs. A lubricant SKU is grade x pack, and neither axis existed: `packSize` held
 Single/Pack of 2/Pack of 6/Family pack, and there was no viscosity at all.
 
-These tests pin the three properties that make the addition safe rather than
+These tests pin the four properties that make the addition safe rather than
 merely present:
 
+* **Tenants are isolated by pack, not by country.** Packs are keyed by pack id,
+  so `real-retail-IN` and `gulf-lubricants-IN` coexist in India without either
+  seeing the other's families. This is what keeps the retail presets
+  byte-identical when a tenant is added.
 * **Existing catalogs do not move.** `packSize` was deliberately left untouched
   and new dimensions added instead, because option values are a pack-global list
   and `_partial_combinations` runs `itertools.product` over it -- adding a value
@@ -50,6 +54,7 @@ from retail_datagen.catalog_packs import (  # noqa: E402
     _partial_combinations,
     resolve_catalog_pack,
 )
+from retail_datagen.config import SUPPORTED_TAX_CATEGORIES  # noqa: E402
 from retail_datagen.locale_packs import LOCALE_PACKS  # noqa: E402
 
 GULF_FAMILIES = {
@@ -73,15 +78,27 @@ FILL_DIMENSIONS = {"packVolume", "packWeight"}
 
 class GulfVocabularyTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.pack = resolve_catalog_pack("IN")
+        self.pack = resolve_catalog_pack("gulf-lubricants-IN")
 
-    def test_every_gulf_family_resolves_in_every_market(self) -> None:
-        # config.py requires a category's catalogFamily to exist in *every*
-        # configured market's pack, so a family present only in IN would make a
-        # multi-market scenario unconfigurable.
-        for country, metadata in CATALOG_PACK_METADATA.items():
-            missing = GULF_FAMILIES.difference(metadata["familyIds"])
-            self.assertEqual(set(), missing, f"{country} is missing {sorted(missing)}")
+    def test_gulf_families_live_only_in_the_gulf_pack(self) -> None:
+        # The whole point of pack scoping: a retail scenario must not be able to
+        # select a lubricant family, and the retail packs' familyIds must not
+        # move because a tenant was added.
+        self.assertEqual(
+            GULF_FAMILIES,
+            GULF_FAMILIES.intersection(
+                CATALOG_PACK_METADATA["gulf-lubricants-IN"]["familyIds"]
+            ),
+        )
+        for pack_id, metadata in CATALOG_PACK_METADATA.items():
+            if pack_id == "gulf-lubricants-IN":
+                continue
+            leaked = GULF_FAMILIES.intersection(metadata["familyIds"])
+            self.assertEqual(set(), leaked, f"{pack_id} leaked {sorted(leaked)}")
+
+    def test_retail_packs_keep_their_original_family_count(self) -> None:
+        for pack_id in ("real-retail-IN", "real-retail-US", "real-retail-GB", "real-retail-DE"):
+            self.assertEqual(41, len(CATALOG_PACK_METADATA[pack_id]["familyIds"]), pack_id)
 
     def test_gulf_families_use_one_grade_and_one_fill(self) -> None:
         # Two dimensions, leaving headroom under the option1..option3 ceiling
@@ -120,7 +137,7 @@ class GulfVocabularyTests(unittest.TestCase):
 
 class FillSemanticsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.pack = resolve_catalog_pack("IN")
+        self.pack = resolve_catalog_pack("gulf-lubricants-IN")
 
     def _options(self, dimension: str, code: str) -> list[dict[str, str]]:
         value = next(
@@ -173,7 +190,7 @@ class ExplicitModeTests(unittest.TestCase):
     """Why Gulf is authored in `explicit` mode rather than `generated`."""
 
     def setUp(self) -> None:
-        self.pack = resolve_catalog_pack("IN")
+        self.pack = resolve_catalog_pack("gulf-lubricants-IN")
 
     def test_generated_mode_can_pair_a_diesel_line_with_an_implausible_grade(self) -> None:
         # Documents the limitation rather than pretending it away: the value
@@ -214,30 +231,15 @@ class ExplicitModeTests(unittest.TestCase):
                 self.assertRegex(value["code"], r"^[A-Z0-9]+$", value["code"])
 
 
-class LubricantTaxTests(unittest.TestCase):
-    def test_india_rates_lubricants_at_eighteen_percent(self) -> None:
-        rates = LOCALE_PACKS["IN"]["tax"]["categoryRates"]
-        self.assertEqual("0.18", rates["lubricants"])
-
-    def test_retail_automotive_rate_is_untouched(self) -> None:
-        # The whole reason `lubricants` is its own class: moving `automotive`
-        # from 0.28 would silently change the retail tenant's data.
-        self.assertEqual("0.28", LOCALE_PACKS["IN"]["tax"]["categoryRates"]["automotive"])
-
-    def test_every_locale_pack_prices_the_new_class(self) -> None:
-        for country, pack in LOCALE_PACKS.items():
-            self.assertIn("lubricants", pack["tax"]["categoryRates"], country)
-
-
 class RetailStabilityTests(unittest.TestCase):
     """The retail presets must not move because Gulf was added."""
 
     def test_packsize_vocabulary_is_unchanged(self) -> None:
-        codes = [row["code"] for row in resolve_catalog_pack("IN")["optionValues"]["packSize"]]
+        codes = [row["code"] for row in resolve_catalog_pack("real-retail-IN")["optionValues"]["packSize"]]
         self.assertEqual(["1PK", "2PK", "6PK", "FAM"], codes)
 
     def test_no_retail_family_gained_a_lubricant_dimension(self) -> None:
-        pack = resolve_catalog_pack("IN")
+        pack = resolve_catalog_pack("real-retail-IN")
         for family_id, family in pack["families"].items():
             if family_id in GULF_FAMILIES:
                 continue
@@ -251,6 +253,15 @@ class RetailStabilityTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             versions = set(re.findall(r"version: '(\d{4}\.\d+)'", text))
             self.assertIn(CATALOG_PACK_VERSION, versions, path.name)
+
+    def test_lubricants_tax_falls_back_to_the_india_default_rate(self) -> None:
+        # No locale pack was edited: India's defaultRate is already 18%, which is
+        # exactly the lubricant GST rate, and `simulation._tax_rate` falls back
+        # to it for any category the table does not name.
+        tax = LOCALE_PACKS["IN"]["tax"]
+        self.assertNotIn("lubricants", tax["categoryRates"])
+        self.assertEqual("0.18", tax["defaultRate"])
+        self.assertEqual("0.28", tax["categoryRates"]["automotive"])
 
 
 class ConfigBuilderDriftTests(unittest.TestCase):
@@ -280,6 +291,18 @@ class ConfigBuilderDriftTests(unittest.TestCase):
 
     def test_embedded_locale_packs_match_python(self) -> None:
         self.assertEqual(LOCALE_PACKS, self._embedded("localePacks"))
+
+    def test_tax_category_dropdown_matches_python(self) -> None:
+        # A select whose option list omits a valid value does not fail loudly:
+        # it renders the first option instead, so opening a Gulf category showed
+        # `apparel` and exporting would have silently rewritten the tax class.
+        match = re.search(
+            r'"Tax category",[^)]*?"select",\[([^\]]*)\]', self.HTML, re.DOTALL
+        )
+        self.assertIsNotNone(match, "tax category select not found")
+        assert match is not None
+        embedded = tuple(re.findall(r'"([a-z]+)"', match.group(1)))
+        self.assertEqual(SUPPORTED_TAX_CATEGORIES, embedded)
 
     def test_inline_dimension_vocabulary_matches_python(self) -> None:
         # This list is inline JavaScript, not a JSON script element, so

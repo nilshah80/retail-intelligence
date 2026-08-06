@@ -145,10 +145,6 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
                 "grocery": "0.05",
                 "health": "0.12",
                 "home": "0.18",
-                # Lubricants are standard-rated at 18% GST, not the 28% demerit
-                # rate the `automotive` class carries. Given as its own class so
-                # the retail `automotive` rate stays exactly where it was.
-                "lubricants": "0.18",
                 "sports": "0.18",
                 "stationery": "0.12",
                 "toys": "0.12",
@@ -246,7 +242,6 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
                 "grocery": "0.00",
                 "health": "0.00",
                 "home": "0.08875",
-                "lubricants": "0.08875",
                 "sports": "0.08875",
                 "stationery": "0.08875",
                 "toys": "0.08875",
@@ -328,7 +323,6 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
                 "grocery": "0.00",
                 "health": "0.00",
                 "home": "0.20",
-                "lubricants": "0.20",
                 "sports": "0.20",
                 "stationery": "0.20",
                 "toys": "0.20",
@@ -401,7 +395,6 @@ LOCALE_PACKS: dict[str, dict[str, Any]] = {
                 "grocery": "0.07",
                 "health": "0.07",
                 "home": "0.19",
-                "lubricants": "0.19",
                 "sports": "0.19",
                 "stationery": "0.19",
                 "toys": "0.19",

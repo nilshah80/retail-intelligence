@@ -21,6 +21,7 @@ from retail_execution import named_profiles, resolve_profile
 from retail_datagen.catalog_packs import (
     CATALOG_PACK_METADATA,
     CATALOG_PACKS,
+    DEFAULT_PACK_BY_COUNTRY,
     _option_price_multiplier,
     barcode_is_valid,
     build_catalog,
@@ -1288,7 +1289,12 @@ class GenerationTests(unittest.TestCase):
                     min(4, len(family_products)),
                 )
             expected_length = (
-                12 if CATALOG_PACKS[market["countryCode"]]["barcodeFormat"] == "UPCA" else 13
+                12
+                if CATALOG_PACKS[DEFAULT_PACK_BY_COUNTRY[market["countryCode"]]][
+                    "barcodeFormat"
+                ]
+                == "UPCA"
+                else 13
             )
             self.assertTrue(
                 all(len(variant["barcode"]) == expected_length for variant in variants)
@@ -1541,21 +1547,35 @@ class GenerationTests(unittest.TestCase):
         self.assertGreater(clearance[0], fire_sale[0])
 
     def test_all_supported_country_catalog_packs_are_rich(self) -> None:
-        self.assertEqual(set(CATALOG_PACKS), {"IN", "US", "GB", "DE"})
-        for country, pack in CATALOG_PACKS.items():
-            self.assertEqual(set(pack["families"]), set(CATALOG_PACK_METADATA[country]["familyIds"]))
+        # Packs are keyed by pack id, not country: a country may host more than
+        # one tenant assortment, and the retail packs must not see another
+        # tenant's families.
+        self.assertEqual(
+            set(CATALOG_PACKS),
+            {
+                "real-retail-IN",
+                "real-retail-US",
+                "real-retail-GB",
+                "real-retail-DE",
+                "gulf-lubricants-IN",
+            },
+        )
+        for pack_id, pack in CATALOG_PACKS.items():
+            self.assertEqual(
+                set(pack["families"]), set(CATALOG_PACK_METADATA[pack_id]["familyIds"])
+            )
             self.assertGreaterEqual(len(pack["brands"]), 6)
             for family in pack["families"].values():
                 self.assertGreaterEqual(len(family["productNames"]), 4)
                 self.assertGreaterEqual(len(family["materials"]), 1)
                 self.assertTrue(family["optionDimensions"])
         self.assertNotEqual(
-            CATALOG_PACKS["IN"]["families"]["grocery-dairy"]["productNames"],
-            CATALOG_PACKS["US"]["families"]["grocery-dairy"]["productNames"],
+            CATALOG_PACKS["real-retail-IN"]["families"]["grocery-dairy"]["productNames"],
+            CATALOG_PACKS["real-retail-US"]["families"]["grocery-dairy"]["productNames"],
         )
         self.assertNotEqual(
-            CATALOG_PACKS["GB"]["families"]["grocery-staples"]["productNames"],
-            CATALOG_PACKS["DE"]["families"]["grocery-staples"]["productNames"],
+            CATALOG_PACKS["real-retail-GB"]["families"]["grocery-staples"]["productNames"],
+            CATALOG_PACKS["real-retail-DE"]["families"]["grocery-staples"]["productNames"],
         )
 
     def test_all_supported_country_catalogs_generate_from_country_selection(self) -> None:
@@ -1573,7 +1593,9 @@ class GenerationTests(unittest.TestCase):
             market["currencyCode"] = LOCALE_PACKS[country]["currency"]["code"]
             market["timezone"] = LOCALE_PACKS[country]["timezones"][0]
             market["localePack"] = deepcopy(LOCALE_PACKS[country])
-            market["catalogPack"] = deepcopy(CATALOG_PACK_METADATA[country])
+            market["catalogPack"] = deepcopy(
+                CATALOG_PACK_METADATA[DEFAULT_PACK_BY_COUNTRY[country]]
+            )
             config["stores"][0]["postcode"] = postcodes[country]
             validated = validate_config(config)
             products = build_catalog(validated)[market["marketId"]]

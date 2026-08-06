@@ -11,7 +11,11 @@ from typing import Any
 import yaml
 
 from retail_datagen import SOURCE_SPEC_VERSION
-from retail_datagen.catalog_packs import CATALOG_PACK_METADATA, CATALOG_PACK_VERSION
+from retail_datagen.catalog_packs import (
+    CATALOG_PACK_METADATA,
+    CATALOG_PACK_VERSION,
+    market_pack_id,
+)
 from retail_datagen.config import _ConfigYamlLoader, load_config
 from retail_datagen.hierarchy import default_departments
 from retail_datagen.locale_packs import LOCALE_PACKS
@@ -32,6 +36,13 @@ PRESETS = {
     "historyPreset": ROOT / "configs" / "multi-market-20-year-history.yaml",
     "volumePreset": ROOT / "configs" / "multi-market-2021-current-volume.yaml",
     "demoDecadePreset": ROOT / "configs" / "multi-market-10-year-demo.yaml",
+}
+
+# Tenant scenarios are embedded in the builder but never rewritten by
+# `_sync_yaml`: that function stamps the retail department hierarchy over
+# whatever it finds, which would erase a tenant's own catalog.
+EMBED_ONLY_PRESETS = {
+    "gulfLubricantsPreset": ROOT / "configs" / "gulf-oil-india-showcase.yaml",
 }
 
 LIFECYCLE = {
@@ -274,7 +285,7 @@ def _sync_yaml(path: Path) -> None:
     generation["lifecycle"] = LIFECYCLE.copy()
     config["catalog"]["departments"] = default_departments()
     for market in config["markets"]:
-        market["catalogPack"] = CATALOG_PACK_METADATA[market["countryCode"]]
+        market["catalogPack"] = CATALOG_PACK_METADATA[market_pack_id(market)]
         market["localePack"] = LOCALE_PACKS[market["countryCode"]]
         market["assortment"]["skusPerDepartment"] = (
             12
@@ -420,7 +431,7 @@ def main() -> None:
         "executionProfiles",
         builder_execution_profiles,
     )
-    for element_id, path in PRESETS.items():
+    for element_id, path in {**PRESETS, **EMBED_ONLY_PRESETS}.items():
         html = _replace_json_script(html, element_id, load_config(path))
     html = re.sub(
         r"generator-owned contract · retail-source-config/v\d+",

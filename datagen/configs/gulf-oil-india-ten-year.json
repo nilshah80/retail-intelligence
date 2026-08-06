@@ -1,0 +1,4400 @@
+{
+  "specVersion": "retail-source-config/v13",
+  "identity": {
+    "scenarioId": "gulf-oil-india-ten-year",
+    "scenarioVersion": "0.1.0",
+    "scenarioName": "Gulf Oil India lubricants distributor ten-year history",
+    "masterSeed": 20260806
+  },
+  "time": {
+    "startDate": "2016-08-01",
+    "endDate": "2026-07-31",
+    "generationPartition": "month"
+  },
+  "retailer": {
+    "retailerId": "gulf-oil-india",
+    "name": "Gulf Oil Lubricants India",
+    "reportingCurrency": "INR"
+  },
+  "markets": [
+    {
+      "marketId": "gulf-india",
+      "name": "India — National",
+      "countryCode": "IN",
+      "regionCode": "MH",
+      "city": "Mumbai",
+      "currencyCode": "INR",
+      "timezone": "Asia/Kolkata",
+      "catalogPack": {
+        "id": "gulf-lubricants-IN",
+        "version": "2026.6",
+        "label": "Gulf Oil India lubricants reference catalog",
+        "countryCode": "IN",
+        "barcodeFormat": "EAN13",
+        "familyIds": [
+          "automotive-accessories",
+          "automotive-car-care",
+          "lubricants-adblue",
+          "lubricants-coolant-brake",
+          "lubricants-diesel-engine",
+          "lubricants-ev-fluids",
+          "lubricants-gear",
+          "lubricants-grease",
+          "lubricants-hydraulic",
+          "lubricants-industrial",
+          "lubricants-motorcycle",
+          "lubricants-pcmo",
+          "lubricants-tractor",
+          "lubricants-transmission"
+        ]
+      },
+      "fxRateToReporting": "1.000000000000000000",
+      "localePack": {
+        "id": "IN",
+        "version": "2026.5",
+        "label": "India",
+        "currency": {
+          "code": "INR",
+          "symbol": "₹",
+          "minorUnitExponent": 2,
+          "decimalSeparator": ".",
+          "groupSeparator": ",",
+          "priceEndings": [
+            "00",
+            "49",
+            "99"
+          ],
+          "defaultPriceMin": "99.00",
+          "defaultPriceMax": "9999.00"
+        },
+        "tax": {
+          "basis": "inclusive",
+          "defaultRate": "0.18",
+          "categoryRates": {
+            "apparel": "0.12",
+            "automotive": "0.28",
+            "baby": "0.05",
+            "beauty": "0.18",
+            "books": "0.00",
+            "electronics": "0.18",
+            "grocery": "0.05",
+            "health": "0.12",
+            "home": "0.18",
+            "sports": "0.18",
+            "stationery": "0.12",
+            "toys": "0.12"
+          },
+          "jurisdiction": "GST",
+          "components": {
+            "intraRegion": [
+              {
+                "code": "CGST",
+                "share": "0.5"
+              },
+              {
+                "code": "SGST",
+                "share": "0.5"
+              }
+            ],
+            "interRegion": [
+              {
+                "code": "IGST",
+                "share": "1.0"
+              }
+            ]
+          }
+        },
+        "fiscalYearStartMonth": 4,
+        "timezones": [
+          "Asia/Kolkata"
+        ],
+        "fakerLocale": "en_IN",
+        "postcodePattern": "^[1-9][0-9]{5}$",
+        "calendarCoverage": {
+          "startDate": "2005-01-01",
+          "endDate": "2026-12-31"
+        },
+        "climate": {
+          "profile": "tropical-monsoon",
+          "summerC": 33,
+          "winterC": 23,
+          "monsoonMonths": [
+            6,
+            7,
+            8,
+            9
+          ]
+        },
+        "holidayRules": [
+          {
+            "type": "fixed",
+            "name": "Republic Day",
+            "month": 1,
+            "day": 26,
+            "kind": "public",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "type": "fixed",
+            "name": "Independence Day",
+            "month": 8,
+            "day": 15,
+            "kind": "public",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "type": "fixed",
+            "name": "Gandhi Jayanti",
+            "month": 10,
+            "day": 2,
+            "kind": "public",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "type": "fixed",
+            "name": "Christmas",
+            "month": 12,
+            "day": 25,
+            "kind": "public",
+            "retailBehavior": "public-holiday"
+          }
+        ],
+        "holidays": [
+          {
+            "date": "2005-03-25",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2006-03-15",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2007-03-04",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2008-03-22",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2009-03-11",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2010-03-01",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2011-03-20",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2012-03-08",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2013-03-27",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2014-03-17",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2015-03-06",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2016-03-24",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2017-03-13",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2018-03-02",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2019-03-21",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2020-03-10",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2021-03-29",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2022-03-18",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2023-03-08",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2024-03-25",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2025-03-14",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2026-03-04",
+            "name": "Holi",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2005-11-04",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2006-10-24",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2007-10-13",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2008-10-02",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2009-09-21",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2010-09-11",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2011-08-31",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2012-08-20",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2013-08-09",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2014-07-29",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2015-07-18",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2016-07-07",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2017-06-26",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2018-06-16",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2019-06-05",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2020-05-25",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2021-05-14",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2022-05-03",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2023-04-22",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2024-04-11",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2025-03-31",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2026-03-20",
+            "name": "Eid al-Fitr",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2005-11-01",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2006-10-21",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2007-11-09",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2008-10-28",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2009-10-17",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2010-11-05",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2011-10-26",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2012-11-13",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2013-11-03",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2014-10-23",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2015-11-11",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2016-10-30",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2017-10-19",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2018-11-07",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2019-10-27",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2020-11-14",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2021-11-04",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2022-10-24",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2023-11-12",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2024-10-31",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2025-10-20",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          },
+          {
+            "date": "2026-11-08",
+            "name": "Diwali",
+            "kind": "reviewed-lunar",
+            "retailBehavior": "public-holiday"
+          }
+        ],
+        "saleSeasons": [
+          {
+            "id": "diwali-season",
+            "startMonthDay": "10-01",
+            "endMonthDay": "11-10"
+          },
+          {
+            "id": "republic-day-sale",
+            "startMonthDay": "01-20",
+            "endMonthDay": "01-28"
+          }
+        ]
+      },
+      "assortment": {
+        "skusPerDepartment": 1,
+        "variantsPerProduct": 4
+      },
+      "demand": {
+        "startingDailyOrders": 220,
+        "averageLinesPerOrder": 4.2,
+        "demandLevelScalar": 1,
+        "annualGrowthRate": 0.062,
+        "onlineShareStart": 0.01,
+        "onlineShareEnd": 0.09,
+        "onlineShareSkuVariation": 0.03,
+        "noise": 0.14,
+        "intermittencyRate": 0.16,
+        "newProductRampDays": 120,
+        "dayOfWeekFactors": [
+          0.55,
+          1.18,
+          1.14,
+          1.1,
+          1.12,
+          1.16,
+          0.75
+        ]
+      },
+      "priceDynamics": {
+        "profile": "response-rich",
+        "priceChangeEventsPerSkuPerYear": 9,
+        "annualInflationRate": 0.049,
+        "priceEndingAdherence": 0.74
+      },
+      "signals": {
+        "holidays": true,
+        "promotions": true,
+        "weather": true,
+        "localEvents": true,
+        "competitor": true,
+        "macro": true,
+        "fx": true
+      },
+      "customerPopulation": {
+        "openingRegisteredCustomers": 14000,
+        "annualNewCustomers": 3200,
+        "annualChurnRate": 0.11,
+        "annualReactivationRate": 0.07,
+        "guestCheckoutRate": 0.05,
+        "openingCustomerHistoryYears": 4,
+        "maxOrdersPerCustomerPerDay": 3
+      }
+    }
+  ],
+  "legalEntities": [
+    {
+      "legalEntityId": "gulf-oil-india",
+      "name": "Gulf Oil Lubricants India Ltd",
+      "marketIds": [
+        "gulf-india"
+      ]
+    }
+  ],
+  "channels": [
+    {
+      "channelId": "bazaar-trade",
+      "name": "Bazaar Trade",
+      "marketId": "gulf-india",
+      "type": "store"
+    },
+    {
+      "channelId": "gulf-online",
+      "name": "Gulf Direct Online",
+      "marketId": "gulf-india",
+      "type": "online"
+    },
+    {
+      "channelId": "gulf-marketplace",
+      "name": "Marketplace",
+      "marketId": "gulf-india",
+      "type": "marketplace"
+    }
+  ],
+  "stores": [
+    {
+      "storeId": "mumbai-dist",
+      "businessCentralLocationCode": "MUM-DST",
+      "name": "Mumbai Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "mumbai-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Andheri Kurla Road, Andheri East",
+      "postcode": "400059",
+      "assortmentCoverage": 0.94,
+      "demandScale": 1.0
+    },
+    {
+      "storeId": "pune-dist",
+      "businessCentralLocationCode": "PUN-DST",
+      "name": "Pune Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "mumbai-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Nagar Road, Kharadi",
+      "postcode": "411014",
+      "assortmentCoverage": 0.88,
+      "demandScale": 0.72
+    },
+    {
+      "storeId": "ahmedabad-dist",
+      "businessCentralLocationCode": "AMD-DST",
+      "name": "Ahmedabad Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "silvassa-plant",
+        "mumbai-depot"
+      ],
+      "addressLine1": "Sarkhej Gandhinagar Highway",
+      "postcode": "380054",
+      "assortmentCoverage": 0.86,
+      "demandScale": 0.68
+    },
+    {
+      "storeId": "indore-dist",
+      "businessCentralLocationCode": "IDR-DST",
+      "name": "Indore Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "silvassa-plant",
+        "delhi-depot"
+      ],
+      "addressLine1": "AB Road, Vijay Nagar",
+      "postcode": "452010",
+      "assortmentCoverage": 0.78,
+      "demandScale": 0.48
+    },
+    {
+      "storeId": "delhi-dist",
+      "businessCentralLocationCode": "DEL-DST",
+      "name": "Delhi NCR Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "delhi-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Mathura Road, Faridabad",
+      "postcode": "121003",
+      "assortmentCoverage": 0.92,
+      "demandScale": 0.94
+    },
+    {
+      "storeId": "jaipur-dist",
+      "businessCentralLocationCode": "JAI-DST",
+      "name": "Jaipur Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "delhi-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Tonk Road, Sanganer",
+      "postcode": "302029",
+      "assortmentCoverage": 0.8,
+      "demandScale": 0.52
+    },
+    {
+      "storeId": "ludhiana-dist",
+      "businessCentralLocationCode": "LDH-DST",
+      "name": "Ludhiana Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "delhi-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Gill Road, Industrial Area",
+      "postcode": "141003",
+      "assortmentCoverage": 0.82,
+      "demandScale": 0.58
+    },
+    {
+      "storeId": "chennai-dist",
+      "businessCentralLocationCode": "CHN-DST",
+      "name": "Chennai Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "chennai-plant",
+        "bengaluru-depot"
+      ],
+      "addressLine1": "GST Road, Guindy",
+      "postcode": "600032",
+      "assortmentCoverage": 0.92,
+      "demandScale": 0.86
+    },
+    {
+      "storeId": "bengaluru-dist",
+      "businessCentralLocationCode": "BLR-DST",
+      "name": "Bengaluru Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "bengaluru-depot",
+        "chennai-plant"
+      ],
+      "addressLine1": "Hosur Road, Bommanahalli",
+      "postcode": "560068",
+      "assortmentCoverage": 0.9,
+      "demandScale": 0.82
+    },
+    {
+      "storeId": "hyderabad-dist",
+      "businessCentralLocationCode": "HYD-DST",
+      "name": "Hyderabad Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "bengaluru-depot",
+        "chennai-plant"
+      ],
+      "addressLine1": "Balanagar, Kukatpally",
+      "postcode": "500037",
+      "assortmentCoverage": 0.86,
+      "demandScale": 0.7
+    },
+    {
+      "storeId": "coimbatore-dist",
+      "businessCentralLocationCode": "CBE-DST",
+      "name": "Coimbatore Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "chennai-plant",
+        "bengaluru-depot"
+      ],
+      "addressLine1": "Avinashi Road, Peelamedu",
+      "postcode": "641004",
+      "assortmentCoverage": 0.76,
+      "demandScale": 0.44
+    },
+    {
+      "storeId": "kolkata-dist",
+      "businessCentralLocationCode": "KOL-DST",
+      "name": "Kolkata Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "kolkata-depot",
+        "silvassa-plant"
+      ],
+      "addressLine1": "Diamond Harbour Road, Behala",
+      "postcode": "700034",
+      "assortmentCoverage": 0.84,
+      "demandScale": 0.62
+    },
+    {
+      "storeId": "guwahati-dist",
+      "businessCentralLocationCode": "GAU-DST",
+      "name": "Guwahati Distributor",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "channelIds": [
+        "bazaar-trade",
+        "gulf-online",
+        "gulf-marketplace"
+      ],
+      "warehousePriority": [
+        "kolkata-depot",
+        "delhi-depot"
+      ],
+      "addressLine1": "GS Road, Dispur",
+      "postcode": "781006",
+      "assortmentCoverage": 0.7,
+      "demandScale": 0.34
+    }
+  ],
+  "warehouses": [
+    {
+      "warehouseId": "silvassa-plant",
+      "name": "Silvassa Blending Plant",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "mumbai-dist",
+        "pune-dist",
+        "ahmedabad-dist",
+        "indore-dist"
+      ],
+      "businessCentralLocationCode": "SIL-PLT",
+      "capacityUnits": 1400000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 55
+    },
+    {
+      "warehouseId": "chennai-plant",
+      "name": "Chennai (Ennore) Blending Plant",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "chennai-dist",
+        "bengaluru-dist",
+        "hyderabad-dist",
+        "coimbatore-dist"
+      ],
+      "businessCentralLocationCode": "CHN-PLT",
+      "capacityUnits": 1250000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 55
+    },
+    {
+      "warehouseId": "delhi-depot",
+      "name": "Delhi NCR Depot",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "delhi-dist",
+        "jaipur-dist",
+        "ludhiana-dist"
+      ],
+      "businessCentralLocationCode": "DEL-DEP",
+      "capacityUnits": 480000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 32
+    },
+    {
+      "warehouseId": "kolkata-depot",
+      "name": "Kolkata Depot",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "kolkata-dist",
+        "guwahati-dist"
+      ],
+      "businessCentralLocationCode": "KOL-DEP",
+      "capacityUnits": 360000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 32
+    },
+    {
+      "warehouseId": "mumbai-depot",
+      "name": "Mumbai Depot",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "mumbai-dist",
+        "pune-dist"
+      ],
+      "businessCentralLocationCode": "MUM-DEP",
+      "capacityUnits": 420000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 28
+    },
+    {
+      "warehouseId": "bengaluru-depot",
+      "name": "Bengaluru Depot",
+      "marketId": "gulf-india",
+      "legalEntityId": "gulf-oil-india",
+      "servesLocations": [
+        "bengaluru-dist",
+        "hyderabad-dist"
+      ],
+      "businessCentralLocationCode": "BLR-DEP",
+      "capacityUnits": 380000,
+      "openingStockPerSku": 90,
+      "replenishmentPackSize": 24,
+      "openingStockDaysOfCover": 28
+    }
+  ],
+  "sourceInstances": {
+    "shopify": [
+      {
+        "shopId": "gulf-in",
+        "shopDomain": "gulf-in.myshopify.com",
+        "marketId": "gulf-india",
+        "storeIds": [
+          "mumbai-dist",
+          "pune-dist",
+          "ahmedabad-dist",
+          "indore-dist",
+          "delhi-dist",
+          "jaipur-dist",
+          "ludhiana-dist",
+          "chennai-dist",
+          "bengaluru-dist",
+          "hyderabad-dist",
+          "coimbatore-dist",
+          "kolkata-dist",
+          "guwahati-dist"
+        ]
+      }
+    ],
+    "businessCentral": [
+      {
+        "companyId": "bc-gulf-in",
+        "companyName": "Gulf Oil India",
+        "legalEntityId": "gulf-oil-india",
+        "warehouseIds": [
+          "silvassa-plant",
+          "chennai-plant",
+          "delhi-depot",
+          "kolkata-depot",
+          "mumbai-depot",
+          "bengaluru-depot"
+        ]
+      }
+    ]
+  },
+  "catalog": {
+    "generation": {
+      "mode": "explicit",
+      "catalogPackVersion": "2026.6",
+      "skuPrefix": "GLF",
+      "launchHistoryDays": 365,
+      "incumbentProductPct": 1,
+      "discontinueRate": 0,
+      "launchSpreadPct": 0,
+      "variantLaunchSpreadDays": 0,
+      "replacementLinkRate": 0,
+      "minProductLifeDays": 365,
+      "maxProductLifeDays": 1825,
+      "lifecycle": {
+        "defaultLaunchProfile": "linear-ramp",
+        "launchSpikeMultiplier": 4.0,
+        "launchSpikeDays": 14,
+        "launchSettleDays": 76,
+        "preLaunchAnticipationDays": 45,
+        "preLaunchDemandMultiplier": 0.55,
+        "substitutionRate": 0.65,
+        "runoutMonths": 18,
+        "runoutDemandMultiplier": 0.35,
+        "runoutMarkdownPct": 0.1,
+        "runoutMarkdownDemandMultiplier": 1.08,
+        "clearanceStartDaysAfterSuccessor": 120,
+        "clearanceDiscountPct": 0.25,
+        "clearanceDemandMultiplier": 1.35,
+        "fireSaleFinalDays": 30,
+        "fireSaleDiscountPct": 0.45,
+        "fireSaleDemandMultiplier": 2.1
+      }
+    },
+    "departments": [
+      {
+        "departmentId": "automotive-engine-oils",
+        "name": "Automotive Engine Oils",
+        "categories": [
+          {
+            "categoryId": "gulf-mco",
+            "name": "Motorcycle Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-motorcycle",
+            "optionDimensions": [
+              "viscosity",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 10,
+            "seasonalityStrength": 0.22,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.34,
+            "baseReturnRate": 0.006,
+            "elasticityMin": -2.1,
+            "elasticityMax": -0.7
+          },
+          {
+            "categoryId": "gulf-pcmo",
+            "name": "Passenger Car Motor Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-pcmo",
+            "optionDimensions": [
+              "viscosity",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 7,
+            "seasonalityStrength": 0.14,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.32,
+            "baseReturnRate": 0.005,
+            "elasticityMin": -1.9,
+            "elasticityMax": -0.6
+          },
+          {
+            "categoryId": "gulf-deo",
+            "name": "Diesel & CV Engine Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-diesel-engine",
+            "optionDimensions": [
+              "viscosity",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 3,
+            "seasonalityStrength": 0.16,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.24,
+            "baseReturnRate": 0.004,
+            "elasticityMin": -2.3,
+            "elasticityMax": -0.85
+          },
+          {
+            "categoryId": "gulf-tractor",
+            "name": "Tractor & Farm Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-tractor",
+            "optionDimensions": [
+              "viscosity",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 6,
+            "seasonalityStrength": 0.38,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.26,
+            "baseReturnRate": 0.004,
+            "elasticityMin": -2.4,
+            "elasticityMax": -0.9
+          }
+        ]
+      },
+      {
+        "departmentId": "driveline-specialities",
+        "name": "Driveline & Specialities",
+        "categories": [
+          {
+            "categoryId": "gulf-gear",
+            "name": "Gear Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-gear",
+            "optionDimensions": [
+              "gearGrade",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 7,
+            "seasonalityStrength": 0.12,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.3,
+            "baseReturnRate": 0.004,
+            "elasticityMin": -1.9,
+            "elasticityMax": -0.6
+          },
+          {
+            "categoryId": "gulf-atf",
+            "name": "Transmission Fluids",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-transmission",
+            "optionDimensions": [
+              "format",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 7,
+            "seasonalityStrength": 0.1,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.3,
+            "baseReturnRate": 0.004,
+            "elasticityMin": -1.8,
+            "elasticityMax": -0.55
+          },
+          {
+            "categoryId": "gulf-grease",
+            "name": "Greases",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-grease",
+            "optionDimensions": [
+              "nlgiGrade",
+              "packWeight"
+            ],
+            "seasonalityPeakMonth": 6,
+            "seasonalityStrength": 0.14,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.32,
+            "baseReturnRate": 0.004,
+            "elasticityMin": -2.0,
+            "elasticityMax": -0.65
+          },
+          {
+            "categoryId": "gulf-coolant-brake",
+            "name": "Coolants & Brake Fluids",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-coolant-brake",
+            "optionDimensions": [
+              "format",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 4,
+            "seasonalityStrength": 0.2,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.3,
+            "baseReturnRate": 0.005,
+            "elasticityMin": -2.2,
+            "elasticityMax": -0.75
+          }
+        ]
+      },
+      {
+        "departmentId": "industrial-lubricants",
+        "name": "Industrial Lubricants",
+        "categories": [
+          {
+            "categoryId": "gulf-hydraulic",
+            "name": "Hydraulic Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-hydraulic",
+            "optionDimensions": [
+              "isoViscosityGrade",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 3,
+            "seasonalityStrength": 0.1,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.22,
+            "baseReturnRate": 0.003,
+            "elasticityMin": -2.0,
+            "elasticityMax": -0.7
+          },
+          {
+            "categoryId": "gulf-compressor-turbine",
+            "name": "Compressor & Turbine Oils",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-industrial",
+            "optionDimensions": [
+              "isoViscosityGrade",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 3,
+            "seasonalityStrength": 0.1,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.24,
+            "baseReturnRate": 0.003,
+            "elasticityMin": -1.8,
+            "elasticityMax": -0.55
+          },
+          {
+            "categoryId": "gulf-metalworking",
+            "name": "Metalworking Fluids",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-industrial",
+            "optionDimensions": [
+              "isoViscosityGrade",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 2,
+            "seasonalityStrength": 0.08,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.26,
+            "baseReturnRate": 0.003,
+            "elasticityMin": -1.9,
+            "elasticityMax": -0.6
+          },
+          {
+            "categoryId": "gulf-industrial-gear",
+            "name": "Industrial Gear & Circulating",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-industrial",
+            "optionDimensions": [
+              "isoViscosityGrade",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 3,
+            "seasonalityStrength": 0.09,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.25,
+            "baseReturnRate": 0.003,
+            "elasticityMin": -1.8,
+            "elasticityMax": -0.55
+          }
+        ]
+      },
+      {
+        "departmentId": "adjacent-new-energy",
+        "name": "Adjacent & New Energy",
+        "categories": [
+          {
+            "categoryId": "gulf-adblue",
+            "name": "AdBlue & DEF",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-adblue",
+            "optionDimensions": [
+              "format",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 3,
+            "seasonalityStrength": 0.08,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.16,
+            "baseReturnRate": 0.003,
+            "elasticityMin": -2.6,
+            "elasticityMax": -1.0
+          },
+          {
+            "categoryId": "gulf-ev-fluids",
+            "name": "EV Fluids",
+            "taxCategory": "lubricants",
+            "catalogFamily": "lubricants-ev-fluids",
+            "optionDimensions": [
+              "format",
+              "packVolume"
+            ],
+            "seasonalityPeakMonth": 10,
+            "seasonalityStrength": 0.15,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.38,
+            "baseReturnRate": 0.005,
+            "elasticityMin": -1.5,
+            "elasticityMax": -0.45
+          },
+          {
+            "categoryId": "gulf-battery",
+            "name": "Batteries",
+            "taxCategory": "automotive",
+            "catalogFamily": "automotive-accessories",
+            "optionDimensions": [
+              "format",
+              "compatibility"
+            ],
+            "seasonalityPeakMonth": 5,
+            "seasonalityStrength": 0.24,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.22,
+            "baseReturnRate": 0.02,
+            "elasticityMin": -2.0,
+            "elasticityMax": -0.7
+          },
+          {
+            "categoryId": "gulf-car-care",
+            "name": "Car Care & Consumables",
+            "taxCategory": "lubricants",
+            "catalogFamily": "automotive-car-care",
+            "optionDimensions": [
+              "packSize",
+              "format"
+            ],
+            "seasonalityPeakMonth": 10,
+            "seasonalityStrength": 0.18,
+            "costingMethod": "FIFO",
+            "targetMargin": 0.35,
+            "baseReturnRate": 0.012,
+            "elasticityMin": -2.2,
+            "elasticityMax": -0.75
+          }
+        ]
+      }
+    ],
+    "productTemplates": [
+      {
+        "productId": "gulf-mco-pride-4t-plus",
+        "marketId": "gulf-india",
+        "productCode": "GLF-PRIDE-4T-PLUS",
+        "title": "Gulf Pride 4T Plus",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Pride 4T Plus; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-mco",
+        "basePrice": "415.79",
+        "baseCost": "274.42",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-mco-pride-4t-ultra",
+        "marketId": "gulf-india",
+        "productCode": "GLF-PRIDE-4T-ULTRA",
+        "title": "Gulf Pride 4T Ultra",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Pride 4T Ultra; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-mco",
+        "basePrice": "542.11",
+        "baseCost": "357.79",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-mco-pride-4t-usyn",
+        "marketId": "gulf-india",
+        "productCode": "GLF-PRIDE-4T-USYN",
+        "title": "Gulf Pride 4T UltraSynth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Pride 4T UltraSynth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-mco",
+        "basePrice": "784.21",
+        "baseCost": "517.58",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "1 L"
+            }
+          }
+        ],
+        "launchDate": "2019-04-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-mco-pride-2t",
+        "marketId": "gulf-india",
+        "productCode": "GLF-PRIDE-2T",
+        "title": "Gulf Pride 2T",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Pride 2T; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-mco",
+        "basePrice": "370.69",
+        "baseCost": "244.66",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-mco-pride-4t-scoot",
+        "marketId": "gulf-india",
+        "productCode": "GLF-PRIDE-4T-SCOOT",
+        "title": "Gulf Pride 4T Scooter",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Pride 4T Scooter; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-mco",
+        "basePrice": "577.59",
+        "baseCost": "381.21",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "900 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "1 L"
+            }
+          }
+        ],
+        "launchDate": "2021-06-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-pcmo-formula-g",
+        "marketId": "gulf-india",
+        "productCode": "GLF-FORMULA-G",
+        "title": "Gulf Formula G",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Formula G; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-pcmo",
+        "basePrice": "753.85",
+        "baseCost": "512.62",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-pcmo-formula-ule",
+        "marketId": "gulf-india",
+        "productCode": "GLF-FORMULA-ULE",
+        "title": "Gulf Formula ULE",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Formula ULE; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-pcmo",
+        "basePrice": "889.23",
+        "baseCost": "604.68",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "0W-20",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "0W-20",
+              "packVolume": "1 L"
+            }
+          }
+        ],
+        "launchDate": "2018-02-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-pcmo-formula-gx",
+        "marketId": "gulf-india",
+        "productCode": "GLF-FORMULA-GX",
+        "title": "Gulf Formula GX",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Formula GX; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-pcmo",
+        "basePrice": "609.23",
+        "baseCost": "414.28",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "10W-40",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-40",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-40",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-pcmo-ultrasynth-x",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ULTRASYNTH-X",
+        "title": "Gulf Ultrasynth X",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Ultrasynth X; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-pcmo",
+        "basePrice": "1000.00",
+        "baseCost": "680.00",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-30",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "5W-40",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2020-09-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-pcmo-formula-dsl",
+        "marketId": "gulf-india",
+        "productCode": "GLF-FORMULA-DSL",
+        "title": "Gulf Formula Diesel",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Formula Diesel; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-pcmo",
+        "basePrice": "670.77",
+        "baseCost": "456.12",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "3.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-40",
+              "packVolume": "3.5 L"
+            }
+          }
+        ],
+        "launchDate": "2017-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-xld",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-XLD",
+        "title": "Gulf Superfleet XLD",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet XLD; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "516.48",
+        "baseCost": "392.52",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "50 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-le",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-LE",
+        "title": "Gulf Superfleet LE",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet LE; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "575.82",
+        "baseCost": "437.62",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "26 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2017-07-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-sup",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-SUP",
+        "title": "Gulf Superfleet Supreme",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet Supreme; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "435.16",
+        "baseCost": "330.72",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "50 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-turbo",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-TURBO",
+        "title": "Gulf Superfleet Turbo",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet Turbo; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "471.11",
+        "baseCost": "358.04",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "7.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "7.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-lng",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-LNG",
+        "title": "Gulf Superfleet LNG",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet LNG; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "523.53",
+        "baseCost": "397.88",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "50 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2022-04-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-deo-superfleet-ck4",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERFLEET-CK4",
+        "title": "Gulf Superfleet CK-4",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superfleet CK-4; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-deo",
+        "basePrice": "555.88",
+        "baseCost": "422.47",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2023-01-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-tractor-sup-tractor-oil",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUP-TRACTOR-OIL",
+        "title": "Gulf Superior Tractor Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superior Tractor Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-tractor",
+        "basePrice": "450.55",
+        "baseCost": "333.41",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "7.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-tractor-max-star",
+        "marketId": "gulf-india",
+        "productCode": "GLF-MAX-STAR",
+        "title": "Gulf Max Star",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Max Star; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-tractor",
+        "basePrice": "413.19",
+        "baseCost": "305.76",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "7.5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "20W-40",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-tractor-multi-tf",
+        "marketId": "gulf-india",
+        "productCode": "GLF-MULTI-TF",
+        "title": "Gulf Multi TF",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Multi TF; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-tractor",
+        "basePrice": "501.10",
+        "baseCost": "370.81",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2017-05-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-tractor-tracsynth",
+        "marketId": "gulf-india",
+        "productCode": "GLF-TRACSYNTH",
+        "title": "Gulf Tracsynth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Tracsynth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "automotive-engine-oils",
+        "categoryId": "gulf-tractor",
+        "basePrice": "602.20",
+        "baseCost": "445.63",
+        "optionDimensions": [
+          "viscosity",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "10W-30",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "viscosity": "15W-40",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2021-09-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-gear-gear-mp",
+        "marketId": "gulf-india",
+        "productCode": "GLF-GEAR-MP",
+        "title": "Gulf Gear MP",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Gear MP; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-gear",
+        "basePrice": "491.38",
+        "baseCost": "343.97",
+        "optionDimensions": [
+          "gearGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-gear-gear-ep",
+        "marketId": "gulf-india",
+        "productCode": "GLF-GEAR-EP",
+        "title": "Gulf Gear EP",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Gear EP; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-gear",
+        "basePrice": "465.00",
+        "baseCost": "325.50",
+        "optionDimensions": [
+          "gearGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "gearGrade": "85W-140",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "85W-140",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "85W-140",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-gear-gear-hd",
+        "marketId": "gulf-india",
+        "productCode": "GLF-GEAR-HD",
+        "title": "Gulf Gear HD",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Gear HD; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-gear",
+        "basePrice": "523.08",
+        "baseCost": "366.16",
+        "optionDimensions": [
+          "gearGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "85W-140",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2018-06-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-gear-gear-synth",
+        "marketId": "gulf-india",
+        "productCode": "GLF-GEAR-SYNTH",
+        "title": "Gulf Gear Synth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Gear Synth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-gear",
+        "basePrice": "890.00",
+        "baseCost": "623.00",
+        "optionDimensions": [
+          "gearGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "gearGrade": "75W-90",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "75W-90",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "75W-90",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "gearGrade": "80W-90",
+              "packVolume": "1 L"
+            }
+          }
+        ],
+        "launchDate": "2022-02-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-atf-atf-dx3",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ATF-DX3",
+        "title": "Gulf ATF DX-III",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf ATF DX-III; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-atf",
+        "basePrice": "525.00",
+        "baseCost": "367.50",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-atf-atf-multi",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ATF-MULTI",
+        "title": "Gulf ATF Multi",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf ATF Multi; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-atf",
+        "basePrice": "685.00",
+        "baseCost": "479.50",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2019-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-atf-utto",
+        "marketId": "gulf-india",
+        "productCode": "GLF-UTTO",
+        "title": "Gulf UTTO",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf UTTO; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-atf",
+        "basePrice": "538.46",
+        "baseCost": "376.92",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "26 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2017-04-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-grease-crown-grease",
+        "marketId": "gulf-india",
+        "productCode": "GLF-CROWN-GREASE",
+        "title": "Gulf Crown Grease",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Crown Grease; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-grease",
+        "basePrice": "318.97",
+        "baseCost": "216.90",
+        "optionDimensions": [
+          "nlgiGrade",
+          "packWeight"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "500 g"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "1 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 3",
+              "packWeight": "1 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "18 kg"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-grease-superlith",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SUPERLITH",
+        "title": "Gulf Superlith",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Superlith; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-grease",
+        "basePrice": "395.00",
+        "baseCost": "268.60",
+        "optionDimensions": [
+          "nlgiGrade",
+          "packWeight"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "1 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "5 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "18 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 3",
+              "packWeight": "18 kg"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-grease-wheel-bearing",
+        "marketId": "gulf-india",
+        "productCode": "GLF-WHEEL-BEARING",
+        "title": "Gulf Wheel Bearing Grease",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Wheel Bearing Grease; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-grease",
+        "basePrice": "370.69",
+        "baseCost": "252.07",
+        "optionDimensions": [
+          "nlgiGrade",
+          "packWeight"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 3",
+              "packWeight": "500 g"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 3",
+              "packWeight": "1 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "500 g"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 3",
+              "packWeight": "5 kg"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-grease-mp-grease",
+        "marketId": "gulf-india",
+        "productCode": "GLF-MP-GREASE",
+        "title": "Gulf Multipurpose Grease",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Multipurpose Grease; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-grease",
+        "basePrice": "284.48",
+        "baseCost": "193.45",
+        "optionDimensions": [
+          "nlgiGrade",
+          "packWeight"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "500 g"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "1 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 2",
+              "packWeight": "5 kg"
+            }
+          },
+          {
+            "optionValues": {
+              "nlgiGrade": "NLGI 1",
+              "packWeight": "1 kg"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-coolant-brake-rad-coolant",
+        "marketId": "gulf-india",
+        "productCode": "GLF-RAD-COOLANT",
+        "title": "Gulf Radiator Coolant",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Radiator Coolant; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-coolant-brake",
+        "basePrice": "456.90",
+        "baseCost": "319.83",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-coolant-brake-endurance-cool",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ENDURANCE-COOL",
+        "title": "Gulf Endurance Coolant",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Endurance Coolant; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-coolant-brake",
+        "basePrice": "425.00",
+        "baseCost": "297.50",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2019-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-coolant-brake-brake-dot3",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BRAKE-DOT3",
+        "title": "Gulf Brake Fluid DOT 3",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Brake Fluid DOT 3; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-coolant-brake",
+        "basePrice": "336.21",
+        "baseCost": "235.35",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Compact",
+              "packVolume": "500 ml"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-coolant-brake-brake-dot4",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BRAKE-DOT4",
+        "title": "Gulf Brake Fluid DOT 4",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Brake Fluid DOT 4; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "driveline-specialities",
+        "categoryId": "gulf-coolant-brake",
+        "basePrice": "422.41",
+        "baseCost": "295.69",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "500 ml"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-hydraulic-harmony-aw",
+        "marketId": "gulf-india",
+        "productCode": "GLF-HARMONY-AW",
+        "title": "Gulf Harmony AW",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Harmony AW; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-hydraulic",
+        "basePrice": "214.71",
+        "baseCost": "167.47",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-hydraulic-harmony-hvi",
+        "marketId": "gulf-india",
+        "productCode": "GLF-HARMONY-HVI",
+        "title": "Gulf Harmony HVI",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Harmony HVI; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-hydraulic",
+        "basePrice": "245.88",
+        "baseCost": "191.79",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2018-01-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-hydraulic-harmony-zf",
+        "marketId": "gulf-india",
+        "productCode": "GLF-HARMONY-ZF",
+        "title": "Gulf Harmony ZF",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Harmony ZF; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-hydraulic",
+        "basePrice": "271.76",
+        "baseCost": "211.97",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2021-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-hydraulic-hydrasynth",
+        "marketId": "gulf-india",
+        "productCode": "GLF-HYDRASYNTH",
+        "title": "Gulf Hydrasynth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Hydrasynth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-hydraulic",
+        "basePrice": "402.94",
+        "baseCost": "314.29",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2022-07-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-compressor-turbine-cyclo-comp",
+        "marketId": "gulf-india",
+        "productCode": "GLF-CYCLO-COMP",
+        "title": "Gulf Cyclo Compressor Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Cyclo Compressor Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-compressor-turbine",
+        "basePrice": "250.00",
+        "baseCost": "190.00",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 100",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-compressor-turbine-turbine-oil",
+        "marketId": "gulf-india",
+        "productCode": "GLF-TURBINE-OIL",
+        "title": "Gulf Turbine Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Turbine Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-compressor-turbine",
+        "basePrice": "263.53",
+        "baseCost": "200.28",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-compressor-turbine-comp-synth",
+        "marketId": "gulf-india",
+        "productCode": "GLF-COMP-SYNTH",
+        "title": "Gulf Compressor Synth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Compressor Synth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-compressor-turbine",
+        "basePrice": "526.47",
+        "baseCost": "400.12",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 100",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2023-05-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-metalworking-cutting-oil",
+        "marketId": "gulf-india",
+        "productCode": "GLF-CUTTING-OIL",
+        "title": "Gulf Cutting Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Cutting Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-metalworking",
+        "basePrice": "204.71",
+        "baseCost": "151.49",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-metalworking-soluble-cut",
+        "marketId": "gulf-india",
+        "productCode": "GLF-SOLUBLE-CUT",
+        "title": "Gulf Soluble Cutting Fluid",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Soluble Cutting Fluid; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-metalworking",
+        "basePrice": "218.82",
+        "baseCost": "161.93",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "50 L"
+            }
+          }
+        ],
+        "launchDate": "2017-09-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-metalworking-quench-oil",
+        "marketId": "gulf-india",
+        "productCode": "GLF-QUENCH-OIL",
+        "title": "Gulf Quenching Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Quenching Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-metalworking",
+        "basePrice": "19.58",
+        "baseCost": "14.49",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 46",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 32",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2018-11-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-industrial-gear-ind-gear-ep",
+        "marketId": "gulf-india",
+        "productCode": "GLF-IND-GEAR-EP",
+        "title": "Gulf Industrial Gear EP",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Industrial Gear EP; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-industrial-gear",
+        "basePrice": "244.12",
+        "baseCost": "183.09",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 220",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 150",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 220",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 100",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-industrial-gear-circ-oil",
+        "marketId": "gulf-india",
+        "productCode": "GLF-CIRC-OIL",
+        "title": "Gulf Circulating Oil",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Circulating Oil; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-industrial-gear",
+        "basePrice": "226.47",
+        "baseCost": "169.85",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 100",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 68",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 150",
+              "packVolume": "26 L"
+            }
+          }
+        ],
+        "launchDate": "2016-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-industrial-gear-ind-gear-syn",
+        "marketId": "gulf-india",
+        "productCode": "GLF-IND-GEAR-SYN",
+        "title": "Gulf Industrial Gear Synth",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Industrial Gear Synth; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "industrial-lubricants",
+        "categoryId": "gulf-industrial-gear",
+        "basePrice": "544.12",
+        "baseCost": "408.09",
+        "optionDimensions": [
+          "isoViscosityGrade",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 220",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 150",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 220",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "isoViscosityGrade": "ISO VG 150",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2022-10-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-adblue-adblue",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ADBLUE",
+        "title": "Gulf AdBlue",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf AdBlue; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-adblue",
+        "basePrice": "62.64",
+        "baseCost": "52.62",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "210 L"
+            }
+          }
+        ],
+        "launchDate": "2018-04-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-adblue-adblue-pro",
+        "marketId": "gulf-india",
+        "productCode": "GLF-ADBLUE-PRO",
+        "title": "Gulf AdBlue Pro",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf AdBlue Pro; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-adblue",
+        "basePrice": "52.84",
+        "baseCost": "44.39",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "10 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "210 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2021-01-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-ev-fluids-evolt-drive",
+        "marketId": "gulf-india",
+        "productCode": "GLF-EVOLT-DRIVE",
+        "title": "Gulf eVolt Driveline Fluid",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf eVolt Driveline Fluid; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-ev-fluids",
+        "basePrice": "1450.00",
+        "baseCost": "899.00",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2023-06-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-ev-fluids-evolt-cool",
+        "marketId": "gulf-india",
+        "productCode": "GLF-EVOLT-COOL",
+        "title": "Gulf eVolt Coolant",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf eVolt Coolant; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-ev-fluids",
+        "basePrice": "1180.00",
+        "baseCost": "731.60",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "5 L"
+            }
+          }
+        ],
+        "launchDate": "2023-06-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-ev-fluids-evolt-therm",
+        "marketId": "gulf-india",
+        "productCode": "GLF-EVOLT-THERM",
+        "title": "Gulf eVolt Thermal Fluid",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf eVolt Thermal Fluid; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-ev-fluids",
+        "basePrice": "369.23",
+        "baseCost": "228.92",
+        "optionDimensions": [
+          "format",
+          "packVolume"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "5 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "20 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "packVolume": "1 L"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "packVolume": "20 L"
+            }
+          }
+        ],
+        "launchDate": "2024-04-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-battery-batt-car-35ah",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BATT-CAR-35AH",
+        "title": "Gulf Car Battery 35Ah",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Car Battery 35Ah; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-battery",
+        "basePrice": "4250.00",
+        "baseCost": "3315.00",
+        "optionDimensions": [
+          "format",
+          "compatibility"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Vehicle specific"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Compact",
+              "compatibility": "Universal"
+            }
+          }
+        ],
+        "launchDate": "2019-02-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-battery-batt-car-65ah",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BATT-CAR-65AH",
+        "title": "Gulf Car Battery 65Ah",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Car Battery 65Ah; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-battery",
+        "basePrice": "6480.00",
+        "baseCost": "5054.40",
+        "optionDimensions": [
+          "format",
+          "compatibility"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Vehicle specific"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "compatibility": "Vehicle specific"
+            }
+          }
+        ],
+        "launchDate": "2019-02-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-battery-batt-bike-9ah",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BATT-BIKE-9AH",
+        "title": "Gulf Two-wheeler Battery 9Ah",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Two-wheeler Battery 9Ah; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-battery",
+        "basePrice": "1450.00",
+        "baseCost": "1131.00",
+        "optionDimensions": [
+          "format",
+          "compatibility"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Compact",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Compact",
+              "compatibility": "Vehicle specific"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Vehicle specific"
+            }
+          }
+        ],
+        "launchDate": "2019-02-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-battery-batt-inv-150ah",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BATT-INV-150AH",
+        "title": "Gulf Inverter Battery 150Ah",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Inverter Battery 150Ah; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-battery",
+        "basePrice": "12800.00",
+        "baseCost": "9984.00",
+        "optionDimensions": [
+          "format",
+          "compatibility"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "format": "Large",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Premium",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Standard",
+              "compatibility": "Universal"
+            }
+          },
+          {
+            "optionValues": {
+              "format": "Large",
+              "compatibility": "Vehicle specific"
+            }
+          }
+        ],
+        "launchDate": "2020-08-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-car-care-wash-shampoo",
+        "marketId": "gulf-india",
+        "productCode": "GLF-WASH-SHAMPOO",
+        "title": "Gulf Car Wash Shampoo",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Car Wash Shampoo; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-car-care",
+        "basePrice": "295.00",
+        "baseCost": "191.75",
+        "optionDimensions": [
+          "packSize",
+          "format"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 2",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Premium"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Family pack",
+              "format": "Standard"
+            }
+          }
+        ],
+        "launchDate": "2020-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-car-care-radiator-flush",
+        "marketId": "gulf-india",
+        "productCode": "GLF-RADIATOR-FLUSH",
+        "title": "Gulf Radiator Flush",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Radiator Flush; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-car-care",
+        "basePrice": "245.00",
+        "baseCost": "159.25",
+        "optionDimensions": [
+          "packSize",
+          "format"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 2",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Compact"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 6",
+              "format": "Standard"
+            }
+          }
+        ],
+        "launchDate": "2020-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-car-care-chain-lube",
+        "marketId": "gulf-india",
+        "productCode": "GLF-CHAIN-LUBE",
+        "title": "Gulf Chain Lube Spray",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Chain Lube Spray; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-car-care",
+        "basePrice": "385.00",
+        "baseCost": "250.25",
+        "optionDimensions": [
+          "packSize",
+          "format"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 2",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Premium"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 6",
+              "format": "Standard"
+            }
+          }
+        ],
+        "launchDate": "2019-07-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      },
+      {
+        "productId": "gulf-car-care-brake-cleaner",
+        "marketId": "gulf-india",
+        "productCode": "GLF-BRAKE-CLEANER",
+        "title": "Gulf Brake Cleaner",
+        "brand": "Gulf",
+        "brandCode": "GULF",
+        "description": "Gulf product-line identity for Gulf Brake Cleaner; India lubricants economics, demand and operations are simulated.",
+        "departmentId": "adjacent-new-energy",
+        "categoryId": "gulf-car-care",
+        "basePrice": "325.00",
+        "baseCost": "211.25",
+        "optionDimensions": [
+          "packSize",
+          "format"
+        ],
+        "variantDefinitions": [
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Pack of 2",
+              "format": "Standard"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Single",
+              "format": "Premium"
+            }
+          },
+          {
+            "optionValues": {
+              "packSize": "Family pack",
+              "format": "Standard"
+            }
+          }
+        ],
+        "launchDate": "2020-03-01",
+        "discontinueDate": "",
+        "successorOfProductCode": "",
+        "launchProfile": "linear-ramp",
+        "variantLaunchSpreadDays": 0
+      }
+    ]
+  },
+  "customerSegments": [
+    {
+      "segmentId": "bazaar-retailers",
+      "name": "Bazaar retailers and mechanics",
+      "share": 0.52,
+      "demandMultiplier": 1.06
+    },
+    {
+      "segmentId": "fleet-institutional",
+      "name": "Fleet and institutional",
+      "share": 0.28,
+      "demandMultiplier": 1.14
+    },
+    {
+      "segmentId": "industrial-accounts",
+      "name": "Industrial accounts",
+      "share": 0.2,
+      "demandMultiplier": 0.94
+    }
+  ],
+  "promotions": [],
+  "events": [],
+  "operations": {
+    "inventory": {
+      "snapshotCadenceDays": 7,
+      "replenishmentCycleDays": 14,
+      "supplierLeadTimeDays": 9,
+      "supplierLeadTimeJitterDays": 4,
+      "stockoutSkuRate": 0.03,
+      "safetyStockUnits": 24,
+      "replenishmentDemandBufferPct": 0.3
+    },
+    "fulfillment": {
+      "splitRate": 0.14,
+      "processingDelayHours": 4
+    },
+    "returns": {
+      "processingRate": 0.9,
+      "refundFailureRate": 0.05
+    },
+    "supplyChain": {
+      "transferCycleDays": 28,
+      "transferSkuRate": 0.06,
+      "wasteRate": 0.01,
+      "supplierDelayRate": 0.12,
+      "weatherForecastHorizonDays": 7
+    },
+    "webhook": {
+      "fixtureSecret": "northstar-synthetic-fixture-secret",
+      "invalidFixtureRate": 0.25
+    },
+    "storeInventory": {
+      "snapshotCadenceDays": 7,
+      "reviewCycleDays": 14,
+      "targetDaysOfCover": 21,
+      "safetyStockUnits": 6,
+      "replenishmentPackSize": 12,
+      "openingDaysOfCover": 18,
+      "residualWorkoffWeeks": 26,
+      "primaryLaneTransitDays": 3,
+      "spillLaneTransitDays": 5
+    },
+    "features": {
+      "detailedFulfillment": true,
+      "returnsAndRefunds": true,
+      "webhookFixtures": true,
+      "inventoryStateMatrix": true,
+      "supplyChain": true,
+      "warehouseOperations": true,
+      "transfers": true,
+      "supplierPlanning": true,
+      "promotionPlanning": true,
+      "allocationEvidence": true,
+      "storeInventory": true
+    }
+  },
+  "output": {
+    "rootDirectory": "output",
+    "publicFormats": [
+      "parquet",
+      "duckdb"
+    ],
+    "compression": "zstd",
+    "writeHiddenTruth": true,
+    "overwrite": false
+  },
+  "pandemics": []
+}

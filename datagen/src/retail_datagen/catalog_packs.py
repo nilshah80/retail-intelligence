@@ -18,7 +18,7 @@ from typing import Any
 
 from .identity import rng, stable_integer
 
-CATALOG_PACK_VERSION = "2026.7"
+CATALOG_PACK_VERSION = "2026.6"
 MONEY_QUANT = Decimal("0.01")
 SUPPORTED_CATALOG_MODES = {"generated", "hybrid", "explicit"}
 # Option values are a pack-global list per dimension, so every value of a
@@ -794,32 +794,75 @@ _OPTION_VALUES = {
     ],
 }
 
-_COUNTRY_SETTINGS = {
-    "IN": {
-        "id": "real-retail-IN", "label": "India real-brand reference catalog",
+# A pack's identity is its id, not its country. Two tenants can operate in the
+# same country with entirely different assortments -- a general retailer and a
+# lubricants marketer both sell in India -- and neither should see the other's
+# families in its dropdowns, its validation, or its embedded config. Keying the
+# registry by pack id is what lets a tenant be added without touching any other
+# tenant's checked-in scenario.
+#
+# `families` is the exhaustive family set for the pack. A family absent from the
+# list does not exist for that pack: it cannot be selected, cannot validate, and
+# never appears in the pack's `familyIds` metadata.
+_RETAIL_FAMILIES = tuple(
+    family_id
+    for family_id in _FAMILY_BEHAVIOUR
+    if not family_id.startswith("lubricants-")
+)
+_GULF_FAMILIES = tuple(
+    family_id
+    for family_id in _FAMILY_BEHAVIOUR
+    if family_id.startswith("lubricants-")
+    # Batteries and car care are genuinely the same behaviour as the retail
+    # automotive families, so the lubricants pack reuses them rather than
+    # duplicating them under a new name.
+    or family_id in {"automotive-accessories", "automotive-car-care"}
+)
+
+_PACK_SETTINGS: dict[str, dict[str, Any]] = {
+    "real-retail-IN": {
+        "countryCode": "IN", "label": "India real-brand reference catalog",
         "barcodeFormat": "EAN13", "countryOfOrigin": "IN", "priceScale": "83",
+        "families": _RETAIL_FAMILIES,
     },
-    "US": {
-        "id": "real-retail-US", "label": "United States real-brand reference catalog",
+    "real-retail-US": {
+        "countryCode": "US", "label": "United States real-brand reference catalog",
         "barcodeFormat": "UPCA", "countryOfOrigin": "US", "priceScale": "1",
+        "families": _RETAIL_FAMILIES,
     },
-    "GB": {
-        "id": "real-retail-GB", "label": "United Kingdom real-brand reference catalog",
+    "real-retail-GB": {
+        "countryCode": "GB", "label": "United Kingdom real-brand reference catalog",
         "barcodeFormat": "EAN13", "countryOfOrigin": "GB", "priceScale": "0.79",
+        "families": _RETAIL_FAMILIES,
     },
-    "DE": {
-        "id": "real-retail-DE", "label": "Germany/Europe real-brand reference catalog",
+    "real-retail-DE": {
+        "countryCode": "DE", "label": "Germany/Europe real-brand reference catalog",
         "barcodeFormat": "EAN13", "countryOfOrigin": "DE", "priceScale": "0.92",
+        "families": _RETAIL_FAMILIES,
+    },
+    "gulf-lubricants-IN": {
+        "countryCode": "IN", "label": "Gulf Oil India lubricants reference catalog",
+        "barcodeFormat": "EAN13", "countryOfOrigin": "IN", "priceScale": "83",
+        "families": _GULF_FAMILIES,
     },
 }
 
+#: Default pack per country, for callers that have only a country in hand.
+DEFAULT_PACK_BY_COUNTRY = {
+    "IN": "real-retail-IN",
+    "US": "real-retail-US",
+    "GB": "real-retail-GB",
+    "DE": "real-retail-DE",
+}
 
-def _resolved_pack(country_code: str) -> dict[str, Any]:
-    source = _COUNTRY_SETTINGS[country_code]
+
+def _resolved_pack(pack_id: str) -> dict[str, Any]:
+    source = _PACK_SETTINGS[pack_id]
+    country_code = source["countryCode"]
     scale = Decimal(source["priceScale"])
     families: dict[str, dict[str, Any]] = {}
-    for family_id, definition in _FAMILY_BEHAVIOUR.items():
-        family = deepcopy(definition)
+    for family_id in source["families"]:
+        family = deepcopy(_FAMILY_BEHAVIOUR[family_id])
         if family_id in _REGIONAL_PRODUCT_OVERRIDES.get(country_code, {}):
             family["products"] = deepcopy(
                 _REGIONAL_PRODUCT_OVERRIDES[country_code][family_id]
@@ -840,7 +883,7 @@ def _resolved_pack(country_code: str) -> dict[str, Any]:
         }
     )
     return {
-        "id": source["id"],
+        "id": pack_id,
         "version": CATALOG_PACK_VERSION,
         "label": source["label"],
         "countryCode": country_code,
@@ -848,30 +891,48 @@ def _resolved_pack(country_code: str) -> dict[str, Any]:
         "countryOfOrigin": source["countryOfOrigin"],
         "brands": [{"name": name, "code": code} for name, code in brands],
         "collections": [],
+        # Option values stay pack-global. Only families are scoped: a pack
+        # cannot use a dimension none of its families declare, so filtering here
+        # would add a second failure mode without removing any real coupling.
         "optionValues": deepcopy(_OPTION_VALUES),
         "families": families,
     }
 
 
-CATALOG_PACKS = {country: _resolved_pack(country) for country in _COUNTRY_SETTINGS}
+CATALOG_PACKS = {pack_id: _resolved_pack(pack_id) for pack_id in _PACK_SETTINGS}
 CATALOG_PACK_METADATA = {
-    country: {
+    pack_id: {
         "id": pack["id"],
         "version": pack["version"],
         "label": pack["label"],
-        "countryCode": country,
+        "countryCode": pack["countryCode"],
         "barcodeFormat": pack["barcodeFormat"],
         "familyIds": sorted(pack["families"]),
     }
-    for country, pack in CATALOG_PACKS.items()
+    for pack_id, pack in CATALOG_PACKS.items()
 }
 
 
-def resolve_catalog_pack(country_code: str) -> dict[str, Any]:
+def resolve_catalog_pack(pack_id: str) -> dict[str, Any]:
+    """Resolve one catalog pack by its id.
+
+    Identity is the pack id rather than the country: two tenants may share a
+    country and must not share an assortment.
+    """
+
     try:
-        return deepcopy(CATALOG_PACKS[country_code])
+        return deepcopy(CATALOG_PACKS[pack_id])
     except KeyError as exc:
-        raise ValueError(f"unsupported catalog country {country_code!r}") from exc
+        raise ValueError(f"unsupported catalog pack {pack_id!r}") from exc
+
+
+def market_pack_id(market: dict[str, Any]) -> str:
+    """The pack a market selects, defaulting to its country's retail pack."""
+
+    declared = (market.get("catalogPack") or {}).get("id")
+    if isinstance(declared, str) and declared:
+        return declared
+    return DEFAULT_PACK_BY_COUNTRY.get(market.get("countryCode", ""), "")
 
 
 def _decimal_between(
@@ -1090,7 +1151,7 @@ def _product_from_definition(
     generated_lifecycle_position: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     master_seed = config["identity"]["masterSeed"]
-    pack = resolve_catalog_pack(market["countryCode"])
+    pack = resolve_catalog_pack(market_pack_id(market))
     family = pack["families"][category["catalogFamily"]]
     generation = config["catalog"]["generation"]
     lifecycle = generation["lifecycle"]
