@@ -1792,6 +1792,140 @@ production.
       and artifact semantics must not be host-specific.
 - [ ] **Exit:** full run passes; all screens live.
 
+## Gulf Oil India tenant — lubricants datagen & source onboarding `[PARALLEL TENANT TRACK, BLOCKED ON CLIENT EVIDENCE]`
+
+Plan: `plans/local/gulf-oil-india-implementation-plan.md`. Depends on Phase 1 and Phase 2 only —
+it does not wait on Phases 3–8, and it does not deliver a forecast, elasticity or pricing result.
+Code changes land in `datagen/` only; one new profile YAML lands in `ingestion/`; `ml/`, `api/`,
+`db/` and `ui/` code is untouched. Verified: no department, category or tax class is hard-coded in
+any downstream executable path, and option dimensions ride the generic `option1Name`…`option3Value`
+columns, so extending the catalog vocabulary changes no downstream schema.
+
+**GOI-0 Client evidence and framing decisions**
+- [ ] **Entry gate — no other Gulf task starts first.** Obtain the client-confirmed department/
+      category structure, product lines, viscosity grades, pack sizes, indicative MRP and cost
+      bands, channel mix, and depot/distributor topology. The catalog in §8 of the plan is
+      assembled from public brand knowledge and is a proposal, not evidence. Amend §8 to what the
+      client confirms; remove or explicitly label everything it does not. If the evidence pack is
+      unavailable, do not proceed by inventing a lubricants catalog — a delayed demo beats
+      presenting a fabricated assortment back to the client as their own.
+- [ ] Record `GOI-D0` (no SKU ships without client evidence or an explicit synthetic label) and
+      `GOI-D9` (brand and product-line names are reference identities only; prices, costs, volumes,
+      demand and operations are simulated — exactly as `catalog_packs.py:465` already treats
+      Castrol/Shell/Mobil/Valvoline).
+- [ ] Decide `GOI-D1` topology framing in writing: depots→warehouses and distributors→stores,
+      reusing Phase 4 multi-echelon mechanics unchanged (option A); or first-class distributor/
+      OEM/institutional channel types with secondary-sales grain (option B — a `v14` source-
+      contract change that supersedes this plan rather than amending it). If A, record the
+      accepted vocabulary imprecision: a "store" is a distributor, and that word reaches canonical
+      data and the screen.
+- [ ] Decide `GOI-D2` source-system framing: keep Shopify/Business Central shapes as source
+      stand-ins with zero adapter work (option A), or author a SAP-shaped profile and bounded
+      adapter (option B, a separate ingestion workstream). If A, state the framing in every demo
+      surface — presenting a BC-shaped extract as Gulf's ERP is a false claim about the estate.
+- [ ] Confirm whether the requirement is source/data demonstration, forecasting, or pricing.
+      Phase 3 forecast authorization is NO-GO and Phase 5 is an unapproved draft, so a Gulf
+      forecast or pricing result is not deliverable here; record that dependency explicitly if
+      either is the ask, and again at `GOI-8`.
+
+**GOI-1 Freeze the vocabulary and tax design**
+- [ ] Specify, before any catalog code: the grade dimension and its value list; litre/millilitre/
+      kilogram pack values with display names, codes and numeric content; measurement bases per
+      new family; and the Gulf families per `GOI-D4` (`categoryCode`, option dimensions, reference
+      identities, price band, seasonality peak/strength, margin, return rate, elasticity range,
+      costing method, shelf life).
+- [ ] Decide `GOI-D3` India lubricant tax mechanism. Lubricants are 18% GST but the `IN` pack
+      rates `automotive` at `0.28`. Prefer adding a `lubricants` class to the closed list at
+      `config.py:900` and to `IN.tax.categoryRates` over changing the `automotive` rate, which
+      would move the Northstar retail preset's data.
+- [ ] State the option budget per category and prove none exceeds three dimensions.
+      `generator.py:921`–`:926` writes `option1`…`option3` and silently drops the rest; no
+      validator catches a fourth. Grade × pack is two, so Gulf fits — but make the check explicit.
+
+**GOI-2 Extend the catalog pack with Northstar byte-stability**
+- [ ] Extend `SUPPORTED_OPTION_DIMENSIONS` (`catalog_packs.py:24`), `_OPTION_VALUES` (`:545`),
+      `PACK_COUNTS` (`:58`), `FAMILY_MEASUREMENTS` (`:38`) and `_FAMILY_BEHAVIOUR` (`:113`); apply
+      the `GOI-D3` tax change; bump `CATALOG_PACK_VERSION` (`:21`) and record it in the resolved
+      config.
+- [ ] Extend the Config Builder to author the new dimension and values, and prove lossless
+      YAML/JSON export and re-import.
+- [ ] **Hard exit:** prove the Northstar preset yields a byte-identical resolved catalog and an
+      unchanged config hash. Record explicitly whether the pack-version bump moves the retail run
+      identity, and obtain approval for that consequence *before* proceeding, not after. Silent
+      movement of the accepted retail lineage is a no-go.
+
+**GOI-3 Author the Gulf scenario configuration**
+- [ ] Author in the Config Builder, not by hand: retailer, market(s), legal entity, channels,
+      depots as warehouses, distributors as stores, source instances, operations; four departments
+      and sixteen categories with per-category economics; every confirmed product template with
+      its grade and pack variants under `GOI-D5` (`explicit` mode — no generated filler in a
+      client-facing lubricants catalog).
+- [ ] Author seasonality from existing surfaces only: monsoon oil-change surge, Kharif/Rabi
+      tractor peaks, Diwali two-wheeler servicing, freight-cycle CV demand, and at least one
+      base-oil cost shock through phased `events` with `costMultiplier`/`leadTimeMultiplier`.
+- [ ] Validate and plan the config; record product count, sellable SKU count, estimated orders and
+      partition count. A validation pass is not a fidelity pass — if the estimate implies SKU or
+      order volumes the client would not recognize, return to `GOI-1`.
+- [ ] Decide `GOI-D6` market granularity (single `IN` versus four regional markets) and `GOI-D10`
+      config-hash handling. `command_config_hash` (`tools/dev.py:3043`) hard-codes the Northstar
+      config with no override; validate the Gulf config through `retail_datagen.cli validate-config`
+      directly rather than teaching `tools/dev.py` about tenants.
+
+**GOI-4 Author and fixture-prove the Gulf ingestion profile**
+- [ ] Author `ingestion/src/retail_ingestion/profiles/gulf_oil_india.yaml` against
+      `contracts/profiles/profile.schema.json`. The existing profile is scenario-bound, not
+      generic: it hard-codes `extractWindow`, six Northstar `sourceInstances` and
+      `locationOverrides` keyed to literal Shopify location GIDs. Carry the ~360-line `datasets`
+      block over unchanged and replace the rest.
+- [ ] Prove the profile on a small deterministic fixture end to end — generate → land → Gate A →
+      stage → transform → Gate B → readiness → publish via `--source-profile` — before any long
+      run. Add the round-trip test plus a negative test showing a Gulf run under the Northstar
+      profile fails Gate A with a clear reason.
+- [ ] **Stop condition:** if any stage requires a code edit outside `datagen/`, halt and escalate.
+      That result falsifies the track's central premise; the plan is revised, not worked around.
+
+**GOI-5 Short-horizon publication and sizing evidence**
+- [ ] Generate the showcase horizon and take it to a curated publication. Record per-stage wall
+      time, peak memory, row counts and control totals; append to `docs/pipeline-stage-timings.md`.
+- [ ] Compute the SKU × location × week grid and compare every intended analysis segment against
+      `MIN_SEGMENT_SERIES = 25` (`ml/src/retail_ml/models/reconciliation.py:33`). Resize the
+      scenario before the long run if segments fall short — discovering thin segments after a
+      ~90-minute, ~15 GB generation is avoidable waste. Decide `GOI-D6`/`GOI-D7` on this evidence,
+      not on estimates.
+- [ ] Confirm the expected source outcomes: nonzero store and depot stock; typed origin-safe
+      service lanes; fulfillment and status facts passing event-placement rules; supplier terms at
+      `native_extracted` or stronger; non-degenerate lead-time distribution; reconstructible
+      inbound positions at replay origins.
+
+**GOI-6 Long-horizon publication, selection and pin**
+- [ ] Generate the long horizon without overwriting the showcase run; run Gate A and Gate B;
+      publish an immutable curated publication with retained evidence; create Decision-#73
+      candidate → approved → active selections and a separate Gulf expected-pin per `GOI-D8`.
+- [ ] Prove two lineages coexist: the Northstar publication, selections and pin unchanged and
+      still active, with exactly one active version per scope within each lineage. No Gulf artifact
+      supersedes a retail artifact and no shared pin file is repointed in place.
+- [ ] Prove determinism — repeated generation under the same pinned writer/profile reproduces
+      source ids exactly after excluded logical objects are removed — and safe/performance
+      equivalence on canonical schemas, control totals and ordered row digests. Cross-profile
+      source-id equality is not required.
+- [ ] Do not update any pin until the capability verdict itself passes; a global Gate B pass is not
+      evidence that the required Gulf capabilities are ready and sufficient.
+
+**GOI-7 Isolation, regression and portability evidence**
+- [ ] Run the full suite via `tools/dev.py` (`test`, `contracts`, `boundaries`, `ui-test`,
+      `ml-test`) plus `check_import_boundaries.py`; prove no executable file under `ml/`, `api/`,
+      `db/` or `ui/` differs from `main`; re-verify the Northstar lineage from its own pin and
+      confirm identical control totals.
+- [ ] Collect manual Windows, macOS and Linux evidence for the Gulf datagen and ingestion path per
+      `contracts/validation-policy.yaml`. No repository CI is added.
+
+**GOI-8 Demo framing and handover**
+- [ ] **Exit:** the demo narrative states which data is synthetic, that Shopify/Business Central
+      are source shapes rather than claims about Gulf's estate, that "store" denotes a distributor,
+      and which client-confirmed catalog facts underpin the assortment; the forecast/pricing
+      dependency is restated (no Gulf forecast or pricing result is authorized under this track);
+      and the escalation path to `GOI-D1`/`GOI-D2` option B is recorded with its scope.
+
 - [x] **Decision #92 closed end to end 2026-08-01.** Cold-start intervals are published only
       within the calibrated horizon and withheld beyond it, and the withholding now reaches
       serving rather than stopping at the bundle.
