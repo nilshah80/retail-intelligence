@@ -16,6 +16,7 @@ import hashlib
 import json
 from decimal import Decimal
 import subprocess
+import sys
 from pathlib import Path
 
 import duckdb
@@ -567,7 +568,11 @@ def test_import_boundaries_hold_for_the_new_adapters() -> None:
     """The shared boundary checker covers the new code too."""
 
     result = subprocess.run(
-        ["python3", str(REPO_ROOT / "tools/check_import_boundaries.py")],
+        # sys.executable, not "python3": on Windows that name resolves to the
+        # Microsoft Store alias stub, which exits 9009 with "Python was not
+        # found" without running the script. The interpreter running this test
+        # is by definition present and correct.
+        [sys.executable, str(REPO_ROOT / "tools/check_import_boundaries.py")],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

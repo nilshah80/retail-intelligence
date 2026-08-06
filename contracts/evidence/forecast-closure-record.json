@@ -49,7 +49,7 @@
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": []
   },
-  "bundlePath": "ml\\data\\artifacts\\forecast_run_current",
+  "bundlePath": "ml/data/artifacts/forecast_run_current",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",

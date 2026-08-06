@@ -103,7 +103,7 @@
   "forecastAuthority": {
     "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
     "activeAuthorityCount": 1,
-    "bundlePath": "ml\\data\\artifacts\\forecast_run_current",
+    "bundlePath": "ml/data/artifacts/forecast_run_current",
     "featureSemanticFingerprint": "f743da0a134cf07f6d08fae82bb06bf433d955e452a76d760f6950d699f23eca",
     "forecastRunId": "fr_b2ed1a914b059e93",
     "lifecycleStatus": "accepted",
@@ -185,7 +185,7 @@
   },
   "package": "P4-0",
   "parityAmendment": {
-    "amendedContractPath": "contracts\\screens\\demand-forecast.parity.yaml",
+    "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
     "amendedContractSha256": "8de45c92f2a831c0425d2d216cb99d0be45b8d1d32b42a2a23c72fab5567354f",
     "amendmentId": "P4-0P-A1",
     "approval": {
@@ -227,7 +227,7 @@
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
   "servingMigration": "0020_safety_stock_drivers",
   "sourceSelection": {
-    "activeRecordId": "rec_3955dd35e0b6d9e3",
+    "activeRecordId": "rec_65c46eb067afe368",
     "capabilityReadiness": "ready",
     "capabilitySufficiency": "sufficient",
     "lifecycleRecords": [

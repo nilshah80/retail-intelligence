@@ -242,7 +242,10 @@ def _bundle_index() -> dict[str, str]:
             continue
         run_id = manifest.get("forecastRunId")
         if run_id:
-            index[run_id] = str(manifest_path.parent.relative_to(REPO_ROOT))
+            # as_posix: this value is written into `supersededIdentities[].bundlePath`
+            # below, so it is committed evidence and must not carry the separator of
+            # whichever host generated it.
+            index[run_id] = manifest_path.parent.relative_to(REPO_ROOT).as_posix()
     return index
 
 
@@ -389,7 +392,13 @@ def build(bundle: Path) -> dict:
             "run it described. Regenerate with: "
             "tools/dev.py closure-record --forecast-run <bundle>"
         ),
-        "bundlePath": str(bundle.relative_to(REPO_ROOT)),
+        # as_posix, not str(): `str()` on a Windows PurePath yields backslashes, and
+        # this value is committed evidence that three tests join back onto
+        # REPO_ROOT. Regenerated on Windows it produced
+        # "ml\data\artifacts\..." and those tests then passed only on
+        # Windows -- the one place this repository's logical-paths-use-/ rule
+        # was actually broken rather than merely at risk.
+        "bundlePath": bundle.relative_to(REPO_ROOT).as_posix(),
         "acceptedRun": {
             "forecastRunId": manifest["forecastRunId"],
             "forecastVersionId": live["forecastVersionId"],

@@ -135,6 +135,7 @@ class TestAdoptionRefusals:
         original = dev._repin_facts
         dev._repin_facts = lambda run_id: {
             "run": run_id,
+            "gateAStatus": "pass",  # so the capability check is what refuses
             "missingRequiredCapabilities": ["inventory_replenishment_replay"],
         }
         try:
@@ -161,6 +162,7 @@ class TestAdoptionRefusals:
         original = dev._repin_facts
         dev._repin_facts = lambda run_id: {
             "run": run_id,
+            "gateAStatus": "pass",
             "missingRequiredCapabilities": [],
         }
         try:
@@ -228,9 +230,94 @@ class TestReRunSafety:
         assert not stamp.startswith("1970")
 
 
+class TestPortability:
+    def test_every_selected_run_is_derivable_without_local_bytes(self) -> None:
+        """The ledger must verify on a fresh clone, not only where the data is.
+
+        `ingestion/data/` is gitignored, so a run adopted here has no bytes anywhere
+        else. r7 named a run that was in neither EVIDENCE_RELEASED_RUNS nor any
+        released set, and `--check` consequently failed on macOS, on a fresh clone,
+        and on this host the moment it wiped derived data -- while passing here.
+        """
+
+        released = set(selection.EVIDENCE_RELEASED_RUNS)
+        released |= {str(e.get("run")) for e in selection.load_generations()}
+        directory = (
+            REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+        )
+        unreachable = set()
+        for path in directory.glob("*.json"):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            logical = (record.get("publication") or {}).get("logicalPath")
+            if not logical:
+                continue
+            run = logical.rsplit("/", 1)[-1]
+            if run not in released:
+                unreachable.add(run)
+        assert not unreachable, (
+            "these runs are named by committed records but are neither declared "
+            f"evidence-released nor named by a ledger generation: {sorted(unreachable)}"
+        )
+
+    def test_committed_logical_paths_use_forward_slashes(self) -> None:
+        """A committed logical path must not carry the writing host's separator."""
+
+        offenders = []
+        for path in (REPO_ROOT / "contracts" / "evidence").rglob("*.json"):
+            document = json.loads(path.read_text(encoding="utf-8"))
+
+            def walk(node, where=path.name):
+                if isinstance(node, dict):
+                    for key, value in node.items():
+                        if (
+                            key.lower().endswith("path")
+                            and isinstance(value, str)
+                            and "\\" in value
+                        ):
+                            offenders.append(f"{where}:{key}={value}")
+                        walk(value, where)
+                elif isinstance(node, list):
+                    for item in node:
+                        walk(item, where)
+
+            walk(document)
+        assert not offenders, f"backslashes in committed logical paths: {offenders}"
+
+
 class TestCollisionAvoidance:
     def test_an_adopted_run_is_recognised(self) -> None:
         """The check that stops a re-publication overwriting an attested artifact."""
 
         assert dev._generation_names_run("run-adac9e85dccb56e8-r6")
         assert not dev._generation_names_run("run-does-not-exist")
+
+
+class TestGateRefusal:
+    def test_a_failing_gate_a_is_refused_before_any_record_is_written(
+        self, capsys
+    ) -> None:
+        """A reason string must not be able to say "passed Gate A (fail)"."""
+
+        import argparse
+
+        original = dev._repin_facts
+        dev._repin_facts = lambda run_id: {
+            "run": run_id,
+            "gateAStatus": "fail",
+            "missingRequiredCapabilities": [],
+        }
+        try:
+            code = dev.command_repin(
+                argparse.Namespace(
+                    run_id="run-test",
+                    approve=True,
+                    actor=None,
+                    reason=None,
+                    reason_code="TEST",
+                    approved_at=None,
+                )
+            )
+        finally:
+            dev._repin_facts = original
+        assert code == 1
+        assert "Gate A is 'fail'" in capsys.readouterr().err

@@ -37,9 +37,7 @@ from urllib.request import urlopen
 #: `PYTHONUTF8=1` is read by any CPython at startup, so every venv subprocess picks
 #: it up by inheritance, and it changes nothing on macOS or Linux where stdio is
 #: already UTF-8. `setdefault` so an explicit host setting still wins.
-import os as _os_for_utf8  # noqa: E402  (must run before any subprocess is spawned)
-
-_os_for_utf8.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONUTF8", "1")
 
 #: ...and fix THIS process's own streams, which the variable above cannot reach.
 #:
@@ -822,6 +820,17 @@ def command_repin(args: argparse.Namespace) -> int:
 
     facts = _repin_facts(run_id)
     previous = _repin_previous()
+    # Gate A is interpolated into the candidate reason as "passed Gate A (...)",
+    # so a non-pass run would produce a governance record asserting it passed while
+    # naming the failure in the same sentence. The builder catches it a step later
+    # and the rollback unwinds it, but a record should not be able to say that at
+    # all -- refusing here is cheaper than relying on a downstream catch.
+    if facts.get("gateAStatus") != "pass":
+        print(
+            f"refusing: Gate A is {facts.get('gateAStatus')!r}, not 'pass'",
+            file=sys.stderr,
+        )
+        return 1
     if facts["missingRequiredCapabilities"]:
         print(
             "refusing: this publication does not offer every required capability: "
@@ -855,11 +864,16 @@ def command_repin(args: argparse.Namespace) -> int:
     # persist a half-adoption: a generation recorded, selections possibly advanced,
     # and the pin still naming the previous publication. Restoring the ledger and
     # removing the records it produced is the closest this gets to a transaction.
+    # Bytes, not text: restoring must not itself depend on `write_text(newline=)`,
+    # which is 3.10+. A rollback that raises on the interpreter it is most likely to
+    # run under is worse than no rollback, because it fails while claiming to repair.
     ledger_before = (
-        selection.GENERATIONS_PATH.read_text(encoding="utf-8")
+        selection.GENERATIONS_PATH.read_bytes()
         if selection.GENERATIONS_PATH.is_file()
         else None
     )
+    pin_path = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
+    pin_before = pin_path.read_bytes() if pin_path.is_file() else None
     records_before = {
         path.name
         for path in (
@@ -869,9 +883,15 @@ def command_repin(args: argparse.Namespace) -> int:
 
     def _roll_back(stage: str) -> None:
         if ledger_before is not None:
-            selection.GENERATIONS_PATH.write_text(
-                ledger_before, encoding="utf-8", newline="\n"
-            )
+            selection.GENERATIONS_PATH.write_bytes(ledger_before)
+        # The pin too. Rollback restored the ledger and the records but left a pin
+        # that a failed expected-pin stage had already rewritten or truncated --
+        # while reporting that no half-adoption remained. A rollback that claims more
+        # than it undid is the thing that makes the next failure hard to diagnose.
+        if pin_before is not None:
+            pin_path.write_bytes(pin_before)
+        elif pin_path.is_file():
+            pin_path.unlink()
         directory = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
         for path in directory.glob("*.json"):
             if path.name not in records_before:
@@ -953,26 +973,34 @@ def command_serve(args: argparse.Namespace) -> int:
     # container, user and database: `_local_postgres_dsn` already honours
     # RETAIL_POSTGRES_DSN and deploy/.env, and the previous form reported a
     # customised deployment as having no active forecast at all.
-    dsn = os.environ.get("RETAIL_POSTGRES_DSN") or _local_postgres_dsn(
-        sqlalchemy=False
-    )
+    # `_local_postgres_dsn` unconditionally, never the raw environment variable: it
+    # is the function that NORMALISES the override, and a supported
+    # `postgresql+psycopg://…` value read directly reaches psycopg unparsed and
+    # raises. Reading the variable myself skipped the one thing the helper is for.
+    dsn = _local_postgres_dsn(sqlalchemy=False)
+    # The DSN carries a password, so it goes through the child's environment rather
+    # than argv, where it would be visible to any process listing on the host. That
+    # matters more now than it did with the hard-coded local default, because this
+    # path deliberately honours a real deployment's credentials.
+    probe_env = dict(os.environ)
+    probe_env["RETAIL_PROBE_DSN"] = dsn
     probe = subprocess.run(
         [
             str(_require_python(ML_ENV, "ml")),
             "-c",
-            "import sys, psycopg\n"
-            "with psycopg.connect(sys.argv[1]) as c:\n"
+            "import os, sys, psycopg\n"
+            "with psycopg.connect(os.environ['RETAIL_PROBE_DSN']) as c:\n"
             "    row = c.execute(\n"
             "        'select activation_scope_fingerprint from '\n"
             "        'retail_serving.active_forecast_versions '\n"
             "        'where publication_semantic_fingerprint = %s',\n"
-            "        (sys.argv[2],),\n"
+            "        (sys.argv[1],),\n"
             "    ).fetchone()\n"
             "print(row[0] if row else '')\n",
-            dsn,
             publication,
         ],
         capture_output=True, encoding="utf-8", errors="replace", check=False,
+        env=probe_env,
     )
     fingerprint = (probe.stdout or "").strip()
     if not fingerprint:
@@ -1265,7 +1293,14 @@ def _host_execution_profile() -> str:
             status = _MemoryStatusEx()
             status.dwLength = ctypes.sizeof(_MemoryStatusEx)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                memory_gb = int(status.ullTotalPhys) // (1024**3)
+                # ROUNDED, not floored. GlobalMemoryStatusEx reports OS-visible
+                # physical memory -- installed minus the firmware reservation -- so a
+                # nominal 32 GB box reports 31.7 GiB and flooring gives 31, one below
+                # the `>= 32` threshold. macOS's `sysctl hw.memsize` returns the
+                # nominal 34359738368 and gives 32, so identical hardware resolved
+                # `performance` there and `balanced` here: precisely the
+                # cross-platform divergence this probe was added to remove.
+                memory_gb = round(int(status.ullTotalPhys) / (1024**3))
         except (ImportError, AttributeError, OSError, ValueError):
             memory_gb = 0
     if memory_gb >= 32 and cores >= 8:

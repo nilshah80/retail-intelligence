@@ -185,7 +185,9 @@ def _parity_amendment() -> dict[str, Any]:
         "decisionAmendment": amendment["decisionAmendment"],
         "frozenBehavior": amendment["frozenBehavior"],
         "approval": amendment["approval"],
-        "amendedContractPath": str(PARITY_CONTRACT.relative_to(REPO_ROOT)),
+        # as_posix for the same reason as bundlePath: a committed logical path
+        # must not carry the separator of whichever host wrote it.
+        "amendedContractPath": PARITY_CONTRACT.relative_to(REPO_ROOT).as_posix(),
         "amendedContractSha256": _sha256(PARITY_CONTRACT),
         "resolvedDecisionQuestions": sorted(
             contract["reviewGate"]["resolvedDecision"],

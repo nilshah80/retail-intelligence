@@ -35,7 +35,10 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from build_publication_selection import current_records  # noqa: E402
+from build_publication_selection import (  # noqa: E402
+    current_records,
+    load_generations,
+)
 
 PIN_PATH = REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
 SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
@@ -47,15 +50,25 @@ SELECTION_DIR = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 #: once: the feature manifest recorded sourceSnapshotId d43fd302 when the intent was
 #: 0634b079. Hence the derivation below, and hence `build_pin` cross-checking the
 #: active decision-#73 selection before it writes anything.
-#:
-#: Kept only as the fallback for a repository with no retained evidence at all --
-#: `_pinned_run()` below is the real answer. It was a hand-edited constant, and the
-#: automated repin made that untenable: `repin` rewrites the pin FILE for whichever
-#: run it adopted but cannot rewrite a literal in this source, so after one automated
-#: adoption the constant named r6 while the pin named r2 and `--check` failed against
-#: a pin that was itself correct. A value that must be edited by hand after every
-#: automated step is a value that will be stale.
-_FALLBACK_RUN = "run-adac9e85dccb56e8-r6"
+
+
+def _fallback_run() -> str | None:
+    """The run the committed ledger last adopted, for a checkout with no data.
+
+    Derived, because a hardcoded fallback goes stale exactly as fast as the constant
+    it replaced: it said r6 while the committed pin named r2, one commit later, so a
+    fresh clone's `--list` reported a run nothing pinned. The newest ledger
+    generation is the same authority `--check` verifies against, so the two cannot
+    disagree.
+    """
+
+    try:
+        generations = load_generations()
+    except (OSError, ValueError):
+        return None
+    if not generations:
+        return None
+    return str(generations[-1].get("run") or "") or None
 
 
 def _pinned_run() -> str:
@@ -73,7 +86,13 @@ def _pinned_run() -> str:
     if len(promoted) == 1:
         return promoted[0]
     if not promoted:
-        return _FALLBACK_RUN
+        fallback = _fallback_run()
+        if fallback is None:
+            raise SystemExit(
+                "no run has retained evidence and the ledger names none; "
+                "pass --run to state which publication is pinned"
+            )
+        return fallback
     raise SystemExit(
         f"{len(promoted)} runs have retained evidence ({', '.join(promoted)}); "
         "pass --run to state which one is pinned rather than letting this guess"
@@ -269,7 +288,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         available = _promoted_runs()
-        print(f"currently pinned: {_pinned_run()}")
+        # Guarded for the same reason the --check comparison is: `_pinned_run()`
+        # refuses to guess between several retained runs, and a LISTING is exactly
+        # when a caller needs to see those runs rather than be told to disambiguate
+        # them. Raising here made the command that answers "which runs are there?"
+        # fail because there was more than one.
+        try:
+            print(f"currently pinned: {_pinned_run()}")
+        except SystemExit as ambiguity:
+            print(f"currently pinned: undetermined -- {ambiguity}")
         if available:
             for run in available:
                 print(f"  retained evidence: {run}")

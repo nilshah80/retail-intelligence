@@ -177,7 +177,10 @@ def test_platform_identifiers_stay_inside_the_reviewed_allowlist(
                 continue
             if ".venv" in path.parts or "node_modules" in path.parts:
                 continue
-            relative = str(path.relative_to(REPO_ROOT))
+            # as_posix: the allowlist entries are `/`-separated logical paths,
+            # and str() yields backslashes on Windows, so startswith() never
+            # matched and permitted files were reported as offenders.
+            relative = path.relative_to(REPO_ROOT).as_posix()
             if any(relative.startswith(entry) for entry in permitted):
                 continue
             if PLATFORM_PATTERN.search(path.read_text(encoding="utf-8", errors="ignore")):

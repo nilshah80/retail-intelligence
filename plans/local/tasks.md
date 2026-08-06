@@ -106,13 +106,13 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
       gate and this row does not satisfy it.
       **Done 2026-08-05 on Windows 11 Pro 10.0.26200** (8 logical cores, 31.7 GiB, NTFS, Python
       3.12.10, Go 1.26.5, Node 24.19.0, Docker 29.6.2 / Compose v5.3.1), `performance` profile,
-      against the regenerated ten-year pin: `datagen` plus all sixteen `tools/dev.py pipeline`
+      against the regenerated ten-year pin: `datagen` plus all eighteen `tools/dev.py pipeline`
       stages from `land` to `inventory-activate`, exit 0. The forecast passed every acceptance gate
       — A1 established **53.48%**, A2 coverage **0.9029**, per-cohort **0.8991** cold-start /
       **0.9047** established against the hard `[0.85, 0.95]` band, A3–A5 pass, champion WAPE
       **0.27686** over 708,708 rows. Cold-start coverage reproduced the accepted macOS run to all
       sixteen digits, which is the substantive result: **the platform changed the clock, not the
-      numbers.** Also exercised: contract validation and codegen `--check`, the 74-record selection
+      numbers.** Also exercised: contract validation and codegen `--check`, the 86-record selection
       ledger and expected-pin re-derivation, all 20 migrations to head `0020_safety_stock_drivers`,
       `go build` / `go vet` / `go test ./...`, `npm ci` + typecheck + 37/37 vitest + `vite build`,
       and the live API and UI serving the accepted publication.

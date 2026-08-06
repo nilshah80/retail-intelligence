@@ -288,11 +288,28 @@ def build_candidate(
     if not (evidence / "publication-manifest.json").is_file():
         # No retained evidence. Reproduce the record that was derived when the
         # evidence existed, or refuse -- never invent one.
-        if run not in EVIDENCE_RELEASED_RUNS:
+        # A run named by a committed ledger generation is released implicitly.
+        #
+        # `ingestion/data/` is gitignored, so the bytes behind an adopted publication
+        # exist only on the machine that produced them. Requiring a hand-added
+        # EVIDENCE_RELEASED_RUNS entry meant every automated adoption produced a
+        # ledger that verified on exactly one host: r7 named run-adac9e85dccb56e8-r2
+        # and `--check` failed on a Mac, on a fresh clone, and on this host the moment
+        # it wiped derived data. An adoption IS the declaration, so it counts as one.
+        #
+        # This cannot mint a selection nobody verified. `_recorded_blocks` below still
+        # requires a committed record carrying the publication block to reproduce
+        # from, and a run with neither retained bytes nor a committed record still
+        # refuses. On the host that does hold the bytes, the on-disk manifest is
+        # preferred, so nothing stops being verified while the data is present.
+        if run not in EVIDENCE_RELEASED_RUNS and run not in {
+            str(entry.get("run")) for entry in load_generations()
+        }:
             raise SystemExit(
-                f"{run}: no retained evidence at {evidence} and the run is not a "
-                "declared evidence-released run. A selection cannot be derived "
-                "without the gate and manifest files it is derived FROM."
+                f"{run}: no retained evidence at {evidence}, no declared "
+                "evidence-released entry and no ledger generation naming it. A "
+                "selection cannot be derived without the gate and manifest files it "
+                "is derived FROM."
             )
         blocks = _recorded_blocks(run, capability)
         if blocks is None:
@@ -454,8 +471,9 @@ GENERATIONS_PATH = (
 #: reader downstream treats the ledger as evidence that someone looked.
 AUTOMATED_ACTOR = "automated/repin-policy/v1"
 
-#: Suffix on the ledger tag, so `-r7-active.json` follows `-r6-active.json` and the
-#: committed filenames stay sortable and obviously sequential.
+#: The three capabilities every generation covers. A publication is adopted for
+#: all of them or none: they rest on different evidence and fail independently,
+#: which is why temporal-evidence policy v2 split them in the first place.
 _GENERATION_CAPABILITIES = (
     "demand_forecast_non_pit",
     "inventory_replenishment_current_snapshot",
@@ -571,10 +589,12 @@ def append_generation(
     }
     generations.append(entry)
     document["generations"] = generations
-    GENERATIONS_PATH.write_text(
-        json.dumps(document, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    # write_bytes, not write_text(newline=...): that keyword is 3.10+ and this is
+    # reachable from an orchestrator running whichever python3 is on PATH, which on
+    # macOS is still 3.9. Encoding here keeps the file LF unconditionally -- the same
+    # reasoning, and the same call, `build_expected_pin` already uses for the pin.
+    GENERATIONS_PATH.write_bytes(
+        (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
     )
     return entry
 
@@ -1143,6 +1163,34 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         *r6_superseded.values(),
         *(record for chain in r6_chains.values() for record in chain),
     ]
+
+    # Built HERE, before the invariant, not spliced into the returned filename list
+    # after it. The r4 comment above records this exact bug being fixed once already;
+    # it came back with the derived path and would have stayed, because every future
+    # generation flows through it. The assertion was reading a ledger that stopped at
+    # r6 while the directory held r7 -- "the check verifies a subset and reports on
+    # the whole", again.
+    # Hoisted above `derived` because the derivation needs them. They used to sit
+    # beside the returned filename list, which was fine while the derived
+    # generations were spliced in there too.
+    legacy_prefix = f"{RETAILER_ID}-demand-forecast-{ENVIRONMENT}"
+    forecast_prefix = f"{RETAILER_ID}-demand-forecast-ten-year-{ENVIRONMENT}"
+    current_prefix = f"{RETAILER_ID}-inventory-current-ten-year-{ENVIRONMENT}"
+    replay_prefix = f"{RETAILER_ID}-inventory-replay-ten-year-{ENVIRONMENT}"
+
+    derived = _derived_generations(
+        previous_actives={
+            capability: r6_chains[capability][2]
+            for capability in _GENERATION_CAPABILITIES
+        },
+        prefixes={
+            "demand_forecast_non_pit": forecast_prefix,
+            "inventory_replenishment_current_snapshot": current_prefix,
+            "inventory_replenishment_replay": replay_prefix,
+        },
+    )
+    everything.extend(record for _, record in derived)
+
     # The Phase 3 active record stays on disk as history, so the directory now
     # holds two records whose state reads `active` for one scope. Resolving that
     # by filename or by mtime would be the arbitrary tie-break decision #90 was
@@ -1155,10 +1203,6 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
     predecessor["supersededBySelectionId"] = phase_3_active["selectionId"]
     predecessor["supersededByRecordId"] = phase_3_active["lifecycle"]["recordId"]
 
-    legacy_prefix = f"{RETAILER_ID}-demand-forecast-{ENVIRONMENT}"
-    forecast_prefix = f"{RETAILER_ID}-demand-forecast-ten-year-{ENVIRONMENT}"
-    current_prefix = f"{RETAILER_ID}-inventory-current-ten-year-{ENVIRONMENT}"
-    replay_prefix = f"{RETAILER_ID}-inventory-replay-ten-year-{ENVIRONMENT}"
     return [
         (f"{legacy_prefix}-candidate.json", phase_3_candidate),
         (f"{legacy_prefix}-approved.json", phase_3_approved),
@@ -1257,23 +1301,10 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
         # Everything after r6 is DATA, not source. See the note in the generations
         # ledger: the six hand-written chains above are why adopting one publication
         # took five coordinated edits, and they stay hand-written because they are
-        # already committed and verified.
-        *_derived_generations(
-            previous_actives={
-                "demand_forecast_non_pit": r6_chains["demand_forecast_non_pit"][2],
-                "inventory_replenishment_current_snapshot": r6_chains[
-                    "inventory_replenishment_current_snapshot"
-                ][2],
-                "inventory_replenishment_replay": r6_chains[
-                    "inventory_replenishment_replay"
-                ][2],
-            },
-            prefixes={
-                "demand_forecast_non_pit": forecast_prefix,
-                "inventory_replenishment_current_snapshot": current_prefix,
-                "inventory_replenishment_replay": replay_prefix,
-            },
-        ),
+        # already committed and verified. `derived` is computed above so the
+        # one-active-per-scope invariant sees it; the SAME list is emitted here
+        # rather than a second call, because two calls could disagree.
+        *derived,
     ]
 
 
@@ -1359,7 +1390,20 @@ def main(argv: list[str] | None = None) -> int:
                 "-- see EVIDENCE_RELEASED_RUNS)"
             )
             for run in sorted(_reproduced_runs):
-                print(f"  reproduced: {run} ({EVIDENCE_RELEASED_RUNS[run]})")
+                # A run may be released by the hand-written map OR implicitly by a
+                # ledger generation naming it, so the label must cover both.
+                # Indexing the map directly raised KeyError for every automated
+                # adoption -- after the check had already printed that all 86
+                # records matched, which is the worst possible order to fail in.
+                label = EVIDENCE_RELEASED_RUNS.get(run) or next(
+                    (
+                        f"ledger generation {entry.get('tag')}"
+                        for entry in load_generations()
+                        if entry.get("run") == run
+                    ),
+                    "declared by the generations ledger",
+                )
+                print(f"  reproduced: {run} ({label})")
             for run in sorted(_derived_runs):
                 print(f"  derived from retained evidence: {run}")
         else:
