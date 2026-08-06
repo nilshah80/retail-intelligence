@@ -217,7 +217,51 @@ Two constraints that bound the design rather than block it:
   (`config.py:1076`), and every `optionValues` name must exist in the pack pool
   (`config.py:1118`).
 
-### 1.5 Business-model mismatch
+### 1.5 The Config Builder is a second vocabulary surface
+
+`datagen/config-builder.html` (439 KB) is the only supported authoring surface, and it does not
+read `catalog_packs.py` at runtime. It carries its own **serialized copy** of the generator
+contract, which means the Python extension in `GOI-2` is only half the change.
+
+What the builder embeds, and how it is kept current:
+
+| Embedded contract | In the HTML | Regenerated from |
+|---|---|---|
+| `catalogPacks` JSON script | `config-builder.html:1288`, parsed at `:12883` | `CATALOG_PACK_METADATA` via `datagen/tools/sync_presets.py:406` |
+| `localePacks` JSON script | same pattern | `LOCALE_PACKS` via `sync_presets.py:405` |
+| `executionProfiles` JSON script | same pattern | the execution-profile contract, `sync_presets.py:417` |
+| One JSON script per checked-in preset | one per `PRESETS` entry | `sync_presets.py:30`–`:35`, applied at `:424` |
+| `retail-source-config/vN` version string | inline text | `SOURCE_SPEC_VERSION`, rewritten by `sync_presets.py` |
+
+What that snapshot drives:
+
+- `CATALOG_PACKS.IN.familyIds` populates the **Catalog family** dropdown
+  (`config-builder.html:13107`) and backs two validators (`:13503`, `:13525`). Until the blob is
+  resynced, new Gulf families are neither selectable nor valid — the builder rejects every Gulf
+  category as an unknown catalog family.
+- `config-builder.html:13414` checks each market's embedded `catalogPack` for **equivalence**
+  against the builder's snapshot. A stale blob therefore rejects an otherwise-valid config
+  outright, rather than degrading gracefully.
+
+Two findings that make this a real risk rather than a mechanical step:
+
+1. **One vocabulary list is not synced at all.** `config-builder.html:13498` holds a second,
+   hand-maintained copy of the option-dimension vocabulary as inline JavaScript —
+   `new Set(["ageGroup","color","connectivity","power","compatibility","storage","packSize",
+   "flavour","format","size"])`. `sync_presets.py` only replaces `<script type="application/json">`
+   elements, so it does not touch this. The grade dimension must be hand-added here **in addition
+   to** `SUPPORTED_OPTION_DIMENSIONS` (`catalog_packs.py:24`), and the two must agree.
+2. **There is no gate proving the two surfaces agree.** `sync_presets.py` is referenced in no
+   README, no Makefile, no test, and not in `tools/dev.py`. Nothing fails when the Python pack
+   moves and the HTML does not. A Gulf onboarding that extends `catalog_packs.py` and forgets the
+   resync produces a builder that silently refuses the very categories the extension was written
+   to enable.
+
+`GOI-2` therefore owns four distinct Config Builder changes — the hand edit at `:13498`, the
+`sync_presets.py` run, a new drift test, and authoring-surface support for the new dimension — and
+`GOI-3` owns a fifth: registering the Gulf preset in `PRESETS` so it is selectable at all.
+
+### 1.6 Business-model mismatch
 
 Gulf Oil Lubricants India is a lubricant marketer with a distributor-led B2B2C chain: plants and
 depots → distributors → retailers, mechanics, workshops, fleets, and OEMs. The generator models a
@@ -229,7 +273,7 @@ industrial channel — and the customer model is B2C-shaped (`openingRegisteredC
 This is `GOI-D1`. It is the single largest scope determinant in the plan and must be decided before
 any configuration is authored.
 
-### 1.6 Segment-population risk at single-market scale
+### 1.7 Segment-population risk at single-market scale
 
 `MIN_SEGMENT_SERIES = 25` (`ml/src/retail_ml/models/reconciliation.py:33`) gates segment-level
 reconciliation and cold-start blending. A single-market Gulf scenario with a small number of
@@ -237,7 +281,7 @@ distributor locations can produce segments below that floor, which yields fallba
 rather than results. This is a **scenario-sizing constraint, not a code defect**, and it is why §7
 requires the SKU × location grid to be sized against the floor before the long run, not after.
 
-### 1.7 Reusable assets
+### 1.8 Reusable assets
 
 - The complete `datasets` block of the existing ingestion profile.
 - The India locale pack: GST-inclusive basis, CGST/SGST/IGST components, ₹ price endings, fiscal
@@ -506,9 +550,17 @@ at `GOI-3`.
 5. `CATALOG_PACK_VERSION` bump and its record in the resolved config.
 6. India lubricant tax class or rate correction per `GOI-D3`.
 7. `datagen/configs/gulf-oil-india-showcase.yaml` and `gulf-oil-india-<horizon>.yaml`.
-8. Config Builder support for the new dimension and values, exported losslessly to YAML and JSON.
+8. Config Builder changes, all five of them (§1.5):
+   a. hand-add the grade dimension to the inline vocabulary Set at `config-builder.html:13498`;
+   b. re-run `datagen/tools/sync_presets.py` to regenerate the `catalogPacks`, `localePacks`, and
+      preset JSON scripts and the source-spec version string;
+   c. authoring-surface support for the new dimension and its values, with lossless YAML/JSON
+      export and re-import;
+   d. a drift test asserting the HTML's embedded contracts equal the Python contracts, closing the
+      currently ungated gap;
+   e. register the Gulf preset in `sync_presets.PRESETS` (`GOI-3`).
 9. Datagen tests: vocabulary, catalog build, SKU uniqueness, measurement derivation, Northstar
-   byte-stability.
+   byte-stability, and Config Builder embedded-contract drift.
 
 ### 5.2 Ingestion deliverables
 
@@ -564,10 +616,13 @@ datagen/
     gulf-oil-india-showcase.json
     gulf-oil-india-<horizon>.yaml
     gulf-oil-india-<horizon>.json
-  config-builder.html                        # amended: new dimension and values
+  config-builder.html                        # amended: inline dimension Set at :13498, then re-synced
+  tools/
+    sync_presets.py                          # amended: Gulf preset registered in PRESETS
   tests/
     test_gulf_catalog.py
     test_catalog_pack_stability.py
+    test_config_builder_contract_drift.py    # net-new: HTML embedded contracts == Python contracts
 
 ingestion/
   src/retail_ingestion/profiles/
@@ -640,12 +695,26 @@ or price band.
 1. Implement the dimension, value, pack-count, measurement, and family additions.
 2. Implement the `GOI-D3` tax change.
 3. Bump `CATALOG_PACK_VERSION`.
-4. Extend the Config Builder to author the new dimension and values, and prove lossless YAML/JSON
+4. Hand-add the grade dimension to the inline vocabulary Set at `config-builder.html:13498`.
+   `sync_presets.py` replaces only JSON script elements and will not touch this list; if it is
+   missed, the builder rejects every Gulf category while the Python side passes.
+5. Re-run `datagen/tools/sync_presets.py` so the embedded `catalogPacks`, `localePacks`, and
+   source-spec version string match the extended Python contracts, and confirm the new families
+   appear in the Catalog family dropdown (`config-builder.html:13107`) and pass the market
+   pack-equivalence check (`:13414`).
+6. Add a drift test asserting the HTML's embedded `catalogPacks`/`localePacks` equal
+   `CATALOG_PACK_METADATA`/`LOCALE_PACKS`. This gap is currently ungated — `sync_presets.py`
+   appears in no README, Makefile, test, or `tools/dev.py` path — so nothing today fails when the
+   two surfaces diverge.
+7. Extend the authoring surface for the new dimension and its values, and prove lossless YAML/JSON
    export and re-import.
-5. Prove the Northstar preset produces a byte-identical resolved catalog and an unchanged config
-   hash. Record explicitly whether the pack-version bump moves the retail run identity, and if it
-   does, obtain approval for that consequence before proceeding.
-6. Run the full datagen suite plus `tools/check_import_boundaries.py`.
+8. Prove the Northstar preset produces a byte-identical resolved catalog and an unchanged config
+   hash. Because `sync_presets.py` rewrites the embedded preset scripts as well, this proof must
+   cover the HTML: the four retail presets embedded in the builder must be unchanged except for
+   the approved pack-version field.
+9. Record explicitly whether the pack-version bump moves the retail run identity, and if it does,
+   obtain approval for that consequence before proceeding.
+10. Run the full datagen suite plus `tools/check_import_boundaries.py`.
 
 **Exit:** vocabulary extended, retail preset provably unmoved or its movement explicitly approved.
 
@@ -664,10 +733,13 @@ field, revert and re-specify. Silent movement of the accepted retail lineage is 
 3. Author every confirmed product template with its grade and pack variants under `GOI-D5`.
 4. Author seasonality: monsoon, Kharif/Rabi, Diwali, freight cycle, and at least one base-oil cost
    shock.
-5. Export YAML and JSON; validate with `retail_datagen.cli validate-config`; resolve `GOI-D10`.
-6. Run `retail_datagen.cli plan` and record product count, sellable SKU count, estimated orders,
+5. Register the Gulf config in `sync_presets.PRESETS` (`datagen/tools/sync_presets.py:30`) and
+   re-run the sync, so the preset is embedded in the builder and selectable rather than importable
+   only as a file.
+6. Export YAML and JSON; validate with `retail_datagen.cli validate-config`; resolve `GOI-D10`.
+7. Run `retail_datagen.cli plan` and record product count, sellable SKU count, estimated orders,
    and partition count.
-7. Confirm no category exceeds the three-option budget and no `productCode`/`brandCode` violates its
+8. Confirm no category exceeds the three-option budget and no `productCode`/`brandCode` violates its
    pattern.
 
 **Exit:** a validated Gulf showcase configuration with a recorded plan estimate.
@@ -848,7 +920,15 @@ not defaults to be assumed.
 - Net content resolves for every pack via `PACK_COUNTS` and `FAMILY_MEASUREMENTS`.
 - Lubricant categories resolve an 18% GST rate under the approved `GOI-D3` mechanism.
 - The Northstar preset yields a byte-identical resolved catalog and unchanged config hash, or its
-  movement is explicitly approved.
+  movement is explicitly approved, and the four retail presets embedded in the Config Builder are
+  unchanged except for the approved pack-version field.
+- The Config Builder's embedded `catalogPacks` and `localePacks` equal the Python
+  `CATALOG_PACK_METADATA` and `LOCALE_PACKS`, proven by the new drift test rather than by having
+  remembered to run `sync_presets.py`.
+- The inline dimension vocabulary at `config-builder.html:13498` matches
+  `SUPPORTED_OPTION_DIMENSIONS`.
+- New Gulf families are selectable in the Catalog family dropdown and pass the market
+  pack-equivalence check; the Gulf preset is registered in `sync_presets.PRESETS`.
 
 ### 9.3 Generation gates
 
@@ -908,7 +988,11 @@ Any one of these stops the work:
 - Tax: lubricant categories resolve 18%; the retail `automotive` class is unaffected under
   `GOI-D3(b)`.
 - Stability: the Northstar preset's resolved catalog digest and config hash are unchanged.
-- Config Builder: lossless YAML/JSON export and re-import of the new dimension.
+- Config Builder drift: embedded `catalogPacks`/`localePacks` equal their Python sources; the
+  inline dimension Set at `:13498` equals `SUPPORTED_OPTION_DIMENSIONS`; every `PRESETS` entry is
+  embedded and current. This test is net-new — no equivalent exists today.
+- Config Builder: lossless YAML/JSON export and re-import of the new dimension; a Gulf category
+  using a new family validates in-browser rather than being rejected as unknown.
 
 ### 10.2 Ingestion tests
 
@@ -997,6 +1081,8 @@ plan with their own Gate A/Gate B and capability analysis. They are not amendmen
 | Forecast or pricing expected from this plan | Commitment that cannot be met | §0.3 dependency recorded at `GOI-0` and again at `GOI-8` |
 | Long run consumes hours before a defect surfaces | Wasted cycle | Fixture proof in `GOI-4`, short horizon in `GOI-5` |
 | Four-dimension category truncated silently | Missing variant axis, undetected | Explicit budget check in `GOI-3`; test in `GOI-2` |
+| Config Builder embedded contracts drift from `catalog_packs.py` | Builder rejects the very Gulf categories the extension enabled, while Python passes; today nothing fails | Hand edit at `:13498`, `sync_presets.py` run, and the net-new drift test — all three in `GOI-2` |
+| `sync_presets.py` rewrites the embedded retail presets | Silent movement of the Northstar authoring surface | Retail preset scripts are part of the `GOI-2` byte-stability proof |
 | Gulf and retail lineages conflated | Ambiguous single-active-authority semantics | `GOI-D8` separation and the `GOI-6` coexistence proof |
 
 ---
@@ -1055,7 +1141,8 @@ The Gulf Oil India tenant onboarding is complete only when all are true:
 5. The Northstar preset produces a byte-identical resolved catalog and an unchanged config hash, or
    its movement was measured and approved before it happened.
 6. A validated Gulf configuration exists in both YAML and JSON, authored through the Config Builder
-   and re-importable losslessly.
+   and re-importable losslessly; the Gulf preset is registered and embedded; and the builder's
+   embedded contracts are proven equal to the Python contracts by a test rather than by habit.
 7. A schema-valid Gulf ingestion source profile exists and is proven on a fixture before any long
    run.
 8. No executable file under `ml/`, `api/`, `db/`, or `ui/` differs from `main`, and

@@ -1847,12 +1847,27 @@ columns, so extending the catalog vocabulary changes no downstream schema.
       `PACK_COUNTS` (`:58`), `FAMILY_MEASUREMENTS` (`:38`) and `_FAMILY_BEHAVIOUR` (`:113`); apply
       the `GOI-D3` tax change; bump `CATALOG_PACK_VERSION` (`:21`) and record it in the resolved
       config.
-- [ ] Extend the Config Builder to author the new dimension and values, and prove lossless
-      YAML/JSON export and re-import.
+- [ ] **Config Builder is a second vocabulary surface, not a cosmetic follow-up.**
+      `config-builder.html` does not read `catalog_packs.py`; it carries a serialized copy of the
+      contract. Hand-add the grade dimension to the inline Set at `config-builder.html:13498` —
+      `sync_presets.py` replaces only JSON script elements and will not touch it — then re-run
+      `datagen/tools/sync_presets.py` to regenerate the embedded `catalogPacks`, `localePacks` and
+      source-spec version string. Until both are done, `CATALOG_PACKS.IN.familyIds` leaves the new
+      Gulf families out of the Catalog family dropdown (`:13107`) and the validators at `:13503`
+      and `:13525` reject every Gulf category, while the Python side passes.
+- [ ] Add a drift test asserting the HTML's embedded `catalogPacks`/`localePacks` equal
+      `CATALOG_PACK_METADATA`/`LOCALE_PACKS`, and that the inline Set at `:13498` equals
+      `SUPPORTED_OPTION_DIMENSIONS`. This gap is currently **ungated** — `sync_presets.py` appears
+      in no README, Makefile, test or `tools/dev.py` path, so nothing fails today when the two
+      surfaces diverge.
+- [ ] Extend the authoring surface for the new dimension and its values; prove lossless YAML/JSON
+      export and re-import, and that a Gulf category on a new family validates in-browser.
 - [ ] **Hard exit:** prove the Northstar preset yields a byte-identical resolved catalog and an
-      unchanged config hash. Record explicitly whether the pack-version bump moves the retail run
-      identity, and obtain approval for that consequence *before* proceeding, not after. Silent
-      movement of the accepted retail lineage is a no-go.
+      unchanged config hash. `sync_presets.py` also rewrites the four retail preset scripts
+      embedded in the builder, so the proof must cover the HTML, not just the YAML. Record
+      explicitly whether the pack-version bump moves the retail run identity, and obtain approval
+      for that consequence *before* proceeding, not after. Silent movement of the accepted retail
+      lineage is a no-go.
 
 **GOI-3 Author the Gulf scenario configuration**
 - [ ] Author in the Config Builder, not by hand: retailer, market(s), legal entity, channels,
@@ -1863,6 +1878,9 @@ columns, so extending the catalog vocabulary changes no downstream schema.
 - [ ] Author seasonality from existing surfaces only: monsoon oil-change surge, Kharif/Rabi
       tractor peaks, Diwali two-wheeler servicing, freight-cycle CV demand, and at least one
       base-oil cost shock through phased `events` with `costMultiplier`/`leadTimeMultiplier`.
+- [ ] Register the Gulf config in `sync_presets.PRESETS` (`datagen/tools/sync_presets.py:30`) and
+      re-run the sync, so the preset is embedded in the builder and selectable there rather than
+      importable only as a loose file.
 - [ ] Validate and plan the config; record product count, sellable SKU count, estimated orders and
       partition count. A validation pass is not a fidelity pass — if the estimate implies SKU or
       order volumes the client would not recognize, return to `GOI-1`.
