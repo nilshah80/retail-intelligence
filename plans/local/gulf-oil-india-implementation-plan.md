@@ -618,32 +618,60 @@ copying a file back. `GOI-D11` decides whether that is a rebuild or a backup.
 
 ### GOI-D11 · Teardown scope and restore strategy
 
+**Decided: PostgreSQL is not backed up.** It is rebuilt from Docker. The database holds no
+authority of its own — it is a verified projection of an immutable ML bundle, and `db/README.md`
+states that boundary. Migrations live in git; rows are derived. Backing it up would preserve
+nothing that cannot be regenerated from artifacts plus `db-upgrade`.
+
 **What must be emptied before the Gulf run:**
 
-| Store | Size | In git? |
-|---|---|---|
-| `datagen/output/` | ~15 GB | no — gitignored |
-| `ingestion/data/{raw,work,curated,evidence}` | ~23.6 GB | no — `ingestion/.gitignore` excludes `data/` |
-| `ml/data/{features,artifacts}` | 5 bundles | no — `ml/.gitignore` excludes both |
-| PostgreSQL `retail_serving` schema | — | no — migrations are in git, rows are not |
-| `contracts/ml/expected-pin.json`, `contracts/evidence/publication-selections/`, closure and entry records | small | **yes — tracked** |
+| Store | Size | In git? | Teardown |
+|---|---|---|---|
+| `datagen/output/` | ~15 GB | no — gitignored | delete |
+| `ingestion/data/{raw,work,curated,evidence}` | ~23.6 GB | no — `ingestion/.gitignore` excludes `data/` | delete |
+| `ml/data/{features,artifacts}` | 5 bundles | no — `ml/.gitignore` excludes both | see below |
+| Docker volume `postgres-data` | — | no | `docker compose down -v` |
+| Docker volume `mlflow-artifacts` | — | no | same command — see the warning below |
+| `contracts/ml/expected-pin.json`, `contracts/evidence/publication-selections/`, closure and entry records | small | **yes — tracked** | never deleted; branch-isolated |
 
-**Proposed:** treat the two classes differently.
-- *Untracked runtime state* is deleted outright — that is the clean slate, and git cannot lose it
-  because git never had it.
-- *Tracked evidence* is *never deleted*. It is superseded on this branch by Gulf equivalents, so
-  `git switch main` restores the retail records intact. This is what makes "don't delete earlier
-  work" and "clean slate" both true at once.
+Teardown and rebuild, using the checked-in compose project (`deploy/compose.yaml`, project name
+`retail-intelligence`, referenced by `tools/dev.py:72`):
+
+```bash
+docker compose -f deploy/compose.yaml down -v
+docker compose -f deploy/compose.yaml up -d
+python3 tools/dev.py db-upgrade && python3 tools/dev.py db-current
+```
+
+**Warning, because `-v` is not surgical:** `deploy/compose.yaml` declares two named volumes and
+`down -v` removes both. `mlflow-artifacts` and the MLflow backend store — which lives in the same
+PostgreSQL database — go with it. All MLflow experiment history for the retail tenant is destroyed.
+If any retail evidence depends on MLflow run history, export it first or accept the loss
+explicitly; do not discover it at `GOI-12`.
+
+**What still deserves an archive, and why it is not a PostgreSQL backup:** the ML bundles under
+`ml/data/artifacts/` and the accepted curated publication are *inputs* to materialization, not
+outputs of it. Keeping them turns the retail restore into re-materialize plus re-activate — minutes
+— instead of a full regenerate, ingest, train, backtest, publish cycle measured in hours. This is a
+cheap copy of a few GB, and it is orthogonal to the PostgreSQL decision.
 
 **Restore options for `GOI-12`:**
-(a) **Rebuild** — re-run retail datagen + pipeline + train + activate from `main`. No extra storage;
-    costs a full cycle. (b) **Backup** — `pg_dump` the schema and archive the curated publication
-    plus ML bundles before teardown; fast restore, needs roughly 20 GB of free space and a verified
-    restore drill.
+(a) **Artifact-preserving (recommended)** — archive `ml/data/artifacts/` and the accepted curated
+    publication before teardown; restore by `db-upgrade` → `forecast-materialize` →
+    `forecast-activate` → inventory materialize/activate.
+(b) **Full rebuild** — keep nothing; re-run retail datagen (~90 min, ~15 GB) → ingest → features →
+    train → backtest → publish → materialize → activate. Correct but slow, and it re-opens every
+    acceptance gate the retail tenant already passed.
 
-**Recommendation:** (b), with the restore drill executed at `GOI-4T` rather than trusted at
-`GOI-12`. A backup that has never been restored is not a restore path. **Status:** requires
-approval at `GOI-4T`; blocks any teardown.
+**Recommendation:** (a). Under either option, PostgreSQL itself is never backed up.
+
+**Consequence to accept up front:** a rebuilt database restarts the append-only activation chain.
+Decision #90's `prior_event_id` lineage begins again at event 1, so the restored retail tenant will
+**not** reproduce the original activation event ids. `GOI-12`'s baseline comparison must therefore
+be on forecast/version ids, fingerprints, selection record ids and control totals — never on
+activation event ids. Writing that down now prevents a false "restore failed" verdict later.
+
+**Status:** requires approval at `GOI-4T`; blocks any teardown.
 
 ### GOI-D12 · Guardrail extension versus replacement
 
@@ -910,28 +938,35 @@ side effect of another package.
 
 **Tasks:**
 
-1. Take the retail restore point per `GOI-D11`: `pg_dump` the `retail_serving` schema, and archive
-   the accepted curated publication, retained evidence, and ML bundles.
-2. **Execute a restore drill now, not at `GOI-12`.** Restore the dump into a scratch database and
-   confirm the active forecast and inventory versions come back with matching fingerprints. An
-   unrestored backup is not a restore path, and `GOI-12` is too late to discover that.
-3. Record the retail baseline that `GOI-12` must reproduce: the accepted run and version ids from
-   `contracts/evidence/forecast-closure-record.json`, the active selection record ids, the
-   expected-pin fingerprints, and the publication control totals.
-4. Delete the untracked runtime state: `datagen/output/`, `ingestion/data/{raw,work,curated,
-   evidence}`, `ml/data/features/`, `ml/data/artifacts/`.
-5. Drop and recreate the PostgreSQL `retail_serving` schema, then run `tools/dev.py db-upgrade` to
-   the current head and confirm with `db-current`. Migrations come from git; only rows are lost.
-6. Confirm the git working tree is clean of deletions: no retail code, contract, migration, or
+1. Record the retail baseline that `GOI-12` must reproduce: accepted run and version ids from
+   `contracts/evidence/forecast-closure-record.json`, active selection record ids, expected-pin
+   fingerprints, and publication control totals. **Not** activation event ids — see `GOI-D11`.
+2. Under `GOI-D11` option (a), archive `ml/data/artifacts/` and the accepted curated publication
+   out of the repository tree. PostgreSQL is **not** backed up.
+3. **Drill the restore of whatever was archived**, before deleting anything. Materialize the
+   archived bundle into a scratch database and confirm the forecast and inventory versions come
+   back with matching fingerprints. An archive that has never been restored is not a restore path,
+   and `GOI-12` is too late to discover that. Under option (b) there is nothing to drill — but the
+   full-rebuild cost must then be explicitly accepted in writing.
+4. Decide and record the MLflow disposition. `down -v` destroys `mlflow-artifacts` and the MLflow
+   backend store in the same database; export anything retail evidence depends on, or record that
+   nothing does.
+5. Delete the untracked runtime state: `datagen/output/`,
+   `ingestion/data/{raw,work,curated,evidence}`, `ml/data/features/`, `ml/data/artifacts/`.
+6. Recreate the database from Docker:
+   `docker compose -f deploy/compose.yaml down -v`, then `up -d`, then `tools/dev.py db-upgrade`
+   and confirm with `db-current`. Migrations come from git; rows are derived and expendable.
+7. Confirm the git working tree is clean of deletions: no retail code, contract, migration, or
    tracked evidence file is removed. `git status` shows no deleted tracked files.
-7. Record what was deleted, its measured size, the restore-point location, and the drill result.
+8. Record what was deleted, its measured size, the archive location, the drill result, and the
+   MLflow disposition.
 
-**Exit:** an empty stack, a restore point proven by an executed drill, and a written retail
-baseline.
+**Exit:** an empty stack on a fresh database at migration head, a restore path proven by an
+executed drill, and a written retail baseline.
 
-**Stop:** do not begin teardown without the drill passing in step 2. Do not delete any tracked
-file. If disk space blocks the backup, resolve that first — `GOI-D11` option (a), rebuild, is a
-legitimate fallback but must be an explicit approved decision, not a consequence of a full disk.
+**Stop:** do not begin teardown before the step-3 drill passes, or before `GOI-4` has fixture-proven
+the Gulf profile. Do not delete any tracked file. Choosing option (b) is legitimate but must be an
+explicit approved decision, never a consequence of a full disk.
 
 ### GOI-5 · Short-horizon publication and sizing evidence
 
@@ -1073,17 +1108,22 @@ is not done until retail is back.
 
 **Tasks:**
 
-1. Capture the Gulf state first, applying `GOI-D11` to Gulf in reverse: back up the Gulf
-   publication, bundles, and schema so the demo is reproducible without a full regeneration.
-2. Restore retail per the approved `GOI-D11` option — restore the dump and archives, or rebuild
-   from `main`.
-3. Restore the git-tracked evidence by switching off this branch; confirm the retail selection
+1. Archive the Gulf state first, applying `GOI-D11` to Gulf in reverse: keep the Gulf publication
+   and ML bundles so the demo is reproducible without a full regeneration. Gulf's PostgreSQL is not
+   backed up either — it re-materializes from the same bundles.
+2. Tear the stack down the same way `GOI-4T` did: delete Gulf runtime state, then
+   `docker compose -f deploy/compose.yaml down -v && up -d && tools/dev.py db-upgrade`.
+3. Restore retail per the approved `GOI-D11` option — re-materialize and re-activate from the
+   archived bundles (a), or rebuild from `main` (b).
+4. Restore the git-tracked evidence by switching off this branch; confirm the retail selection
    records, expected-pin, and closure record are the ones `main` carries.
-4. Revert the guardrail extension if `GOI-9` moved the retail policy fingerprint, and confirm the
+5. Revert the guardrail extension if `GOI-9` moved the retail policy fingerprint, and confirm the
    restored fingerprint matches the `GOI-4T` baseline.
-5. Verify against the `GOI-4T` baseline: accepted run and version ids, active selection ids,
-   expected-pin fingerprints, publication control totals.
-6. Run `tools/dev.py verify` and the full suite; confirm exit 0 and that the retail screens serve
+6. Verify against the `GOI-4T` baseline: accepted run and version ids, active selection ids,
+   expected-pin fingerprints, publication control totals. **Expect fresh activation event ids** —
+   a rebuilt database restarts the append-only chain at event 1, which is correct behaviour under
+   `GOI-D11`, not a restore failure.
+7. Run `tools/dev.py verify` and the full suite; confirm exit 0 and that the retail screens serve
    their accepted values again.
 
 **Exit:** the retail tenant is measurably back to its `GOI-4T` baseline, and the Gulf work is
@@ -1217,13 +1257,18 @@ not defaults to be assumed.
 
 ### 9.4a Teardown and restore gates
 
-- A `pg_dump` and archive of the retail publication, evidence, and ML bundles exists **and has been
-  restored once** into a scratch database with matching fingerprints.
 - The retail baseline is recorded: accepted run/version ids, active selection ids, expected-pin
-  fingerprints, publication control totals.
+  fingerprints, publication control totals. Activation event ids are deliberately excluded.
+- Under `GOI-D11` option (a), the ML bundles and curated publication are archived **and have been
+  restored once** into a scratch database with matching fingerprints. Under option (b), the
+  full-rebuild cost is accepted in writing.
+- The MLflow disposition is recorded before `down -v` destroys `mlflow-artifacts` and the MLflow
+  backend store.
 - Teardown removed untracked runtime state only; `git status` shows no deleted tracked file.
-- PostgreSQL is recreated and at the current migration head.
-- At `GOI-12`, every recorded baseline value is reproduced and `tools/dev.py verify` exits 0.
+- The database is recreated from `deploy/compose.yaml` and is at the current migration head; no
+  `pg_dump` was taken or is required.
+- At `GOI-12`, every recorded baseline value is reproduced and `tools/dev.py verify` exits 0, with
+  a fresh activation chain treated as correct rather than as a failure.
 
 ### 9.4b ML, API, and UI gates
 
@@ -1381,7 +1426,9 @@ plan with their own Gate A/Gate B and capability analysis. They are not amendmen
 | Four-dimension category truncated silently | Missing variant axis, undetected | Explicit budget check in `GOI-3`; test in `GOI-2` |
 | Config Builder embedded contracts drift from `catalog_packs.py` | Builder rejects the very Gulf categories the extension enabled, while Python passes; today nothing fails | Hand edit at `:13498`, `sync_presets.py` run, and the net-new drift test — all three in `GOI-2` |
 | `sync_presets.py` rewrites the embedded retail presets | Silent movement of the Northstar authoring surface | Retail preset scripts are part of the `GOI-2` byte-stability proof |
-| Teardown destroys ~38 GB of retail state that git never held | Retail return costs a full rebuild, or is impossible if the backup is bad | `GOI-D11` backup with a drill **executed at `GOI-4T`**, not trusted at `GOI-12` |
+| Teardown destroys ~38 GB of retail state that git never held | Retail return costs a full rebuild, or is impossible if the archive is bad | `GOI-D11` option (a) archive with a drill **executed at `GOI-4T`**, not trusted at `GOI-12` |
+| `docker compose down -v` also removes `mlflow-artifacts` and the MLflow backend store | Retail MLflow experiment history destroyed silently | Explicit MLflow disposition recorded at `GOI-4T` step 4, before the command runs |
+| Rebuilt database restarts the activation chain at event 1 | A correct restore is misread as a failed one | `GOI-D11` excludes activation event ids from the baseline; `GOI-12` step 6 states the expectation |
 | Guardrails raise on the Gulf market/currency pair | Inventory engine fails after a long run | `GOI-9` precedes `GOI-10`; positive and negative resolver tests |
 | Guardrail edit moves the retail policy fingerprint | Retail run identity changes; `GOI-12` cannot restore cleanly | Additive edit per `GOI-D12`; fingerprint recorded at `GOI-9`, reverted at `GOI-12` |
 | Lubricant demand is more intermittent than retail | Cold-start cohort and Croston routing dominate; gates may not clear | Characterize and record the expectation at `GOI-10` step 2, before training |
@@ -1455,8 +1502,9 @@ The Gulf Oil India tenant onboarding is complete only when all are true:
    retained evidence.
 10. Decision-#73 candidate → approved → active selections exist for the Gulf lineage, and a separate
     Gulf expected-pin document is generated.
-11. Teardown removed untracked runtime state only, against a restore point whose drill was executed
-    at `GOI-4T`; no tracked retail file was deleted at any point.
+11. Teardown removed untracked runtime state only and recreated the database from
+    `deploy/compose.yaml` with no `pg_dump`, against an archive whose restore drill was executed at
+    `GOI-4T`; no tracked retail file was deleted at any point.
 12. Repeated generation is deterministic under the same pinned writer and profile; safe and
     performance profiles match on canonical schemas, control totals, and ordered row digests.
 13. Segment counts for every intended analysis clear `MIN_SEGMENT_SERIES`, or the shortfall is
@@ -1476,5 +1524,5 @@ The Gulf Oil India tenant onboarding is complete only when all are true:
     exist.
 19. **`GOI-12` has run:** the retail tenant is restored and measurably matches its `GOI-4T`
     baseline — accepted run and version ids, active selection ids, expected-pin fingerprints,
-    publication control totals — with `tools/dev.py verify` exit 0; and the Gulf work is preserved
-    as a reproducible archive.
+    publication control totals, with a fresh activation chain expected and accepted — and
+    `tools/dev.py verify` exits 0; the Gulf work is preserved as a reproducible archive.

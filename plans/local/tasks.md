@@ -1913,18 +1913,26 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       That result falsifies the track's central premise; the plan is revised, not worked around.
 
 **GOI-4T Clean-slate teardown and retail restore point** `[ONLY DESTRUCTIVE PACKAGE]`
-- [ ] Take the retail restore point per `GOI-D11`: `pg_dump` the `retail_serving` schema and
-      archive the accepted curated publication, retained evidence and ML bundles. Then **execute a
-      restore drill into a scratch database** and confirm the active forecast and inventory
-      versions return with matching fingerprints. A backup that has never been restored is not a
-      restore path, and `GOI-12` is far too late to find that out.
+- [ ] **PostgreSQL is not backed up** (`GOI-D11`, decided). It holds no authority of its own — it
+      is a verified projection of an immutable bundle, migrations are in git, rows are derived.
+      Rebuild it from Docker instead: `docker compose -f deploy/compose.yaml down -v`, `up -d`,
+      then `tools/dev.py db-upgrade` and `db-current`.
+- [ ] **Record the MLflow disposition before running `down -v`.** `deploy/compose.yaml` declares
+      two named volumes and `-v` removes both, so `mlflow-artifacts` and the MLflow backend store —
+      which lives in the same PostgreSQL database — are destroyed with it. Export anything retail
+      evidence depends on, or record that nothing does.
 - [ ] Record the retail baseline `GOI-12` must reproduce: accepted run/version ids from
       `contracts/evidence/forecast-closure-record.json`, active selection record ids, expected-pin
-      fingerprints, publication control totals.
+      fingerprints, publication control totals. **Not activation event ids** — a rebuilt database
+      restarts the append-only chain at event 1, which is correct, not a restore failure.
+- [ ] Archive `ml/data/artifacts/` and the accepted curated publication (`GOI-D11` option a). These
+      are *inputs* to materialization, not outputs of it, so keeping them makes the retail restore
+      a re-materialize plus re-activate — minutes — instead of a regenerate/ingest/train/backtest
+      cycle measured in hours. This is orthogonal to the PostgreSQL decision. Then **drill the
+      restore before deleting anything**; an archive never restored is not a restore path.
 - [ ] Delete untracked runtime state only — `datagen/output/` (~15 GB),
       `ingestion/data/{raw,work,curated,evidence}` (~23.6 GB), `ml/data/features/`,
-      `ml/data/artifacts/`. Drop and recreate the PostgreSQL `retail_serving` schema, then
-      `db-upgrade` to head and confirm with `db-current`.
+      `ml/data/artifacts/`.
 - [ ] **Prove nothing tracked was deleted:** `git status` shows no deleted tracked file. Retail
       code, contracts, migrations and evidence stay intact — the clean slate is runtime state, and
       git never held it. Record what was deleted, its measured size, the restore-point location and
@@ -2020,13 +2028,15 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
 **GOI-12 Restore the retail tenant** `[REQUIRED — THE BRANCH IS NOT DONE WITHOUT IT]`
 - [ ] Archive the Gulf state first — publication, bundles, schema — so the demo stays reproducible
       without a full regeneration.
-- [ ] Restore retail per the approved `GOI-D11` option; switch off this branch to restore the
-      git-tracked retail selection records, expected-pin and closure record; revert the `GOI-9`
-      guardrail extension if it moved the retail policy fingerprint.
+- [ ] Tear down the same way `GOI-4T` did (`down -v`, `up -d`, `db-upgrade`), then restore retail
+      per the approved `GOI-D11` option — re-materialize and re-activate from the archived bundles,
+      or rebuild from `main`. Switch off this branch to restore the git-tracked retail selection
+      records, expected-pin and closure record; revert the `GOI-9` guardrail extension if it moved
+      the retail policy fingerprint.
 - [ ] **Exit:** every `GOI-4T` baseline value is reproduced — accepted run/version ids, active
       selection ids, expected-pin fingerprints, publication control totals — `tools/dev.py verify`
-      exits 0, and the retail screens serve their accepted values again. "It looks right" is not
-      the exit; the baseline comparison is.
+      exits 0, and the retail screens serve their accepted values again. Fresh activation event ids
+      are expected and correct. "It looks right" is not the exit; the baseline comparison is.
 
 - [x] **Decision #92 closed end to end 2026-08-01.** Cold-start intervals are published only
       within the calibrated horizon and withheld beyond it, and the withholding now reaches
