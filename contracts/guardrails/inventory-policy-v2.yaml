@@ -358,6 +358,38 @@ marketCurrencyRules:
       C: "0.80"
     supplierCapacityConfirmedPctFloor: "0.70"
 
+  # GOI-9. The Gulf Oil India lubricants tenant. Without this rule
+  # `resolve_guardrails("gulf-india", "INR")` RAISES under zeroMatchBehavior:
+  # fail_closed, which stops the inventory engine after a full run rather than
+  # before it.
+  #
+  # PROVISIONAL CEILING. The india-west comment above records what a placeholder
+  # costs: Rs 25 lakh against Rs 26.08 Cr of real recommendations, exceeded
+  # 104-fold, so no compliance figure meant anything. This one is derived rather
+  # than guessed -- 244 SKUs at a mean unit cost of Rs 7,352, 8,039 order lines
+  # per day across 13 distributors, giving roughly Rs 41.4 Cr of weekly
+  # replenishment at cost against ~Rs 2,855 Cr of annual sell-out. The ceiling is
+  # set just below that so the constraint can actually bind, matching the
+  # india-west intent. But it is computed from the scenario's plan estimate, NOT
+  # from observed engine output, because no Gulf inventory run exists yet. It
+  # must be re-checked against the first real recommendation set at GOI-10.
+  - marketId: gulf-india
+    currencyCode: INR
+    timezone: Asia/Kolkata
+    weeklyReplenishmentBudgetMinor: 38000000000
+    # Below the smallest depot's 360,000 configured units so the cap can bind on
+    # a real node, above the ~50,000 units a single distributor holds. Also
+    # provisional pending observed node positions.
+    nodeCapacityUnits: 300000
+    # Bazaar trade is availability-critical -- a mechanic does not wait for a
+    # backorder -- while industrial accounts order against a plan, so the A/C
+    # spread is wider than the retail tenant's.
+    serviceLevelsByClass:
+      A: "0.97"
+      B: "0.92"
+      C: "0.82"
+    supplierCapacityConfirmedPctFloor: "0.70"
+
 # ---------------------------------------------------------------------------
 # P4-D11. ERP transmission is shadow-only in this phase and no send path exists.
 # ---------------------------------------------------------------------------

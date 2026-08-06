@@ -2482,6 +2482,18 @@ def _command_pipeline(args: argparse.Namespace) -> int:
         print(f"source profile not found: {source_profile}", file=sys.stderr)
         return 2
 
+    # Every ML stage validates the curated publication against an input pin and
+    # fails closed on a mismatch. The pin names one tenant's fingerprints, so a
+    # second tenant needs its own -- otherwise the ML half of the pipeline is
+    # single-tenant no matter which publication reached it. The ML CLI already
+    # takes --expected-pin on each stage; only the orchestrator lacked a way to
+    # pass one through.
+    expected_pin = args.expected_pin
+    if expected_pin is not None and not Path(expected_pin).is_file():
+        print(f"expected pin not found: {expected_pin}", file=sys.stderr)
+        return 2
+    pin_args = ["--expected-pin", str(expected_pin)] if expected_pin else []
+
     run_id = (source_root or Path(args.run_id or "run-unknown")).name
     if run_id == "run-unknown":
         # Resuming mid-chain with no --source-root: `curated` and `work` are built
@@ -2779,6 +2791,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     str(ml), "-m", "retail_ml.cli", "features",
                     "--output-dir", str(features),
                     "--execution-profile", profile,
+                    *pin_args,
                 ],
             )
 
@@ -2820,6 +2833,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 "--output-dir", str(current),
                 "--decision-as-of", decision_as_of,
                 "--execution-profile", profile,
+                *pin_args,
             ]
             blend = backtest / "cold_start_blend_model.json"
             if blend.is_file():
@@ -2890,6 +2904,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     # developer should not have to export RETAIL_POSTGRES_DSN to run
                     # the pipeline on the local compose stack.
                     "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+                    *pin_args,
                 ],
             )
 
@@ -2913,6 +2928,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 "--activation-scope-fingerprint", scope,
                 "--actor", args.actor,
                 "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
+                *pin_args,
             ]
             if args.retire_other_scopes:
                 activate_command.append("--retire-other-scopes")
@@ -3373,6 +3389,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="tenant source profile; defaults to the retail datagen profile",
+    )
+    pipeline.add_argument(
+        "--expected-pin",
+        type=Path,
+        default=None,
+        help="tenant ML input pin; defaults to contracts/ml/expected-pin.json",
     )
     pipeline.add_argument("--snapshot-root", type=Path, default=None)
     pipeline.add_argument("--work-root", type=Path, default=None)

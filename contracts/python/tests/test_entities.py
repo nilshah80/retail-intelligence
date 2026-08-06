@@ -29,7 +29,9 @@ def test_entire_contract_tree_validates() -> None:
         "stagingV2Roles": 40,
         "jsonSchemas": 5,
         "openApiContracts": 1,
-        "guardrailVectors": 4,
+        # 4 retail (india-west + us-new-york under v1 and v2) plus the 2 added
+        # for the Gulf tenant at GOI-9, one per policy generation.
+        "guardrailVectors": 6,
         "determinismContracts": 1,
     }
 

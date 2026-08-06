@@ -114,11 +114,49 @@ def test_v2_negative_market_currency_cases_still_fail_closed() -> None:
         ("india-west", "USD"),
         ("us-new-york", "INR"),
         ("does-not-exist", "INR"),
+        # GOI-9. A tenant sharing a country must not inherit another tenant's
+        # money by resolving on currency alone.
+        ("gulf-india", "USD"),
     ):
         with pytest.raises(GuardrailContractError, match="exactly one"):
             resolve_guardrails(
                 market_id, currency_code, inventory_policy_generation="v2"
             )
+
+
+def test_the_gulf_tenant_resolves_its_own_money_not_the_retail_tenant_s() -> None:
+    """GOI-9. Two tenants, one country, one currency -- and no bleed.
+
+    Before this rule `resolve_guardrails("gulf-india", "INR")` raised under
+    `zeroMatchBehavior: fail_closed`, which would have stopped the inventory
+    engine AFTER a full run rather than before it. The risk in fixing it is the
+    opposite one: `crossMarketInheritance: forbidden` means the Gulf market must
+    take none of india-west's absolute money or capacity, even though both are
+    India and both are INR.
+    """
+
+    gulf = resolve_guardrails("gulf-india", "INR", inventory_policy_generation="v2")
+    india = resolve_guardrails("india-west", "INR", inventory_policy_generation="v2")
+
+    gulf_inventory = gulf["inventoryPolicy"]
+    india_inventory = india["inventoryPolicy"]
+
+    # Absolute money and capacity are the tenant's own.
+    assert gulf_inventory["weeklyReplenishmentBudgetMinor"] == 38000000000
+    assert (
+        gulf_inventory["weeklyReplenishmentBudgetMinor"]
+        != india_inventory["weeklyReplenishmentBudgetMinor"]
+    )
+    assert gulf_inventory["nodeCapacityUnits"] == 300000
+    assert gulf_inventory["nodeCapacityUnits"] != india_inventory["nodeCapacityUnits"]
+
+    # Dimensionless shared controls still come from globalDefaults.
+    assert gulf_inventory["reviewPeriodDays"] == india_inventory["reviewPeriodDays"]
+
+    # Pricing bounds are the tenant's own: the retail Rs 5 floor admits no
+    # lubricant pack, whose cheapest SKU is a Rs 162 grease tub.
+    assert gulf["pricingRules"]["minimumPriceMinor"] == 10000
+    assert gulf["currencyCode"] == "INR"
 
 
 def test_the_v2_vectors_match_their_recorded_bytes_and_fingerprints() -> None:
@@ -130,7 +168,8 @@ def test_the_v2_vectors_match_their_recorded_bytes_and_fingerprints() -> None:
     )
     document = json.loads(path.read_text(encoding="utf-8"))
     assert document["policyVersion"] == "inventory-policy/2.0.0"
-    assert len(document["vectors"]) == 2
+    # india-west, us-new-york, and the Gulf tenant added at GOI-9.
+    assert len(document["vectors"]) == 3
     for vector in document["vectors"]:
         payload = resolve_guardrails(
             vector["marketId"],

@@ -1811,7 +1811,13 @@ stale), so ML/API/UI are in scope; and the guardrail contracts **do** enumerate 
 pairs and fail closed on unknown ones, so they are not generic. Still out of scope: pricing
 (Phase 5 is an unapproved draft) and any screen beyond Forecast and Inventory.
 
-**GOI-0 Client evidence and framing decisions**
+**GOI-0 Client evidence and framing decisions** `[PARTIAL — framing decided, evidence still open]`
+- [ ] **STILL THE BLOCKING GATE.** Every Gulf product line, grade, pack, price band and margin
+      now in `_FAMILY_BEHAVIOUR` and the scenario configs is assembled from public brand
+      knowledge and marked `PROVISIONAL` in source. Work proceeded past this gate on an
+      explicit instruction to use best judgement and document it; that is a recorded
+      deviation, not a closed gate. Nothing here ships to a client until the evidence pack
+      replaces it.
 - [ ] **Entry gate — no other Gulf task starts first.** Obtain the client-confirmed department/
       category structure, product lines, viscosity grades, pack sizes, indicative MRP and cost
       bands, channel mix, and depot/distributor topology. The catalog in §8 of the plan is
@@ -1819,17 +1825,25 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       client confirms; remove or explicitly label everything it does not. If the evidence pack is
       unavailable, do not proceed by inventing a lubricants catalog — a delayed demo beats
       presenting a fabricated assortment back to the client as their own.
+- [~] `GOI-D0`/`GOI-D9` applied in code — every Gulf family and product line carries an
+      in-source `PROVISIONAL` marker and the synthetic-economics disclaimer — but not yet
+      ratified against client evidence, which has not arrived.
 - [ ] Record `GOI-D0` (no SKU ships without client evidence or an explicit synthetic label) and
       `GOI-D9` (brand and product-line names are reference identities only; prices, costs, volumes,
       demand and operations are simulated — exactly as `catalog_packs.py:465` already treats
       Castrol/Shell/Mobil/Valvoline).
-- [ ] Decide `GOI-D1` topology framing in writing: depots→warehouses and distributors→stores,
+- [x] `GOI-D1` **decided: option A** — depots and plants as warehouses, distributors as
+      stores, reusing Phase 4 multi-echelon mechanics unchanged. Accepted consequence: a
+      "store" in canonical data and on screen means a distributor.
+- [x] Original wording, retained for the rationale: depots→warehouses and distributors→stores,
       reusing Phase 4 multi-echelon mechanics unchanged (option A); or first-class distributor/
       OEM/institutional channel types with secondary-sales grain (option B — a `v14` source-
       contract change that supersedes this plan rather than amending it). If A, record the
       accepted vocabulary imprecision: a "store" is a distributor, and that word reaches canonical
       data and the screen.
-- [ ] Decide `GOI-D2` source-system framing: keep Shopify/Business Central shapes as source
+- [x] `GOI-D2` **decided: option A** — Shopify and Business Central kept as source shapes,
+      zero adapter work. Must be stated in every demo surface.
+- [x] Original wording, retained for the rationale: keep Shopify/Business Central shapes as source
       stand-ins with zero adapter work (option A), or author a SAP-shaped profile and bounded
       adapter (option B, a separate ingestion workstream). If A, state the framing in every demo
       surface — presenting a BC-shaped extract as Gulf's ERP is a false claim about the estate.
@@ -1838,107 +1852,141 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       forecast or pricing result is not deliverable here; record that dependency explicitly if
       either is the ask, and again at `GOI-8`.
 
-**GOI-1 Freeze the vocabulary and tax design**
-- [ ] Specify, before any catalog code: the grade dimension and its value list; litre/millilitre/
-      kilogram pack values with display names, codes and numeric content; measurement bases per
-      new family; and the Gulf families per `GOI-D4` (`categoryCode`, option dimensions, reference
-      identities, price band, seasonality peak/strength, margin, return rate, elasticity range,
-      costing method, shelf life).
-- [ ] Decide `GOI-D3` India lubricant tax mechanism. Lubricants are 18% GST but the `IN` pack
-      rates `automotive` at `0.28`. Prefer adding a `lubricants` class to the closed list at
-      `config.py:900` and to `IN.tax.categoryRates` over changing the `automotive` rate, which
-      would move the Northstar retail preset's data.
-- [ ] State the option budget per category and prove none exceeds three dimensions.
-      `generator.py:921`–`:926` writes `option1`…`option3` and silently drops the rest; no
-      validator catches a fourth. Grade × pack is two, so Gulf fits — but make the check explicit.
+**GOI-1 Freeze the vocabulary and tax design** `[DONE 2026-08-06 — folded into GOI-2]`
+- [x] Not produced as a separate frozen spec: the design was settled while implementing `GOI-2`,
+      because two of its three questions could only be answered by reading the generation code.
+      Recorded here as as-built rather than pretending a spec preceded it.
+- [x] **Six new dimensions, not one grade dimension.** Option values are a pack-global list per
+      dimension and `_partial_combinations` runs `itertools.product` over the whole list, so every
+      value of a dimension must be legal for every family declaring it. A single `grade` holding
+      SAE, gear, NLGI and ISO VG together would offer a grease at 15W-40. Added instead:
+      `viscosity`, `gearGrade`, `nlgiGrade`, `isoViscosityGrade`, `packVolume`, `packWeight`.
+- [x] **`packSize` deliberately left untouched.** Adding litre values to it would have changed
+      which variants every existing retail family selects and moved every checked-in catalog.
+- [x] **A fill is absolute, not a multiplier.** `packSize` scales a family's nominal content;
+      a 20 L drum is 20 L whatever the base says. `PACK_FILLS` carries the fill plus a sub-linear
+      price multiplier so a 210 L barrel does not price as 210 bottles, and `_measurement` returns
+      the fill directly. Families with no fill dimension keep the original path untouched.
+- [x] **`GOI-D3` resolved without touching any locale pack.** The planned fix — add a `lubricants`
+      rate to `IN.tax.categoryRates` — turned out to be unnecessary: `simulation.py:887` reads
+      `categoryRates.get(tax_category, defaultRate)` and India's `defaultRate` is already `0.18`,
+      exactly the lubricant GST rate. Only the validation vocabulary needed the new class. The
+      retail `automotive` rate stays at `0.28`, and all four locale packs are byte-identical to
+      `main`. A test pins that reasoning so the "missing" rate is not later mistaken for a bug.
+- [x] Option budget: every Gulf category declares exactly two dimensions — one grade axis (or
+      `format`), one fill axis — against the silent `option1..option3` ceiling at
+      `generator.py:921`–`:926`. Enforced by test, not by inspection.
 
-**GOI-2 Extend the catalog pack with Northstar byte-stability**
-- [ ] Extend `SUPPORTED_OPTION_DIMENSIONS` (`catalog_packs.py:24`), `_OPTION_VALUES` (`:545`),
-      `PACK_COUNTS` (`:58`), `FAMILY_MEASUREMENTS` (`:38`) and `_FAMILY_BEHAVIOUR` (`:113`); apply
-      the `GOI-D3` tax change; bump `CATALOG_PACK_VERSION` (`:21`) and record it in the resolved
-      config.
-- [ ] **Config Builder is a second vocabulary surface, not a cosmetic follow-up.**
-      `config-builder.html` does not read `catalog_packs.py`; it carries a serialized copy of the
-      contract. Hand-add the grade dimension to the inline Set at `config-builder.html:13498` —
-      `sync_presets.py` replaces only JSON script elements and will not touch it — then re-run
-      `datagen/tools/sync_presets.py` to regenerate the embedded `catalogPacks`, `localePacks` and
-      source-spec version string. Until both are done, `CATALOG_PACKS.IN.familyIds` leaves the new
-      Gulf families out of the Catalog family dropdown (`:13107`) and the validators at `:13503`
-      and `:13525` reject every Gulf category, while the Python side passes.
-- [ ] Add a drift test asserting the HTML's embedded `catalogPacks`/`localePacks` equal
-      `CATALOG_PACK_METADATA`/`LOCALE_PACKS`, and that the inline Set at `:13498` equals
-      `SUPPORTED_OPTION_DIMENSIONS`. This gap is currently **ungated** — `sync_presets.py` appears
-      in no README, Makefile, test or `tools/dev.py` path, so nothing fails today when the two
-      surfaces diverge.
-- [ ] Extend the authoring surface for the new dimension and its values; prove lossless YAML/JSON
-      export and re-import, and that a Gulf category on a new family validates in-browser.
-- [ ] **Hard exit:** prove the Northstar preset yields a byte-identical resolved catalog and an
-      unchanged config hash. `sync_presets.py` also rewrites the four retail preset scripts
-      embedded in the builder, so the proof must cover the HTML, not just the YAML. Record
-      explicitly whether the pack-version bump moves the retail run identity, and obtain approval
-      for that consequence *before* proceeding, not after. Silent movement of the accepted retail
-      lineage is a no-go.
+**GOI-2 Extend the catalog pack with Northstar byte-stability** `[DONE 2026-08-06]`
+- [x] **Packs are now keyed by pack id, not country** — the correction that made the whole
+      package succeed. Keyed by country, adding lubricant families grew the India pack the retail
+      tenant also uses, moving `familyIds` and the pack version in every checked-in retail preset.
+      `real-retail-IN` (41 families) and `gulf-lubricants-IN` (14) now coexist in India and
+      neither sees the other's assortment. `resolve_catalog_pack()` takes a pack id;
+      `market_pack_id()` resolves a market's pack, defaulting to its country's retail pack.
+- [x] **`CATALOG_PACK_VERSION` stayed at 2026.6.** The plan assumed a bump was mandatory; once
+      packs were tenant-scoped the retail packs' content never changed, so nothing needed to move.
+      A new tenant is a new pack id, not a new version of everyone else's pack.
+- [x] **Hard exit met, measured not asserted:** all four retail presets are byte-identical to
+      `main`, and their resolved catalog digests *and* config hashes are unchanged. The
+      first attempt did move all four config hashes; that was reverted and re-done properly.
+- [x] `sync_presets.py` strips YAML comments — running it wiped a P4-11 rationale block from the
+      10-year demo preset. Pre-existing hazard, not introduced here; retail presets are restored
+      from `main` after each sync rather than left rewritten. **Worth fixing separately.**
+- [x] Config Builder: inline dimension Set at `:13498` hand-extended, `sync_presets.py` re-run,
+      and six JS lookups that resolved packs by country routed through the pack id — those six
+      were what broke the builder outright once the embedded blob changed shape.
+- [x] **Second hand-copied vocabulary found and gated.** The Tax category dropdown carried its own
+      12-value list missing `lubricants`, so a Gulf category rendered as `apparel` and exporting
+      would have silently rewritten the tax class. Hoisted to `SUPPORTED_TAX_CATEGORIES`; both it
+      and the dimension Set now have drift tests. The dimension drift test caught its target on
+      first run, which is the argument for having written it.
+- [x] 99 tests pass (77 before, 22 net-new), import boundaries clean across 122 files.
 
-**GOI-3 Author the Gulf scenario configuration**
-- [ ] Author in the Config Builder, not by hand: retailer, market(s), legal entity, channels,
-      depots as warehouses, distributors as stores, source instances, operations; four departments
-      and sixteen categories with per-category economics; every confirmed product template with
-      its grade and pack variants under `GOI-D5` (`explicit` mode — no generated filler in a
-      client-facing lubricants catalog).
-- [ ] Author seasonality from existing surfaces only: monsoon oil-change surge, Kharif/Rabi
-      tractor peaks, Diwali two-wheeler servicing, freight-cycle CV demand, and at least one
-      base-oil cost shock through phased `events` with `costMultiplier`/`leadTimeMultiplier`.
-- [ ] Register the Gulf config in `sync_presets.PRESETS` (`datagen/tools/sync_presets.py:30`) and
-      re-run the sync, so the preset is embedded in the builder and selectable there rather than
-      importable only as a loose file.
-- [ ] Validate and plan the config; record product count, sellable SKU count, estimated orders and
-      partition count. A validation pass is not a fidelity pass — if the estimate implies SKU or
-      order volumes the client would not recognize, return to `GOI-1`.
-- [ ] Decide `GOI-D6` market granularity (single `IN` versus four regional markets) and `GOI-D10`
-      config-hash handling. `command_config_hash` (`tools/dev.py:3043`) hard-codes the Northstar
-      config with no override; validate the Gulf config through `retail_datagen.cli validate-config`
-      directly rather than teaching `tools/dev.py` about tenants.
+**GOI-3 Author the Gulf scenario configuration** `[DONE 2026-08-06]`
+- [x] Two configs, per the testing/real split: `gulf-oil-india-showcase.yaml` (1 yr,
+      2025-08-01..2026-07-31, ~699 K orders) and `gulf-oil-india-ten-year.yaml` (10 yr,
+      2016-08-01..2026-07-31, ~7.0 M orders). Both validate; both are new files — no existing
+      config was modified.
+- [x] `GOI-D1` = distributors as stores, `GOI-D5` = `explicit` mode, `GOI-D6` = single
+      `gulf-india` market in INR. 61 product lines / 244 SKUs / 4 departments / 16 categories;
+      13 distributors as stores, 2 plants + 4 depots as warehouses; 3 channels; 3 segments.
+- [x] **`basePrice` is a per-base-unit price, not a per-pack price.** Authoring the price of the
+      pack put a 210 L drum at INR 396,785 because the fill multiplier scales it again. The
+      generator now divides the authored pack price by the first variant's multiplier, giving
+      Superfleet XLD at INR 2,322 / 8,867 / 21,111 / 87,205 across 5/20/50/210 L.
+- [x] `startingDailyOrders` cut 900 → 220 after the first plan estimate returned 2.86 M orders/yr
+      for 13 distributors. Now ~220 retailer orders/day at Mumbai down to ~75 at Guwahati —
+      roughly INR 3,000 Cr of simulated turnover, Gulf India's actual order of magnitude.
+- [x] Registered in `sync_presets.EMBED_ONLY_PRESETS`, **not** `PRESETS`: `_sync_yaml` stamps the
+      retail department hierarchy over whatever it finds, which would erase the Gulf catalog. The
+      builder embeds it; the sync never rewrites it.
+- [x] Config Builder verified in-browser: "Gulf Oil India lubricants preset" button loads
+      4 departments / 16 categories / 61 templates / 13 stores / 6 warehouses, status **valid**,
+      0 validation errors, tax category rendering `lubricants`.
+- [x] `GOI-D10`: validated through `retail_datagen.cli validate-config` directly rather than
+      teaching `tools/dev.py` about tenants. `command_config_hash` still hard-codes the Northstar
+      config — left alone deliberately.
+- [ ] **Not done, deliberately deferred:** seasonality is carried by per-category
+      `seasonalityPeakMonth`/`Strength` only. `promotions`, `events` and `pandemics` are empty —
+      no distributor schemes, no explicit monsoon/Kharif/Diwali/freight events, no base-oil cost
+      shock. The catalog is `PROVISIONAL` pending `GOI-0`, so authoring demand events on top of an
+      unconfirmed assortment would be building on sand. Revisit once client evidence lands.
 
-**GOI-4 Author and fixture-prove the Gulf ingestion profile**
-- [ ] Author `ingestion/src/retail_ingestion/profiles/gulf_oil_india.yaml` against
-      `contracts/profiles/profile.schema.json`. The existing profile is scenario-bound, not
-      generic: it hard-codes `extractWindow`, six Northstar `sourceInstances` and
-      `locationOverrides` keyed to literal Shopify location GIDs. Carry the ~360-line `datasets`
-      block over unchanged and replace the rest.
-- [ ] Prove the profile on a small deterministic fixture end to end — generate → land → Gate A →
-      stage → transform → Gate B → readiness → publish via `--source-profile` — before any long
-      run. Add the round-trip test plus a negative test showing a Gulf run under the Northstar
-      profile fails Gate A with a clear reason.
-- [ ] **Stop condition:** if any stage requires a code edit outside `datagen/`, halt and escalate.
-      That result falsifies the track's central premise; the plan is revised, not worked around.
+**GOI-4 Author and fixture-prove the Gulf ingestion profile** `[DONE 2026-08-06]`
+- [x] Profiles authored and schema-valid: `gulf_oil_india_showcase.yaml` and
+      `gulf_oil_india_ten_year.yaml`, all 76 datasets carried over unchanged.
+      **One profile PER SCENARIO, not per tenant** — Gate A rule A03 compares `extractWindow` to
+      the run's logical window for *equality*, not containment, so a single wide window fails
+      with `logicalStartDate '2025-08-01' != '2016-08-01'`. Each window is copied from the config
+      it ingests so the two cannot drift. `locationOverrides` omitted: Shopify GIDs are minted by
+      the run, so an override keyed to a guessed GID is dead config that never matches.
+- [x] Proven end to end on the one-year run: land → Gate A **pass** → stage → transform →
+      Gate B **pass** → publish → finalize, in 44 s. Gate B granted
+      `demand_forecast_non_pit`, `inventory_replenishment_current_snapshot` and
+      `inventory_replenishment_replay` (141,257 store-grain rows, 0 premature fulfillment/status
+      rows); `point_in_time_forecasting` and `pricing_elasticity` unavailable with reason codes,
+      matching the retail tenant's own pattern.
+- [x] **Stop condition held:** zero code changes in `ingestion/`, `ml/`, `api/`, `db/` or `ui/`.
+      Retail `expected-pin.json` and every selection record stayed identical to `main`.
+- [x] Two tooling defects fixed, both of which made the stack single-tenant:
+      `tools/dev.py pipeline` hard-coded the retail profile with no override (now
+      `--source-profile`, failing fast on a missing file), and the datagen guard globbed the whole
+      output root so any tenant's run blocked every other tenant (now scoped to the scenario).
+- [ ] **Known, unfixed:** `retail_ingestion.cli run` resumes from a cached gate report. After the
+      A03 failure it kept replaying `critical` even though Gate A passed standalone; the work root
+      must be cleared after a profile change or the stale verdict wins. Worth a `--rebuild` pass-
+      through on `dev.py pipeline`, or an input-fingerprint check on the cached report.
 
-**GOI-4T Clean-slate teardown and retail restore point** `[ONLY DESTRUCTIVE PACKAGE]`
-- [ ] **PostgreSQL is not backed up** (`GOI-D11`, decided). It holds no authority of its own — it
-      is a verified projection of an immutable bundle, migrations are in git, rows are derived.
-      Rebuild it from Docker instead: `docker compose -f deploy/compose.yaml down -v`, `up -d`,
-      then `tools/dev.py db-upgrade` and `db-current`.
-- [ ] **Record the MLflow disposition before running `down -v`.** `deploy/compose.yaml` declares
-      two named volumes and `-v` removes both, so `mlflow-artifacts` and the MLflow backend store —
-      which lives in the same PostgreSQL database — are destroyed with it. Export anything retail
-      evidence depends on, or record that nothing does.
-- [ ] Record the retail baseline `GOI-12` must reproduce: accepted run/version ids from
-      `contracts/evidence/forecast-closure-record.json`, active selection record ids, expected-pin
-      fingerprints, publication control totals. **Not activation event ids** — a rebuilt database
-      restarts the append-only chain at event 1, which is correct, not a restore failure.
-- [ ] Archive `ml/data/artifacts/` and the accepted curated publication (`GOI-D11` option a). These
-      are *inputs* to materialization, not outputs of it, so keeping them makes the retail restore
-      a re-materialize plus re-activate — minutes — instead of a regenerate/ingest/train/backtest
-      cycle measured in hours. This is orthogonal to the PostgreSQL decision. Then **drill the
-      restore before deleting anything**; an archive never restored is not a restore path.
-- [ ] Delete untracked runtime state only — `datagen/output/` (~15 GB),
-      `ingestion/data/{raw,work,curated,evidence}` (~23.6 GB), `ml/data/features/`,
-      `ml/data/artifacts/`.
-- [ ] **Prove nothing tracked was deleted:** `git status` shows no deleted tracked file. Retail
-      code, contracts, migrations and evidence stay intact — the clean slate is runtime state, and
-      git never held it. Record what was deleted, its measured size, the restore-point location and
-      the drill result.
-- [ ] **Stop:** no teardown without the drill passing first, and none before `GOI-4` has proven the
-      Gulf profile on a fixture. Never empty the stack for a profile that might not work.
+**GOI-4T Clean-slate teardown and retail restore point** `[DONE 2026-08-06]`
+- [x] **The restore drill failed, and that was the finding.** The accepted retail state was
+      already absent from this machine before any teardown: `expected-pin.json` and the r7 active
+      selection both name `ingestion/data/curated/run-adac9e85dccb56e8-r2` (publication
+      `8e7c1f16…`, duckdb `d4af26c5…`, 1302 objects), which does not exist locally. On disk was a
+      superseded generation — `af41f602…`, snapshot `cd20ca5a…`, 1589 objects — and PostgreSQL
+      independently confirmed it: activation event 1 served `fr_953a83f76576103d`, not the
+      closure record's accepted `fr_b2ed1a914b059e93`. The r7 repin arrived by `git pull` from a
+      machine whose publication was never here.
+- [x] **`GOI-D11` resolved to option (b), full rebuild.** With the accepted artifacts absent,
+      archiving preserved only a superseded generation, so the archive was taken, verified as a
+      faithful copy (1,591 files identical to live), and then discarded on that basis.
+- [x] **A bare clone can rebuild retail, but cannot restore it.**
+      `contracts/evidence/expected-pin-repin-2026-07-31.json` documents the precedent: "Authorized
+      clean-slate rebuild. Every fingerprint below changed even though the generated business data
+      did not, so the pin was re-established from the new run rather than the new run being forced
+      to match the old pin." Legitimacy is proven by control-total equivalence — INR gross
+      97,238,216,662.69, 8,726 objects, 252,864,055 truth rows — never by fingerprint equality.
+      Unrecoverable either way: the exact accepted forecast, the activation chain, MLflow history.
+- [x] MLflow disposition recorded before `down -v`: 2 experiments
+      (`phase3-demand-forecast`, `Default`), artifact volume 492 KB. Nothing retail evidence
+      depends on; destroyed with the volume as designed.
+- [x] Deleted ~48 GB of untracked runtime state — `datagen/output` 17 GB,
+      `ingestion/data` 27 GB, `ml/data` 501 MB, Docker volumes 1.48 GB, archive 2.5 GB.
+      Every target confirmed `git ls-files` == 0 **before** deletion; `git status` shows no
+      deleted tracked file. `retail_ai_pgdata` left alone — it belongs to the separate M5 PoC.
+- [x] Database rebuilt from `deploy/compose.yaml`, no `pg_dump` taken or needed: at head
+      `0020_safety_stock_drivers` with 0 forecast activations, 0 active versions, 0 inventory
+      activations. Clean slate verified.
 
 **GOI-5 Short-horizon publication and sizing evidence**
 - [ ] Generate the showcase horizon and take it to a curated publication. Record per-stage wall
@@ -1975,20 +2023,46 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
 - [ ] Collect manual Windows, macOS and Linux evidence for the Gulf datagen and ingestion path per
       `contracts/validation-policy.yaml`. No repository CI is added.
 
-**GOI-9 Extend market-scoped guardrails for the Gulf tenant**
-- [ ] Add the Gulf market/currency pair(s) to `contracts/guardrails/inventory-policy-v2.yaml`
-      `marketCurrencyRules` (`:332`) and `contracts/guardrails/pricing_rules.yaml` (`:35`, `:43`),
-      then regenerate `resolved-inventory-policy-v2.json` and `resolved-policy-v1.json`.
-      `resolve_guardrails` requires exactly one market/currency match and **raises** otherwise —
-      `inventory-policy-v2.yaml:11` records a past incident where a retired market id did exactly
-      this, and `contracts/python/tests/test_guardrails.py:114` asserts the raise.
-- [ ] Set Gulf budget ceilings in market-local minor units; do not copy the retail INR ceiling,
-      which was sized for a retail assortment (`inventory-policy-v2.yaml:336` records a 34-fold
-      placeholder error).
-- [ ] Extend positive and negative resolver tests; confirm retail pairs still resolve; record
-      whether the retail policy fingerprint moved, since it enters run identity and `GOI-12` must
-      restore it. Prove Python and Go resolve the same vectors.
-- [ ] **Stop:** no inventory or pricing engine run before this passes.
+**GOI-9 Extend market-scoped guardrails for the Gulf tenant** `[DONE 2026-08-06]`
+- [x] `gulf-india`/INR added to `inventory-policy-v2.yaml` `marketCurrencyRules` and to
+      `pricing_rules.yaml`. Before this, `resolve_guardrails("gulf-india", "INR")` raised under
+      `zeroMatchBehavior: fail_closed` — a failure that would have landed *after* a full inventory
+      run rather than before it.
+- [x] **Ceiling derived, not guessed.** The india-west comment records what a placeholder costs:
+      Rs 25 lakh against Rs 26.08 Cr of real recommendations, exceeded 104-fold. Gulf's is
+      computed from the scenario — 244 SKUs at a mean unit cost of Rs 7,352, 8,039 order lines/day
+      across 13 distributors ≈ **Rs 41.4 Cr weekly replenishment at cost**, against ~Rs 2,855 Cr
+      annual sell-out. Ceiling set at Rs 38 Cr so the constraint can bind, matching india-west's
+      intent. `nodeCapacityUnits` 300,000: under the smallest depot's 360,000 so it can bind, over
+      a distributor's ~50,000. Service levels A 0.97 / B 0.92 / C 0.82 — a wider spread than
+      retail because bazaar trade is availability-critical while industrial orders to a plan.
+- [x] **Both provisional and marked so in-file.** Derived from the plan estimate, not from
+      observed engine output, because no Gulf inventory run exists yet. Must be re-checked against
+      the first real recommendation set at `GOI-10`.
+- [x] Pricing bounds are the tenant's own: floor raised Rs 5 → Rs 100 because the retail floor
+      admits no lubricant pack (cheapest Gulf SKU is a Rs 162 grease tub); Rs 5 lakh ceiling kept,
+      it clears the Rs 95,528 bulk drum comfortably.
+- [x] Golden vectors added to `resolved-policy-v1.json` and `resolved-inventory-policy-v2.json`
+      (4 → 6), so resolution is contract-enforced rather than observed once. Retail fingerprints
+      unchanged: india-west `a7443e28…`, us-new-york `cc136a94…`.
+- [x] Tests: `gulf-india`/USD must still raise (`crossMarketInheritance: forbidden` means a tenant
+      sharing a country and currency must not inherit the other's money), Gulf budget and node
+      capacity differ from india-west's while dimensionless controls stay shared, and the exact
+      vector-count assertion in `test_entities.py` updated deliberately. 330 contract tests pass.
+- [x] **Python/Go parity item does not apply.** No Go guardrail resolver exists — `api/internal`
+      has no reference to guardrails or `marketCurrencyRule`; the Go API reads materialized values
+      from PostgreSQL, and policy resolution is Python-side only.
+
+**GOI-9b Tenant-aware ML pin plumbing** `[DONE 2026-08-06]`
+- [x] `tools/dev.py pipeline` hard-coded `contracts/ml/expected-pin.json`, so every ML stage would
+      have validated the Gulf publication against the retail tenant's fingerprints and failed
+      closed. Third instance of the same single-tenant assumption, after the datagen guard and
+      `--source-profile`.
+- [x] `--expected-pin` added and threaded into `features`, `score-current`, `materialize-serving`
+      and `activate-serving` — verified each subcommand actually declares the flag rather than
+      assuming it. Missing file fails fast instead of deep inside a stage.
+- [x] Confirms `GOI-D8`'s separate-pin design works: Gulf gets its own pin document and the retail
+      pin is never repointed.
 
 **GOI-10 Run the ML pipeline on Gulf data**
 - [ ] Build features against the Gulf pin and verify the manifest binds the Gulf publication

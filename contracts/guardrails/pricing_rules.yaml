@@ -48,3 +48,18 @@ marketCurrencyRules:
     candidateStepMinor: 1
     gridOriginMinor: 0
     preferredEndingMinor: [99]
+  # GOI-9. The Gulf Oil India lubricants tenant. Same INR conventions as
+  # india-west -- currency and price-ending behaviour are properties of the
+  # market's money, not of what it sells -- but the bounds are widened for a
+  # catalog whose cheapest SKU is a Rs 162 grease tub and whose dearest is a
+  # Rs 95,528 bulk drum. The retail Rs 5 floor would admit no lubricant pack and
+  # the Rs 5 lakh ceiling is left in place because it comfortably clears the
+  # drum, so only the floor actually moves.
+  - marketId: gulf-india
+    currencyCode: INR
+    minorUnitExponent: 2
+    minimumPriceMinor: 10000
+    maximumPriceMinor: 50000000
+    candidateStepMinor: 100
+    gridOriginMinor: 0
+    preferredEndingMinor: [0, 99]
