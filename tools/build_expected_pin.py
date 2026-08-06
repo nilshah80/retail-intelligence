@@ -68,7 +68,16 @@ def _fallback_run() -> str | None:
         return None
     if not generations:
         return None
-    return str(generations[-1].get("run") or "") or None
+
+    # Highest tag, not last-in-file. `next_generation_tag()` next door already picks
+    # the maximum, and two different rules for "newest" in adjacent functions is how
+    # they eventually disagree about the same ledger.
+    def _tag_number(entry: dict[str, Any]) -> int:
+        tag = str(entry.get("tag") or "")
+        return int(tag[1:]) if tag.startswith("r") and tag[1:].isdigit() else -1
+
+    newest = max(generations, key=_tag_number)
+    return str(newest.get("run") or "") or None
 
 
 def _pinned_run() -> str:
@@ -82,20 +91,28 @@ def _pinned_run() -> str:
     decision #89 exists to prevent.
     """
 
+    # The LEDGER decides what is pinned; retained evidence only decides whether the
+    # pin can be derived. Those are different questions and conflating them gave a
+    # wrong answer in an ordinary case: publish a new run without adopting it and the
+    # single retained evidence directory made `--list` report that unadopted run as
+    # "currently pinned", when the pin and every active selection still named the
+    # previous one. Authority is a governed choice, not a side effect of which bytes
+    # happen to be on this disk.
+    adopted = _fallback_run()
+    if adopted is not None:
+        return adopted
     promoted = _promoted_runs()
     if len(promoted) == 1:
         return promoted[0]
     if not promoted:
-        fallback = _fallback_run()
-        if fallback is None:
-            raise SystemExit(
-                "no run has retained evidence and the ledger names none; "
-                "pass --run to state which publication is pinned"
-            )
-        return fallback
+        raise SystemExit(
+            "no run has retained evidence and the ledger names none; "
+            "pass --run to state which publication is pinned"
+        )
     raise SystemExit(
-        f"{len(promoted)} runs have retained evidence ({', '.join(promoted)}); "
-        "pass --run to state which one is pinned rather than letting this guess"
+        f"{len(promoted)} runs have retained evidence ({', '.join(promoted)}) and "
+        "the ledger names none; pass --run to state which one is pinned rather "
+        "than letting this guess"
     )
 
 #: What ML must be able to do with this bundle. `inventory_replenishment_replay`

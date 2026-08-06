@@ -669,7 +669,25 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     manifest = json.loads(
         (evidence / "publication-manifest.json").read_text(encoding="utf-8")
     )
-    mask = manifest.get("capabilityMask") or {}
+    # Gate B is READ, not assumed. The docstring said this file was one of the
+    # sources and it never was: the fingerprint and the capability mask both came
+    # from the manifest's copy of them, so a missing, failing or inconsistent
+    # `gate-b.json` still produced a confident proposal claiming Gate B passed.
+    # Only `--approve` found out, one step later, via the rollback.
+    gate_b = json.loads((evidence / "gate-b.json").read_text(encoding="utf-8"))
+    if gate_b.get("semanticFingerprint") != manifest.get(
+        "gateBSemanticFingerprint"
+    ):
+        raise SystemExit(
+            f"{run_id}: gate-b.json fingerprint "
+            f"{str(gate_b.get('semanticFingerprint'))[:12]}… disagrees with the "
+            f"publication manifest's "
+            f"{str(manifest.get('gateBSemanticFingerprint'))[:12]}…; the evidence "
+            "for this run is inconsistent with itself"
+        )
+    # The mask from Gate B itself, not the manifest's transcription of it, so the
+    # capability verdict rests on the gate that produced it.
+    mask = gate_b.get("capabilityMask") or manifest.get("capabilityMask") or {}
     required = (
         "demand_forecast_non_pit",
         "inventory_replenishment_current_snapshot",
@@ -682,8 +700,9 @@ def _repin_facts(run_id: str) -> dict[str, object]:
         "run": run_id,
         "sourceSnapshotId": manifest["sourceSnapshotId"],
         "gateAStatus": gate_a.get("status"),
+        "gateBStatus": gate_b.get("status"),
         "gateASemanticFingerprint": gate_a["semanticFingerprint"],
-        "gateBSemanticFingerprint": manifest["gateBSemanticFingerprint"],
+        "gateBSemanticFingerprint": gate_b["semanticFingerprint"],
         "publicationSemanticFingerprint": manifest["semanticFingerprint"],
         "objectCount": len(manifest["objects"]),
         "duckdbSha256": manifest["duckdb"]["sha256"],
@@ -760,8 +779,10 @@ def _repin_reasons(facts: dict, previous: dict, automatic: bool) -> dict[str, st
     return {
         "candidate": (
             f"{origin} Publication for {facts['run']} passed Gate A "
-            f"({facts['gateAStatus']}) and Gate B with all three required "
-            f"capabilities available. Relative to the previous pin: {delta}. "
+            f"({facts['gateAStatus']}) and Gate B ({facts.get('gateBStatus')}), "
+            f"both read from this run's own gate files, with all three required "
+            f"capabilities available in Gate B's mask. Relative to the previous "
+            f"pin: {delta}. "
             f"{control_note}"
         ),
         "approved": (
@@ -825,12 +846,13 @@ def command_repin(args: argparse.Namespace) -> int:
     # naming the failure in the same sentence. The builder catches it a step later
     # and the rollback unwinds it, but a record should not be able to say that at
     # all -- refusing here is cheaper than relying on a downstream catch.
-    if facts.get("gateAStatus") != "pass":
-        print(
-            f"refusing: Gate A is {facts.get('gateAStatus')!r}, not 'pass'",
-            file=sys.stderr,
-        )
-        return 1
+    for gate, key in (("A", "gateAStatus"), ("B", "gateBStatus")):
+        if facts.get(key) != "pass":
+            print(
+                f"refusing: Gate {gate} is {facts.get(key)!r}, not 'pass'",
+                file=sys.stderr,
+            )
+            return 1
     if facts["missingRequiredCapabilities"]:
         print(
             "refusing: this publication does not offer every required capability: "
@@ -1015,7 +1037,11 @@ def command_serve(args: argparse.Namespace) -> int:
         return 1
     print(f"resolved activation scope {fingerprint[:16]}… for {run_id}")
     environment = dict(os.environ)
-    environment.setdefault("RETAIL_POSTGRES_DSN", _local_postgres_dsn(sqlalchemy=False))
+    # Assignment, not setdefault: an override already in the environment may be the
+    # SQLAlchemy form, and pgx rejects `postgresql+psycopg://`. `dsn` is the value
+    # `_local_postgres_dsn` normalised and the probe just used successfully, so the
+    # API and the probe now agree by construction.
+    environment["RETAIL_POSTGRES_DSN"] = dsn
     profile = args.execution_profile or _host_execution_profile()
     api = [
         "go", "run", "./cmd/server",

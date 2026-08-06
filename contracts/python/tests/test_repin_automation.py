@@ -135,7 +135,8 @@ class TestAdoptionRefusals:
         original = dev._repin_facts
         dev._repin_facts = lambda run_id: {
             "run": run_id,
-            "gateAStatus": "pass",  # so the capability check is what refuses
+            "gateAStatus": "pass",  # both gates pass, so the capability check
+            "gateBStatus": "pass",  # is what refuses
             "missingRequiredCapabilities": ["inventory_replenishment_replay"],
         }
         try:
@@ -163,6 +164,7 @@ class TestAdoptionRefusals:
         dev._repin_facts = lambda run_id: {
             "run": run_id,
             "gateAStatus": "pass",
+            "gateBStatus": "pass",
             "missingRequiredCapabilities": [],
         }
         try:
@@ -304,6 +306,7 @@ class TestGateRefusal:
         dev._repin_facts = lambda run_id: {
             "run": run_id,
             "gateAStatus": "fail",
+            "gateBStatus": "pass",
             "missingRequiredCapabilities": [],
         }
         try:
@@ -321,3 +324,110 @@ class TestGateRefusal:
             dev._repin_facts = original
         assert code == 1
         assert "Gate A is 'fail'" in capsys.readouterr().err
+
+
+class TestEvidenceIsRead:
+    def test_gate_b_status_is_read_from_gate_b(self) -> None:
+        """Gate B must come from gate-b.json, not the manifest's copy of it.
+
+        `_repin_facts` documented gate-b.json as a source and never opened it: the
+        fingerprint and mask came from the manifest, so a missing or failing Gate B
+        still produced a confident proposal claiming it passed.
+        """
+
+        run = "run-adac9e85dccb56e8-r2"
+        evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
+        if not (evidence / "gate-b.json").is_file():
+            pytest.skip("no retained evidence on this host")
+        facts = dev._repin_facts(run)
+        gate_b = json.loads((evidence / "gate-b.json").read_text(encoding="utf-8"))
+        assert facts["gateBStatus"] == gate_b["status"]
+        assert facts["gateBSemanticFingerprint"] == gate_b["semanticFingerprint"]
+
+    def test_a_failing_gate_b_is_refused(self, capsys) -> None:
+        import argparse
+
+        original = dev._repin_facts
+        dev._repin_facts = lambda run_id: {
+            "run": run_id,
+            "gateAStatus": "pass",
+            "gateBStatus": "validated_partial",
+            "missingRequiredCapabilities": [],
+        }
+        try:
+            code = dev.command_repin(
+                argparse.Namespace(
+                    run_id="run-test", approve=True, actor=None, reason=None,
+                    reason_code="TEST", approved_at=None,
+                )
+            )
+        finally:
+            dev._repin_facts = original
+        assert code == 1
+        assert "Gate B is 'validated_partial'" in capsys.readouterr().err
+
+
+class TestPinAuthority:
+    def test_the_ledger_outranks_retained_evidence(self) -> None:
+        """What is pinned is a governed choice, not whichever bytes are on disk.
+
+        A newly published but unadopted run left one retained evidence directory, and
+        `--list` then reported that run as "currently pinned" while the pin and every
+        active selection still named the previous one.
+        """
+
+        pin = _load("build_expected_pin")
+        original = pin._promoted_runs
+        pin._promoted_runs = lambda: ["run-freshly-published-not-adopted"]
+        try:
+            assert pin._pinned_run() == pin._fallback_run()
+            assert pin._pinned_run() != "run-freshly-published-not-adopted"
+        finally:
+            pin._promoted_runs = original
+
+    def test_newest_generation_is_the_highest_tag_not_file_order(self) -> None:
+        """Two rules for "newest" in adjacent functions eventually disagree."""
+
+        pin = _load("build_expected_pin")
+        # Patched on `pin`, not on `selection`: the module does
+        # `from build_publication_selection import load_generations`, so the name is
+        # bound at import and rebinding the source module would not be seen.
+        original = pin.load_generations
+        pin.load_generations = lambda: [
+            {"tag": "r9", "run": "run-nine"},
+            {"tag": "r8", "run": "run-eight"},  # later in file, lower tag
+        ]
+        try:
+            assert pin._fallback_run() == "run-nine"
+        finally:
+            pin.load_generations = original
+
+
+class TestEntryRecordPointer:
+    def test_active_record_id_resolves_to_a_committed_active_record(self) -> None:
+        """The field shipped once naming a record that existed nowhere."""
+
+        record = json.loads(
+            (
+                REPO_ROOT / "contracts" / "evidence"
+                / "inventory-replenishment-entry-record.json"
+            ).read_text(encoding="utf-8")
+        )
+        source = record["sourceSelection"]
+        directory = (
+            REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+        )
+        matches = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in directory.glob("*.json")
+            if (
+                json.loads(path.read_text(encoding="utf-8")).get("lifecycle") or {}
+            ).get("recordId") == source["activeRecordId"]
+        ]
+        assert len(matches) == 1, (
+            f"activeRecordId {source['activeRecordId']} matches {len(matches)} "
+            "committed records"
+        )
+        assert matches[0]["selectionId"] == source["selectionId"]
+        assert matches[0]["lifecycle"]["state"] == "active"
+        assert matches[0]["scope"]["capability"] == "demand_forecast_non_pit"

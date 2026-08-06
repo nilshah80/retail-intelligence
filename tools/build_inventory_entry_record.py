@@ -154,6 +154,41 @@ def _selection() -> dict[str, Any]:
         raise SystemExit(
             "no active decision-#73 selection exists; P4-0 cannot exit without one"
         )
+    # Resolve the ids back against the committed directory before writing them.
+    #
+    # This record shipped once naming `rec_3955dd35e0b6d9e3`, a lifecycle record that
+    # exists in no committed file -- the selection records had moved and this had not.
+    # The only assertion on the field is `startswith("rec_")`, which cannot see that,
+    # so a governance record pointed at nothing for a whole commit. A pointer into a
+    # committed set should be checked against that set.
+    resolved = [
+        record
+        for record in records
+        if (record.get("lifecycle") or {}).get("recordId")
+        == active["lifecycle"]["recordId"]
+    ]
+    if len(resolved) != 1:
+        raise SystemExit(
+            f"activeRecordId {active['lifecycle']['recordId']} matches "
+            f"{len(resolved)} committed records; it must match exactly one"
+        )
+    resolved_record = resolved[0]
+    if resolved_record["selectionId"] != active["selectionId"]:
+        raise SystemExit(
+            "the record named by activeRecordId carries selectionId "
+            f"{resolved_record['selectionId']} but this record would claim "
+            f"{active['selectionId']}"
+        )
+    if scope_key(resolved_record)[2] != "demand_forecast_non_pit":
+        raise SystemExit(
+            "activeRecordId names a record for scope "
+            f"{scope_key(resolved_record)[2]}, not demand_forecast_non_pit"
+        )
+    if (resolved_record.get("lifecycle") or {}).get("state") != "active":
+        raise SystemExit(
+            "activeRecordId names a record whose state is "
+            f"{(resolved_record.get('lifecycle') or {}).get('state')!r}, not 'active'"
+        )
     return {
         "selectionId": active["selectionId"],
         "activeRecordId": active["lifecycle"]["recordId"],

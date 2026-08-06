@@ -63,6 +63,7 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
     assert_one_active_per_scope,
     derive_record_id,
     derive_selection_id,
+    scope_key,
     transition,
     validate_selection,
     verify_against_publication,
@@ -1199,6 +1200,27 @@ def build_lifecycle() -> list[tuple[str, dict[str, Any]]]:
     # must be active.
     assert_one_active_per_scope(_current(everything))
 
+    # ...and EXACTLY one, which the call above does not check. It raises on a SECOND
+    # active for a scope but is silent on zero, and zero is the shape the duplicate
+    # it guards against actually takes: a repeated generation shares its
+    # predecessor's recordIds, so the second chain supersedes ITSELF and every scope
+    # ends up with no active selection at all. The whole set then passes, `--check`
+    # passes against the written records, and the first thing to notice is
+    # `build_expected_pin` reporting no active selection for demand_forecast_non_pit
+    # -- a true message pointing at the wrong file.
+    current_actives = {
+        scope_key(record)[2]
+        for record in _current(everything)
+        if record["lifecycle"]["state"] == "active"
+    }
+    missing = set(_GENERATION_CAPABILITIES) - current_actives
+    if missing:
+        raise SystemExit(
+            "no active selection remains for "
+            f"{', '.join(sorted(missing))}. A generation that supersedes its own "
+            "chain does this: check the ledger for a duplicated run."
+        )
+
     predecessor = dict(LEGACY_UNSELECTED_PREDECESSOR)
     predecessor["supersededBySelectionId"] = phase_3_active["selectionId"]
     predecessor["supersededByRecordId"] = phase_3_active["lifecycle"]["recordId"]
@@ -1387,7 +1409,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"({len(_reproduced_runs)} of "
                 f"{len(_reproduced_runs) + len(_derived_runs)} runs reproduced "
                 "from their committed records; retained evidence for them is gone "
-                "-- see EVIDENCE_RELEASED_RUNS)"
+                "-- see EVIDENCE_RELEASED_RUNS or the generations ledger)"
             )
             for run in sorted(_reproduced_runs):
                 # A run may be released by the hand-written map OR implicitly by a
