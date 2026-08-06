@@ -915,3 +915,133 @@ class TestAbsentMaskField:
                 dev._repin_facts("run-x")
         finally:
             dev.REPO_ROOT = original
+
+
+class TestOptionalFieldsAreTypedToo:
+    def test_business_controls_must_be_an_object_when_present(self, tmp_path) -> None:
+        """Optional means "may be absent", never "may be anything".
+
+        `(manifest.get("businessControls") or {}).keys()` covered absent, null and
+        {} -- which is why it survived three rounds -- but a non-empty list or string
+        went straight to `.keys()` and raised AttributeError past the handler.
+        """
+
+        caps = (
+            "demand_forecast_non_pit",
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        )
+        for value in ([1, 2], "text", 7):
+            evidence = tmp_path / str(id(value)) / "ingestion/data/evidence/run-x"
+            evidence.mkdir(parents=True)
+            (evidence / "gate-a.json").write_text(
+                json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
+                encoding="utf-8",
+            )
+            (evidence / "gate-b.json").write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "semanticFingerprint": "b" * 64,
+                        "capabilityMask": {c: {"available": True} for c in caps},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (evidence / "publication-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "sourceSnapshotId": "s" * 64,
+                        "gateBSemanticFingerprint": "b" * 64,
+                        "semanticFingerprint": "p" * 64,
+                        "objects": [],
+                        "duckdb": {"sha256": "d" * 64},
+                        "businessControls": value,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original = dev.REPO_ROOT
+            dev.REPO_ROOT = tmp_path / str(id(value))
+            try:
+                with pytest.raises(SystemExit, match="optional field"):
+                    dev._repin_facts("run-x")
+            finally:
+                dev.REPO_ROOT = original
+
+    def test_invalid_utf8_refuses_before_json_sees_it(self, tmp_path) -> None:
+        """`read_text` raises UnicodeDecodeError, which is not a JSONDecodeError."""
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_bytes(b'\xff\xfe{"status":"pass"}')
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="not valid UTF-8"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+
+class TestScorecardContainer:
+    @pytest.mark.parametrize("shape", [None, [1, 2], "text", 7])
+    def test_an_unreadable_mask_container_does_not_crash(self, tmp_path, shape) -> None:
+        """The entry guard did not cover the container holding the entries."""
+
+        scorecard = _load("direction_scorecard")
+        root = tmp_path / str(id(shape))
+        evidence = root / "ingestion" / "data" / "evidence" / "r"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": shape,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+        )
+        result = scorecard.build(root)
+        codes = {
+            entry["reasonCode"]
+            for phase in result["phases"].values()
+            for entry in (phase.get("missingCapabilities") or [])
+        }
+        # MASK_UNREADABLE, not NOT_EVALUATED: the gate did not run and skip these,
+        # the mask could not be read at all, and the output must not conflate them.
+        assert codes == {"MASK_UNREADABLE"}, codes
+
+    def test_phase_4_checks_the_split_capabilities_not_the_retired_one(self) -> None:
+        """`replenishment` is superseded, and the mask says so itself."""
+
+        scorecard = _load("direction_scorecard")
+        required = scorecard.PHASE_REQUIREMENTS["phase_4_inventory"]["capabilities"]
+        assert "replenishment" not in required
+        assert set(required) == {
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        }
+
+    def test_no_phase_requires_a_superseded_capability(self) -> None:
+        """The class, not the instance: any phase naming a retired flag fails here."""
+
+        scorecard = _load("direction_scorecard")
+        gate_b_path = (
+            REPO_ROOT / "ingestion" / "data" / "evidence"
+            / "run-adac9e85dccb56e8-r2" / "gate-b.json"
+        )
+        if not gate_b_path.is_file():
+            pytest.skip("no retained evidence on this host")
+        mask = json.loads(gate_b_path.read_text(encoding="utf-8"))["capabilityMask"]
+        offenders = [
+            f"{phase}:{capability}"
+            for phase, spec in scorecard.PHASE_REQUIREMENTS.items()
+            for capability in spec["capabilities"]
+            if (mask.get(capability) or {}).get("supersededBy")
+        ]
+        assert not offenders, f"phases requiring superseded capabilities: {offenders}"

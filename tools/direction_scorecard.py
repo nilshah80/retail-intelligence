@@ -103,7 +103,17 @@ PHASE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
     "phase_4_inventory": {
         "goal": "reorder, safety stock, transfers, allocation, inventory replay",
-        "capabilities": ["replenishment"],
+        # The two split capabilities, not the retired umbrella. `replenishment` is
+        # marked `supersededBy: [inventory_replenishment_current_snapshot,
+        # inventory_replenishment_replay]` in the mask itself, and policy v2's
+        # retiredReason says why: one flag could not distinguish serviceable
+        # current-position analytics from unavailable origin-safe replay. Checking it
+        # meant Phase 4 read as unblocked with current-snapshot false, because the
+        # legacy flag was still true.
+        "capabilities": [
+            "inventory_replenishment_current_snapshot",
+            "inventory_replenishment_replay",
+        ],
         "evidence": "replay and policy holdout pass",
         "alsoRequiresForecastServing": True,
     },
@@ -212,6 +222,16 @@ def phase_3_closure(root: Path) -> dict[str, Any]:
 def build(root: Path = REPO_ROOT) -> dict[str, Any]:
     gate_b, gate_b_path = gate_b_evidence(root)
     mask = (gate_b or {}).get("capabilityMask", {})
+    # A mask that is null, a list or a string reached `.get()` below and crashed. The
+    # entry-level guard added last round did not cover the container holding them --
+    # the same one-level-up miss.
+    #
+    # Normalising to `{}` alone would report NOT_EVALUATED, which says the gate ran
+    # and skipped the capability. It did not: the mask could not be read at all, and
+    # those are different facts about the evidence. The flag keeps them apart.
+    mask_unreadable = not isinstance(mask, dict)
+    if mask_unreadable:
+        mask = {}
     forecast = forecast_state(root)
 
     blockers: dict[str, dict[str, Any]] = {}
@@ -231,9 +251,9 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
             # Strict without raising: anything that is not a real boolean `True` is
             # not available, and says which of the two reasons applies. A non-dict
             # entry also used to reach `.get()` and raise AttributeError.
-            if entry is None:
+            if entry is None and not mask_unreadable:
                 missing.append({"capability": capability, "reasonCode": "NOT_EVALUATED"})
-            elif not isinstance(entry, dict) or not isinstance(
+            elif mask_unreadable or not isinstance(entry, dict) or not isinstance(
                 entry.get("available"), bool
             ):
                 missing.append(

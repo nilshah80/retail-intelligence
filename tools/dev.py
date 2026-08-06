@@ -647,8 +647,11 @@ def _utc_now() -> str:
 def _selection_module():
     """Import the selection builder as a module so repin can read its ledger."""
 
-    sys.path.insert(0, str(REPO_ROOT / "tools"))
-    sys.path.insert(0, str(REPO_ROOT / "ingestion" / "src"))
+    for entry in (REPO_ROOT / "ingestion" / "src", REPO_ROOT / "tools"):
+        # Guarded: unconditional inserts grew sys.path by two on every call, so a
+        # measurement taken after a single call read as stable when it was not.
+        if str(entry) not in sys.path:
+            sys.path.insert(0, str(entry))
     import build_publication_selection as selection  # noqa: PLC0415
 
     return selection
@@ -672,12 +675,16 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     # its stage timings to a traceback. `build_pin` already loops over its four files
     # like this; a function whose docstring names three sources should not refuse
     # cleanly for one of them and crash for the other two.
-    def _evidence(name: str, required: dict) -> dict:
+    def _evidence(name: str, required: dict, optional: dict | None = None) -> dict:
         path = evidence / name
         if not path.is_file():
             raise SystemExit(f"retained evidence is absent: {path}")
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as broken:
+            # `read_text` raises this BEFORE json ever sees the bytes, so catching
+            # JSONDecodeError alone missed it -- the fourth shape of the same escape.
+            raise SystemExit(f"retained evidence is not valid UTF-8: {path}: {broken}")
         except json.JSONDecodeError as broken:
             raise SystemExit(f"retained evidence is not valid JSON: {path}: {broken}")
         # Valid JSON is not enough: `[]`, `null` and a bare scalar all parse, and
@@ -705,6 +712,18 @@ def _repin_facts(run_id: str) -> dict[str, object]:
                     f"{type(document[field]).__name__}, expected "
                     f"{' or '.join(k.__name__ for k in (kinds if isinstance(kinds, tuple) else (kinds,)))}"
                 )
+        # Optional means "may be absent", never "may be anything". `businessControls`
+        # was read as `(manifest.get("businessControls") or {}).keys()`, so absent,
+        # null and {} were all covered -- and a non-empty list or string went straight
+        # to `.keys()` and raised AttributeError past the handler. The declaration
+        # should cover every field this function READS, not only those it requires.
+        for field, kinds in (optional or {}).items():
+            if field in document and not isinstance(document[field], kinds):
+                raise SystemExit(
+                    f"retained evidence is malformed: {path} optional field "
+                    f"{field!r} is {type(document[field]).__name__}, expected "
+                    f"{' or '.join(k.__name__ for k in (kinds if isinstance(kinds, tuple) else (kinds,)))}"
+                )
         return document
 
     gate_a = _evidence(
@@ -719,6 +738,7 @@ def _repin_facts(run_id: str) -> dict[str, object]:
             "objects": list,
             "duckdb": dict,
         },
+        optional={"businessControls": dict, "capabilityMask": dict},
     )
     if not isinstance(manifest["duckdb"].get("sha256"), str):
         raise SystemExit(
