@@ -665,22 +665,30 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     """
 
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
-    gate_a = json.loads((evidence / "gate-a.json").read_text(encoding="utf-8"))
-    manifest = json.loads(
-        (evidence / "publication-manifest.json").read_text(encoding="utf-8")
-    )
+
+    # All three sources, one way. Only `gate-b.json` had an existence pre-check, so a
+    # run missing Gate A or the manifest raised FileNotFoundError -- which is not a
+    # SystemExit, so `command_repin`'s handler did not catch it and the pipeline lost
+    # its stage timings to a traceback. `build_pin` already loops over its four files
+    # like this; a function whose docstring names three sources should not refuse
+    # cleanly for one of them and crash for the other two.
+    def _evidence(name: str) -> dict:
+        path = evidence / name
+        if not path.is_file():
+            raise SystemExit(f"retained evidence is absent: {path}")
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as broken:
+            raise SystemExit(f"retained evidence is not valid JSON: {path}: {broken}")
+
+    gate_a = _evidence("gate-a.json")
+    manifest = _evidence("publication-manifest.json")
     # Gate B is READ, not assumed. The docstring said this file was one of the
     # sources and it never was: the fingerprint and the capability mask both came
     # from the manifest's copy of them, so a missing, failing or inconsistent
     # `gate-b.json` still produced a confident proposal claiming Gate B passed.
     # Only `--approve` found out, one step later, via the rollback.
-    gate_b_path = evidence / "gate-b.json"
-    if not gate_b_path.is_file():
-        # A clean refusal, matching what `build_pin` gives for the same four files.
-        # A bare read_text here produced a FileNotFoundError traceback for missing
-        # evidence, which reads like a crash rather than the governed stop it is.
-        raise SystemExit(f"retained evidence is absent: {gate_b_path}")
-    gate_b = json.loads(gate_b_path.read_text(encoding="utf-8"))
+    gate_b = _evidence("gate-b.json")
     if gate_b.get("semanticFingerprint") != manifest.get(
         "gateBSemanticFingerprint"
     ):
@@ -708,9 +716,27 @@ def _repin_facts(run_id: str) -> dict[str, object]:
         "inventory_replenishment_current_snapshot",
         "inventory_replenishment_replay",
     )
-    missing = [
-        name for name in required if not (mask.get(name) or {}).get("available")
-    ]
+    # A real boolean, not truthiness. `"available": "false"` is a non-empty string
+    # and therefore truthy, so a malformed mask read as AVAILABLE and could authorize
+    # an adoption -- the string "no" too. Only a float 0.0 happened to be caught.
+    # Malformed is refused rather than folded into "missing", because a mask this
+    # tool cannot interpret is a different problem from a capability the gate says is
+    # unavailable, and they need different fixes.
+    malformed = []
+    missing = []
+    for name in required:
+        entry = mask.get(name)
+        if not isinstance(entry, dict) or not isinstance(
+            entry.get("available"), bool
+        ):
+            malformed.append(f"{name}={entry!r}")
+        elif not entry["available"]:
+            missing.append(name)
+    if malformed:
+        raise SystemExit(
+            f"{run_id}: gate-b.json capabilityMask entries are not "
+            f"{{'available': <bool>}}: {', '.join(malformed)}"
+        )
     return {
         "run": run_id,
         "sourceSnapshotId": manifest["sourceSnapshotId"],

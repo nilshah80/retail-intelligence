@@ -533,3 +533,127 @@ class TestGateBMaskIsRequired:
                 dev._repin_facts("run-x")
         finally:
             dev.REPO_ROOT = original
+
+
+class TestMaskIsInterpretedStrictly:
+    @staticmethod
+    def _run_dir(tmp_path, mask):
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": mask,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps(
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": {"sha256": "d" * 64},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_the_string_false_does_not_read_as_available(self, tmp_path) -> None:
+        """`"available": "false"` is a truthy string and authorized adoption."""
+
+        root = self._run_dir(
+            tmp_path,
+            {
+                "demand_forecast_non_pit": {"available": "false"},
+                "inventory_replenishment_current_snapshot": {"available": "no"},
+                "inventory_replenishment_replay": {"available": True},
+            },
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = root
+        try:
+            with pytest.raises(SystemExit, match=r"not \{'available': <bool>\}"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+    def test_a_real_false_is_reported_as_missing_not_malformed(
+        self, tmp_path
+    ) -> None:
+        """An honest `false` is a capability verdict, not broken evidence."""
+
+        root = self._run_dir(
+            tmp_path,
+            {
+                "demand_forecast_non_pit": {"available": True},
+                "inventory_replenishment_current_snapshot": {"available": True},
+                "inventory_replenishment_replay": {"available": False},
+            },
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = root
+        try:
+            facts = dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+        assert facts["missingRequiredCapabilities"] == [
+            "inventory_replenishment_replay"
+        ]
+
+
+class TestEvidenceReadsAreUniform:
+    @pytest.mark.parametrize(
+        "absent", ["gate-a.json", "gate-b.json", "publication-manifest.json"]
+    )
+    def test_any_absent_source_refuses_the_same_way(self, tmp_path, absent) -> None:
+        """One of three refusing cleanly and two crashing is the bug."""
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        payloads = {
+            "gate-a.json": {"status": "pass", "semanticFingerprint": "a" * 64},
+            "gate-b.json": {
+                "status": "pass",
+                "semanticFingerprint": "b" * 64,
+                "capabilityMask": {},
+            },
+            "publication-manifest.json": {
+                "sourceSnapshotId": "s" * 64,
+                "gateBSemanticFingerprint": "b" * 64,
+                "semanticFingerprint": "p" * 64,
+                "objects": [],
+                "duckdb": {"sha256": "d" * 64},
+            },
+        }
+        for name, payload in payloads.items():
+            if name != absent:
+                (evidence / name).write_text(json.dumps(payload), encoding="utf-8")
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="retained evidence is absent"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+    def test_malformed_json_refuses_rather_than_raising(self, tmp_path) -> None:
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text("{not json", encoding="utf-8")
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="not valid JSON"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
