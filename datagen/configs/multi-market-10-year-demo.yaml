@@ -22,7 +22,7 @@ markets:
   timezone: Asia/Kolkata
   catalogPack:
     id: real-retail-IN
-    version: '2026.6'
+    version: '2026.7'
     label: India real-brand reference catalog
     countryCode: IN
     barcodeFormat: EAN13
@@ -60,6 +60,18 @@ markets:
     - home-bedding
     - home-cleaning
     - home-cookware
+    - lubricants-adblue
+    - lubricants-coolant-brake
+    - lubricants-diesel-engine
+    - lubricants-ev-fluids
+    - lubricants-gear
+    - lubricants-grease
+    - lubricants-hydraulic
+    - lubricants-industrial
+    - lubricants-motorcycle
+    - lubricants-pcmo
+    - lubricants-tractor
+    - lubricants-transmission
     - sports-fitness
     - sports-outdoor
     - sports-team
@@ -98,6 +110,7 @@ markets:
         grocery: '0.05'
         health: '0.12'
         home: '0.18'
+        lubricants: '0.18'
         sports: '0.18'
         stationery: '0.12'
         toys: '0.12'
@@ -477,7 +490,7 @@ markets:
   timezone: America/New_York
   catalogPack:
     id: real-retail-US
-    version: '2026.6'
+    version: '2026.7'
     label: United States real-brand reference catalog
     countryCode: US
     barcodeFormat: UPCA
@@ -515,6 +528,18 @@ markets:
     - home-bedding
     - home-cleaning
     - home-cookware
+    - lubricants-adblue
+    - lubricants-coolant-brake
+    - lubricants-diesel-engine
+    - lubricants-ev-fluids
+    - lubricants-gear
+    - lubricants-grease
+    - lubricants-hydraulic
+    - lubricants-industrial
+    - lubricants-motorcycle
+    - lubricants-pcmo
+    - lubricants-tractor
+    - lubricants-transmission
     - sports-fitness
     - sports-outdoor
     - sports-team
@@ -553,6 +578,7 @@ markets:
         grocery: '0.00'
         health: '0.00'
         home: '0.08875'
+        lubricants: '0.08875'
         sports: '0.08875'
         stationery: '0.08875'
         toys: '0.08875'
@@ -868,7 +894,7 @@ sourceInstances:
 catalog:
   generation:
     mode: hybrid
-    catalogPackVersion: '2026.6'
+    catalogPackVersion: '2026.7'
     skuPrefix: NST
     launchHistoryDays: 365
     incumbentProductPct: 0.5
@@ -2460,19 +2486,6 @@ operations:
   storeInventory:
     snapshotCadenceDays: 7
     reviewCycleDays: 7
-    # Tightened at P4-11. The previous policy -- 14 days of cover plus 3 units of
-    # safety stock, reviewed weekly, with one day of transit -- replenished faster
-    # than any store could sell, so no store ever ran out. Every availability
-    # measure then saturated: in-stock 99.6%, replay fill rate 99.9999%, and the
-    # heatmap read exactly 100% for every store. That is not a screen defect, it
-    # is a network with nothing to manage, and an inventory product demonstrated
-    # on it has nothing to show.
-    #
-    # Seven days of cover against a seven-day review cycle means a store is
-    # planning to arrive at zero exactly as its next delivery lands, so ordinary
-    # demand variance produces real stock-outs. Two days of transit is also the
-    # honest figure for a DC-to-store lane and gives the in-transit position
-    # something to hold.
     targetDaysOfCover: 7
     safetyStockUnits: 1
     replenishmentPackSize: 6

@@ -881,6 +881,47 @@ or price band.
 **Stop:** if the retail catalog digest changes for any reason other than an approved pack-version
 field, revert and re-specify. Silent movement of the accepted retail lineage is a no-go.
 
+#### GOI-2 as-built — measured 2026-08-06
+
+Implemented in catalog pack **2026.7**. Two design decisions differ from what
+`GOI-1` anticipated, both forced by the code:
+
+1. **New dimensions, not extended `packSize`.** Option values are a pack-global list and
+   `_partial_combinations` runs `itertools.product` over it, so adding a value to `packSize` would
+   change which variants *every existing family* selects and move every retail catalog. Instead
+   `packSize` is untouched and six dimensions are added: `viscosity`, `gearGrade`, `nlgiGrade`,
+   `isoViscosityGrade`, `packVolume`, `packWeight`. Separate grade systems also stop a grease being
+   offered as 15W-40.
+2. **A fill is absolute, not a multiplier.** `packSize` scales a family's nominal content; a 20 L
+   drum is 20 L whatever the family base says. `PACK_FILLS` carries the fill and a sub-linear price
+   multiplier, and `_measurement` returns the fill directly. Families with no fill dimension keep
+   the original multiplier path unchanged — that is what preserves retail stability.
+
+**Measured against the pre-change baseline, all four retail presets:**
+
+| | Result |
+|---|---|
+| Resolved catalog digest | **unchanged** in all four presets |
+| Product / SKU controls | **unchanged** (240 products, 720 SKUs per market) |
+| Config hash | **changed** in all four presets |
+| Datagen suite | 77 passed before, 99 after (22 net-new) |
+| Import boundaries | clean, 122 files across 3 trees |
+
+The config-hash movement is expected and unavoidable, not a defect: `market.catalogPack` embeds
+both `version` (2026.6 → 2026.7) and `familyIds` (41 → 53), and `market.localePack` embeds the new
+`lubricants` tax rate. `_validate_catalog_pack` (`config.py:265`) compares the embedded pack to the
+resolved metadata exactly, so the presets had to be re-synced or every retail config would fail
+validation.
+
+**This is the `GOI-2` approval point.** The retail *catalog* is provably unmoved, but the retail
+*run identity* moves. Regenerating the retail tenant later produces a new run id. Because
+`GOI-D11` restores retail by re-materializing archived bundles rather than regenerating, this does
+not affect the restore path — but it must be approved before `GOI-3`, not discovered at `GOI-12`.
+
+**Still provisional:** every Gulf product line, grade, band and margin in `_FAMILY_BEHAVIOUR` is
+assembled from public brand knowledge and carries an in-code `PROVISIONAL` marker. `GOI-0` replaces
+them.
+
 ### GOI-3 · Author the Gulf scenario configuration
 
 **Entry:** `GOI-2` complete; `GOI-D1` and `GOI-D6` decided.

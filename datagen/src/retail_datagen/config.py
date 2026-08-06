@@ -907,6 +907,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                         "grocery",
                         "health",
                         "home",
+                        "lubricants",
                         "sports",
                         "stationery",
                         "toys",

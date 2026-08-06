@@ -18,9 +18,17 @@ from typing import Any
 
 from .identity import rng, stable_integer
 
-CATALOG_PACK_VERSION = "2026.6"
+CATALOG_PACK_VERSION = "2026.7"
 MONEY_QUANT = Decimal("0.01")
 SUPPORTED_CATALOG_MODES = {"generated", "hybrid", "explicit"}
+# Option values are a pack-global list per dimension, so every value of a
+# dimension must be meaningful for every family that declares it. Lubricant
+# grades are not interchangeable -- an engine oil is never NLGI 2 and a grease is
+# never 15W-40 -- so each grade system gets its own dimension rather than one
+# `grade` dimension holding values that only some families may legally take.
+# `packSize` (Single/Pack of 2/...) is deliberately left untouched: adding values
+# to it would change `itertools.product` in `_partial_combinations` and move
+# every existing catalog.
 SUPPORTED_OPTION_DIMENSIONS = {
     "ageGroup",
     "color",
@@ -28,10 +36,16 @@ SUPPORTED_OPTION_DIMENSIONS = {
     "connectivity",
     "flavour",
     "format",
+    "gearGrade",
+    "isoViscosityGrade",
+    "nlgiGrade",
     "packSize",
+    "packVolume",
+    "packWeight",
     "power",
     "size",
     "storage",
+    "viscosity",
 }
 SUPPORTED_LAUNCH_PROFILES = {"linear-ramp", "flagship-spike-decay", "evergreen"}
 
@@ -53,6 +67,21 @@ FAMILY_MEASUREMENTS: dict[str, tuple[str, Decimal, str]] = {
     "stationery-writing": ("EA", Decimal("5"), "count"),
     "automotive-car-care": ("ML", Decimal("500"), "ml"),
     "automotive-oils": ("ML", Decimal("1000"), "ml"),
+    # Lubricant families quote a 1 L / 1 kg nominal base. In practice an
+    # absolute pack fill overrides it (see `_measurement`), so these values act
+    # as the fallback for a product that declares no fill dimension.
+    "lubricants-motorcycle": ("ML", Decimal("1000"), "ml"),
+    "lubricants-pcmo": ("ML", Decimal("1000"), "ml"),
+    "lubricants-diesel-engine": ("ML", Decimal("1000"), "ml"),
+    "lubricants-tractor": ("ML", Decimal("1000"), "ml"),
+    "lubricants-gear": ("ML", Decimal("1000"), "ml"),
+    "lubricants-transmission": ("ML", Decimal("1000"), "ml"),
+    "lubricants-grease": ("G", Decimal("1000"), "g"),
+    "lubricants-coolant-brake": ("ML", Decimal("1000"), "ml"),
+    "lubricants-hydraulic": ("ML", Decimal("1000"), "ml"),
+    "lubricants-industrial": ("ML", Decimal("1000"), "ml"),
+    "lubricants-adblue": ("ML", Decimal("1000"), "ml"),
+    "lubricants-ev-fluids": ("ML", Decimal("1000"), "ml"),
 }
 
 PACK_COUNTS = {
@@ -60,6 +89,31 @@ PACK_COUNTS = {
     "2PK": Decimal("2"),
     "6PK": Decimal("6"),
     "FAM": Decimal("4"),
+}
+
+# Absolute pack fills. Unlike `packSize`, which multiplies a family's base
+# measurement, a fill *is* the content: a 20 L drum is 20 L regardless of what
+# the family's nominal unit says. Each entry carries the fill in the family's
+# base unit (ml or g) and a price multiplier relative to the 1 L / 1 kg pack.
+# Multipliers are sub-linear because bulk packs sell at a lower unit rate, and
+# strictly increasing so a larger pack is never cheaper in absolute terms.
+PACK_FILLS: dict[str, tuple[Decimal, Decimal]] = {
+    "500ML": (Decimal("500"), Decimal("0.58")),
+    "900ML": (Decimal("900"), Decimal("0.95")),
+    "1L": (Decimal("1000"), Decimal("1")),
+    "3L5": (Decimal("3500"), Decimal("3.25")),
+    "5L": (Decimal("5000"), Decimal("4.55")),
+    "7L5": (Decimal("7500"), Decimal("6.75")),
+    "10L": (Decimal("10000"), Decimal("8.80")),
+    "20L": (Decimal("20000"), Decimal("17")),
+    "26L": (Decimal("26000"), Decimal("21.80")),
+    "50L": (Decimal("50000"), Decimal("41")),
+    "210L": (Decimal("210000"), Decimal("168")),
+    "500G": (Decimal("500"), Decimal("0.58")),
+    "1KG": (Decimal("1000"), Decimal("1")),
+    "5KG": (Decimal("5000"), Decimal("4.55")),
+    "18KG": (Decimal("18000"), Decimal("15.60")),
+    "180KG": (Decimal("180000"), Decimal("148")),
 }
 
 
@@ -480,6 +534,127 @@ _FAMILY_BEHAVIOUR: dict[str, dict[str, Any]] = {
         price=("10", "190"), peak=4, strength=.10, margin=.34, returns=.035,
         elasticity=(-1.9, -.6),
     ),
+    # ---------------------------------------------------------------------
+    # Lubricant families for the Gulf Oil India tenant.
+    #
+    # Price bands are quoted per 1 L / 1 kg in USD and scaled to the market by
+    # `priceScale`; the absolute pack fill supplies the rest of the pack
+    # economics. Product-line identities are real Gulf brand names used exactly
+    # as Castrol/Shell/Mobil/Valvoline are used above -- recognizable reference
+    # identities on wholly synthetic prices, costs, volumes and demand.
+    #
+    # PROVISIONAL: the line-up, grades and bands below are assembled from public
+    # brand knowledge and have NOT been confirmed against Gulf's price list.
+    # GOI-0 replaces every unconfirmed entry before this ships to a client.
+    # ---------------------------------------------------------------------
+    "lubricants-motorcycle": _family(
+        "MCO", ["viscosity", "packVolume"],
+        "Gulf|GULF|Gulf Pride 4T Plus|Mineral motor oil;"
+        "Gulf|GULF|Gulf Pride 4T Ultra|Semi-synthetic motor oil;"
+        "Gulf|GULF|Gulf Pride 4T UltraSynth|Synthetic motor oil;"
+        "Gulf|GULF|Gulf Pride 2T|Two-stroke motor oil",
+        price=("4", "9"), peak=10, strength=.22, margin=.34, returns=.006,
+        elasticity=(-2.1, -.7), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-pcmo": _family(
+        "PCM", ["viscosity", "packVolume"],
+        "Gulf|GULF|Gulf Formula G|Synthetic motor oil;"
+        "Gulf|GULF|Gulf Formula ULE|Fully synthetic motor oil;"
+        "Gulf|GULF|Gulf Formula GX|Semi-synthetic motor oil;"
+        "Gulf|GULF|Gulf Ultrasynth X|Fully synthetic motor oil",
+        price=("6", "15"), peak=7, strength=.14, margin=.32, returns=.005,
+        elasticity=(-1.9, -.6), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-diesel-engine": _family(
+        "DEO", ["viscosity", "packVolume"],
+        "Gulf|GULF|Gulf Superfleet XLD|Mineral diesel engine oil;"
+        "Gulf|GULF|Gulf Superfleet LE|Semi-synthetic diesel engine oil;"
+        "Gulf|GULF|Gulf Superfleet Supreme|Mineral diesel engine oil;"
+        "Gulf|GULF|Gulf Superfleet Turbo|Mineral diesel engine oil",
+        price=("3.50", "7.50"), peak=3, strength=.16, margin=.24, returns=.004,
+        elasticity=(-2.3, -.85), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-tractor": _family(
+        "TRC", ["viscosity", "packVolume"],
+        "Gulf|GULF|Gulf Superior Tractor Oil|Mineral tractor oil;"
+        "Gulf|GULF|Gulf Max Star|Mineral tractor oil;"
+        "Gulf|GULF|Gulf Multi TF|Universal transmission fluid;"
+        "Gulf|GULF|Gulf Tracsynth|Semi-synthetic tractor oil",
+        price=("3.40", "6"), peak=6, strength=.38, margin=.26, returns=.004,
+        elasticity=(-2.4, -.9), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-gear": _family(
+        "GER", ["gearGrade", "packVolume"],
+        "Gulf|GULF|Gulf Gear MP|Mineral gear oil;"
+        "Gulf|GULF|Gulf Gear EP|Extreme-pressure gear oil;"
+        "Gulf|GULF|Gulf Gear HD|Heavy-duty gear oil;"
+        "Gulf|GULF|Gulf Gear Synth|Synthetic gear oil",
+        price=("4.20", "8.50"), peak=7, strength=.12, margin=.30, returns=.004,
+        elasticity=(-1.9, -.6), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-transmission": _family(
+        "ATF", ["format", "packVolume"],
+        "Gulf|GULF|Gulf ATF DX-III|Automatic transmission fluid;"
+        "Gulf|GULF|Gulf ATF Multi|Automatic transmission fluid;"
+        "Gulf|GULF|Gulf UTTO|Universal tractor transmission oil;"
+        "Gulf|GULF|Gulf CVT Fluid|Continuously variable transmission fluid",
+        price=("5", "11"), peak=7, strength=.10, margin=.30, returns=.004,
+        elasticity=(-1.8, -.55), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-grease": _family(
+        "GRS", ["nlgiGrade", "packWeight"],
+        "Gulf|GULF|Gulf Crown Grease|Lithium grease;"
+        "Gulf|GULF|Gulf Superlith|Lithium complex grease;"
+        "Gulf|GULF|Gulf Wheel Bearing Grease|Lithium grease;"
+        "Gulf|GULF|Gulf Multipurpose Grease|Calcium grease",
+        price=("3", "7.20"), peak=6, strength=.14, margin=.32, returns=.004,
+        elasticity=(-2.0, -.65), costing="FIFO", shelf_life_days=1460,
+    ),
+    "lubricants-coolant-brake": _family(
+        "CBF", ["format", "packVolume"],
+        "Gulf|GULF|Gulf Radiator Coolant|Glycol coolant;"
+        "Gulf|GULF|Gulf Endurance Coolant|Long-life glycol coolant;"
+        "Gulf|GULF|Gulf Brake Fluid DOT 3|Glycol-ether brake fluid;"
+        "Gulf|GULF|Gulf Brake Fluid DOT 4|Glycol-ether brake fluid",
+        price=("2.40", "6"), peak=4, strength=.20, margin=.30, returns=.005,
+        elasticity=(-2.2, -.75), costing="FIFO", shelf_life_days=1095,
+    ),
+    "lubricants-hydraulic": _family(
+        "HYD", ["isoViscosityGrade", "packVolume"],
+        "Gulf|GULF|Gulf Harmony AW|Anti-wear hydraulic oil;"
+        "Gulf|GULF|Gulf Harmony HVI|High-viscosity-index hydraulic oil;"
+        "Gulf|GULF|Gulf Harmony ZF|Zinc-free hydraulic oil;"
+        "Gulf|GULF|Gulf Hydrasynth|Synthetic hydraulic fluid",
+        price=("2.60", "5.40"), peak=3, strength=.10, margin=.22, returns=.003,
+        elasticity=(-2.0, -.7), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-industrial": _family(
+        "IND", ["isoViscosityGrade", "packVolume"],
+        "Gulf|GULF|Gulf Cyclo Compressor Oil|Compressor oil;"
+        "Gulf|GULF|Gulf Turbine Oil|Turbine oil;"
+        "Gulf|GULF|Gulf Cutting Oil|Metalworking fluid;"
+        "Gulf|GULF|Gulf Industrial Gear Oil|Industrial gear oil",
+        price=("3.60", "9.60"), peak=3, strength=.10, margin=.24, returns=.003,
+        elasticity=(-1.8, -.55), costing="FIFO", shelf_life_days=1825,
+    ),
+    "lubricants-adblue": _family(
+        "DEF", ["format", "packVolume"],
+        "Gulf|GULF|Gulf AdBlue|Urea solution;"
+        "Gulf|GULF|Gulf AdBlue Bulk|Urea solution;"
+        "Gulf|GULF|Gulf DEF|Diesel exhaust fluid;"
+        "Gulf|GULF|Gulf AdBlue Pro|Urea solution",
+        price=("0.50", "1"), peak=3, strength=.08, margin=.16, returns=.003,
+        elasticity=(-2.6, -1.0), costing="FIFO", shelf_life_days=365,
+    ),
+    "lubricants-ev-fluids": _family(
+        "EVF", ["format", "packVolume"],
+        "Gulf|GULF|Gulf eVolt Driveline Fluid|Synthetic EV driveline fluid;"
+        "Gulf|GULF|Gulf eVolt Coolant|Dielectric coolant;"
+        "Gulf|GULF|Gulf eVolt Grease|Synthetic EV grease;"
+        "Gulf|GULF|Gulf eVolt Thermal Fluid|Dielectric thermal fluid",
+        price=("9.60", "21.70"), peak=10, strength=.15, margin=.38, returns=.005,
+        elasticity=(-1.5, -.45), costing="FIFO", shelf_life_days=1460,
+    ),
 }
 
 _REGIONAL_PRODUCT_OVERRIDES = {
@@ -584,6 +759,38 @@ _OPTION_VALUES = {
     "ageGroup": [
         {"name": "0-2 years", "code": "A02"}, {"name": "3-5 years", "code": "A35"},
         {"name": "6-9 years", "code": "A69"}, {"name": "10+ years", "code": "A10"},
+    ],
+    "viscosity": [
+        {"name": "0W-20", "code": "0W20"}, {"name": "5W-30", "code": "5W30"},
+        {"name": "5W-40", "code": "5W40"}, {"name": "10W-30", "code": "10W30"},
+        {"name": "10W-40", "code": "10W40"}, {"name": "15W-40", "code": "15W40"},
+        {"name": "20W-40", "code": "20W40"}, {"name": "20W-50", "code": "20W50"},
+    ],
+    "gearGrade": [
+        {"name": "75W-90", "code": "75W90"}, {"name": "80W-90", "code": "80W90"},
+        {"name": "85W-140", "code": "85W140"},
+    ],
+    "nlgiGrade": [
+        {"name": "NLGI 0", "code": "NLGI0"}, {"name": "NLGI 1", "code": "NLGI1"},
+        {"name": "NLGI 2", "code": "NLGI2"}, {"name": "NLGI 3", "code": "NLGI3"},
+    ],
+    "isoViscosityGrade": [
+        {"name": "ISO VG 32", "code": "VG32"}, {"name": "ISO VG 46", "code": "VG46"},
+        {"name": "ISO VG 68", "code": "VG68"}, {"name": "ISO VG 100", "code": "VG100"},
+        {"name": "ISO VG 150", "code": "VG150"}, {"name": "ISO VG 220", "code": "VG220"},
+    ],
+    "packVolume": [
+        {"name": "500 ml", "code": "500ML"}, {"name": "900 ml", "code": "900ML"},
+        {"name": "1 L", "code": "1L"}, {"name": "3.5 L", "code": "3L5"},
+        {"name": "5 L", "code": "5L"}, {"name": "7.5 L", "code": "7L5"},
+        {"name": "10 L", "code": "10L"}, {"name": "20 L", "code": "20L"},
+        {"name": "26 L", "code": "26L"}, {"name": "50 L", "code": "50L"},
+        {"name": "210 L", "code": "210L"},
+    ],
+    "packWeight": [
+        {"name": "500 g", "code": "500G"}, {"name": "1 kg", "code": "1KG"},
+        {"name": "5 kg", "code": "5KG"}, {"name": "18 kg", "code": "18KG"},
+        {"name": "180 kg", "code": "180KG"},
     ],
 }
 
@@ -822,6 +1029,11 @@ def _option_price_multiplier(options: list[dict[str, str]]) -> Decimal:
                 "BT": Decimal("1"),
                 "USBC": Decimal("1"),
             }[option["code"]]
+        elif option["name"] in {"packVolume", "packWeight"}:
+            # The family price band is quoted per 1 L / 1 kg, so the fill
+            # multiplier carries the whole pack economics. A 210 L barrel is not
+            # a variant of a 1 L bottle at the same price.
+            multiplier *= PACK_FILLS[option["code"]][1]
     return multiplier
 
 
@@ -833,6 +1045,20 @@ def _measurement(
         family_id,
         ("EA", Decimal("1"), "count"),
     )
+    # An absolute fill replaces the family's nominal content rather than
+    # multiplying it; a 20 L drum holds 20 L whatever the family base says.
+    # Families that declare no fill dimension keep the original packSize
+    # multiplier path exactly, which is what keeps existing catalogs stable.
+    fill = next(
+        (
+            PACK_FILLS[option["code"]][0]
+            for option in options
+            if option["name"] in {"packVolume", "packWeight"}
+        ),
+        None,
+    )
+    if fill is not None:
+        return unit_of_measure, fill, measurement_unit
     pack_count = next(
         (
             PACK_COUNTS[option["code"]]
