@@ -1027,21 +1027,139 @@ class TestScorecardContainer:
             "inventory_replenishment_replay",
         }
 
-    def test_no_phase_requires_a_superseded_capability(self) -> None:
-        """The class, not the instance: any phase naming a retired flag fails here."""
+    def test_no_phase_requires_a_retired_capability(self) -> None:
+        """The class guard -- and it must run on a fresh clone, which it did not.
+
+        This previously read the Gate-B mask under `ingestion/data/`, which is
+        gitignored, so it skipped on a fresh clone, on macOS, and here after a wipe.
+        It also named one run id, so it stopped running the moment the pin moved even
+        on a host that had evidence. That is the same "passes only where the bytes
+        are" shape the selection ledger was fixed for at a855c62 -- reappearing inside
+        the guard written to stop a class from recurring.
+
+        The authority is now the committed policy, so this runs everywhere.
+        """
 
         scorecard = _load("direction_scorecard")
-        gate_b_path = (
-            REPO_ROOT / "ingestion" / "data" / "evidence"
-            / "run-adac9e85dccb56e8-r2" / "gate-b.json"
-        )
-        if not gate_b_path.is_file():
-            pytest.skip("no retained evidence on this host")
-        mask = json.loads(gate_b_path.read_text(encoding="utf-8"))["capabilityMask"]
-        offenders = [
+        retired = scorecard.retired_capabilities()
+        assert retired, "the committed policy should declare at least one retirement"
+        offenders = sorted(
             f"{phase}:{capability}"
             for phase, spec in scorecard.PHASE_REQUIREMENTS.items()
             for capability in spec["capabilities"]
-            if (mask.get(capability) or {}).get("supersededBy")
-        ]
-        assert not offenders, f"phases requiring superseded capabilities: {offenders}"
+            if capability in retired
+        )
+        assert not offenders, f"phases requiring retired capabilities: {offenders}"
+
+    def test_the_retirement_authority_is_committed_not_gitignored(self) -> None:
+        """A guard sourced from gitignored data is a guard that skips."""
+
+        scorecard = _load("direction_scorecard")
+        assert scorecard._POLICY_PATH.is_file(), scorecard._POLICY_PATH
+        assert "ingestion/data" not in scorecard._POLICY_PATH.as_posix()
+
+    def test_the_mask_alias_matches_a_real_policy_retirement(self) -> None:
+        """An alias naming nothing would silently stop covering its mask spelling."""
+
+        scorecard = _load("direction_scorecard")
+        policy = json.loads(
+            scorecard._POLICY_PATH.read_text(encoding="utf-8")
+        )
+        declared = set(
+            (policy.get("capabilities") or {}).get("retiredDefinitions") or {}
+        )
+        for mask_name, policy_name in scorecard.RETIRED_CAPABILITY_ALIASES.items():
+            assert policy_name in declared, (
+                f"alias {mask_name} -> {policy_name} names no policy retirement"
+            )
+
+
+class TestReadBoundary:
+    def test_a_read_error_refuses_rather_than_raising(self, tmp_path, monkeypatch):
+        """PermissionError and a deletion race are OSError, not SystemExit.
+
+        The is_file() check cannot close the race on its own -- the file can vanish
+        between the check and the read -- so only catching the read closes it.
+        """
+
+        import pathlib as _pathlib
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text("{}", encoding="utf-8")
+        real = _pathlib.Path.read_text
+
+        def deny(self, *args, **kwargs):
+            if self.name == "gate-a.json":
+                raise PermissionError(13, "Permission denied")
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(_pathlib.Path, "read_text", deny)
+        monkeypatch.setattr(dev, "REPO_ROOT", tmp_path)
+        with pytest.raises(SystemExit, match="could not be read"):
+            dev._repin_facts("run-x")
+
+
+class TestScorecardNullEntry:
+    def test_an_explicit_null_entry_is_malformed_not_unevaluated(
+        self, tmp_path
+    ) -> None:
+        """An absent key and `"capability": null` are different claims.
+
+        Absent means the gate did not evaluate it; an explicit null is malformed
+        evidence. `.get()` returns None for both and collapsed the distinction.
+        """
+
+        scorecard = _load("direction_scorecard")
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
+        evidence.mkdir(parents=True)
+        capabilities = sorted(
+            {
+                capability
+                for spec in scorecard.PHASE_REQUIREMENTS.values()
+                for capability in spec["capabilities"]
+            }
+        )
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": {c: None for c in capabilities},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+        )
+        codes = {
+            entry["reasonCode"]
+            for phase in scorecard.build(tmp_path)["phases"].values()
+            for entry in (phase.get("missingCapabilities") or [])
+        }
+        assert codes == {"MASK_UNREADABLE"}, codes
+
+    def test_an_absent_key_is_still_not_evaluated(self, tmp_path) -> None:
+        scorecard = _load("direction_scorecard")
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+        )
+        codes = {
+            entry["reasonCode"]
+            for phase in scorecard.build(tmp_path)["phases"].values()
+            for entry in (phase.get("missingCapabilities") or [])
+        }
+        assert codes == {"NOT_EVALUATED"}, codes

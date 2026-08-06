@@ -681,6 +681,12 @@ def _repin_facts(run_id: str) -> dict[str, object]:
             raise SystemExit(f"retained evidence is absent: {path}")
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as broken:
+            # PermissionError, a deletion between the is_file() check and this read,
+            # a disk error -- all OSError, none a SystemExit, so each escaped the
+            # handler like the four shapes before it. The is_file() check above cannot
+            # close the race on its own; only catching the read can.
+            raise SystemExit(f"retained evidence could not be read: {path}: {broken}")
         except UnicodeDecodeError as broken:
             # `read_text` raises this BEFORE json ever sees the bytes, so catching
             # JSONDecodeError alone missed it -- the fourth shape of the same escape.

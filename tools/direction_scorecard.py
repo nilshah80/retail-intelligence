@@ -139,6 +139,44 @@ PHASE_REQUIREMENTS: dict[str, dict[str, Any]] = {
     },
 }
 
+#: Capability names this scorecard must never require, derived from the committed
+#: policy rather than from evidence.
+#:
+#: The obvious source -- the Gate-B mask's own `supersededBy` -- lives under
+#: `ingestion/data/`, which is gitignored, so a test reading it verifies only on a
+#: host that still holds the bytes. That is the same "passes where the data is" shape
+#: the selection ledger was fixed for, and it must not come back in the guard written
+#: to stop a class of bug from recurring.
+#:
+#: `temporal-evidence-policy-v2.json` IS committed and carries the retirement, but
+#: under a different spelling: the policy retires `inventory_replenishment` while the
+#: mask emits `replenishment`. The alias is declared here, once, so the tool and its
+#: test share one definition instead of the test inventing a second.
+_POLICY_PATH = (
+    REPO_ROOT / "contracts" / "onboarding" / "temporal-evidence-policy-v2.json"
+)
+
+#: Mask spelling -> policy spelling, for names that differ between the two.
+RETIRED_CAPABILITY_ALIASES: dict[str, str] = {
+    "replenishment": "inventory_replenishment",
+}
+
+
+def retired_capabilities() -> set[str]:
+    """Names no phase may require, under either spelling."""
+
+    policy = _load(_POLICY_PATH) or {}
+    retired = set(
+        (policy.get("capabilities") or {}).get("retiredDefinitions") or {}
+    )
+    aliases = {
+        mask_name
+        for mask_name, policy_name in RETIRED_CAPABILITY_ALIASES.items()
+        if policy_name in retired
+    }
+    return retired | aliases
+
+
 #: Capabilities that unlock more than one phase, so blocking them is expensive.
 LEVERAGE_NOTE = (
     "A capability blocking more than one phase is higher leverage than any "
@@ -229,6 +267,23 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
     # Normalising to `{}` alone would report NOT_EVALUATED, which says the gate ran
     # and skipped the capability. It did not: the mask could not be read at all, and
     # those are different facts about the evidence. The flag keeps them apart.
+    # Refuse to MEASURE a retired capability, not merely to have one configured.
+    # Phase 4 required `replenishment` -- retired and superseded -- so it reported no
+    # missing capability while current-snapshot was false. A scorecard that quietly
+    # measures the wrong flag is worse than one that stops.
+    retired = retired_capabilities()
+    offenders = sorted(
+        f"{phase}:{capability}"
+        for phase, spec in PHASE_REQUIREMENTS.items()
+        for capability in spec["capabilities"]
+        if capability in retired
+    )
+    if offenders:
+        raise SystemExit(
+            "these phases require capabilities the committed policy retires: "
+            f"{', '.join(offenders)}"
+        )
+
     mask_unreadable = not isinstance(mask, dict)
     if mask_unreadable:
         mask = {}
@@ -239,6 +294,11 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
     for name, spec in PHASE_REQUIREMENTS.items():
         missing: list[dict[str, str]] = []
         for capability in spec["capabilities"]:
+            # Key membership, not `.get()`: an ABSENT key means the gate did not
+            # evaluate this capability, while a key present with an explicit null is
+            # malformed evidence. `.get()` returns None for both and collapsed the
+            # same distinction this file draws everywhere else.
+            evaluated = capability in mask
             entry = mask.get(capability)
             # The fourth reader of this field, and it had the same truthiness defect
             # as the three in the repin path: `{"available": "false"}` is a non-empty
@@ -251,7 +311,7 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
             # Strict without raising: anything that is not a real boolean `True` is
             # not available, and says which of the two reasons applies. A non-dict
             # entry also used to reach `.get()` and raise AttributeError.
-            if entry is None and not mask_unreadable:
+            if entry is None and not evaluated and not mask_unreadable:
                 missing.append({"capability": capability, "reasonCode": "NOT_EVALUATED"})
             elif mask_unreadable or not isinstance(entry, dict) or not isinstance(
                 entry.get("available"), bool
