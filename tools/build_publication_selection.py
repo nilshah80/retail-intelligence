@@ -126,6 +126,41 @@ PHASE_4R6_RUN = "run-adac9e85dccb56e8-r6"
 PHASE_4R6_APPROVED_AT = "2026-08-05T00:00:00Z"
 
 
+def capability_is_available(
+    mask: Any, capability: str, *, subject: str
+) -> bool:
+    """Interpret one capability-mask entry strictly. Shared by all three readers.
+
+    Three call sites decide whether a capability is available -- `build_candidate`
+    here, `build_pin`, and `_repin_facts` in `tools/dev.py` -- and all three had the
+    same defect: `if not mask.get("available")` tests truthiness, so
+    `{"available": "false"}` and `{"available": "no"}` both read as AVAILABLE because
+    a non-empty string is truthy. Only a float 0.0 happened to be caught.
+
+    The first fix went to `_repin_facts`, which is the PROPOSAL gate -- the least
+    consequential of the three. These two are the gates that write committed
+    artifacts: a mask reading `"false"` produced a governance record asserting the
+    capability was sufficient, and a pin naming it required. Both are reachable
+    without `repin` at all, so the earlier refusal shielded neither.
+
+    Hence one function rather than three corrected copies, because three copies of a
+    check is how the next one drifts.
+
+    Malformed raises rather than returning False: "this cannot be interpreted" and
+    "the gate says no" need different responses, and collapsing them sends the reader
+    to the wrong file.
+    """
+
+    entry = (mask or {}).get(capability) if isinstance(mask, dict) else None
+    if not isinstance(entry, dict) or not isinstance(entry.get("available"), bool):
+        raise SystemExit(
+            f"{subject}: capability mask entry for {capability} is not "
+            f"{{'available': <bool>}}, it is {entry!r}. A verdict this tool cannot "
+            "interpret must not be read as a verdict."
+        )
+    return entry["available"]
+
+
 def _scope(capability: str) -> dict[str, str]:
     return {
         "retailerId": RETAILER_ID,
@@ -358,8 +393,10 @@ def build_candidate(
             f"{run}: both gates must pass; gate A = {gate_a.get('status')}, "
             f"gate B = {gate_b.get('status')}"
         )
-    mask = gate_b["capabilityMask"].get(capability) or {}
-    if not mask.get("available"):
+    if not capability_is_available(
+        gate_b.get("capabilityMask"), capability, subject=run
+    ):
+        mask = (gate_b.get("capabilityMask") or {}).get(capability) or {}
         reasons = mask.get("reasonCodes") or [mask.get("reasonCode")]
         raise SystemExit(
             f"{run}: {capability} is not available in the retained capability "

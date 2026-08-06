@@ -677,9 +677,19 @@ def _repin_facts(run_id: str) -> dict[str, object]:
         if not path.is_file():
             raise SystemExit(f"retained evidence is absent: {path}")
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            document = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as broken:
             raise SystemExit(f"retained evidence is not valid JSON: {path}: {broken}")
+        # Valid JSON is not enough: `[]`, `null` and a bare scalar all parse, and
+        # every reader below calls `.get()` on the result. That AttributeError is not
+        # a SystemExit, so it escaped the handler and cost the stage timings again --
+        # the same failure this loader was written to stop, one type further out.
+        if not isinstance(document, dict):
+            raise SystemExit(
+                f"retained evidence is not a JSON object: {path} parsed as "
+                f"{type(document).__name__}"
+            )
+        return document
 
     gate_a = _evidence("gate-a.json")
     manifest = _evidence("publication-manifest.json")
@@ -716,27 +726,17 @@ def _repin_facts(run_id: str) -> dict[str, object]:
         "inventory_replenishment_current_snapshot",
         "inventory_replenishment_replay",
     )
-    # A real boolean, not truthiness. `"available": "false"` is a non-empty string
-    # and therefore truthy, so a malformed mask read as AVAILABLE and could authorize
-    # an adoption -- the string "no" too. Only a float 0.0 happened to be caught.
-    # Malformed is refused rather than folded into "missing", because a mask this
-    # tool cannot interpret is a different problem from a capability the gate says is
-    # unavailable, and they need different fixes.
-    malformed = []
-    missing = []
-    for name in required:
-        entry = mask.get(name)
-        if not isinstance(entry, dict) or not isinstance(
-            entry.get("available"), bool
-        ):
-            malformed.append(f"{name}={entry!r}")
-        elif not entry["available"]:
-            missing.append(name)
-    if malformed:
-        raise SystemExit(
-            f"{run_id}: gate-b.json capabilityMask entries are not "
-            f"{{'available': <bool>}}: {', '.join(malformed)}"
+    # The shared strict reader, not a third private copy of the same check. It
+    # raises on a malformed entry, which keeps "cannot interpret" distinct from "the
+    # gate says no" -- so `missing` below only ever holds genuine gate verdicts, and
+    # the reason string that interpolates it cannot misreport one as the other.
+    missing = [
+        name
+        for name in required
+        if not _selection_module().capability_is_available(
+            mask, name, subject=f"{run_id} gate-b.json"
         )
+    ]
     return {
         "run": run_id,
         "sourceSnapshotId": manifest["sourceSnapshotId"],

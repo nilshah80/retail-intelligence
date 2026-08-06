@@ -657,3 +657,73 @@ class TestEvidenceReadsAreUniform:
                 dev._repin_facts("run-x")
         finally:
             dev.REPO_ROOT = original
+
+
+class TestSharedMaskReader:
+    """One reader, because three copies of a check is how the next one drifts.
+
+    The truthiness defect was fixed first in `_repin_facts` -- the PROPOSAL gate, and
+    the least consequential of the three. It survived at both gates that write
+    committed artifacts: `build_candidate`, which writes the governance record, and
+    `build_pin`, which writes the pin. Both are reachable without `repin`, so the
+    earlier refusal shielded neither.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        ["false", "no", "0", 1, 0.0, None, [], {}],
+        ids=["str-false", "str-no", "str-zero", "int", "float", "none", "list", "dict"],
+    )
+    def test_only_a_real_boolean_is_a_verdict(self, value) -> None:
+        mask = {"demand_forecast_non_pit": {"available": value}}
+        with pytest.raises(SystemExit, match=r"not \{'available': <bool>\}"):
+            selection.capability_is_available(
+                mask, "demand_forecast_non_pit", subject="run-x"
+            )
+
+    def test_real_booleans_pass_through(self) -> None:
+        for available in (True, False):
+            mask = {"demand_forecast_non_pit": {"available": available}}
+            assert (
+                selection.capability_is_available(
+                    mask, "demand_forecast_non_pit", subject="run-x"
+                )
+                is available
+            )
+
+    @pytest.mark.parametrize("mask", [None, {}, [], "nope", {"other": {}}])
+    def test_an_unusable_mask_is_refused(self, mask) -> None:
+        with pytest.raises(SystemExit):
+            selection.capability_is_available(
+                mask, "demand_forecast_non_pit", subject="run-x"
+            )
+
+    def test_both_writing_gates_use_the_shared_reader(self) -> None:
+        """A guard at the proposal gate alone does not protect the artifacts."""
+
+        import inspect
+
+        pin = _load("build_expected_pin")
+        assert "capability_is_available" in inspect.getsource(pin.build_pin)
+        assert "capability_is_available" in inspect.getsource(
+            selection.build_candidate
+        )
+
+
+class TestEvidenceMustBeAnObject:
+    @pytest.mark.parametrize("payload", ["[]", "null", "42", '"text"'])
+    def test_valid_json_that_is_not_an_object_is_refused(
+        self, tmp_path, payload
+    ) -> None:
+        """`[]`, `null` and scalars all parse, then every reader calls .get()."""
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text(payload, encoding="utf-8")
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="not a JSON object"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original

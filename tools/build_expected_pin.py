@@ -36,6 +36,7 @@ from retail_ingestion.readiness.selection import (  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from build_publication_selection import (  # noqa: E402
+    capability_is_available,
     current_records,
     load_generations,
 )
@@ -209,8 +210,10 @@ def build_pin(run: str | None = None) -> dict[str, Any]:
                 f"the active {capability} selection names a different publication "
                 "fingerprint than the retained manifest"
             )
-        mask = gate_b["capabilityMask"].get(capability) or {}
-        if not mask.get("available"):
+        if not capability_is_available(
+            gate_b.get("capabilityMask"), capability, subject=run
+        ):
+            mask = (gate_b.get("capabilityMask") or {}).get(capability) or {}
             raise SystemExit(
                 f"{capability} is required by the pin but unavailable in the "
                 f"retained capability mask: {mask.get('reasonCodes') or mask}"
