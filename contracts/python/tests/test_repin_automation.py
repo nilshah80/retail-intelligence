@@ -180,6 +180,54 @@ class TestAdoptionRefusals:
         assert "--actor requires --reason" in capsys.readouterr().err
 
 
+class TestReRunSafety:
+    def test_adopting_an_already_selected_run_is_a_no_op(self, capsys) -> None:
+        """Re-running an approval must not mint a second generation.
+
+        It did: the pipeline stage checked whether a record already named the run and
+        the standalone command did not, so `repin --approve` twice produced duplicate
+        candidate/approved/active records sharing one selectionId and broke the
+        one-active-per-scope invariant.
+        """
+
+        import argparse
+
+        before = len(selection.load_generations())
+        code = dev.command_repin(
+            argparse.Namespace(
+                run_id="run-adac9e85dccb56e8-r6",  # already selected by a record
+                approve=True,
+                actor=None,
+                reason=None,
+                reason_code="TEST",
+                approved_at=None,
+            )
+        )
+        assert code == 0
+        assert "already selected" in capsys.readouterr().out
+        assert len(selection.load_generations()) == before
+
+    def test_no_committed_approval_claims_the_epoch(self) -> None:
+        """An approval timestamp whose only job is to say when must not say 1970."""
+
+        directory = (
+            REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+        )
+        offenders = [
+            path.name
+            for path in directory.glob("*.json")
+            if (json.loads(path.read_text(encoding="utf-8")).get("approval") or {})
+            .get("approvedAt", "")
+            .startswith("1970")
+        ]
+        assert not offenders, f"epoch approval timestamps in {offenders}"
+
+    def test_utc_now_is_rfc3339_zulu(self) -> None:
+        stamp = dev._utc_now()
+        assert stamp.endswith("Z") and "T" in stamp
+        assert not stamp.startswith("1970")
+
+
 class TestCollisionAvoidance:
     def test_an_adopted_run_is_recognised(self) -> None:
         """The check that stops a re-publication overwriting an attested artifact."""

@@ -1,12 +1,12 @@
 {
   "approval": {
     "actor": "automated/repin-policy/v1",
-    "approvedAt": "1970-01-01T00:00:00Z",
+    "approvedAt": "2026-08-05T22:43:10Z",
     "reason": "Adopted automatically by the repin policy: no actor was supplied, so this record asserts a POLICY decision on derived evidence and not a human review. Anyone relying on it should read the facts below, not the fact that it was approved. Publication for run-adac9e85dccb56e8-r2 passed Gate A (pass) and Gate B with all three required capabilities available. Relative to the previous pin: publication fingerprint, curated DuckDB hash. Business controls present for 11 group(s) in this run's own manifest: activeSkus, asOfDate, channels, currencies, dateRange, forecastCoveragePct, fx, markets, modelAccuracyPct, stores, totalSkus."
   },
   "lifecycle": {
     "reasonCode": "AUTOMATED_REPIN_ADOPTION",
-    "recordId": "rec_bd8a729822cb46ee",
+    "recordId": "rec_8aeb9a11d08e5a90",
     "state": "candidate",
     "supersedes": null
   },

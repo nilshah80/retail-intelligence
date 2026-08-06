@@ -9,6 +9,7 @@ wrapper. Every subprocess is invoked with an argument list, every path uses
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import platform
@@ -627,6 +628,24 @@ def command_contracts(_: argparse.Namespace) -> int:
     return 0
 
 
+def _utc_now() -> str:
+    """The event time for an approval, as RFC 3339 UTC.
+
+    `approvedAt` is audit evidence and is excluded from semantic identity, so a real
+    clock here cannot move a selectionId -- the value is stored in the ledger once
+    and read back verbatim, which keeps `--check` reproducible. The previous default
+    was the epoch, and it put "approved 1970-01-01" into committed audit records: a
+    field whose only job is to say when something happened, saying something false.
+    """
+
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
 def _selection_module():
     """Import the selection builder as a module so repin can read its ledger."""
 
@@ -788,6 +807,19 @@ def command_repin(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # Already adopted -> no-op, never a second chain. Without this, re-running
+    # `repin --approve` appended a fresh generation for a run a committed record
+    # already selects, producing duplicate candidate/approved/active records that
+    # share one selectionId and break the one-active-per-scope invariant. The
+    # pipeline stage checked this and the standalone command did not, which is
+    # exactly the asymmetry that makes a governance tool unsafe to re-run.
+    if _generation_names_run(run_id):
+        print(
+            f"{run_id} is already selected by a committed record; nothing to adopt. "
+            "Re-running an adoption is a no-op, not a second generation."
+        )
+        return 0
+
     facts = _repin_facts(run_id)
     previous = _repin_previous()
     if facts["missingRequiredCapabilities"]:
@@ -816,9 +848,43 @@ def command_repin(args: argparse.Namespace) -> int:
         print("--actor requires --reason", file=sys.stderr)
         return 2
     reasons = _repin_reasons(facts, previous, automatic=not args.actor)
+
+    # An adoption is one act, so a failed one must leave nothing behind. The ledger
+    # is written first because everything downstream derives FROM it, which means a
+    # missing evidence file, a --no-clobber conflict or a pin failure would otherwise
+    # persist a half-adoption: a generation recorded, selections possibly advanced,
+    # and the pin still naming the previous publication. Restoring the ledger and
+    # removing the records it produced is the closest this gets to a transaction.
+    ledger_before = (
+        selection.GENERATIONS_PATH.read_text(encoding="utf-8")
+        if selection.GENERATIONS_PATH.is_file()
+        else None
+    )
+    records_before = {
+        path.name
+        for path in (
+            REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+        ).glob("*.json")
+    }
+
+    def _roll_back(stage: str) -> None:
+        if ledger_before is not None:
+            selection.GENERATIONS_PATH.write_text(
+                ledger_before, encoding="utf-8", newline="\n"
+            )
+        directory = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+        for path in directory.glob("*.json"):
+            if path.name not in records_before:
+                path.unlink()
+        print(
+            f"repin failed at {stage}; rolled the ledger and any records it wrote "
+            "back to their prior state so no half-adoption is left committed",
+            file=sys.stderr,
+        )
+
     entry = selection.append_generation(
         run=run_id,
-        approved_at=args.approved_at,
+        approved_at=args.approved_at or _utc_now(),
         reason_code=args.reason_code,
         candidate_reason=(args.reason or reasons["candidate"]),
         approved_reason=reasons["approved"],
@@ -828,7 +894,8 @@ def command_repin(args: argparse.Namespace) -> int:
     )
     print(
         f"appended generation {entry['tag']} for {run_id} "
-        f"(actor={entry['actor']}, mode={entry['approvalMode']})"
+        f"(actor={entry['actor']}, mode={entry['approvalMode']}, "
+        f"approvedAt={entry['approvedAt']})"
     )
     builder = REPO_ROOT / "tools" / "build_publication_selection.py"
     for label, command in (
@@ -846,7 +913,7 @@ def command_repin(args: argparse.Namespace) -> int:
     ):
         result = _run(command)
         if result:
-            print(f"repin failed at {label}", file=sys.stderr)
+            _roll_back(label)
             return result
     return 0
 
@@ -867,21 +934,54 @@ def command_serve(args: argparse.Namespace) -> int:
         return 2
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
     curated = REPO_ROOT / "ingestion" / "data" / "curated" / run_id
-    scope = subprocess.run(
+    manifest_path = curated / "publication-manifest.json"
+    if not manifest_path.is_file():
+        print(f"no publication manifest at {manifest_path}", file=sys.stderr)
+        return 2
+    publication = json.loads(manifest_path.read_text(encoding="utf-8"))[
+        "semanticFingerprint"
+    ]
+
+    # Two independent choices used to be made here and nothing tied them together:
+    # the evidence came from `run_id` while the scope came from the newest activation
+    # globally. With an older forecast still active the API would start on mismatched
+    # lineage and fail closed -- correct, but for a reason nothing on screen explains.
+    # Selecting the activation BY this publication's fingerprint makes the pairing
+    # explicit, so a genuine mismatch is reported here by name instead.
+    #
+    # Queried over the configured DSN rather than `docker exec` with a hard-coded
+    # container, user and database: `_local_postgres_dsn` already honours
+    # RETAIL_POSTGRES_DSN and deploy/.env, and the previous form reported a
+    # customised deployment as having no active forecast at all.
+    dsn = os.environ.get("RETAIL_POSTGRES_DSN") or _local_postgres_dsn(
+        sqlalchemy=False
+    )
+    probe = subprocess.run(
         [
-            "docker", "exec", "retail-intelligence-postgres-1",
-            "psql", "-U", "retail", "-d", "retail_intelligence", "-tAc",
-            "select activation_scope_fingerprint from "
-            "retail_serving.active_forecast_versions "
-            "order by recorded_at desc limit 1",
+            str(_require_python(ML_ENV, "ml")),
+            "-c",
+            "import sys, psycopg\n"
+            "with psycopg.connect(sys.argv[1]) as c:\n"
+            "    row = c.execute(\n"
+            "        'select activation_scope_fingerprint from '\n"
+            "        'retail_serving.active_forecast_versions '\n"
+            "        'where publication_semantic_fingerprint = %s',\n"
+            "        (sys.argv[2],),\n"
+            "    ).fetchone()\n"
+            "print(row[0] if row else '')\n",
+            dsn,
+            publication,
         ],
         capture_output=True, encoding="utf-8", errors="replace", check=False,
     )
-    fingerprint = (scope.stdout or "").strip()
+    fingerprint = (probe.stdout or "").strip()
     if not fingerprint:
+        detail = (probe.stderr or "").strip().splitlines()[-1:] or ["(no error)"]
         print(
-            "no active forecast activation in retail_serving; materialize and "
-            "activate a forecast before serving",
+            f"no active forecast activation for publication {publication[:12]}… "
+            f"(the publication {run_id} names). Materialize and activate a forecast "
+            f"built on THIS publication, or pass --run-id for the one that is "
+            f"active. Probe said: {detail[0]}",
             file=sys.stderr,
         )
         return 1
@@ -2278,8 +2378,10 @@ def build_parser() -> argparse.ArgumentParser:
     repin.add_argument("--reason", default=None,
                        help="required with --actor; replaces the derived reason")
     repin.add_argument("--reason-code", default="AUTOMATED_REPIN_ADOPTION")
-    repin.add_argument("--approved-at", default="1970-01-01T00:00:00Z",
-                       help="approval timestamp recorded in the ledger entry")
+    repin.add_argument(
+        "--approved-at", default=None,
+        help="approval timestamp for the ledger entry; defaults to now, in UTC",
+    )
     serve = subparsers.add_parser(
         "serve",
         help="start the API (and optionally the UI) against the active activation",
@@ -2349,7 +2451,11 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--repin-reason", default=None,
                           help="required with --repin-actor")
     pipeline.add_argument("--repin-reason-code", default="AUTOMATED_REPIN_ADOPTION")
-    pipeline.add_argument("--repin-approved-at", default="1970-01-01T00:00:00Z")
+    pipeline.add_argument(
+        "--repin-approved-at", default=None,
+        help="approval timestamp for an adoption made by the repin stage; "
+             "defaults to now, in UTC",
+    )
     pipeline.add_argument("--horizons", type=int, default=26,
                           help="horizon COUNT; the comma list is derived")
     pipeline.add_argument("--origin-count", type=int, default=13)

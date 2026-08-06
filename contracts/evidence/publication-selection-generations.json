@@ -8,7 +8,7 @@
       "activeReason": "Adopted as the active source authority for this scope. The preceding generation is superseded in the same change, so exactly one selection is active per scope (decision #90).",
       "actor": "automated/repin-policy/v1",
       "approvalMode": "automatic",
-      "approvedAt": "1970-01-01T00:00:00Z",
+      "approvedAt": "2026-08-05T22:43:10Z",
       "approvedReason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash were all derived from this run's own retained evidence rather than transcribed: Gate A 4999fa1a, Gate B 0817812c, publication 8e7c1f16, DuckDB d4af26c5, 1302 curated objects.",
       "candidateReason": "Adopted automatically by the repin policy: no actor was supplied, so this record asserts a POLICY decision on derived evidence and not a human review. Anyone relying on it should read the facts below, not the fact that it was approved. Publication for run-adac9e85dccb56e8-r2 passed Gate A (pass) and Gate B with all three required capabilities available. Relative to the previous pin: publication fingerprint, curated DuckDB hash. Business controls present for 11 group(s) in this run's own manifest: activeSkus, asOfDate, channels, currencies, dateRange, forecastCoveragePct, fx, markets, modelAccuracyPct, stores, totalSkus.",
       "reasonCode": "AUTOMATED_REPIN_ADOPTION",

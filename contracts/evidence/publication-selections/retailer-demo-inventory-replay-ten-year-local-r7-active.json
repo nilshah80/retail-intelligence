@@ -1,14 +1,14 @@
 {
   "approval": {
     "actor": "automated/repin-policy/v1",
-    "approvedAt": "1970-01-01T00:00:00Z",
+    "approvedAt": "2026-08-05T22:43:10Z",
     "reason": "Adopted as the active source authority for this scope. The preceding generation is superseded in the same change, so exactly one selection is active per scope (decision #90)."
   },
   "lifecycle": {
     "reasonCode": "AUTOMATED_REPIN_ADOPTION",
-    "recordId": "rec_7c6e6fc3eee3ce3e",
+    "recordId": "rec_ff76dab4663a370e",
     "state": "active",
-    "supersedes": "rec_d574a8c614ad4cc9"
+    "supersedes": "rec_bcf576f0059e2266"
   },
   "publication": {
     "duckdbSha256": "d4af26c508285e18a7c110a03306e714fd51b21fece573f40f9f433b54bf1677",

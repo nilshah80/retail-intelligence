@@ -278,13 +278,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     run = args.run or _pinned_run()
-    if args.check and args.run and args.run != _pinned_run():
-        print(
-            f"--check verifies the committed pin, which names {_pinned_run()}; "
-            f"--run {args.run} would verify a different derivation",
-            file=sys.stderr,
-        )
-        return 2
+    # The guard exists to stop `--check --run X` quietly verifying a derivation other
+    # than the committed pin's. It must not itself fail when the caller has already
+    # supplied the answer: `_pinned_run()` refuses to guess between several retained
+    # runs, so calling it unconditionally made `--check --run X` die telling the
+    # caller to "pass --run" with --run right there on the command line. When the run
+    # cannot be derived there is nothing to contradict, and `--check` compares the
+    # derived pin against the committed file regardless -- so skipping the guard
+    # loses no safety.
+    if args.check and args.run:
+        try:
+            committed = _pinned_run()
+        except SystemExit:
+            committed = None
+        if committed is not None and args.run != committed:
+            print(
+                f"--check verifies the committed pin, which names {committed}; "
+                f"--run {args.run} would verify a different derivation",
+                file=sys.stderr,
+            )
+            return 2
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
     if not (evidence / "publication-manifest.json").is_file():
         available = _promoted_runs()
