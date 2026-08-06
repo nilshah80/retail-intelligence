@@ -472,8 +472,17 @@ class TestGateBMaskIsRequired:
             json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
             encoding="utf-8",
         )
+        # An EMPTY mask, not an absent one: absent is now caught earlier by the
+        # required-field check, and both must refuse. This case proves the manifest
+        # cannot backfill a mask the gate does not usefully carry.
         (evidence / "gate-b.json").write_text(
-            json.dumps({"status": "pass", "semanticFingerprint": "b" * 64}),
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": {},
+                }
+            ),
             encoding="utf-8",
         )
         (evidence / "publication-manifest.json").write_text(
@@ -724,6 +733,185 @@ class TestEvidenceMustBeAnObject:
         dev.REPO_ROOT = tmp_path
         try:
             with pytest.raises(SystemExit, match="not a JSON object"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+
+class TestEvidenceFieldsAreRequired:
+    """An object is not enough either.
+
+    Each round this escaped one type further out: FileNotFoundError, then
+    AttributeError on `[]`/`null`, now KeyError on `{}`. None of them is a SystemExit,
+    so each in turn bypassed `command_repin`'s handler and cost the stage timings.
+    The fields are declared up front rather than discovered by whichever line first
+    needs one.
+    """
+
+    CAPS = (
+        "demand_forecast_non_pit",
+        "inventory_replenishment_current_snapshot",
+        "inventory_replenishment_replay",
+    )
+
+    def _write(self, tmp_path, overrides):
+        mask = {c: {"available": True} for c in self.CAPS}
+        payloads = {
+            "gate-a.json": {"status": "pass", "semanticFingerprint": "a" * 64},
+            "gate-b.json": {
+                "status": "pass",
+                "semanticFingerprint": "b" * 64,
+                "capabilityMask": mask,
+            },
+            "publication-manifest.json": {
+                "sourceSnapshotId": "s" * 64,
+                "gateBSemanticFingerprint": "b" * 64,
+                "semanticFingerprint": "p" * 64,
+                "objects": [],
+                "duckdb": {"sha256": "d" * 64},
+            },
+        }
+        payloads.update(overrides)
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        for name, payload in payloads.items():
+            (evidence / name).write_text(json.dumps(payload), encoding="utf-8")
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        "name,payload,expected",
+        [
+            ("gate-a.json", {"status": "pass"}, "has no 'semanticFingerprint'"),
+            (
+                "publication-manifest.json",
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "duckdb": {"sha256": "d" * 64},
+                },
+                "has no 'objects'",
+            ),
+            (
+                "publication-manifest.json",
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": "nope",
+                },
+                "expected dict",
+            ),
+        ],
+        ids=["gate-a-missing-field", "manifest-missing-field", "manifest-wrong-type"],
+    )
+    def test_incomplete_evidence_refuses_rather_than_raising(
+        self, tmp_path, name, payload, expected
+    ) -> None:
+        root = self._write(tmp_path, {name: payload})
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = root
+        try:
+            with pytest.raises(SystemExit, match=expected):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+    def test_a_nested_duckdb_sha_is_required(self, tmp_path) -> None:
+        root = self._write(
+            tmp_path,
+            {
+                "publication-manifest.json": {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": {},
+                }
+            },
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = root
+        try:
+            with pytest.raises(SystemExit, match="duckdb.sha256"):
+                dev._repin_facts("run-x")
+        finally:
+            dev.REPO_ROOT = original
+
+
+class TestScorecardMaskReader:
+    def test_a_malformed_mask_is_not_reported_as_available(self, tmp_path) -> None:
+        """The fourth reader. Reporting, not authorization -- so strict, not raising."""
+
+        scorecard = _load("direction_scorecard")
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "r"
+        evidence.mkdir(parents=True)
+        capabilities = sorted(
+            {
+                capability
+                for spec in scorecard.PHASE_REQUIREMENTS.values()
+                for capability in spec["capabilities"]
+            }
+        )
+        (evidence / "gate-b.json").write_text(
+            json.dumps(
+                {
+                    "status": "pass",
+                    "semanticFingerprint": "b" * 64,
+                    "capabilityMask": {
+                        c: {"available": "false"} for c in capabilities
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps({"sourceSnapshotId": "s" * 64}), encoding="utf-8"
+        )
+        result = scorecard.build(tmp_path)
+        for name, spec in scorecard.PHASE_REQUIREMENTS.items():
+            if not spec["capabilities"]:
+                continue
+            codes = {
+                entry["reasonCode"]
+                for entry in result["phases"][name].get("missingCapabilities") or []
+            }
+            assert codes == {"MASK_UNREADABLE"}, (
+                f"{name} did not flag the unreadable mask: {codes}"
+            )
+
+
+class TestAbsentMaskField:
+    def test_gate_b_without_the_mask_key_refuses_up_front(self, tmp_path) -> None:
+        """Declared as required, so it is named rather than met later as a KeyError."""
+
+        evidence = tmp_path / "ingestion" / "data" / "evidence" / "run-x"
+        evidence.mkdir(parents=True)
+        (evidence / "gate-a.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "a" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "gate-b.json").write_text(
+            json.dumps({"status": "pass", "semanticFingerprint": "b" * 64}),
+            encoding="utf-8",
+        )
+        (evidence / "publication-manifest.json").write_text(
+            json.dumps(
+                {
+                    "sourceSnapshotId": "s" * 64,
+                    "gateBSemanticFingerprint": "b" * 64,
+                    "semanticFingerprint": "p" * 64,
+                    "objects": [],
+                    "duckdb": {"sha256": "d" * 64},
+                }
+            ),
+            encoding="utf-8",
+        )
+        original = dev.REPO_ROOT
+        dev.REPO_ROOT = tmp_path
+        try:
+            with pytest.raises(SystemExit, match="has no 'capabilityMask'"):
                 dev._repin_facts("run-x")
         finally:
             dev.REPO_ROOT = original

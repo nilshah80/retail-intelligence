@@ -220,9 +220,38 @@ def build(root: Path = REPO_ROOT) -> dict[str, Any]:
         missing: list[dict[str, str]] = []
         for capability in spec["capabilities"]:
             entry = mask.get(capability)
+            # The fourth reader of this field, and it had the same truthiness defect
+            # as the three in the repin path: `{"available": "false"}` is a non-empty
+            # string, so it read as AVAILABLE. The consequence here is different in
+            # kind -- this tool prints a scorecard and writes no committed artifact,
+            # so the failure is a phase shown as unblocked, not an authorization --
+            # which is why it does not import the raising helper the other three
+            # share: turning a report into a crash would be the wrong trade.
+            #
+            # Strict without raising: anything that is not a real boolean `True` is
+            # not available, and says which of the two reasons applies. A non-dict
+            # entry also used to reach `.get()` and raise AttributeError.
             if entry is None:
                 missing.append({"capability": capability, "reasonCode": "NOT_EVALUATED"})
-            elif not entry.get("available"):
+            elif not isinstance(entry, dict) or not isinstance(
+                entry.get("available"), bool
+            ):
+                missing.append(
+                    {"capability": capability, "reasonCode": "MASK_UNREADABLE"}
+                )
+                blockers.setdefault(
+                    "MASK_UNREADABLE",
+                    {
+                        "reasonCode": "MASK_UNREADABLE",
+                        "capabilities": [],
+                        "phasesBlocked": [],
+                    },
+                )
+                if capability not in blockers["MASK_UNREADABLE"]["capabilities"]:
+                    blockers["MASK_UNREADABLE"]["capabilities"].append(capability)
+                if name not in blockers["MASK_UNREADABLE"]["phasesBlocked"]:
+                    blockers["MASK_UNREADABLE"]["phasesBlocked"].append(name)
+            elif not entry["available"]:
                 reason = str(entry.get("reasonCode", "UNAVAILABLE"))
                 missing.append({"capability": capability, "reasonCode": reason})
                 blockers.setdefault(

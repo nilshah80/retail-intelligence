@@ -672,7 +672,7 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     # its stage timings to a traceback. `build_pin` already loops over its four files
     # like this; a function whose docstring names three sources should not refuse
     # cleanly for one of them and crash for the other two.
-    def _evidence(name: str) -> dict:
+    def _evidence(name: str, required: dict) -> dict:
         path = evidence / name
         if not path.is_file():
             raise SystemExit(f"retained evidence is absent: {path}")
@@ -689,16 +689,51 @@ def _repin_facts(run_id: str) -> dict[str, object]:
                 f"retained evidence is not a JSON object: {path} parsed as "
                 f"{type(document).__name__}"
             )
+        # ...and an object is still not enough. `{}` parses, is a dict, and then meets
+        # `gate_a["semanticFingerprint"]` -- a KeyError, which is no more a SystemExit
+        # than the AttributeError before it or the FileNotFoundError before that. Each
+        # round this escaped one type further out, so the fields are declared here
+        # rather than discovered by the first line that happens to need one.
+        for field, kinds in required.items():
+            if field not in document:
+                raise SystemExit(
+                    f"retained evidence is incomplete: {path} has no {field!r}"
+                )
+            if not isinstance(document[field], kinds):
+                raise SystemExit(
+                    f"retained evidence is malformed: {path} field {field!r} is "
+                    f"{type(document[field]).__name__}, expected "
+                    f"{' or '.join(k.__name__ for k in (kinds if isinstance(kinds, tuple) else (kinds,)))}"
+                )
         return document
 
-    gate_a = _evidence("gate-a.json")
-    manifest = _evidence("publication-manifest.json")
+    gate_a = _evidence(
+        "gate-a.json", {"status": str, "semanticFingerprint": str}
+    )
+    manifest = _evidence(
+        "publication-manifest.json",
+        {
+            "sourceSnapshotId": str,
+            "gateBSemanticFingerprint": str,
+            "semanticFingerprint": str,
+            "objects": list,
+            "duckdb": dict,
+        },
+    )
+    if not isinstance(manifest["duckdb"].get("sha256"), str):
+        raise SystemExit(
+            f"retained evidence is malformed: {evidence / 'publication-manifest.json'}"
+            " field 'duckdb.sha256' is missing or not a string"
+        )
     # Gate B is READ, not assumed. The docstring said this file was one of the
     # sources and it never was: the fingerprint and the capability mask both came
     # from the manifest's copy of them, so a missing, failing or inconsistent
     # `gate-b.json` still produced a confident proposal claiming Gate B passed.
     # Only `--approve` found out, one step later, via the rollback.
-    gate_b = _evidence("gate-b.json")
+    gate_b = _evidence(
+        "gate-b.json",
+        {"status": str, "semanticFingerprint": str, "capabilityMask": dict},
+    )
     if gate_b.get("semanticFingerprint") != manifest.get(
         "gateBSemanticFingerprint"
     ):
@@ -730,10 +765,11 @@ def _repin_facts(run_id: str) -> dict[str, object]:
     # raises on a malformed entry, which keeps "cannot interpret" distinct from "the
     # gate says no" -- so `missing` below only ever holds genuine gate verdicts, and
     # the reason string that interpolates it cannot misreport one as the other.
+    capability_is_available = _selection_module().capability_is_available
     missing = [
         name
         for name in required
-        if not _selection_module().capability_is_available(
+        if not capability_is_available(
             mask, name, subject=f"{run_id} gate-b.json"
         )
     ]
