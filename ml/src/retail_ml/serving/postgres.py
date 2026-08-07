@@ -35,7 +35,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
 #: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
 #: interval can be stored, and pairs them with an attributable reason.
-MIGRATION_REVISION: Final[str] = "0020_safety_stock_drivers"
+MIGRATION_REVISION: Final[str] = "0021_forecast_eval_recent"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
@@ -54,7 +54,15 @@ ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v2"
 #: v5 pairs with acceptance-v5 and migration 0007: only a run scored against decision
 #: #85's HARD per-cohort coverage gate may serve. v4 materialisations are not
 #: reinterpreted, they simply stop being eligible, so no accepted artifact is rewritten.
-FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v5"
+#:
+#: v6 pairs with run-schema v4 and migration 0021: a serveable run must carry the
+#: ragged `forecast_eval_recent` artifact. The forecast-versus-actual screen reads
+#: it, and a v5 bundle simply does not have it -- serving one would leave the chart
+#: showing h19-h26 for recent weeks while claiming to compare like with like, which
+#: is the defect the artifact exists to remove. Same shape of boundary as v5: no
+#: accepted artifact is rewritten and no verdict is reinterpreted, prior
+#: materialisations just stop being eligible until they are rebuilt on v4.
+FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v6"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "forecast_versions": (
@@ -90,6 +98,25 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "interval_available",
         "interval_unavailable_reason",
         "data_quality_class",
+    ),
+    # The ragged recent schedule. Its own table so no existing query can pool it
+    # with the complete grid by forgetting a filter: an origin scored at four
+    # horizons must never move a metric computed over twenty-six, and physical
+    # separation enforces that where a WHERE clause only asks politely.
+    "forecast_eval_recent": (
+        "forecast_run_id",
+        "forecast_origin",
+        "target_week_start",
+        "market_id",
+        "sku_id",
+        "store_id",
+        "channel_id",
+        "horizon",
+        "dept_id",
+        "category",
+        "actual_units",
+        "yhat_p50",
+        "yhat_p90",
     ),
     "forecast_eval_predictions": (
         "forecast_run_id",
@@ -443,6 +470,7 @@ def prepare_serving_projection(
     versions = _read_frame(run, "forecast_versions")
     series = _read_frame(run, "forecast_series")
     evaluation = _read_frame(run, "forecast_eval_predictions")
+    recent_evaluation = _read_frame(run, "forecast_eval_recent")
     metrics = _read_frame(run, "forecast_metrics")
     drivers = _read_frame(run, "forecast_drivers")
     exceptions = _read_frame(run, "forecast_exceptions")
@@ -567,6 +595,16 @@ def prepare_serving_projection(
 
     serving_evaluation = evaluation.copy()
     serving_evaluation.insert(0, "forecast_run_id", run_id)
+    serving_recent = recent_evaluation.copy()
+    if serving_recent.empty:
+        serving_recent = pd.DataFrame(
+            columns=[
+                column
+                for column in TABLE_COLUMNS["forecast_eval_recent"]
+                if column != "forecast_run_id"
+            ]
+        )
+    serving_recent.insert(0, "forecast_run_id", run_id)
     serving_metrics = metrics.copy()
     serving_metrics.insert(0, "forecast_run_id", run_id)
     serving_drivers = drivers.copy()
@@ -619,6 +657,9 @@ def prepare_serving_projection(
         "forecast_series": serving_series[list(TABLE_COLUMNS["forecast_series"])],
         "forecast_eval_predictions": serving_evaluation[
             list(TABLE_COLUMNS["forecast_eval_predictions"])
+        ],
+        "forecast_eval_recent": serving_recent[
+            list(TABLE_COLUMNS["forecast_eval_recent"])
         ],
         "forecast_metrics": serving_metrics[list(TABLE_COLUMNS["forecast_metrics"])],
         "forecast_drivers": serving_drivers[list(TABLE_COLUMNS["forecast_drivers"])],

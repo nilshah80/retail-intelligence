@@ -32,6 +32,30 @@ EVALUATION_WINDOW_WEEKS: Final[int] = 26
 ORIGIN_STEP_WEEKS: Final[int] = 2
 SCORING_ORIGINS: Final[int] = 13
 TRAINING_ORIGINS: Final[int] = 104
+
+#: The RAGGED recent schedule, and deliberately a separate set of constants from
+#: the three above.
+#:
+#: An origin joins the complete schedule only when all 26 horizons have a realised
+#: actual, so the newest scoreable origin always sits exactly 26 weeks behind the
+#: newest actual. That lag is permanent, not an artifact of a frozen dataset: a
+#: retailer receiving weekly data can never score last week at h26 either. The
+#: consequence is that every recent week is reachable ONLY at h19-h26, where pooled
+#: bias runs -5.8% to -6.6% against -0.29% at h1, so a forecast-versus-actual view
+#: of recent weeks reads as a forecast that is permanently short when the estimator
+#: at the horizon a planner acts on is very nearly unbiased.
+#:
+#: These origins are scored at the horizons they CAN evaluate and nothing else. They
+#: are published as their own artifact, land in their own projection, and are never
+#: pooled with the complete grid into a headline metric: an origin contributing four
+#: horizons must not lift a 26-horizon accuracy figure. A1-A5, the decision #82
+#: cohorts and the frozen 13-origin comparison schedule are untouched by this, and
+#: acceptance continues to read the complete grid alone.
+RECENT_HORIZONS: Final[tuple[int, ...]] = (1, 2, 3, 4)
+RECENT_SCORING_ORIGINS: Final[int] = 13
+RECENT_ORIGIN_STEP_WEEKS: Final[int] = 1
+#: Its object name inside the backtest bundle.
+RECENT_EVAL_FILENAME: Final[str] = "forecast_eval_recent.parquet"
 SLOW_MOVER_THRESHOLD: Final[float] = 0.60
 #: v5 is the fail-closed boundary decision #85 promised and never created.
 #:

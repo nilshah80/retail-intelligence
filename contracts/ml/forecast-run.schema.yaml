@@ -27,7 +27,7 @@ required:
   - artifacts
 properties:
   schemaVersion:
-    const: retail-forecast-run/v3
+    const: retail-forecast-run/v4
   forecastRunId:
     type: string
     pattern: ^fr_[0-9a-f]{16}$
@@ -221,6 +221,9 @@ properties:
           - /artifacts/forecast_eval_predictions/path
           - /artifacts/forecast_eval_predictions/bytes
           - /artifacts/forecast_eval_predictions/sha256
+          - /artifacts/forecast_eval_recent/path
+          - /artifacts/forecast_eval_recent/bytes
+          - /artifacts/forecast_eval_recent/sha256
           - /artifacts/forecast_baseline_predictions/path
           - /artifacts/forecast_baseline_predictions/bytes
           - /artifacts/forecast_baseline_predictions/sha256
@@ -247,6 +250,7 @@ properties:
       - forecast_series
       - forecast_drivers
       - forecast_eval_predictions
+      - forecast_eval_recent
       - forecast_baseline_predictions
       - forecast_metrics
       - forecast_exceptions
@@ -287,6 +291,14 @@ properties:
                   - n
             required:
               - additiveMetricColumns
+      # The ragged recent schedule. No additiveMetricColumns: it publishes the
+      # comparison columns only, so nothing in it can be mistaken for a gate input.
+      forecast_eval_recent:
+        allOf:
+          - $ref: "#/$defs/artifact"
+          - properties:
+              schemaVersion:
+                const: retail-forecast-eval-recent/v1
       forecast_baseline_predictions:
         allOf:
           - $ref: "#/$defs/artifact"

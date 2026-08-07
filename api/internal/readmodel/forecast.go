@@ -19,7 +19,7 @@ const (
 	// generation are the only shapes serving accepts. 0005 stays immutable but is
 	// no longer eligible to back an activation, so this pin must move with it or
 	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0020_safety_stock_drivers"
+	ForecastMigrationRevision = "0021_forecast_eval_recent"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -93,8 +93,14 @@ type ForecastQuery struct {
 	ExceptionClass string
 	Horizon        int
 	HorizonWeeks   int
-	Offset         int
-	Limit          int
+	// Largest horizon the forecast-versus-actual comparison may use. Its own
+	// field, NOT HorizonWeeks: that one scopes FUTURE weeks -- "Next 4 Weeks"
+	// sums h1..h4 of the forward forecast -- so driving a backward-looking
+	// comparison from it moves this chart six months when a reader narrows the
+	// forward scope, which is not a relationship either label implies.
+	ComparisonHorizon int
+	Offset            int
+	Limit             int
 }
 
 func unavailableForecast(reasonCode, message string) *ForecastStore {
@@ -419,6 +425,16 @@ func normalizedForecastQuery(query ForecastQuery) ForecastQuery {
 	}
 	if query.HorizonWeeks > 26 {
 		query.HorizonWeeks = 26
+	}
+	// Defaults to the like-for-like band. A forecast-versus-actual chart exists to
+	// show forecast quality, and h1-h4 is the horizon a planner acts on; 26 is the
+	// "most recent weeks" mode, the only way to reach the newest scoreable week
+	// and it costs an h19-h26 comparison to get there.
+	if query.ComparisonHorizon < 1 {
+		query.ComparisonHorizon = 4
+	}
+	if query.ComparisonHorizon > 26 {
+		query.ComparisonHorizon = 26
 	}
 	if query.ChannelType != "online" && query.ChannelType != "store" {
 		query.ChannelType = ""
@@ -1422,7 +1438,18 @@ func (s *ForecastStore) weeklyActuals(
 	if weekCount > 52 {
 		weekCount = 52
 	}
+	// Origins are placed so all 26 horizons can be scored, so the newest scoreable
+	// week sits exactly 26 weeks after the last origin and the freshest forecast
+	// reaching it is h26. Pooled bias runs -0.29% at h1 against -5.8% to -6.6% at
+	// h19-h26, so picking weeks by recency alone selects the worst horizons on
+	// offer and the P50 lands under the actual every week. The cap is the choice
+	// between the two honest readings; nothing here can reach the CURRENT month,
+	// because actuals stop at the data horizon and the forward forecast beyond it
+	// has nothing to be compared against.
+	args = append(args, query.ComparisonHorizon)
+	horizonIndex := len(args)
 	args = append(args, weekCount)
+	limitIndex := len(args)
 	// Same lesson as the stores aggregate: each join is paid on a full scan of the
 	// run, so only add the ones a filter actually needs.
 	weeklyJoins := ""
@@ -1448,6 +1475,25 @@ func (s *ForecastStore) weeklyActuals(
 		}
 		weeklyScoped += " AND " + clause
 	}
+	// The last two selected columns count coverage PER SERIES, because the summed
+	// band this query also returns is not an interval. A P90 is a per-series
+	// quantile, and the sum of 2,034 of them sits far above the 90th percentile of
+	// their sum -- errors diversify -- which is the rule the inventory policy
+	// states as sumOfChannelP90: forbidden. Measured off the summed band the card
+	// reported the actual inside the range in 8 of 8 weeks, implying a
+	// well-covered forecast; counted per series it is 89.9 per cent at h19-h26 and
+	// 90.8 per cent at h1-h4, both sitting on the 90 a P90 owes, at every horizon.
+	// The sums stay because the columns are a central scenario and legitimate as
+	// one; only the coverage claim moves off them.
+	//
+	// Both schedules are unioned before `freshest` picks the smallest horizon per
+	// week. That is the whole point of the ragged table: a recent week the complete
+	// grid can only reach at h19-h26 is reachable at h1-h4 here, so MIN picks the
+	// short one and the comparison stops being a half-year-ahead forecast wearing a
+	// "last 8 weeks" label. They cannot collide -- the two schedules hold disjoint
+	// origins, so one (week, horizon) pair can only come from one of them -- and
+	// they cannot pool, because MIN selects a single horizon per week and the join
+	// admits only rows at that horizon.
 	rows, err := s.pool.Query(
 		ctx,
 		fmt.Sprintf(
@@ -1459,30 +1505,44 @@ func (s *ForecastStore) weeklyActuals(
 					evaluation.yhat_p50,
 					evaluation.yhat_p90,
 					evaluation.actual_units
-				FROM retail_serving.forecast_eval_predictions AS evaluation%s
-				WHERE %s
+				FROM retail_serving.forecast_eval_predictions AS evaluation%[1]s
+				WHERE %[2]s
+				UNION ALL
+				SELECT
+					evaluation.target_week_start,
+					evaluation.horizon,
+					evaluation.yhat_p50,
+					evaluation.yhat_p90,
+					evaluation.actual_units
+				FROM retail_serving.forecast_eval_recent AS evaluation%[1]s
+				WHERE %[2]s
 			),
 			freshest AS (
 				SELECT target_week_start, MIN(horizon) AS horizon
 				FROM scoped
 				GROUP BY target_week_start
+				HAVING MIN(horizon) <= $%[3]d
 			)
 			SELECT
 				scoped.target_week_start,
+				MIN(scoped.horizon),
 				SUM(scoped.yhat_p50),
 				SUM(scoped.yhat_p90),
-				SUM(scoped.actual_units)
+				SUM(scoped.actual_units),
+				COUNT(*) FILTER (WHERE scoped.actual_units <= scoped.yhat_p90),
+				COUNT(*)
 			FROM scoped
 			JOIN freshest
 			  ON freshest.target_week_start = scoped.target_week_start
 			 AND freshest.horizon = scoped.horizon
 			GROUP BY scoped.target_week_start
 			ORDER BY scoped.target_week_start DESC
-			LIMIT $%d
+			LIMIT $%[4]d
 			`,
 			weeklyJoins,
 			weeklyScoped,
-			len(args),
+			horizonIndex,
+			limitIndex,
 		),
 		args...,
 	)
@@ -1491,13 +1551,26 @@ func (s *ForecastStore) weeklyActuals(
 	}
 	defer rows.Close()
 	items := []map[string]any{}
+	var coveredSeries, totalSeries int64
+	minHorizon, maxHorizon := 0, 0
 	for rows.Next() {
 		var targetWeek time.Time
+		var horizon int
 		var forecast, forecastP90, actual float64
+		var weekCovered, weekSeries int64
 		if err := rows.Scan(
-			&targetWeek, &forecast, &forecastP90, &actual,
+			&targetWeek, &horizon, &forecast, &forecastP90, &actual,
+			&weekCovered, &weekSeries,
 		); err != nil {
 			return nil, err
+		}
+		coveredSeries += weekCovered
+		totalSeries += weekSeries
+		if minHorizon == 0 || horizon < minHorizon {
+			minHorizon = horizon
+		}
+		if horizon > maxHorizon {
+			maxHorizon = horizon
 		}
 		// P90 alongside P50 because the two answer different questions and the
 		// chart needs both to be honest. `forecast` is a MEDIAN, and this demand is
@@ -1508,9 +1581,18 @@ func (s *ForecastStore) weeklyActuals(
 		// the screen show the actual falling INSIDE it rather than above a point.
 		items = append(items, map[string]any{
 			"targetWeekStart": targetWeek.Format("2006-01-02"),
-			"forecast":        forecast,
-			"forecastP90":     forecastP90,
-			"actual":          actual,
+			// How far ahead this week's number was made. Per row because it VARIES
+			// across the chart -- biweekly origins put alternate weeks at h1 and h2
+			// -- and a reader comparing a forecast to an actual is entitled to know
+			// how far ahead the forecast was made.
+			"horizonWeeks": horizon,
+			"forecast":     forecast,
+			"forecastP90":  forecastP90,
+			"actual":       actual,
+			// Per week as well as pooled, so a reader can see one bad week rather
+			// than only the average of eight.
+			"seriesCovered": weekCovered,
+			"series":        weekSeries,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1521,6 +1603,26 @@ func (s *ForecastStore) weeklyActuals(
 	}
 	payload := s.envelope("retail-forecast-actuals/v1")
 	payload["items"] = items
+	// The figure the card captions itself with. Counted over SERIES, never over
+	// the eight summed weeks: "inside the range in 8 of 8" was measured against a
+	// band that is a sum of per-series quantiles, so it reported near-perfect
+	// coverage from an interval that does not exist. Absent when no row was
+	// scored, so the caption withholds rather than dividing by zero.
+	if totalSeries > 0 {
+		payload["seriesCoverage"] = map[string]any{
+			"covered": coveredSeries,
+			"series":  totalSeries,
+			"ratio":   float64(coveredSeries) / float64(totalSeries),
+		}
+	}
+	// The band the caption may name, so the label cannot drift from the rows.
+	if len(items) > 0 {
+		payload["horizonRange"] = map[string]any{
+			"min": minHorizon,
+			"max": maxHorizon,
+			"cap": query.ComparisonHorizon,
+		}
+	}
 	return payload, nil
 }
 

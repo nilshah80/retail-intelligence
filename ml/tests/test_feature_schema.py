@@ -226,6 +226,10 @@ def test_backtest_consumer_rejects_mutated_publisher_input(
     objects: dict[str, dict[str, object]] = {}
     for name, contents in {
         "forecast_eval_predictions.parquet": b"evaluation",
+        # The ragged recent schedule joined the frozen contract with the
+        # forecast-versus-actual horizon fix; a bundle without it is rejected on
+        # the object SET, which would mask the per-object tamper this asserts.
+        "forecast_eval_recent.parquet": b"recent",
         "forecast_calibration.parquet": b"calibration",
         "acceptance.json": b"{}\n",
         # Decision #84 added the fitted blend weights to the frozen contract.

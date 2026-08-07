@@ -344,14 +344,14 @@ function ForecastModal({
   );
 }
 
-function useForecastData(filters: ForecastFilters) {
+function useForecastData(filters: ForecastFilters, comparisonHorizon: number) {
   const summary = useQuery({
     queryKey: ["forecast-summary"],
     queryFn: loadForecastSummary
   });
   const actuals = useQuery({
-    queryKey: ["forecast-actuals", filters],
-    queryFn: () => loadForecastActuals(filters)
+    queryKey: ["forecast-actuals", filters, comparisonHorizon],
+    queryFn: () => loadForecastActuals(filters, comparisonHorizon)
   });
   const horizons = useQuery({
     queryKey: ["forecast-horizons", filters],
@@ -584,6 +584,8 @@ function Overview({
   healthGrain,
   granularity,
   horizonWeeks,
+  comparisonHorizon,
+  setComparisonHorizon,
   windowMetrics,
   setModal
 }: {
@@ -592,6 +594,9 @@ function Overview({
   granularity: string;
   /** The selected window, so the health table can mark the rows the tile pools. */
   horizonWeeks: number;
+  /** Forecast vs Actual only: the largest horizon its comparison may use. */
+  comparisonHorizon: number;
+  setComparisonHorizon: (next: number) => void;
   /** The pooled figure the Forecast Accuracy tile shows, passed rather than
    *  recomputed: two derivations of one number is how they come to disagree. */
   windowMetrics: {accuracy: number | null; bias: number | null};
@@ -645,9 +650,25 @@ function Overview({
   // its own, the forecast bar looks permanently short. What actually matters is
   // whether the week landed inside the published interval, so the card says so
   // rather than leaving a reader to infer it from two bars that cannot show it.
-  const coveredWeeks = chartData.filter(
-    (row) => row.actual >= row.forecast && row.actual <= row.forecastP90
-  ).length;
+  //
+  // Counted PER SERIES by the read model, not by asking whether the eight summed
+  // weeks fell inside the summed band. Those bars sum ~2,034 per-series P90s, and
+  // a sum of quantiles is not the quantile of the sum -- errors diversify, so the
+  // drawn band sits far above a real aggregate P90. Measured against it the card
+  // said "inside the range in 8 of 8" and implied a near-perfect forecast; the
+  // per-series figure is 89.9% at h19-h26 and 90.8% at h1-h4, which is a P90
+  // doing exactly its job at both. The old count is kept nowhere: a number that
+  // flatters by construction is worse than no number.
+  const coverage = data.actuals!.seriesCoverage;
+  // "h1" when every week was forecast a week out, "h1–h4" when the biweekly
+  // origin grid puts them at different distances. Read from the payload, not the
+  // control: the control is a CAP and the qualifying weeks sit anywhere below it.
+  const range = data.actuals!.horizonRange;
+  const horizonLabel = !range
+    ? ""
+    : range.min === range.max
+      ? ` · h${range.min} forecast`
+      : ` · h${range.min}–h${range.max} forecast`;
   // Decision #80: exactly four exact-horizon rows in reference order, always
   // rendered. The operational horizon selector changes future scope, not which
   // diagnostic rows exist, so it must not filter this table.
@@ -684,11 +705,31 @@ function Overview({
         <Card
           title="Forecast vs Actual"
           link={
-            `Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"} · ` +
-            `actual inside the P50–P90 forecast range in ` +
-            `${coveredWeeks} of ${chartData.length}`
+            `Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"}` +
+            `${horizonLabel} · ` +
+            (coverage
+              ? `actual within the per-series P90 for ` +
+                `${(coverage.ratio * 100).toFixed(1)}% of ` +
+                `${coverage.series.toLocaleString("en-US")} series-weeks`
+              : `per-series P90 coverage not available`)
           }
         >
+          <div className="filters" style={{justifyContent: "flex-start", marginBottom: 8}}>
+            <select
+              className="filter"
+              aria-label="Comparison basis"
+              value={comparisonHorizon}
+              onChange={(event) => setComparisonHorizon(Number(event.target.value))}
+            >
+              <option value={4}>Like-for-like (h1–h4)</option>
+              <option value={26}>Most recent weeks</option>
+            </select>
+            <small className="muted">
+              {comparisonHorizon === 4
+                ? "The horizon a planner acts on. Older weeks, fair comparison."
+                : "The newest weeks that have actuals — only long horizons reach them."}
+            </small>
+          </div>
           <div className="chart-box" aria-label="Forecast versus actual chart">
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={chartData} margin={{top: 12, right: 8, bottom: 4, left: 0}}>
@@ -701,10 +742,18 @@ function Overview({
                 <Legend />
                 {/*
                   The forecast column is stacked: solid blue to P50, then a light
-                  blue segment carrying the rest of the way to P90. So the whole
-                  column IS the forecast range, and the question a reader asks --
-                  did the week land inside it -- is answered by whether the green
-                  Actual bar's top falls within the column's height.
+                  blue segment carrying the rest of the way to the SUMMED P90.
+
+                  That upper segment is NOT an interval and must not be labelled
+                  as one. A P90 is a per-series quantile, and summing ~2,034 of
+                  them lands far above the 90th percentile of their sum because
+                  errors diversify -- the rule the inventory policy states as
+                  sumOfChannelP90: forbidden. Read as an interval it said the
+                  actual fell inside the range in 8 of 8 weeks, implying a
+                  near-perfect forecast; counted per series the coverage is
+                  89.9 per cent at h19-h26 and 90.8 per cent at h1-h4. The series
+                  name now says what the segment is, and the coverage claim has
+                  moved to the caption where it is counted per series.
 
                   Actual carries its own stackId rather than none, so every Bar is
                   on the same layout path; a lone unstacked bar beside a stacked
@@ -727,7 +776,7 @@ function Overview({
                 <Bar
                   dataKey="bandSpan"
                   stackId="forecast"
-                  name="P50 → P90 range"
+                  name="P50 → Σ per-series P90 (not an interval)"
                   fill="#9dc3f7"
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={false}
@@ -994,6 +1043,10 @@ export function DemandForecast({
   const [region, setRegion] = useState("");
   const [category, setCategory] = useState("");
   const [horizonWeeks, setHorizonWeeks] = useState(4);
+  // The Forecast vs Actual card's own scope, kept apart from `horizonWeeks`.
+  // That one is the FORWARD selector ("Next 4 Weeks" sums h1..h4 of the forward
+  // forecast); this picks which past weeks the comparison is drawn from.
+  const [comparisonHorizon, setComparisonHorizon] = useState(4);
   const [granularity, setGranularity] = useState("Weekly");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("Overview");
@@ -1008,7 +1061,7 @@ export function DemandForecast({
     search: search.trim(),
     horizonWeeks
   }), [selectedStore?.marketId, region, storeId, channelType, category, search, horizonWeeks]);
-  const data = useForecastData(filters);
+  const data = useForecastData(filters, comparisonHorizon);
   // Decision #77 grain resolution. A channel filter never changes the grain, and
   // this screen never selects a single complete SeriesKey, so the resolved grain
   // is market/portfolio by default and store/category once one is chosen.
@@ -1203,6 +1256,8 @@ export function DemandForecast({
             healthGrain={healthGrain}
             granularity={granularity}
             horizonWeeks={horizonWeeks}
+            comparisonHorizon={comparisonHorizon}
+            setComparisonHorizon={setComparisonHorizon}
             windowMetrics={scopedMetrics}
             setModal={setModal}
           />

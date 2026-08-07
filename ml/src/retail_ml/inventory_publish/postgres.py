@@ -38,7 +38,11 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: 0010 adds the inventory serving surface. Materializing against 0009 would load
 #: evidence into tables that do not exist; against a later head, into tables whose
 #: constraints this writer has not been checked against.
-MIGRATION_REVISION: Final[str] = "0020_safety_stock_drivers"
+#:
+#: Moves with the forecast writer even though 0021 adds no inventory table: the two
+#: writers share one schema, and a pair pinned to different heads would each refuse
+#: the other's, leaving no head that can serve both halves of a bundle.
+MIGRATION_REVISION: Final[str] = "0021_forecast_eval_recent"
 
 
 class InventoryServingError(RuntimeError):

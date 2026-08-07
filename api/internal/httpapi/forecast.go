@@ -48,8 +48,10 @@ func mountForecastRoutes(app *aarv.App, store *readmodel.ForecastStore) {
 				ExceptionClass: c.Query("exceptionClass"),
 				Horizon:        c.QueryInt("horizon", 0),
 				HorizonWeeks:   c.QueryInt("horizonWeeks", 4),
-				Offset:         c.QueryInt("offset", 0),
-				Limit:          c.QueryInt("limit", 100),
+				// Separate from horizonWeeks on purpose; see ForecastQuery.
+				ComparisonHorizon: c.QueryInt("comparisonHorizon", 4),
+				Offset:            c.QueryInt("offset", 0),
+				Limit:             c.QueryInt("limit", 100),
 			})
 			if err != nil {
 				reasonCode := readmodel.ForecastReadErrorReason(err)
