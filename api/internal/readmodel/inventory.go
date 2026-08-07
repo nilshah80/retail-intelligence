@@ -25,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0020_safety_stock_drivers"
+	InventoryMigrationRevision = "0021_forecast_eval_recent"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -2408,9 +2408,9 @@ var inventoryAggregates = map[string]map[string]string{
 		"safetyStockLeadTimeUnits": "SUM(safety_stock_lead_time_units)",
 		"leadTimeVariabilityWithheldCells": "COUNT(*) FILTER (WHERE " +
 			"lead_time_variability_reason_code IS NOT NULL)",
-		"classACells":      "COUNT(*) FILTER (WHERE abc_class = 'A')",
-		"classBCells":      "COUNT(*) FILTER (WHERE abc_class = 'B')",
-		"classCCells":      "COUNT(*) FILTER (WHERE abc_class = 'C')",
+		"classACells": "COUNT(*) FILTER (WHERE abc_class = 'A')",
+		"classBCells": "COUNT(*) FILTER (WHERE abc_class = 'B')",
+		"classCCells": "COUNT(*) FILTER (WHERE abc_class = 'C')",
 	},
 	"replenishment_transfers": {
 		"rows":          "COUNT(*)",

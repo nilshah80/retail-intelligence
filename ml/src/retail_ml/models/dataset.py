@@ -10,7 +10,13 @@ import duckdb
 import pandas as pd
 
 from retail_ml.features.availability import HORIZONS, LABEL_EMBARGO_WEEKS
-from retail_ml.models.backtest import TRAINING_ORIGINS, rolling_origin_schedule
+from retail_ml.models.backtest import (
+    RECENT_HORIZONS,
+    RECENT_ORIGIN_STEP_WEEKS,
+    RECENT_SCORING_ORIGINS,
+    TRAINING_ORIGINS,
+    rolling_origin_schedule,
+)
 
 BASE_MODEL_COLUMNS: Final[tuple[str, ...]] = (
     "origin_units",
@@ -109,6 +115,49 @@ def eligible_scoring_origins(feature_path: str | Path) -> list[date]:
     ).fetchall()
     connection.close()
     return rolling_origin_schedule([row[0] for row in rows])
+
+
+def eligible_recent_origins(feature_path: str | Path) -> list[date]:
+    """Origins too recent for the complete grid, scoreable at h1..h4.
+
+    The complete schedule needs `target_units_h26`, which is why its newest origin
+    is 26 weeks behind the newest actual and every recent week is measurable only
+    at h19-h26. This asks the weaker question -- which origins have a realised
+    actual for the SHORT horizons -- and returns the newest of those that the
+    complete schedule does not already cover.
+
+    Disjoint from `eligible_scoring_origins` by construction: an origin the
+    complete grid already scores at all 26 horizons needs nothing added, and
+    overlapping the two would put one origin in two schedules with different
+    horizon coverage, which is precisely the pooling this artifact exists to avoid.
+    Weekly rather than biweekly: the ragged set is a display comparison, not the
+    frozen acceptance schedule, so it takes every origin it can rather than
+    preserving a step the comparison battery depends on.
+    """
+
+    # The complete schedule is derived from h26 eligibility, so it must be read
+    # through the function that owns that rule rather than re-derived here from a
+    # weaker predicate: computing it off the h4-eligible rows would return a
+    # different set of origins and silently fail to exclude the real ones.
+    complete = set(eligible_scoring_origins(feature_path))
+    source = _escaped(Path(feature_path))
+    longest = max(RECENT_HORIZONS)
+    connection = duckdb.connect()
+    rows = connection.execute(
+        f"""
+        SELECT DISTINCT forecast_origin
+        FROM read_parquet('{source}')
+        WHERE training_eligible
+          AND units_lag_52 IS NOT NULL
+          AND target_units_h{longest} IS NOT NULL
+        ORDER BY forecast_origin
+        """
+    ).fetchall()
+    connection.close()
+    candidates = [row[0] for row in rows if row[0] not in complete]
+    window = candidates[-(RECENT_SCORING_ORIGINS * RECENT_ORIGIN_STEP_WEEKS):]
+    selected = list(reversed(list(reversed(window))[::RECENT_ORIGIN_STEP_WEEKS]))
+    return selected[-RECENT_SCORING_ORIGINS:]
 
 
 def load_training_horizon(

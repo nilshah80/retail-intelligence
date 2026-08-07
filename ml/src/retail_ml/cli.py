@@ -17,6 +17,7 @@ from retail_ml.bench.memory_spike import run_memory_spike
 from retail_ml.features.build import build_features
 from retail_ml.features.characterize import characterize_features
 from retail_ml.io.bundle import discover_input_bundle
+from retail_ml.models.backtest import RECENT_EVAL_FILENAME
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.current_cycle import run_current_cycle
 from retail_ml.models.forecasting import (
@@ -224,6 +225,9 @@ def _command_publish(args: argparse.Namespace) -> int:
     )
     publication = publish_forecast_run(
         pd.read_parquet(backtest_paths["forecast_eval_predictions.parquet"]),
+        # The ragged recent schedule, read from the same verified bundle as the
+        # complete grid so the two cannot come from different backtests.
+        pd.read_parquet(backtest_paths[RECENT_EVAL_FILENAME]),
         pd.read_parquet(backtest_paths["forecast_calibration.parquet"]),
         acceptance,
         pd.read_parquet(args.exceptions),

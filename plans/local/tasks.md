@@ -1453,6 +1453,60 @@ changing datagen merely to manufacture greener metrics.
       both all 13 origins and the untouched final 5, and require both windows to pass. Publish a
       new immutable candidate; never overwrite or cosmetically reclassify prior evidence.
 
+### Forecast vs Actual defects found 2026-08-07 `[NOT STARTED]`
+
+_Measured against served run `fr_b2ed1a914b059e93`. Each line is a defect with evidence, not a
+presentation preference. None is implemented; none may be marked complete without review._
+
+- [ ] **The chart's P50→P90 band is not an interval, and its coverage caption is therefore
+      wrong.** `actuals` in `api/internal/readmodel/forecast.go` draws `SUM(yhat_p90)` across
+      ~2,034 series. A P90 is a per-series quantile and the sum of 2,034 of them sits far above
+      the 90th percentile of their sum, because errors diversify — the same rule
+      `sumOfChannelP90: forbidden` states for the inventory policy, and `aggregatedSumIsStatistical
+      P50: false` states for the P50. Read off that band the screen reported "actual inside the
+      P50–P90 forecast range in 8 of 8", implying a well-covered forecast. Per-series coverage is
+      **89.9% at h19–h26 and 90.8% at h1–h4** — both on the 90% a P90 owes, at every horizon. Fix:
+      caption the per-series coverage, which is the valid and meaningful measure and is computable
+      from the same table. The summed columns may stay as a central scenario; the band must stop
+      being presented as an interval.
+- [ ] **Drop or relabel the summed-P90 segment itself.** Even with the caption corrected, the
+      light-blue stack still draws a band a reader will interpret as an interval. Either remove it
+      or label it as a sum of per-series P90s. A true aggregate P90 needs the joint distribution,
+      which per-series quantiles cannot supply.
+- [ ] **The chart does not disclose which horizon it is showing.** It selects the most recent
+      weeks that have actuals and captions them "Last 8 weeks", implying a near-term comparison.
+      Backtest origins are placed so all 26 horizons can be scored, so the last origin is
+      2026-01-19 and those weeks are reachable only at **h19–h26**, where pooled bias is −5.8% to
+      −6.6% against −0.29% at h1 — which is why the P50 sits under the actual in 8 of 8 weeks and
+      reads as a forecast that is always short. Fix: name the horizon band in the caption, and let
+      the reader choose the comparison window. Note the forward "Next N Weeks" filter must NOT be
+      that control: it scopes future weeks (one series sums 4,149 units at 4 and 22,080 at 26) and
+      driving a backward-looking chart from it moves the x-axis six months when the forward scope
+      narrows.
+- [ ] **Ragged backtest evaluation, so recent weeks are measurable at short horizons.**
+      `eligible_scoring_origins` (`ml/src/retail_ml/models/dataset.py`) admits an origin only when
+      `target_units_h26 IS NOT NULL`, so the last usable origin is always
+      `last_actual_week − 26 weeks`. This lag is **permanent, not a frozen-dataset artifact** — a
+      live retailer receiving weekly data can never evaluate last week at a short horizon either.
+      Fix: keep the full 26-horizon grid for origins that have room and ADDITIONALLY score later
+      origins at whatever horizons they do have, so h1–h4 rows exist for the newest weeks.
+      Constraints: a ragged origin is scored only on the horizons it can evaluate and is **never
+      pooled with complete origins into one headline metric** — an origin contributing four
+      horizons must not lift a 26-horizon accuracy figure; A1–A5, decision #82 cohorts and the
+      fixed 13-origin comparison schedule stay unchanged, so this adds coverage and must not
+      become a route to a greener number. Rejected alternatives, measured: raising horizons to 52
+      moves the last origin to 2025-07-21 and needs `target_units_h27..h52` columns that do not
+      exist (`HORIZONS` is `range(1, 27)` in `ml/src/retail_ml/features/availability.py`), and
+      shortening horizons to 4 discards the long-horizon evaluation the gates and Phase 4 need.
+      Requires a `backtest` re-run (~40 min for the existing 13×26 grid) and new immutable
+      evidence.
+- [ ] **Investigate the forward forecast level.** The current cycle forecasts 43,140–47,877 units
+      per week for h1–h9 (2026-08-03 onward) against 60,255–63,543 realised in Jun–Jul 2026 and
+      53,862–63,361 in the same weeks a year earlier. A ~20–30% step down is far beyond the
+      −6% long-horizon bias measured above and is not explained by series count (2,034 forward
+      against 2,042–2,148 evaluated). Establish whether this is seasonality, an assortment change
+      or a defect **before any forward number is presented as a plan**.
+
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
 
 Status legend: `[x]` complete and running on the ten-year pin; `[~]` built and
@@ -1664,6 +1718,48 @@ production.
 6. **Point-in-time forecasting and pricing elasticity** remain unavailable with
    their inherited reason codes (`LANDING_BACKFILL_DEPENDENCY`,
    `PRICE_AVAILABILITY_BACKFILLED`). Phase 4 changed neither.
+
+### Inventory screen defects found 2026-08-07 `[NOT STARTED]`
+
+_Measured against served inventory `iv_911e443f2f847361`. None is implemented._
+
+- [ ] **"Out of Stock" serves 3 cells when 127 are out of stock, because the assortment join
+      resolves to zero.** The generator closes every `assortment_calendar` window at its scenario
+      `endDate` (2026-07-28) and emits no open-ended `active_to`, while the pipeline decides as of
+      2026-07-31. `COALESCE(assortment.active, FALSE)` in
+      `ml/src/retail_ml/inventory_run/load.py` then marks all 4,683 cells de-assorted, the build
+      filter in `build.py` keeps only `active | on_hand > 0`, and every empty shelf is dropped
+      before `classify_health` sees it — `inventory_positions` holds zero rows with
+      `on_hand_units = 0`. Measured effect: Out of Stock 3 (0.1%) against 127 (2.7%), assorted
+      cells 0 against 2,128, and Store Inventory's On-Shelf Availability unrenderable at 0/0
+      against 893/1,017 = 87.8%. **The real fix is the generator emitting an open-ended
+      `active_to` for a still-live assortment**; giving the inventory build its own as-of date is
+      a workaround at the consuming end, and it forces the inventory manifest to record a
+      `decisionAsOf` three days behind the forecast it consumes, which is a governance change.
+      Note the two dates cannot be reconciled by one flag: the forecast needs ≥ 2026-07-30
+      (`load_current_horizon` hides rows whose `source_known_as_of` is later than the decision,
+      and those stamps run to 2026-07-29 09:30 IST) while the assortment join needs ≤ 2026-07-28.
+      Do NOT class this as `dead`-versus-`stockout` precedence: the 169 ATP-zero cells that
+      classify `dead` are DC cells physically holding stock with no trailing demand, and calling
+      them out of stock would be a worse misstatement.
+- [ ] **Inventory row tables have no pagination, so a capped page reads as the whole population.**
+      Inventory Ageing serves "Top 20 of 2,877" ranked oldest-first, and 180-plus is 1,235 of
+      those rows — so Age reads `180-plus`, Sell-through `0.0%`, Action `Markdown 10% + transfer`
+      and Priority `High` on every visible row, and rows 1–1,235 cannot show otherwise. Priority
+      is a tautology there: it is *defined* High for every 180-plus row. The population is varied
+      — 0-30 885, 30-60 297, 60-90 174, 90-180 286, 180-plus 1,235; sell-through is non-zero on
+      1,641 of 2,877. Fix: pagination, and a rows-per-page control, because prev/next alone needs
+      62 clicks at 20 rows to reach a second age bucket.
+- [ ] **The inventory UI sends no query parameters at all.** `loadInventorySlice` is called with
+      the bare endpoint, so market, store, offset and limit never reach an API that accepts all
+      four. Wiring the header's store selection must carry a per-screen guard: `inventory_ageing`
+      is built from `inventory_batches`, which the source tracks at the four warehouses and no
+      stores, so a blanket store filter empties the page and renders "Zero rows is a governed
+      result" — true of the query and misleading about the page.
+- [ ] **`category` is accepted and silently ignored on several inventory routes.** On
+      `/api/v1/inventory/ageing`, `category=electronics-audio` returns all 2,877 rows. Either
+      admit it to those projections' filterable sets or stop accepting it; a filter that changes
+      nothing teaches a reader the data has no other categories.
 
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 - [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.

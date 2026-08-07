@@ -42,10 +42,14 @@ from retail_ml.models.cohorts import (
 )
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.confidence import forecast_confidence
+from retail_ml.models.backtest import RECENT_HORIZONS
 from retail_ml.policies.classification import load_classification_policy
 from retail_ml.runtime.profile import MLRuntimeProfile
 
-RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v3"
+#: v4 adds `forecast_eval_recent`: the ragged recent schedule, scored at the
+#: horizons a recent origin can actually evaluate. The artifact SET changed, so the
+#: run schema moves with it rather than a v3 bundle silently meaning two shapes.
+RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v4"
 ACCEPTANCE_EVALUATION_VERSION: Final[str] = (
     "cohorted-seasonal-cold-start-recomputation/v4"
 )
@@ -54,6 +58,11 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "forecast_series": "retail-v2-forecast-series/v1",
     "forecast_drivers": "retail-v2-forecast-drivers/v1",
     "forecast_eval_predictions": "retail-forecast-eval-predictions/v1",
+    # Ragged by construction and never pooled with the complete grid. Its own
+    # artifact rather than extra rows in forecast_eval_predictions, because that
+    # one is contractually a complete 13 x 26 rectangle and acceptance depends on
+    # it staying that way.
+    "forecast_eval_recent": "retail-forecast-eval-recent/v1",
     "forecast_baseline_predictions": "retail-forecast-baseline-predictions/v1",
     "forecast_metrics": "retail-forecast-metrics/v1",
     "forecast_exceptions": "retail-forecast-exceptions/v1",
@@ -85,6 +94,18 @@ EVALUATION_KEY_COLUMNS: Final[tuple[str, ...]] = (
     "store_id",
     "channel_id",
     "horizon",
+)
+#: What the ragged schedule publishes. The evaluation columns a comparison needs
+#: and nothing else: no `selected_model` or `zero_share_52w`, because those feed
+#: the acceptance diagnostics the complete grid owns and this artifact is
+#: forbidden from reaching.
+RECENT_EVALUATION_COLUMNS: Final[tuple[str, ...]] = (
+    *EVALUATION_KEY_COLUMNS,
+    "dept_id",
+    "category",
+    "actual_units",
+    "yhat_p50",
+    "yhat_p90",
 )
 BASELINE_COLUMNS: Final[dict[str, str]] = {
     "naive": "naive_baseline",
@@ -295,6 +316,60 @@ REMEDIATION_REPLAY_COLUMNS: Final[tuple[str, ...]] = (
     "champion_p90",
     "cohort",
 )
+
+
+def _validate_recent_schedule(frame: pd.DataFrame) -> None:
+    """The ragged schedule's own rules: short horizons, and no complete origin.
+
+    Deliberately NOT `_validate_complete_schedule`. This artifact exists because
+    a recent origin cannot offer 26 horizons, so demanding a rectangle would make
+    it unpublishable. What it must still guarantee is that it is what it claims:
+    only short horizons, and disjoint from the complete grid, so no consumer can
+    join the two and land an origin in a schedule twice.
+    """
+
+    _require_columns(
+        frame,
+        {"forecast_origin", "horizon"},
+        label="recent evaluation predictions",
+    )
+    if frame.empty:
+        return
+    horizons = set(pd.to_numeric(frame["horizon"]).astype(int).unique())
+    if not horizons.issubset(set(RECENT_HORIZONS)):
+        raise ForecastPublicationError(
+            "the recent schedule may only carry horizons "
+            f"{list(RECENT_HORIZONS)}"
+        )
+    for origin, group in frame.groupby("forecast_origin", sort=False):
+        present = set(pd.to_numeric(group["horizon"]).astype(int).unique())
+        if present != horizons:
+            raise ForecastPublicationError(
+                f"recent origin {origin} is scored at {sorted(present)} while the "
+                f"schedule carries {sorted(horizons)}; an origin is scored at every "
+                "horizon it can evaluate or it is not published"
+            )
+
+
+def derive_recent_evaluation_predictions(recent: pd.DataFrame) -> pd.DataFrame:
+    """Project the ragged schedule onto the evaluation artifact's own columns.
+
+    Same columns as the complete grid so one read model can serve both, and so a
+    reader comparing them is comparing like with like. The SEPARATION is the
+    artifact boundary, not a different shape.
+    """
+
+    if recent.empty:
+        return pd.DataFrame(columns=list(RECENT_EVALUATION_COLUMNS))
+    required = set(RECENT_EVALUATION_COLUMNS)
+    _require_columns(recent, required, label="recent evaluation predictions")
+    _validate_recent_schedule(recent)
+    result = recent[list(RECENT_EVALUATION_COLUMNS)].copy()
+    if result.duplicated(list(EVALUATION_KEY_COLUMNS), keep=False).any():
+        raise ForecastPublicationError(
+            "recent evaluation predictions duplicate the canonical evaluation key"
+        )
+    return result.sort_values(list(EVALUATION_KEY_COLUMNS)).reset_index(drop=True)
 
 
 def derive_evaluation_predictions(
@@ -1477,6 +1552,7 @@ def _validate_remediation_candidate(
 
 def publish_forecast_run(
     evaluation: pd.DataFrame,
+    recent_evaluation: pd.DataFrame,
     calibration: pd.DataFrame,
     acceptance: dict[str, Any],
     exceptions: pd.DataFrame,
@@ -1525,6 +1601,7 @@ def publish_forecast_run(
         evaluation,
         remediation=remediation is not None,
     )
+    recent_artifact = derive_recent_evaluation_predictions(recent_evaluation)
     baseline_artifact = derive_baseline_predictions(evaluation)
     acceptance_frame = _acceptance_frame(
         evaluation_artifact,
@@ -1657,6 +1734,11 @@ def publish_forecast_run(
                 staging,
                 name="forecast_eval_predictions",
                 frame=evaluation_artifact,
+            ),
+            "forecast_eval_recent": _write_frame(
+                staging,
+                name="forecast_eval_recent",
+                frame=recent_artifact,
             ),
             "forecast_baseline_predictions": _write_frame(
                 staging,

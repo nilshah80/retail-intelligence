@@ -194,8 +194,29 @@ export const forecastActualsSchema = z.object({
     // The P90. Optional so a bundle published before the read model served it
     // still validates rather than blanking the chart.
     forecastP90: z.number().optional(),
-    actual: z.number()
-  }))
+    actual: z.number(),
+    // Per-series coverage for this week. Optional for the same reason.
+    seriesCovered: z.number().int().optional(),
+    series: z.number().int().optional(),
+    // How far ahead this week was forecast. Varies across the chart, because
+    // biweekly origins put alternate weeks at h1 and h2.
+    horizonWeeks: z.number().int().optional()
+  })),
+  // Pooled per-series coverage across the weeks shown. This, not a count of
+  // weeks whose total fell inside the summed band, is what the card captions:
+  // summing per-series P90s does not produce an aggregate P90, so "inside the
+  // range in 8 of 8" measured a band that is not an interval.
+  seriesCoverage: z.object({
+    covered: z.number().int(),
+    series: z.number().int(),
+    ratio: z.number()
+  }).optional(),
+  // The horizon band the rows actually came from, for the caption.
+  horizonRange: z.object({
+    min: z.number().int(),
+    max: z.number().int(),
+    cap: z.number().int()
+  }).optional()
 });
 
 export const forecastHorizonsSchema = z.object({
@@ -415,11 +436,24 @@ function forecastQuery(filters: ForecastFilters, extra?: Record<string, string |
 
 export const loadForecastSummary = () =>
   get("/api/v1/forecast/summary", forecastSummarySchema);
-export const loadForecastActuals = (filters: ForecastFilters) =>
-  get(
-    `/api/v1/forecast/actuals${forecastQuery(filters, {view: "weekly", limit: 8})}`,
+/**
+ * `comparisonHorizon` is the Forecast vs Actual card's own control, and
+ * `horizonWeeks` is deliberately dropped from this one request. That filter
+ * scopes FUTURE weeks — "Next 4 Weeks" sums h1..h4 of the forward forecast — so
+ * letting it also pick the comparison window moved this chart six months back
+ * whenever a reader narrowed the forward scope.
+ */
+export const loadForecastActuals = (
+  filters: ForecastFilters, comparisonHorizon: number
+) => {
+  const {horizonWeeks: _forwardScope, ...scope} = filters;
+  return get(
+    `/api/v1/forecast/actuals${forecastQuery(scope, {
+      view: "weekly", limit: 8, comparisonHorizon
+    })}`,
     forecastActualsSchema
   );
+};
 export const loadForecastHorizons = (filters: ForecastFilters) =>
   get(`/api/v1/forecast/horizons${forecastQuery(filters)}`, forecastHorizonsSchema);
 export const loadForecastStores = (filters: ForecastFilters) =>

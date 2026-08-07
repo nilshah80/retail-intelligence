@@ -25,19 +25,24 @@ from retail_ml.features.build import (
 from retail_ml.features.availability import HORIZONS
 from retail_ml.models.backtest import (
     CANDIDATE_CLASS_REMEDIATION,
+    RECENT_EVAL_FILENAME,
+    RECENT_HORIZONS,
     evaluate_acceptance,
 )
 from retail_ml.models.baselines import attach_baselines, metric_for_column
-from retail_ml.models.cohorts import attach_cold_start_baseline
+from retail_ml.models.cohorts import assign_cohorts, attach_cold_start_baseline
 from retail_ml.models.bias_correction import (
     COVERAGE_MODEL_FILENAME,
+    apply_quantile_calibration,
     remediate_coverage,
 )
 from retail_ml.models.cold_start_blend import (
     BLEND_MODEL_FILENAME,
+    apply_cold_start_blend,
     remediate_cold_start,
 )
 from retail_ml.models.dataset import (
+    eligible_recent_origins,
     eligible_scoring_origins,
     load_evaluation_horizon,
     load_training_horizon,
@@ -135,6 +140,10 @@ def verified_backtest_artifacts(
         raise ValueError("backtest does not match the verified feature artifact")
     expected_names = {
         "forecast_eval_predictions.parquet",
+        # The ragged recent schedule. Part of the frozen set for the same reason
+        # the blend model is: a consumer must not have to guess whether a bundle
+        # carries it, and a bundle that omitted it could not serve the comparison.
+        RECENT_EVAL_FILENAME,
         "forecast_calibration.parquet",
         "acceptance.json",
         # Decision #84's fitted blend weights. Part of the frozen contract because
@@ -208,6 +217,104 @@ def _history(feature_path: Path, origin: date) -> pd.DataFrame:
     ).fetchdf()
     connection.close()
     return frame
+
+
+def _score_recent_schedule(
+    *,
+    feature_path: Path,
+    origins: list[date],
+    runtime_profile: MLRuntimeProfile,
+    telemetry: MLStageTelemetry,
+    replay_history: pd.DataFrame,
+    blend_model: dict[str, Any],
+    coverage_model: dict[str, Any],
+) -> pd.DataFrame:
+    """Score the ragged recent origins at h1..h4 and nothing else.
+
+    Same estimator, same order of operations as the complete grid, with one
+    deliberate difference: the decision #84 blend and the decision #58 coverage
+    calibration are APPLIED from the models the complete grid fitted, never
+    refitted here. Refitting on these origins would measure an estimator that was
+    never certified and never served, which is the opposite of what a
+    forecast-versus-actual comparison is for.
+
+    `replay_history` arrives from the complete pass and is used unchanged: every
+    complete origin precedes every ragged one, so the tail-routing decision these
+    rows see is the one a reader of that week would have seen.
+
+    Returns an empty frame when no origin qualifies -- a dataset whose actuals stop
+    at the complete schedule's own horizon has nothing recent to score, and that is
+    a real answer rather than a failure.
+    """
+
+    if not origins:
+        return pd.DataFrame()
+    scored_frames: list[pd.DataFrame] = []
+    for origin in origins:
+        def fit_score(horizon: int) -> pd.DataFrame:
+            with telemetry.measure("recent_load_training"):
+                training = load_training_horizon(
+                    feature_path,
+                    scored_origin=origin,
+                    horizon=horizon,
+                    threads=runtime_profile.threads_per_model,
+                )
+            with telemetry.measure("recent_load_evaluation"):
+                evaluation = load_evaluation_horizon(
+                    feature_path,
+                    scored_origin=origin,
+                    horizon=horizon,
+                    threads=runtime_profile.threads_per_model,
+                )
+            with telemetry.measure("recent_fit_models"):
+                model = fit_horizon_model(
+                    training,
+                    horizon=horizon,
+                    threads_per_model=runtime_profile.threads_per_model,
+                )
+            with telemetry.measure("recent_score"):
+                return score_horizon_model(evaluation, model)
+
+        with ThreadPoolExecutor(
+            max_workers=model_worker_budget(runtime_profile)
+        ) as executor:
+            results = list(executor.map(fit_score, RECENT_HORIZONS))
+        scored_origin = pd.concat(results, ignore_index=True)
+        with telemetry.measure("recent_history"):
+            intermittent_history = _history(feature_path, origin)
+            partial_history = _partial_history(feature_path, origin)
+        with telemetry.measure("recent_baselines"):
+            scored_origin = attach_baselines(scored_origin)
+            scored_origin = attach_cold_start_baseline(
+                scored_origin,
+                intermittent_history,
+                partial_history,
+            )
+        with telemetry.measure("recent_intermittent_routing"):
+            scored_origin = route_intermittent_forecasts(
+                scored_origin,
+                intermittent_history,
+                replay_preferred_keys=replay_preferred_tail_keys(
+                    replay_history,
+                    known_before=origin,
+                ),
+            )
+        scored_frames.append(scored_origin)
+    recent = pd.concat(scored_frames, ignore_index=True)
+    recent = assign_cohorts(recent)
+    with telemetry.measure("recent_remediation"):
+        recent = apply_cold_start_blend(recent, blend_model)
+        recent = apply_quantile_calibration(recent, coverage_model)
+    return recent.sort_values(
+        [
+            "forecast_origin",
+            "market_id",
+            "store_id",
+            "channel_id",
+            "sku_id",
+            "horizon",
+        ]
+    ).reset_index(drop=True)
 
 
 def run_backtest(
@@ -412,6 +519,25 @@ def run_backtest(
                         "non-inferiority gate."
                     ),
                 }
+            # The ragged pass runs AFTER acceptance has been evaluated on the
+            # complete grid, and its frame is never merged into `evaluation`.
+            # Ordering is the guarantee: acceptance cannot see these rows even by
+            # accident, so an origin contributing four horizons cannot move a gate
+            # scored over twenty-six. Only attempted on a full schedule, because a
+            # partial run is already diagnostic-only and adding a second partial
+            # schedule to it would publish two incomparable things.
+            recent_evaluation = pd.DataFrame()
+            if full_schedule:
+                with telemetry.measure("recent_schedule"):
+                    recent_evaluation = _score_recent_schedule(
+                        feature_path=feature_path,
+                        origins=eligible_recent_origins(feature_path),
+                        runtime_profile=runtime_profile,
+                        telemetry=telemetry,
+                        replay_history=replay_history,
+                        blend_model=blend_model,
+                        coverage_model=coverage_model,
+                    )
             if not full_schedule:
                 acceptance["passed"] = False
                 acceptance["diagnosticOnly"] = True
@@ -444,9 +570,14 @@ def run_backtest(
                 encoding="utf-8",
             )
             eval_path = staging / "forecast_eval_predictions.parquet"
+            recent_path = staging / RECENT_EVAL_FILENAME
             calibration_path = staging / "forecast_calibration.parquet"
             with telemetry.measure("serialize_diagnostics"):
                 evaluation.to_parquet(eval_path, index=False)
+                # Written unconditionally, empty when nothing qualified, so the
+                # bundle's object set is the same shape on every run and a reader
+                # never has to distinguish "absent" from "none".
+                recent_evaluation.to_parquet(recent_path, index=False)
                 pd.DataFrame(calibration_records).to_parquet(
                     calibration_path,
                     index=False,
@@ -486,6 +617,13 @@ def run_backtest(
                     }
                     for path in (
                         eval_path,
+                        # Registered here as well as written above. `verified_
+                        # backtest_artifacts` compares the manifest's object SET
+                        # against the frozen contract, so writing the file without
+                        # naming it here produced a bundle that failed its own
+                        # verification -- correctly, and only at the publish stage
+                        # three and a half hours later.
+                        recent_path,
                         calibration_path,
                         acceptance_path,
                         blend_path,

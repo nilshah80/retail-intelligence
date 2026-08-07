@@ -67,6 +67,39 @@ def _full_schedule() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _recent_schedule() -> pd.DataFrame:
+    """The ragged companion: recent origins, h1-h4 only, disjoint from above.
+
+    Origins start well after the complete schedule's last one, which is the real
+    relationship -- a recent origin is precisely one the complete grid cannot
+    reach, because 26 horizons of actuals do not exist for it yet.
+    """
+
+    rows = []
+    first = date(2026, 3, 30)
+    for origin_index in range(13):
+        origin = first + timedelta(weeks=origin_index)
+        for horizon in range(1, 5):
+            actual = float(10 + horizon % 3)
+            rows.append(
+                {
+                    "forecast_origin": origin,
+                    "target_week_start": origin + timedelta(weeks=horizon),
+                    "market_id": "india-west",
+                    "dept_id": "dept",
+                    "category": "category",
+                    "sku_id": "sku",
+                    "store_id": "store",
+                    "channel_id": "channel",
+                    "horizon": horizon,
+                    "actual_units": actual,
+                    "yhat_p50": actual - 1,
+                    "yhat_p90": actual + 2,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _accepted_schedule() -> pd.DataFrame:
     rows = []
     first = date(2025, 8, 4)
@@ -272,6 +305,7 @@ def test_publisher_emits_schema_valid_rejected_candidate(tmp_path: Path) -> None
     output = tmp_path / "run"
     publication = publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         acceptance,
         _exceptions(),
@@ -312,6 +346,9 @@ def test_publisher_emits_schema_valid_rejected_candidate(tmp_path: Path) -> None
         "forecast_series",
         "forecast_drivers",
         "forecast_eval_predictions",
+        # run/v4: the ragged recent schedule travels with every bundle, so a
+        # consumer never has to distinguish "absent" from "no recent origin".
+        "forecast_eval_recent",
         "forecast_baseline_predictions",
         "forecast_metrics",
         "forecast_exceptions",
@@ -332,6 +369,7 @@ def test_publisher_emits_and_verifies_accepted_candidate(tmp_path: Path) -> None
     output = tmp_path / "accepted"
     publication = publish_forecast_run(
         evaluation,
+        _recent_schedule(),
         _calibration(),
         acceptance,
         _exceptions(),
@@ -360,6 +398,7 @@ def test_publisher_rejects_partial_schedule(tmp_path: Path) -> None:
     ):
         publish_forecast_run(
             _full_schedule().query("horizon == 1"),
+            _recent_schedule(),
             _calibration(),
             _acceptance(),
             _exceptions(),
@@ -385,6 +424,7 @@ def test_publisher_refuses_invalid_classification_policy_fingerprint(
     ):
         publish_forecast_run(
             _full_schedule(),
+            _recent_schedule(),
             _calibration(),
             _acceptance(),
             _exceptions(),
@@ -411,6 +451,7 @@ def test_verifier_rejects_mutated_artifact(tmp_path: Path) -> None:
     output = tmp_path / "run"
     publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -445,6 +486,7 @@ def test_publisher_rejects_forged_acceptance_verdict(tmp_path: Path) -> None:
     ):
         publish_forecast_run(
             _full_schedule(),
+            _recent_schedule(),
             _calibration(),
             forged,
             _exceptions(),
@@ -473,6 +515,7 @@ def test_publisher_rejects_confidence_not_derived_from_quantiles(
     ):
         publish_forecast_run(
             evaluation,
+            _recent_schedule(),
             _calibration(),
             _acceptance(evaluation),
             _exceptions(),
@@ -495,6 +538,7 @@ def test_verifier_recomputes_acceptance_after_hashes_are_resigned(
     output = tmp_path / "run"
     publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -550,6 +594,7 @@ def test_verifier_recomputes_confidence_after_artifact_is_resigned(
     output = tmp_path / "run"
     publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -607,6 +652,7 @@ def test_execution_profile_does_not_change_run_identity(tmp_path: Path) -> None:
     }
     safe = publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         acceptance,
         _exceptions(),
@@ -619,6 +665,7 @@ def test_execution_profile_does_not_change_run_identity(tmp_path: Path) -> None:
     )
     ultra = publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         acceptance,
         _exceptions(),
@@ -678,6 +725,7 @@ def test_a_remediation_bundle_does_not_share_an_identity_with_a_champion(
     }
     champion = publish_forecast_run(
         _full_schedule(),
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -687,6 +735,7 @@ def test_a_remediation_bundle_does_not_share_an_identity_with_a_champion(
     )
     remediation = publish_forecast_run(
         evaluation,
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -724,6 +773,7 @@ def test_both_documents_declare_the_same_candidate_class(tmp_path: Path) -> None
 
     publish_forecast_run(
         evaluation,
+        _recent_schedule(),
         _calibration(),
         _acceptance(),
         _exceptions(),
@@ -757,6 +807,7 @@ def test_a_remediation_bundle_must_publish_its_replay_columns(tmp_path: Path) ->
     with pytest.raises(ForecastPublicationError, match="replayed"):
         publish_forecast_run(
             _full_schedule(),
+            _recent_schedule(),
             _calibration(),
             _acceptance(),
             _exceptions(),

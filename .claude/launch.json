@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "ui", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-3", "tools/dev.py", "serve", "--with-ui"],
+      "port": 5173
     }
   ]
 }
