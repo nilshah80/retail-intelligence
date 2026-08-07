@@ -1,10 +1,10 @@
 {
   "authorityLedger": {
-    "currentEventId": 1,
+    "currentEventId": 2,
     "currentPriorEventId": null,
     "identitiesWithoutRetainedBytes": [],
     "nullPredecessorEventIds": [
-      1
+      2
     ],
     "supersededIdentityCount": 0
   },
@@ -101,15 +101,15 @@
   },
   "entryAuthorized": true,
   "forecastAuthority": {
-    "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
+    "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
     "activeAuthorityCount": 1,
     "bundlePath": "ml/data/artifacts/forecast_run_current",
-    "featureSemanticFingerprint": "f743da0a134cf07f6d08fae82bb06bf433d955e452a76d760f6950d699f23eca",
-    "forecastRunId": "fr_b2ed1a914b059e93",
+    "featureSemanticFingerprint": "78c52026d829e090f2756a269c464fc674dd08f04c1db94b8d5e3cd4474879a3",
+    "forecastRunId": "fr_ced9221fd94158f7",
     "lifecycleStatus": "accepted",
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
-    "runSemanticFingerprint": "0e2750efcbd98f4c96d32f5318ca7bd21626b0481d8a284ab328f13f681c62ae",
-    "versionId": "fv_0be7039af25e247d"
+    "publicationSemanticFingerprint": "cf688833b447191d949e49b9b1a94634b8590573c1b2060aee7671e591f9715e",
+    "runSemanticFingerprint": "7b06749a31b06530ed5a9280372056367ff6e3a36db54057da38c10cf47fa56b",
+    "versionId": "fv_4ecce31acc6fa59a"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
@@ -225,9 +225,9 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0020_safety_stock_drivers",
+  "servingMigration": "0021_forecast_eval_recent",
   "sourceSelection": {
-    "activeRecordId": "rec_65c46eb067afe368",
+    "activeRecordId": "rec_526485c4d32b4dad",
     "capabilityReadiness": "ready",
     "capabilitySufficiency": "sufficient",
     "lifecycleRecords": [
@@ -262,6 +262,10 @@
       "retailer-demo-demand-forecast-ten-year-local-r7-active.json",
       "retailer-demo-demand-forecast-ten-year-local-r7-approved.json",
       "retailer-demo-demand-forecast-ten-year-local-r7-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r7-superseded.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-active.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-approved.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-candidate.json",
       "retailer-demo-demand-forecast-ten-year-local-superseded.json",
       "retailer-demo-inventory-current-ten-year-local-active.json",
       "retailer-demo-inventory-current-ten-year-local-approved.json",
@@ -289,6 +293,10 @@
       "retailer-demo-inventory-current-ten-year-local-r7-active.json",
       "retailer-demo-inventory-current-ten-year-local-r7-approved.json",
       "retailer-demo-inventory-current-ten-year-local-r7-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r7-superseded.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-active.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-approved.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-candidate.json",
       "retailer-demo-inventory-current-ten-year-local-superseded.json",
       "retailer-demo-inventory-replay-ten-year-local-active.json",
       "retailer-demo-inventory-replay-ten-year-local-approved.json",
@@ -316,17 +324,21 @@
       "retailer-demo-inventory-replay-ten-year-local-r7-active.json",
       "retailer-demo-inventory-replay-ten-year-local-r7-approved.json",
       "retailer-demo-inventory-replay-ten-year-local-r7-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r7-superseded.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-active.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-approved.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-candidate.json",
       "retailer-demo-inventory-replay-ten-year-local-superseded.json"
     ],
-    "objectCount": 1302,
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
+    "objectCount": 1305,
+    "publicationSemanticFingerprint": "cf688833b447191d949e49b9b1a94634b8590573c1b2060aee7671e591f9715e",
     "scope": {
       "capability": "demand_forecast_non_pit",
       "environment": "local",
       "retailerId": "retailer-demo",
       "tenantId": "tenant-demo"
     },
-    "selectionId": "sel_40ed20a2b978154a",
+    "selectionId": "sel_fe117fd1526e6ac6",
     "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
   }
 }

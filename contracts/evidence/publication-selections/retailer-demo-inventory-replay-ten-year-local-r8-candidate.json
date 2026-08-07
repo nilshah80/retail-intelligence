@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "automated/repin-policy/v1",
+    "approvedAt": "2026-08-07T12:41:27Z",
+    "reason": "Adopted automatically by the repin policy: no actor was supplied, so this record asserts a POLICY decision on derived evidence and not a human review. Anyone relying on it should read the facts below, not the fact that it was approved. Publication for run-adac9e85dccb56e8-r3 passed Gate A (pass) and Gate B (pass), both read from this run's own gate files, with all three required capabilities available in Gate B's mask. Relative to the previous pin: publication fingerprint, curated DuckDB hash. Business controls present for 11 group(s) in this run's own manifest: activeSkus, asOfDate, channels, currencies, dateRange, forecastCoveragePct, fx, markets, modelAccuracyPct, stores, totalSkus."
+  },
+  "lifecycle": {
+    "reasonCode": "AUTOMATED_REPIN_ADOPTION",
+    "recordId": "rec_e3ff3bec75aab832",
+    "state": "candidate",
+    "supersedes": null
+  },
+  "publication": {
+    "duckdbSha256": "42cb70c011a98ad3b0941b00bf16ee8d8ccee8b92d03080d4a08c2dcc95a072c",
+    "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
+    "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
+    "logicalPath": "ingestion/data/curated/run-adac9e85dccb56e8-r3",
+    "objectCount": 1305,
+    "publicationSemanticFingerprint": "cf688833b447191d949e49b9b1a94634b8590573c1b2060aee7671e591f9715e",
+    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_3adb1b3f3abfeff6"
+}

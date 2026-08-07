@@ -19,32 +19,32 @@
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_b2ed1a914b059e93",
-    "forecastVersionId": "fv_0be7039af25e247d",
+    "forecastRunId": "fr_ced9221fd94158f7",
+    "forecastVersionId": "fv_4ecce31acc6fa59a",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "0e2750efcbd98f4c96d32f5318ca7bd21626b0481d8a284ab328f13f681c62ae"
+    "runSemanticFingerprint": "7b06749a31b06530ed5a9280372056367ff6e3a36db54057da38c10cf47fa56b"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "8cba50bc254c4407bc67e038df991d312ab58d0f5d1e2190d1b8351f552c0c8d",
+    "forecast-run-manifest.json": "dc808fd4f0df935b09a5889fa1eddc151fdb60b0704e0a3b9b842429b3dbcf67",
     "forecast_acceptance.json": "20df3bde230953fc85d02538e54faafb912f5547565ee56561e6af6690395054"
   },
   "authorityLedger": {
-    "currentEventId": 1,
+    "currentEventId": 2,
     "currentPriorEventId": null,
     "events": [
       {
-        "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
+        "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
         "actor": "developer",
-        "eventId": 1,
+        "eventId": 2,
         "eventType": "active",
-        "forecastRunId": "fr_b2ed1a914b059e93",
+        "forecastRunId": "fr_ced9221fd94158f7",
         "priorEventId": null,
-        "recordedAt": "2026-08-06 02:37:17.905243+00",
-        "versionId": "fv_0be7039af25e247d"
+        "recordedAt": "2026-08-07 17:51:33.180634+00",
+        "versionId": "fv_4ecce31acc6fa59a"
       }
     ],
     "nullPredecessorEventIds": [
-      1
+      2
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": []
@@ -168,7 +168,7 @@
   "inputBundle": {
     "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
     "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
+    "publicationSemanticFingerprint": "cf688833b447191d949e49b9b1a94634b8590573c1b2060aee7671e591f9715e",
     "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
   },
   "intervalAvailability": {
@@ -195,14 +195,14 @@
     "withheldShareOfServed": "0.16557"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
-    "forecastRunId": "fr_b2ed1a914b059e93",
-    "forecastVersionId": "fv_0be7039af25e247d"
+    "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
+    "forecastRunId": "fr_ced9221fd94158f7",
+    "forecastVersionId": "fv_4ecce31acc6fa59a"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0020_safety_stock_drivers",
+  "servingMigration": "0021_forecast_eval_recent",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": []
 }

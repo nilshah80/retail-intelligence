@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "automated/repin-policy/v1",
+    "approvedAt": "2026-08-05T22:43:10Z",
+    "reason": "Superseded by selection sel_3adb1b3f3abfeff6 over publication run-adac9e85dccb56e8-r3. Replaced as source authority by the publication for run-adac9e85dccb56e8-r3. Compared with the pin this record's publication carried: publication fingerprint, curated DuckDB hash. Scope: inventory_replenishment_replay."
+  },
+  "lifecycle": {
+    "reasonCode": "AUTOMATED_REPIN_ADOPTION",
+    "recordId": "rec_c1d425942934086b",
+    "state": "superseded",
+    "supersedes": "rec_ff76dab4663a370e"
+  },
+  "publication": {
+    "duckdbSha256": "d4af26c508285e18a7c110a03306e714fd51b21fece573f40f9f433b54bf1677",
+    "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
+    "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
+    "logicalPath": "ingestion/data/curated/run-adac9e85dccb56e8-r2",
+    "objectCount": 1302,
+    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
+    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_f67ce6d37418758f"
+}
