@@ -19,18 +19,18 @@
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_ced9221fd94158f7",
-    "forecastVersionId": "fv_4ecce31acc6fa59a",
+    "forecastRunId": "fr_a450c26ab1aaacfb",
+    "forecastVersionId": "fv_67ec780b9fde840f",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "7b06749a31b06530ed5a9280372056367ff6e3a36db54057da38c10cf47fa56b"
+    "runSemanticFingerprint": "d0e3f37097dbb0b080f691815b7e731ad703bf634597ae94e615648dce947827"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "dc808fd4f0df935b09a5889fa1eddc151fdb60b0704e0a3b9b842429b3dbcf67",
+    "forecast-run-manifest.json": "1981113b81244d53a1fbd4d7d7cf1ce3dbeb36dbde7e2b137e3bbfddefc10930",
     "forecast_acceptance.json": "20df3bde230953fc85d02538e54faafb912f5547565ee56561e6af6690395054"
   },
   "authorityLedger": {
-    "currentEventId": 2,
-    "currentPriorEventId": null,
+    "currentEventId": 4,
+    "currentPriorEventId": 3,
     "events": [
       {
         "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
@@ -41,6 +41,26 @@
         "priorEventId": null,
         "recordedAt": "2026-08-07 17:51:33.180634+00",
         "versionId": "fv_4ecce31acc6fa59a"
+      },
+      {
+        "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
+        "actor": "developer",
+        "eventId": 3,
+        "eventType": "superseded",
+        "forecastRunId": "fr_ced9221fd94158f7",
+        "priorEventId": 2,
+        "recordedAt": "2026-08-07 19:46:17.80611+00",
+        "versionId": "fv_4ecce31acc6fa59a"
+      },
+      {
+        "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
+        "actor": "developer",
+        "eventId": 4,
+        "eventType": "active",
+        "forecastRunId": "fr_a450c26ab1aaacfb",
+        "priorEventId": 3,
+        "recordedAt": "2026-08-07 19:46:17.80611+00",
+        "versionId": "fv_67ec780b9fde840f"
       }
     ],
     "nullPredecessorEventIds": [
@@ -196,13 +216,23 @@
   },
   "liveActivation": {
     "activationScopeFingerprint": "dc62412481012b65bc1f73d7073bc3cdd074f790dd1874ca5c36398c6353926d",
-    "forecastRunId": "fr_ced9221fd94158f7",
-    "forecastVersionId": "fv_4ecce31acc6fa59a"
+    "forecastRunId": "fr_a450c26ab1aaacfb",
+    "forecastVersionId": "fv_67ec780b9fde840f"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
   "servingMigration": "0021_forecast_eval_recent",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
-  "supersededIdentities": []
+  "supersededIdentities": [
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_ced9221fd94158f7",
+      "forecastVersionId": "fv_4ecce31acc6fa59a",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    }
+  ]
 }

@@ -1,12 +1,14 @@
 {
   "authorityLedger": {
-    "currentEventId": 2,
-    "currentPriorEventId": null,
-    "identitiesWithoutRetainedBytes": [],
+    "currentEventId": 4,
+    "currentPriorEventId": 3,
+    "identitiesWithoutRetainedBytes": [
+      "fr_ced9221fd94158f7"
+    ],
     "nullPredecessorEventIds": [
       2
     ],
-    "supersededIdentityCount": 0
+    "supersededIdentityCount": 1
   },
   "decision92Residue": {
     "handedTo": "P4-1",
@@ -105,11 +107,11 @@
     "activeAuthorityCount": 1,
     "bundlePath": "ml/data/artifacts/forecast_run_current",
     "featureSemanticFingerprint": "78c52026d829e090f2756a269c464fc674dd08f04c1db94b8d5e3cd4474879a3",
-    "forecastRunId": "fr_ced9221fd94158f7",
+    "forecastRunId": "fr_a450c26ab1aaacfb",
     "lifecycleStatus": "accepted",
     "publicationSemanticFingerprint": "cf688833b447191d949e49b9b1a94634b8590573c1b2060aee7671e591f9715e",
-    "runSemanticFingerprint": "7b06749a31b06530ed5a9280372056367ff6e3a36db54057da38c10cf47fa56b",
-    "versionId": "fv_4ecce31acc6fa59a"
+    "runSemanticFingerprint": "d0e3f37097dbb0b080f691815b7e731ad703bf634597ae94e615648dce947827",
+    "versionId": "fv_67ec780b9fde840f"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
