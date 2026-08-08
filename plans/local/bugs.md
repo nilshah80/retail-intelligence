@@ -374,8 +374,18 @@ forecast codebase that is still moving underneath it.
 
 ### D. Run the clean pipeline once, after all code is stable
 
-- [ ] Clean the generated work/artifact directories and rebuild the serving database only
+- [x] Clean the generated work/artifact directories and rebuild the serving database only
       after BUG-2's targeted replay validation passes and every code change above is fixed.
+      PostgreSQL/MLflow volumes and all prior datagen, ingestion, ML and DuckDB run state were
+      removed; the fresh database is at migration 0021. Gulf datagen then promoted
+      `run-95b856f20766c9e1` under the `performance` profile in **2h 53m 25.3s**.
+- [x] Rebuild ingestion and the reusable weekly-feature boundary from that source. The
+      land-through-features chain completed in **7m 33.2s**, selected curated revision
+      `run-95b856f20766c9e1-r2`, reproduced source snapshot `a88758a1…`, and promoted
+      publication fingerprint `1b88e7f5…` as Gulf selection generation r11. The corrected
+      curated dimensions now retain `gulf-marketplace` as `marketplace` (with
+      `bazaar-trade` still `store` and `gulf-online` still `online`), proving BUG-2's
+      ingestion half against the clean rebuild rather than only the retained counterfactual.
 - [ ] Run the full Gulf flow once from the agreed clean boundary: ingestion, feature build,
       complete plus recent backtest, normalized current-cycle score, classification,
       publication, migration/materialization/activation, inventory build and corrected

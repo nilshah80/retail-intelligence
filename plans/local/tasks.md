@@ -2185,6 +2185,19 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       snapshot bridge from observed dates instead of assuming Thursday plus offsets 4/5/6. The
       direct stage emits all 8 metrics; stale `gulf4` levels fail downstream policy gates, so the
       clean run—not the oracle fix—must decide final replay acceptance.
+- [x] **Clean Gulf source regenerated from empty runtime state.** PostgreSQL and MLflow volumes,
+      prior datagen/ingestion/ML artifacts, shared features and DuckDB files were removed before
+      generation; the fresh database was migrated through `0021_forecast_eval_recent`. The
+      `performance` profile promoted `run-95b856f20766c9e1` in **2h 53m 25.3s** on
+      2026-08-09 (9,981,587 orders, 41,815,212 units, 4,814 objects). The disposable staging
+      spool was removed on promotion and the retained source is 29 GB.
+- [x] **Fresh ingestion/features boundary promoted.** Land through features completed in
+      **7m 33.2s** under the `performance` profile. Curated revision
+      `run-95b856f20766c9e1-r2` reproduced source snapshot `a88758a1…`; generation r11 now
+      pins publication `1b88e7f5…` and DuckDB `ff32f88d…`. The feature bundle contains
+      3,372,399 rows / 9,603 SeriesKeys and the clean curated database proves
+      `gulf-marketplace → marketplace`, `bazaar-trade → store`, and
+      `gulf-online → online`.
 - [ ] **BUG-17 logged, deliberately not added to this experiment.** At portfolio grain MA13 is
       93.00% accurate versus the champion's 89.84% (FVA −45.21%). Dense rows over-forecast by
       4.77m units while cold start under-forecasts by 0.78m; the errors partly cancel. Re-measure

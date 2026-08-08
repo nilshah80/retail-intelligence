@@ -4,8 +4,8 @@
   "sourceSnapshotId": "a88758a19e787cd2c1cbf2dde9f11b3c10360a23114726c59d56e34666407e3f",
   "gateA": {
     "status": "pass",
-    "semanticFingerprint": "9d6cd81c8510347281c4df456046af8db12f35bd8e777c5530634f4fc22a6204",
-    "evidenceSha256": "3335799a4f60f7a7fe6268258bdda8200a7982c3124c7e2f58a3abdf8ccb2633"
+    "semanticFingerprint": "f5a57acb5e8d608a54066377a3b349cea963c727e2466c8a6d31ad9a1ce2721d",
+    "evidenceSha256": "3eee6473efd2ef23c8ad2c82ed1bda201590f7962007e627db20e92695771081"
   },
   "gateB": {
     "status": "pass",
@@ -13,23 +13,23 @@
     "evidenceSha256": "dd5634e6dcbe8425dfad9266ca984db6c59b2526ace533103e6c67e5b4bbef7a"
   },
   "publication": {
-    "semanticFingerprint": "179f662e0d4f2af7294237b88ae26e2b60958f2b89efd819d00bcc3ded21f378",
+    "semanticFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
     "gateBSemanticFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e",
-    "evidenceSha256": "8c876486da95d35e131f27bf26ce7878c89ca977ac34d2aa3e0cb49a92e8919f",
-    "objectCount": 2273,
+    "evidenceSha256": "d5a5b121ff9ced21529a38c7b697fa32ea0331bcb2a922570aba07adc5e6fc39",
+    "objectCount": 2259,
     "duckdb": {
-      "bytes": 3430952960,
+      "bytes": 3429904384,
       "path": "retail_v2.duckdb",
-      "sha256": "5b802ff1f50d4bbeef9dcd461829da982299d692c9eeaa5baec531c57898c606"
+      "sha256": "ff32f88dc7417037a00a032573c7c80ada197c4900b4244961104aa97ed6aec0"
     }
   },
   "retention": {
     "schemaVersion": "retail-ingestion-retained-evidence/v1",
-    "publicationFingerprint": "179f662e0d4f2af7294237b88ae26e2b60958f2b89efd819d00bcc3ded21f378",
+    "publicationFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
     "files": {
-      "gate-a.json": "3335799a4f60f7a7fe6268258bdda8200a7982c3124c7e2f58a3abdf8ccb2633",
+      "gate-a.json": "3eee6473efd2ef23c8ad2c82ed1bda201590f7962007e627db20e92695771081",
       "gate-b.json": "dd5634e6dcbe8425dfad9266ca984db6c59b2526ace533103e6c67e5b4bbef7a",
-      "publication-manifest.json": "8c876486da95d35e131f27bf26ce7878c89ca977ac34d2aa3e0cb49a92e8919f"
+      "publication-manifest.json": "d5a5b121ff9ced21529a38c7b697fa32ea0331bcb2a922570aba07adc5e6fc39"
     }
   },
   "requiredCapabilities": [

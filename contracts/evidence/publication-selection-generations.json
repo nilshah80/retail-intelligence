@@ -55,6 +55,19 @@
       "supersedeReason": "Replaced as source authority by the publication for run-95b856f20766c9e1. Compared with the pin this record's publication carried: sourceSnapshotId, publication fingerprint, curated DuckDB hash.",
       "supersedesTag": "r9",
       "tag": "r10"
+    },
+    {
+      "activeReason": "Adopted as the active source authority for this scope. The preceding generation is superseded in the same change, so exactly one selection is active per scope (decision #90).",
+      "actor": "automated/repin-policy/v1",
+      "approvalMode": "automatic",
+      "approvedAt": "2026-08-08T19:54:34Z",
+      "approvedReason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash were all derived from this run's own retained evidence rather than transcribed: Gate A f5a57acb, Gate B e49187f3, publication 1b88e7f5, DuckDB ff32f88d, 2259 curated objects.",
+      "candidateReason": "Adopted automatically by the repin policy: no actor was supplied, so this record asserts a POLICY decision on derived evidence and not a human review. Anyone relying on it should read the facts below, not the fact that it was approved. Publication for run-95b856f20766c9e1-r2 passed Gate A (pass) and Gate B (pass), both read from this run's own gate files, with all three required capabilities available in Gate B's mask. Relative to the previous pin: publication fingerprint, curated DuckDB hash. Business controls present for 11 group(s) in this run's own manifest: activeSkus, asOfDate, channels, currencies, dateRange, forecastCoveragePct, fx, markets, modelAccuracyPct, stores, totalSkus.",
+      "reasonCode": "AUTOMATED_REPIN_ADOPTION",
+      "run": "run-95b856f20766c9e1-r2",
+      "supersedeReason": "Replaced as source authority by the publication for run-95b856f20766c9e1-r2. Compared with the pin this record's publication carried: publication fingerprint, curated DuckDB hash.",
+      "supersedesTag": "r10",
+      "tag": "r11"
     }
   ],
   "note": "Generations added after r6. Source code stopped being the ledger here: every generation up to and including r6 is a hand-written chain in build_lifecycle(), which is why adopting one publication took five coordinated edits across two files. Entries below are data, appended by `tools/dev.py repin --approve`, and build_lifecycle() derives their candidate/approved/active/superseded records the same way it does the hand-written ones. The historical chains are deliberately NOT migrated into this file: they are committed and verified, and rewriting them to prove a new mechanism risks the one thing the ledger exists to protect.",

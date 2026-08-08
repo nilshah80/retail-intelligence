@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "automated/repin-policy/v1",
+    "approvedAt": "2026-08-08T19:54:34Z",
+    "reason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash were all derived from this run's own retained evidence rather than transcribed: Gate A f5a57acb, Gate B e49187f3, publication 1b88e7f5, DuckDB ff32f88d, 2259 curated objects."
+  },
+  "lifecycle": {
+    "reasonCode": "AUTOMATED_REPIN_ADOPTION",
+    "recordId": "rec_e76d24620e97300f",
+    "state": "approved",
+    "supersedes": "rec_577d7f7c31e45ab4"
+  },
+  "publication": {
+    "duckdbSha256": "ff32f88dc7417037a00a032573c7c80ada197c4900b4244961104aa97ed6aec0",
+    "gateASemanticFingerprint": "f5a57acb5e8d608a54066377a3b349cea963c727e2466c8a6d31ad9a1ce2721d",
+    "gateBSemanticFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e",
+    "logicalPath": "ingestion/data/curated/run-95b856f20766c9e1-r2",
+    "objectCount": 2259,
+    "publicationSemanticFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
+    "sourceSnapshotId": "a88758a19e787cd2c1cbf2dde9f11b3c10360a23114726c59d56e34666407e3f"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_6e5dc72ef5354c7a"
+}
