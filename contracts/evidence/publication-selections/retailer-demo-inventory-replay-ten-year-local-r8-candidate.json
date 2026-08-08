@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "gulf-onboarding/GOI-6",
+    "approvedAt": "2026-08-07T02:12:29Z",
+    "reason": "GOI-6. First Gulf Oil India ten-year publication adopted as the active source authority for this scope. The retail tenant was torn down at GOI-4T and holds no active selection, so nothing is superseded."
+  },
+  "lifecycle": {
+    "reasonCode": "HUMAN_REPIN_ADOPTION",
+    "recordId": "rec_3c91526d799e35e7",
+    "state": "candidate",
+    "supersedes": null
+  },
+  "publication": {
+    "duckdbSha256": "245e123325260a368ae78fa2d433a8b83706bcd4a5a888f5e9f3eb712aa1c906",
+    "gateASemanticFingerprint": "cbe5e022eea6f523f59fcbbcf96c5d29b017ad565511e3ba589c6fd1bf7bf246",
+    "gateBSemanticFingerprint": "0c71b4629ddab81949d8d9cc8b89ea75573b2fd4a1189e87967961aed259d9ed",
+    "logicalPath": "ingestion/data/curated/run-03c88245ae97c6bb",
+    "objectCount": 2173,
+    "publicationSemanticFingerprint": "d285c62b236af158d9b41ac18ad773eec15f00e1d484ba75a19da1b9a43a5d37",
+    "sourceSnapshotId": "68f3feac497f250f7d3e42fbf592423797e541c83e4a3786704644830d46a8aa"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "0c71b4629ddab81949d8d9cc8b89ea75573b2fd4a1189e87967961aed259d9ed"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_e04baf1583860a3e"
+}

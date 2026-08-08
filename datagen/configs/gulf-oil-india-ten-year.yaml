@@ -5,7 +5,7 @@ identity:
   scenarioName: Gulf Oil India lubricants distributor ten-year history
   masterSeed: 20260806
 time:
-  startDate: '2016-08-01'
+  startDate: '2016-08-04'
   endDate: '2026-07-31'
   generationPartition: month
 retailer:
@@ -3022,6 +3022,402 @@ catalog:
     successorOfProductCode: ''
     launchProfile: linear-ramp
     variantLaunchSpreadDays: 0
+  - productId: gulf-mco-pride-4t-usyn-plus
+    marketId: gulf-india
+    productCode: GLF-PRIDE-4T-USYN-PLUS
+    title: Gulf Pride 4T UltraSynth Plus
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Pride 4T UltraSynth Plus; India lubricants economics,
+      demand and operations are simulated.
+    departmentId: automotive-engine-oils
+    categoryId: gulf-mco
+    basePrice: '889.47'
+    baseCost: '587.05'
+    optionDimensions:
+    - viscosity
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        viscosity: 10W-30
+        packVolume: 900 ml
+    - optionValues:
+        viscosity: 10W-30
+        packVolume: 1 L
+    - optionValues:
+        viscosity: 5W-40
+        packVolume: 900 ml
+    - optionValues:
+        viscosity: 10W-30
+        packVolume: 5 L
+    launchDate: '2025-09-15'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-pcmo-ultrasynth-x-lv
+    marketId: gulf-india
+    productCode: GLF-ULTRASYNTH-X-LV
+    title: Gulf Ultrasynth X LV
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Ultrasynth X LV; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: automotive-engine-oils
+    categoryId: gulf-pcmo
+    basePrice: '1132.31'
+    baseCost: '769.97'
+    optionDimensions:
+    - viscosity
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        viscosity: 0W-20
+        packVolume: 3.5 L
+    - optionValues:
+        viscosity: 0W-20
+        packVolume: 1 L
+    - optionValues:
+        viscosity: 5W-30
+        packVolume: 3.5 L
+    - optionValues:
+        viscosity: 0W-20
+        packVolume: 5 L
+    launchDate: '2025-10-20'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-deo-superfleet-ck4-plus
+    marketId: gulf-india
+    productCode: GLF-SUPERFLEET-CK4-PLUS
+    title: Gulf Superfleet CK-4 Plus
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Superfleet CK-4 Plus; India lubricants economics,
+      demand and operations are simulated.
+    departmentId: automotive-engine-oils
+    categoryId: gulf-deo
+    basePrice: '602.94'
+    baseCost: '458.23'
+    optionDimensions:
+    - viscosity
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 20 L
+    - optionValues:
+        viscosity: 10W-30
+        packVolume: 20 L
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 210 L
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 5 L
+    launchDate: '2025-11-10'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-tractor-tracsynth-pro
+    marketId: gulf-india
+    productCode: GLF-TRACSYNTH-PRO
+    title: Gulf Tracsynth Pro
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Tracsynth Pro; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: automotive-engine-oils
+    categoryId: gulf-tractor
+    basePrice: '685.71'
+    baseCost: '507.43'
+    optionDimensions:
+    - viscosity
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 5 L
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 10 L
+    - optionValues:
+        viscosity: 15W-40
+        packVolume: 20 L
+    - optionValues:
+        viscosity: 10W-30
+        packVolume: 5 L
+    launchDate: '2026-01-12'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-gear-gear-synth-ls
+    marketId: gulf-india
+    productCode: GLF-GEAR-SYNTH-LS
+    title: Gulf Gear Synth LS
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Gear Synth LS; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: driveline-specialities
+    categoryId: gulf-gear
+    basePrice: '1180.00'
+    baseCost: '826.00'
+    optionDimensions:
+    - gearGrade
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        gearGrade: 75W-90
+        packVolume: 1 L
+    - optionValues:
+        gearGrade: 75W-90
+        packVolume: 5 L
+    - optionValues:
+        gearGrade: 80W-90
+        packVolume: 5 L
+    - optionValues:
+        gearGrade: 75W-90
+        packVolume: 20 L
+    launchDate: '2025-12-01'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-grease-superlith-ep2
+    marketId: gulf-india
+    productCode: GLF-SUPERLITH-EP2
+    title: Gulf Superlith EP2
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Superlith EP2; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: driveline-specialities
+    categoryId: gulf-grease
+    basePrice: '465.00'
+    baseCost: '316.20'
+    optionDimensions:
+    - nlgiGrade
+    - packWeight
+    variantDefinitions:
+    - optionValues:
+        nlgiGrade: NLGI 2
+        packWeight: 1 kg
+    - optionValues:
+        nlgiGrade: NLGI 2
+        packWeight: 5 kg
+    - optionValues:
+        nlgiGrade: NLGI 2
+        packWeight: 18 kg
+    - optionValues:
+        nlgiGrade: NLGI 3
+        packWeight: 5 kg
+    launchDate: '2026-02-09'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-coolant-brake-endurance-cool-oat
+    marketId: gulf-india
+    productCode: GLF-ENDURANCE-COOL-OAT
+    title: Gulf Endurance Coolant OAT
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Endurance Coolant OAT; India lubricants economics,
+      demand and operations are simulated.
+    departmentId: driveline-specialities
+    categoryId: gulf-coolant-brake
+    basePrice: '545.00'
+    baseCost: '381.50'
+    optionDimensions:
+    - format
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        format: Premium
+        packVolume: 1 L
+    - optionValues:
+        format: Premium
+        packVolume: 5 L
+    - optionValues:
+        format: Premium
+        packVolume: 20 L
+    - optionValues:
+        format: Standard
+        packVolume: 5 L
+    launchDate: '2025-09-29'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-hydraulic-hydrasynth-hv
+    marketId: gulf-india
+    productCode: GLF-HYDRASYNTH-HV
+    title: Gulf Hydrasynth HV
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Hydrasynth HV; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: industrial-lubricants
+    categoryId: gulf-hydraulic
+    basePrice: '440.00'
+    baseCost: '343.20'
+    optionDimensions:
+    - isoViscosityGrade
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        isoViscosityGrade: ISO VG 46
+        packVolume: 20 L
+    - optionValues:
+        isoViscosityGrade: ISO VG 68
+        packVolume: 20 L
+    - optionValues:
+        isoViscosityGrade: ISO VG 46
+        packVolume: 210 L
+    - optionValues:
+        isoViscosityGrade: ISO VG 32
+        packVolume: 20 L
+    launchDate: '2026-03-02'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-ev-fluids-evolt-drive-2
+    marketId: gulf-india
+    productCode: GLF-EVOLT-DRIVE-2
+    title: Gulf eVolt Driveline Fluid 2
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf eVolt Driveline Fluid 2; India lubricants economics,
+      demand and operations are simulated.
+    departmentId: adjacent-new-energy
+    categoryId: gulf-ev-fluids
+    basePrice: '1620.00'
+    baseCost: '1004.40'
+    optionDimensions:
+    - format
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        format: Premium
+        packVolume: 1 L
+    - optionValues:
+        format: Premium
+        packVolume: 5 L
+    - optionValues:
+        format: Premium
+        packVolume: 20 L
+    - optionValues:
+        format: Standard
+        packVolume: 5 L
+    launchDate: '2025-11-24'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-ev-fluids-evolt-battery-cool
+    marketId: gulf-india
+    productCode: GLF-EVOLT-BATTERY-COOL
+    title: Gulf eVolt Battery Coolant
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf eVolt Battery Coolant; India lubricants economics,
+      demand and operations are simulated.
+    departmentId: adjacent-new-energy
+    categoryId: gulf-ev-fluids
+    basePrice: '1890.00'
+    baseCost: '1171.80'
+    optionDimensions:
+    - format
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        format: Premium
+        packVolume: 1 L
+    - optionValues:
+        format: Premium
+        packVolume: 5 L
+    - optionValues:
+        format: Standard
+        packVolume: 1 L
+    - optionValues:
+        format: Premium
+        packVolume: 20 L
+    launchDate: '2026-04-06'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-adblue-adblue-bulk
+    marketId: gulf-india
+    productCode: GLF-ADBLUE-BULK
+    title: Gulf AdBlue Bulk
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf AdBlue Bulk; India lubricants economics, demand and
+      operations are simulated.
+    departmentId: adjacent-new-energy
+    categoryId: gulf-adblue
+    basePrice: '69.41'
+    baseCost: '58.30'
+    optionDimensions:
+    - format
+    - packVolume
+    variantDefinitions:
+    - optionValues:
+        format: Standard
+        packVolume: 20 L
+    - optionValues:
+        format: Standard
+        packVolume: 210 L
+    - optionValues:
+        format: Premium
+        packVolume: 20 L
+    - optionValues:
+        format: Standard
+        packVolume: 10 L
+    launchDate: '2026-01-26'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
+  - productId: gulf-car-care-engine-flush
+    marketId: gulf-india
+    productCode: GLF-ENGINE-FLUSH
+    title: Gulf Engine Flush
+    brand: Gulf
+    brandCode: GULF
+    description: Gulf product-line identity for Gulf Engine Flush; India lubricants economics, demand
+      and operations are simulated.
+    departmentId: adjacent-new-energy
+    categoryId: gulf-car-care
+    basePrice: '365.00'
+    baseCost: '237.25'
+    optionDimensions:
+    - packSize
+    - format
+    variantDefinitions:
+    - optionValues:
+        packSize: Single
+        format: Standard
+    - optionValues:
+        packSize: Pack of 2
+        format: Standard
+    - optionValues:
+        packSize: Single
+        format: Premium
+    - optionValues:
+        packSize: Pack of 6
+        format: Standard
+    launchDate: '2025-10-06'
+    discontinueDate: ''
+    successorOfProductCode: ''
+    launchProfile: linear-ramp
+    variantLaunchSpreadDays: 0
 customerSegments:
 - segmentId: bazaar-retailers
   name: Bazaar retailers and mechanics
@@ -3035,8 +3431,1276 @@ customerSegments:
   name: Industrial accounts
   share: 0.2
   demandMultiplier: 0.94
-promotions: []
-events: []
+promotions:
+- promotionId: gulf-diwali-trade-2016
+  name: Diwali distributor trade scheme 2016
+  marketId: gulf-india
+  startDate: '2016-09-25'
+  endDate: '2016-11-05'
+  storeIds: []
+  channelIds: &id002
+  - bazaar-trade
+  - gulf-online
+  - gulf-marketplace
+  departmentIds: []
+  categoryIds: &id003
+  - gulf-mco
+  - gulf-pcmo
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-diwali-trade-2017
+  name: Diwali distributor trade scheme 2017
+  marketId: gulf-india
+  startDate: '2017-09-25'
+  endDate: '2017-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2017
+  name: Pre-monsoon stocking scheme 2017
+  marketId: gulf-india
+  startDate: '2017-05-01'
+  endDate: '2017-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2017
+  name: Kharif tractor-oil scheme 2017
+  marketId: gulf-india
+  startDate: '2017-05-20'
+  endDate: '2017-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: &id004
+  - gulf-tractor
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2017
+  name: Year-end fleet scheme 2017
+  marketId: gulf-india
+  startDate: '2017-02-15'
+  endDate: '2017-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: &id005
+  - gulf-deo
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2018
+  name: Diwali distributor trade scheme 2018
+  marketId: gulf-india
+  startDate: '2018-09-25'
+  endDate: '2018-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2018
+  name: Pre-monsoon stocking scheme 2018
+  marketId: gulf-india
+  startDate: '2018-05-01'
+  endDate: '2018-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2018
+  name: Kharif tractor-oil scheme 2018
+  marketId: gulf-india
+  startDate: '2018-05-20'
+  endDate: '2018-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2018
+  name: Year-end fleet scheme 2018
+  marketId: gulf-india
+  startDate: '2018-02-15'
+  endDate: '2018-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2019
+  name: Diwali distributor trade scheme 2019
+  marketId: gulf-india
+  startDate: '2019-09-25'
+  endDate: '2019-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2019
+  name: Pre-monsoon stocking scheme 2019
+  marketId: gulf-india
+  startDate: '2019-05-01'
+  endDate: '2019-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2019
+  name: Kharif tractor-oil scheme 2019
+  marketId: gulf-india
+  startDate: '2019-05-20'
+  endDate: '2019-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2019
+  name: Year-end fleet scheme 2019
+  marketId: gulf-india
+  startDate: '2019-02-15'
+  endDate: '2019-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2020
+  name: Diwali distributor trade scheme 2020
+  marketId: gulf-india
+  startDate: '2020-09-25'
+  endDate: '2020-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2020
+  name: Pre-monsoon stocking scheme 2020
+  marketId: gulf-india
+  startDate: '2020-05-01'
+  endDate: '2020-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2020
+  name: Kharif tractor-oil scheme 2020
+  marketId: gulf-india
+  startDate: '2020-05-20'
+  endDate: '2020-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2020
+  name: Year-end fleet scheme 2020
+  marketId: gulf-india
+  startDate: '2020-02-15'
+  endDate: '2020-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2021
+  name: Diwali distributor trade scheme 2021
+  marketId: gulf-india
+  startDate: '2021-09-25'
+  endDate: '2021-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2021
+  name: Pre-monsoon stocking scheme 2021
+  marketId: gulf-india
+  startDate: '2021-05-01'
+  endDate: '2021-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2021
+  name: Kharif tractor-oil scheme 2021
+  marketId: gulf-india
+  startDate: '2021-05-20'
+  endDate: '2021-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2021
+  name: Year-end fleet scheme 2021
+  marketId: gulf-india
+  startDate: '2021-02-15'
+  endDate: '2021-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2022
+  name: Diwali distributor trade scheme 2022
+  marketId: gulf-india
+  startDate: '2022-09-25'
+  endDate: '2022-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2022
+  name: Pre-monsoon stocking scheme 2022
+  marketId: gulf-india
+  startDate: '2022-05-01'
+  endDate: '2022-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2022
+  name: Kharif tractor-oil scheme 2022
+  marketId: gulf-india
+  startDate: '2022-05-20'
+  endDate: '2022-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2022
+  name: Year-end fleet scheme 2022
+  marketId: gulf-india
+  startDate: '2022-02-15'
+  endDate: '2022-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2023
+  name: Diwali distributor trade scheme 2023
+  marketId: gulf-india
+  startDate: '2023-09-25'
+  endDate: '2023-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2023
+  name: Pre-monsoon stocking scheme 2023
+  marketId: gulf-india
+  startDate: '2023-05-01'
+  endDate: '2023-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2023
+  name: Kharif tractor-oil scheme 2023
+  marketId: gulf-india
+  startDate: '2023-05-20'
+  endDate: '2023-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2023
+  name: Year-end fleet scheme 2023
+  marketId: gulf-india
+  startDate: '2023-02-15'
+  endDate: '2023-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2024
+  name: Diwali distributor trade scheme 2024
+  marketId: gulf-india
+  startDate: '2024-09-25'
+  endDate: '2024-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2024
+  name: Pre-monsoon stocking scheme 2024
+  marketId: gulf-india
+  startDate: '2024-05-01'
+  endDate: '2024-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2024
+  name: Kharif tractor-oil scheme 2024
+  marketId: gulf-india
+  startDate: '2024-05-20'
+  endDate: '2024-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2024
+  name: Year-end fleet scheme 2024
+  marketId: gulf-india
+  startDate: '2024-02-15'
+  endDate: '2024-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-diwali-trade-2025
+  name: Diwali distributor trade scheme 2025
+  marketId: gulf-india
+  startDate: '2025-09-25'
+  endDate: '2025-11-05'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.09
+  demandMultiplier: 1.34
+- promotionId: gulf-monsoon-stocking-2025
+  name: Pre-monsoon stocking scheme 2025
+  marketId: gulf-india
+  startDate: '2025-05-01'
+  endDate: '2025-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2025
+  name: Kharif tractor-oil scheme 2025
+  marketId: gulf-india
+  startDate: '2025-05-20'
+  endDate: '2025-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2025
+  name: Year-end fleet scheme 2025
+  marketId: gulf-india
+  startDate: '2025-02-15'
+  endDate: '2025-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+- promotionId: gulf-monsoon-stocking-2026
+  name: Pre-monsoon stocking scheme 2026
+  marketId: gulf-india
+  startDate: '2026-05-01'
+  endDate: '2026-05-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id003
+  customerSegmentIds: []
+  discountPct: 0.07
+  demandMultiplier: 1.28
+- promotionId: gulf-kharif-trade-2026
+  name: Kharif tractor-oil scheme 2026
+  marketId: gulf-india
+  startDate: '2026-05-20'
+  endDate: '2026-07-10'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id004
+  customerSegmentIds: []
+  discountPct: 0.08
+  demandMultiplier: 1.31
+- promotionId: gulf-fleet-yearend-2026
+  name: Year-end fleet scheme 2026
+  marketId: gulf-india
+  startDate: '2026-02-15'
+  endDate: '2026-03-31'
+  storeIds: []
+  channelIds: *id002
+  departmentIds: []
+  categoryIds: *id005
+  customerSegmentIds: []
+  discountPct: 0.06
+  demandMultiplier: 1.22
+events:
+- eventId: gulf-rabi-sowing-2016
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2016
+  marketId: gulf-india
+  startDate: '2016-10-10'
+  endDate: '2016-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2016
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2016
+  marketId: gulf-india
+  startDate: '2016-10-01'
+  endDate: '2016-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: &id006
+  - gulf-mco
+  channelIds: []
+- eventId: gulf-monsoon-service-2017
+  type: demand-shock
+  name: Monsoon oil-change surge 2017
+  marketId: gulf-india
+  startDate: '2017-06-01'
+  endDate: '2017-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2017
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2017
+  marketId: gulf-india
+  startDate: '2017-06-05'
+  endDate: '2017-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2017
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2017
+  marketId: gulf-india
+  startDate: '2017-10-10'
+  endDate: '2017-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2017
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2017
+  marketId: gulf-india
+  startDate: '2017-10-01'
+  endDate: '2017-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2017
+  type: demand-shock
+  name: Fiscal year-end freight peak 2017
+  marketId: gulf-india
+  startDate: '2017-03-01'
+  endDate: '2017-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2018
+  type: demand-shock
+  name: Monsoon oil-change surge 2018
+  marketId: gulf-india
+  startDate: '2018-06-01'
+  endDate: '2018-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2018
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2018
+  marketId: gulf-india
+  startDate: '2018-06-05'
+  endDate: '2018-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2018
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2018
+  marketId: gulf-india
+  startDate: '2018-10-10'
+  endDate: '2018-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2018
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2018
+  marketId: gulf-india
+  startDate: '2018-10-01'
+  endDate: '2018-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2018
+  type: demand-shock
+  name: Fiscal year-end freight peak 2018
+  marketId: gulf-india
+  startDate: '2018-03-01'
+  endDate: '2018-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2019
+  type: demand-shock
+  name: Monsoon oil-change surge 2019
+  marketId: gulf-india
+  startDate: '2019-06-01'
+  endDate: '2019-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2019
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2019
+  marketId: gulf-india
+  startDate: '2019-06-05'
+  endDate: '2019-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2019
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2019
+  marketId: gulf-india
+  startDate: '2019-10-10'
+  endDate: '2019-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2019
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2019
+  marketId: gulf-india
+  startDate: '2019-10-01'
+  endDate: '2019-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2019
+  type: demand-shock
+  name: Fiscal year-end freight peak 2019
+  marketId: gulf-india
+  startDate: '2019-03-01'
+  endDate: '2019-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2020
+  type: demand-shock
+  name: Monsoon oil-change surge 2020
+  marketId: gulf-india
+  startDate: '2020-06-01'
+  endDate: '2020-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2020
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2020
+  marketId: gulf-india
+  startDate: '2020-06-05'
+  endDate: '2020-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2020
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2020
+  marketId: gulf-india
+  startDate: '2020-10-10'
+  endDate: '2020-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2020
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2020
+  marketId: gulf-india
+  startDate: '2020-10-01'
+  endDate: '2020-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2020
+  type: demand-shock
+  name: Fiscal year-end freight peak 2020
+  marketId: gulf-india
+  startDate: '2020-03-01'
+  endDate: '2020-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2021
+  type: demand-shock
+  name: Monsoon oil-change surge 2021
+  marketId: gulf-india
+  startDate: '2021-06-01'
+  endDate: '2021-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2021
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2021
+  marketId: gulf-india
+  startDate: '2021-06-05'
+  endDate: '2021-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2021
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2021
+  marketId: gulf-india
+  startDate: '2021-10-10'
+  endDate: '2021-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2021
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2021
+  marketId: gulf-india
+  startDate: '2021-10-01'
+  endDate: '2021-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2021
+  type: demand-shock
+  name: Fiscal year-end freight peak 2021
+  marketId: gulf-india
+  startDate: '2021-03-01'
+  endDate: '2021-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2022
+  type: demand-shock
+  name: Monsoon oil-change surge 2022
+  marketId: gulf-india
+  startDate: '2022-06-01'
+  endDate: '2022-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2022
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2022
+  marketId: gulf-india
+  startDate: '2022-06-05'
+  endDate: '2022-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2022
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2022
+  marketId: gulf-india
+  startDate: '2022-10-10'
+  endDate: '2022-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2022
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2022
+  marketId: gulf-india
+  startDate: '2022-10-01'
+  endDate: '2022-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2022
+  type: demand-shock
+  name: Fiscal year-end freight peak 2022
+  marketId: gulf-india
+  startDate: '2022-03-01'
+  endDate: '2022-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2023
+  type: demand-shock
+  name: Monsoon oil-change surge 2023
+  marketId: gulf-india
+  startDate: '2023-06-01'
+  endDate: '2023-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2023
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2023
+  marketId: gulf-india
+  startDate: '2023-06-05'
+  endDate: '2023-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2023
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2023
+  marketId: gulf-india
+  startDate: '2023-10-10'
+  endDate: '2023-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2023
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2023
+  marketId: gulf-india
+  startDate: '2023-10-01'
+  endDate: '2023-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2023
+  type: demand-shock
+  name: Fiscal year-end freight peak 2023
+  marketId: gulf-india
+  startDate: '2023-03-01'
+  endDate: '2023-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2024
+  type: demand-shock
+  name: Monsoon oil-change surge 2024
+  marketId: gulf-india
+  startDate: '2024-06-01'
+  endDate: '2024-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2024
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2024
+  marketId: gulf-india
+  startDate: '2024-06-05'
+  endDate: '2024-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2024
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2024
+  marketId: gulf-india
+  startDate: '2024-10-10'
+  endDate: '2024-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2024
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2024
+  marketId: gulf-india
+  startDate: '2024-10-01'
+  endDate: '2024-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2024
+  type: demand-shock
+  name: Fiscal year-end freight peak 2024
+  marketId: gulf-india
+  startDate: '2024-03-01'
+  endDate: '2024-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-monsoon-service-2025
+  type: demand-shock
+  name: Monsoon oil-change surge 2025
+  marketId: gulf-india
+  startDate: '2025-06-01'
+  endDate: '2025-09-15'
+  demandMultiplier: 1.32
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id003
+  channelIds: []
+- eventId: gulf-kharif-sowing-2025
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2025
+  marketId: gulf-india
+  startDate: '2025-06-05'
+  endDate: '2025-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-rabi-sowing-2025
+  type: demand-shock
+  name: Rabi sowing tractor-oil peak 2025
+  marketId: gulf-india
+  startDate: '2025-10-10'
+  endDate: '2025-11-30'
+  demandMultiplier: 1.41
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-diwali-service-2025
+  type: demand-shock
+  name: Diwali two-wheeler servicing peak 2025
+  marketId: gulf-india
+  startDate: '2025-10-01'
+  endDate: '2025-11-10'
+  demandMultiplier: 1.46
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: triangle
+  departmentIds: []
+  categoryIds: *id006
+  channelIds: []
+- eventId: gulf-freight-yearend-2025
+  type: demand-shock
+  name: Fiscal year-end freight peak 2025
+  marketId: gulf-india
+  startDate: '2025-03-01'
+  endDate: '2025-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-kharif-sowing-2026
+  type: demand-shock
+  name: Kharif sowing tractor-oil peak 2026
+  marketId: gulf-india
+  startDate: '2026-06-05'
+  endDate: '2026-07-25'
+  demandMultiplier: 1.58
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: *id004
+  channelIds: []
+- eventId: gulf-freight-yearend-2026
+  type: demand-shock
+  name: Fiscal year-end freight peak 2026
+  marketId: gulf-india
+  startDate: '2026-03-01'
+  endDate: '2026-03-31'
+  demandMultiplier: 1.27
+  trafficMultiplier: 1.0
+  costMultiplier: 1.0
+  leadTimeMultiplier: 1.0
+  inventoryLossPct: 0
+  recoveryShape: step
+  departmentIds: []
+  categoryIds: *id005
+  channelIds: []
+- eventId: gulf-base-oil-2018
+  type: supply-disruption
+  name: Base-oil price spike
+  marketId: gulf-india
+  startDate: '2018-05-01'
+  endDate: '2018-11-30'
+  demandMultiplier: 1.0
+  trafficMultiplier: 1.0
+  costMultiplier: 1.18
+  leadTimeMultiplier: 1.15
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: gulf-base-oil-2021
+  type: supply-disruption
+  name: Post-pandemic base-oil and freight squeeze
+  marketId: gulf-india
+  startDate: '2021-03-01'
+  endDate: '2022-06-30'
+  demandMultiplier: 1.0
+  trafficMultiplier: 1.0
+  costMultiplier: 1.34
+  leadTimeMultiplier: 1.42
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
+- eventId: gulf-base-oil-2025
+  type: supply-disruption
+  name: Group II base-oil tightness
+  marketId: gulf-india
+  startDate: '2025-02-01'
+  endDate: '2025-08-31'
+  demandMultiplier: 1.0
+  trafficMultiplier: 1.0
+  costMultiplier: 1.16
+  leadTimeMultiplier: 1.12
+  inventoryLossPct: 0
+  recoveryShape: ramp
+  departmentIds: []
+  categoryIds: []
+  channelIds: []
 operations:
   inventory:
     snapshotCadenceDays: 7

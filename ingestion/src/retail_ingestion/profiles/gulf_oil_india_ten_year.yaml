@@ -21,7 +21,7 @@ sourceSystem: generator
 sourceSchemaVersion: retail-source-config/v13
 businessTimezone: source_location_timezone
 extractWindow:
-  start: '2016-08-01'
+  start: '2016-08-04'
   end: '2026-07-31'
 channelPolicy:
   mode: native

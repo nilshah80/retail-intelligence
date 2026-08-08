@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "gulf-onboarding/GOI-6",
+    "approvedAt": "2026-08-07T12:50:17Z",
+    "reason": "Adopted as the active source authority for this scope. The preceding generation is superseded in the same change, so exactly one selection is active per scope (decision #90)."
+  },
+  "lifecycle": {
+    "reasonCode": "HUMAN_REPIN_ADOPTION",
+    "recordId": "rec_f16a646edbf9e704",
+    "state": "active",
+    "supersedes": "rec_8cc3ec78fd3c292c"
+  },
+  "publication": {
+    "duckdbSha256": "8bd93fb3125b984e15807766e3d26035fa2d28e31ed7c5755068bf5d79b87913",
+    "gateASemanticFingerprint": "e92d267c5e7c28d575736ba606bbdfee7ba58ea81136e1001e8162db888a0a41",
+    "gateBSemanticFingerprint": "dc31e6232e021f948aeab6604ff06dee039b774902ec86d2d0157073f8d6be10",
+    "logicalPath": "ingestion/data/curated/run-ba7e3db6cb294efe",
+    "objectCount": 2226,
+    "publicationSemanticFingerprint": "5e27b42dcdfedecd0d38d565c4676dab002466f670d96026d0191b60064ffc03",
+    "sourceSnapshotId": "82a5a235d6cfd3bb94cb243655a63afcddeb12a5ff6113413836fbc3b98feeae"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "dc31e6232e021f948aeab6604ff06dee039b774902ec86d2d0157073f8d6be10"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "demand_forecast_non_pit",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_e4c76ec3aba6abb0"
+}

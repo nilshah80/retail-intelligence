@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "gulf-onboarding/GOI-6",
+    "approvedAt": "2026-08-07T19:21:46Z",
+    "reason": "GOI-6 rev3. Horizon start moved to a Thursday so weekly store snapshots align with the replay oracle's hard-coded origin+3d bridge; Monday-aligned snapshots left every replay period without state evidence."
+  },
+  "lifecycle": {
+    "reasonCode": "HUMAN_REPIN_ADOPTION",
+    "recordId": "rec_b86f8323b71b8481",
+    "state": "candidate",
+    "supersedes": null
+  },
+  "publication": {
+    "duckdbSha256": "5b802ff1f50d4bbeef9dcd461829da982299d692c9eeaa5baec531c57898c606",
+    "gateASemanticFingerprint": "9d6cd81c8510347281c4df456046af8db12f35bd8e777c5530634f4fc22a6204",
+    "gateBSemanticFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e",
+    "logicalPath": "ingestion/data/curated/run-95b856f20766c9e1",
+    "objectCount": 2273,
+    "publicationSemanticFingerprint": "179f662e0d4f2af7294237b88ae26e2b60958f2b89efd819d00bcc3ded21f378",
+    "sourceSnapshotId": "a88758a19e787cd2c1cbf2dde9f11b3c10360a23114726c59d56e34666407e3f"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_2624442c0b72262f"
+}
