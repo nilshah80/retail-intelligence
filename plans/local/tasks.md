@@ -1453,12 +1453,14 @@ changing datagen merely to manufacture greener metrics.
       both all 13 origins and the untouched final 5, and require both windows to pass. Publish a
       new immutable candidate; never overwrite or cosmetically reclassify prior evidence.
 
-### Forecast vs Actual defects found 2026-08-07 `[NOT STARTED]`
+### Forecast vs Actual defects found 2026-08-07 `[IMPLEMENTED, UNREVIEWED]`
 
-_Measured against served run `fr_b2ed1a914b059e93`. Each line is a defect with evidence, not a
-presentation preference. None is implemented; none may be marked complete without review._
+_Measured against served run `fr_b2ed1a914b059e93`; re-measured on the rebuild
+`fr_ced9221fd94158f7` / run-adac9e85dccb56e8-r3. Each line is a defect with evidence, not a
+presentation preference. Implemented and green on a full pipeline, but nothing here is committed
+or reviewed -- `[x]` records that the change is in and measured, not that it is approved._
 
-- [ ] **The chart's P50→P90 band is not an interval, and its coverage caption is therefore
+- [x] **The chart's P50→P90 band is not an interval, and its coverage caption is therefore
       wrong.** `actuals` in `api/internal/readmodel/forecast.go` draws `SUM(yhat_p90)` across
       ~2,034 series. A P90 is a per-series quantile and the sum of 2,034 of them sits far above
       the 90th percentile of their sum, because errors diversify — the same rule
@@ -1469,11 +1471,16 @@ presentation preference. None is implemented; none may be marked complete withou
       caption the per-series coverage, which is the valid and meaningful measure and is computable
       from the same table. The summed columns may stay as a central scenario; the band must stop
       being presented as an interval.
-- [ ] **Drop or relabel the summed-P90 segment itself.** Even with the caption corrected, the
+      **Done.** `actuals` counts coverage per series and serves `seriesCoverage`; the card reads
+      "actual within the per-series P90 for 92.1% of 16,552 series-weeks" instead of "8 of 8".
+- [~] **Drop or relabel the summed-P90 segment itself.** Even with the caption corrected, the
       light-blue stack still draws a band a reader will interpret as an interval. Either remove it
       or label it as a sum of per-series P90s. A true aggregate P90 needs the joint distribution,
       which per-series quantiles cannot supply.
-- [ ] **The chart does not disclose which horizon it is showing.** It selects the most recent
+      **Partial.** Relabelled to "P50 → Σ per-series P90 (not an interval)" rather than removed,
+      because the reference layout is a frozen UI contract and dropping a series from an approved
+      chart needs the explicit approval that freeze requires. The segment is still drawn.
+- [x] **The chart does not disclose which horizon it is showing.** It selects the most recent
       weeks that have actuals and captions them "Last 8 weeks", implying a near-term comparison.
       Backtest origins are placed so all 26 horizons can be scored, so the last origin is
       2026-01-19 and those weeks are reachable only at **h19–h26**, where pooled bias is −5.8% to
@@ -1483,7 +1490,9 @@ presentation preference. None is implemented; none may be marked complete withou
       that control: it scopes future weeks (one series sums 4,149 units at 4 and 22,080 at 26) and
       driving a backward-looking chart from it moves the x-axis six months when the forward scope
       narrows.
-- [ ] **Ragged backtest evaluation, so recent weeks are measurable at short horizons.**
+      **Done.** The caption names the band ("h1–h4 forecast"), the card carries its own
+      `comparisonHorizon` control, and `horizonWeeks` no longer reaches this request at all.
+- [x] **Ragged backtest evaluation, so recent weeks are measurable at short horizons.**
       `eligible_scoring_origins` (`ml/src/retail_ml/models/dataset.py`) admits an origin only when
       `target_units_h26 IS NOT NULL`, so the last usable origin is always
       `last_actual_week − 26 weeks`. This lag is **permanent, not a frozen-dataset artifact** — a
@@ -1500,12 +1509,42 @@ presentation preference. None is implemented; none may be marked complete withou
       shortening horizons to 4 discards the long-horizon evaluation the gates and Phase 4 need.
       Requires a `backtest` re-run (~40 min for the existing 13×26 grid) and new immutable
       evidence.
-- [ ] **Investigate the forward forecast level.** The current cycle forecasts 43,140–47,877 units
-      per week for h1–h9 (2026-08-03 onward) against 60,255–63,543 realised in Jun–Jul 2026 and
-      53,862–63,361 in the same weeks a year earlier. A ~20–30% step down is far beyond the
-      −6% long-horizon bias measured above and is not explained by series count (2,034 forward
-      against 2,042–2,148 evaluated). Establish whether this is seasonality, an assortment change
-      or a defect **before any forward number is presented as a plan**.
+      **Done — decision #94.** `forecast_eval_recent`: 13 origins 2026-03-30..2026-06-22 at h1–h4,
+      108,332 rows, target weeks to 2026-07-20, zero origins shared with the complete grid.
+      Own artifact (`retail-forecast-eval-recent/v1`), own table with a `horizon BETWEEN 1 AND 4`
+      check, scored after acceptance and never merged into it; acceptance passed on the complete
+      grid alone. Pairs run/v4, verifier/v6, migration 0021. The chart now shows
+      2026-06-01..2026-07-20 at h1–h4 with the forecast above the actual in 5 of 8 weeks.
+- [~] **The forward forecast scored from a two-day week — train/serve skew on `origin_units`.**
+      Diagnosed and repaired at the scoring boundary; the durable feature-side repair is still open.
+      The current cycle forecast 43,140–47,877 units per week for h1–h9 against 60,255–63,543
+      realised in Jun–Jul 2026 and 61,239 in August a year earlier, so seasonality does not explain
+      it. The ragged schedule above is what isolated the cause: the same model, at the same h1–h4,
+      scored on recent origins reads 29.03 units per series-week at −1.1% bias against a 29.36
+      actual, while the forward run read 21.54. Post-processing was innocent — raw `lightgbm_p50`
+      showed the same gap (21.53 vs 29.03) and routing proportions matched.
+      Cause: `_current_origin` selects the week holding `decision_as_of` without requiring it to be
+      whole, and on this bundle that week (2026-07-27) carries **two days** — `exposure_days` 2,
+      `origin_units` 7.14 against a 29.5 weekly level, `training_eligible` 0 for all 2,034 series.
+      `origin_units` is the first entry in `BASE_MODEL_COLUMNS`, and in **all 1,062,988**
+      training-eligible rows `exposure_days = 7`, so `origin_units` and `weekly_units_equivalent`
+      are identical in 100% of training data. The model never saw them disagree; at scoring they
+      diverged 3.5x. Out-of-distribution input, not a demand signal — and invisible to every gate,
+      because acceptance only ever scores `training_eligible` origins.
+      **Repaired at the boundary:** `load_current_horizon` now presents the origin week at its
+      weekly rate, which is the `units * 7 / exposure_days` normalisation the feature build already
+      computes. A no-op on a complete week; guarded where the normalisation is null at zero
+      exposure. No retrain, because the model is unchanged and only its input is made
+      in-distribution.
+      **Still open, and the durable fix:** drop `origin_units` from `BASE_MODEL_COLUMNS` — two
+      features identical across all training data and divergent at serving is a trap that will
+      catch something else. Costs a retrain and a fresh acceptance cycle. Also open: a train/serve
+      range assertion at score time, which is the only thing that would have caught this class
+      without a hand-built like-for-like comparison.
+      Rejected: requiring a complete origin fails closed on this bundle — origin 2026-07-20 has
+      100% feature visibility only at `decision_as_of >= 2026-07-30`, while the "h1 entirely
+      future" guard needs `< 2026-07-27`, and at that date only 332 of 2,046 rows are visible. No
+      `--decision-as-of` value satisfies both.
 
 ## Phase 4 — Inventory & replenishment (`ml/engines`)
 
