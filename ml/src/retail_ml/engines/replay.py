@@ -2,7 +2,7 @@
 
 Net-new. The M5 simulator was daily and store-only; wrapping it would have
 inherited a clock the evidence cannot support, so this is built on the ISO-Monday
-clock and the preceding-Thursday bridge from `engines/clock.py`.
+clock and a source-observed snapshot bridge derived by the replay driver.
 
 Two rules shape everything here, and both exist because the alternative flatters
 the engine:
@@ -27,7 +27,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from retail_ml.engines.clock import monday_period_bounds, opening_snapshot_instant
+from retail_ml.engines.clock import monday_period_bounds
 
 
 @dataclass
@@ -121,9 +121,9 @@ def replay_market(
 ) -> ReplayResult:
     """Run one market through its ISO-Monday periods under one policy.
 
-    `opening_state` is derived by the caller from the preceding Thursday
-    snapshot plus its bridge -- this function does not invent an opening, because
-    the bridge is where the evidence lives.
+    `opening_state` is derived by the caller from the latest admitted source
+    snapshot plus its data-derived bridge. This function does not invent an
+    opening, because the bridge is where the evidence lives.
 
     `waste_by_period` is the third flow in the identity, alongside arrivals and
     demand. Omitting it does not make a replay conservative, it makes it wrong in
@@ -142,13 +142,6 @@ def replay_market(
     period_opens = []
     for origin in sorted(origins):
         period_open, _ = monday_period_bounds(origin, timezone)
-        # The snapshot that seeds this period must precede it; asserting here
-        # rather than trusting the caller keeps a mis-derived bridge from
-        # silently producing a plausible replay.
-        if opening_snapshot_instant(period_open, timezone) >= period_open:
-            raise ValueError(
-                f"the seeding snapshot for {period_open} does not precede it"
-            )
         period_opens.append(period_open)
 
     for period_open in period_opens:

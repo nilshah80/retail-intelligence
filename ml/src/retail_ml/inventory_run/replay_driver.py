@@ -69,6 +69,20 @@ class ReplayDriverError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SnapshotBridgeEvidence:
+    """The observed state instant and data-derived bridge for one replay period."""
+
+    period_open: datetime
+    snapshot_dates: tuple[date, ...]
+    bridge_start: date | None
+    bridge_end: date | None
+    min_bridge_days: int
+    max_bridge_days: int
+    snapshot_cells: int
+    arrival_units: int
+
+
+@dataclass(frozen=True)
 class MarketHistory:
     """One market's replayable history, already bucketed to ISO Mondays."""
 
@@ -89,6 +103,7 @@ class MarketHistory:
     arrivals_by_period: dict[datetime, dict[tuple[str, str], int]]
     waste_by_period: dict[datetime, dict[tuple[str, str], int]]
     observed_closing_units: dict[datetime, int]
+    snapshot_bridges: dict[datetime, SnapshotBridgeEvidence]
     cells: list[tuple[str, str]]
 
 
@@ -105,6 +120,31 @@ def _as_day(value: Any) -> date:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ReplayDriverError(message)
+
+
+def _bridge_cell_to_close(
+    *,
+    cell: tuple[str, str],
+    units: int,
+    snapshot_day: date,
+    close_day: date,
+    arrivals: Mapping[date, Mapping[tuple[str, str], int]],
+    demand: Mapping[date, Mapping[tuple[str, str], int]],
+    waste: Mapping[date, Mapping[tuple[str, str], int]],
+) -> int:
+    """Advance one 23:00 snapshot through every later local business day."""
+
+    _require(
+        snapshot_day <= close_day,
+        f"snapshot {snapshot_day} falls after bridge close {close_day}",
+    )
+    balance = int(units)
+    for offset in range(1, (close_day - snapshot_day).days + 1):
+        bridge_day = snapshot_day + timedelta(days=offset)
+        balance += int(arrivals.get(bridge_day, {}).get(cell, 0))
+        balance = max(0, balance - int(demand.get(bridge_day, {}).get(cell, 0)))
+        balance = max(0, balance - int(waste.get(bridge_day, {}).get(cell, 0)))
+    return balance
 
 
 def load_market_history(
@@ -131,13 +171,38 @@ def load_market_history(
     _require(weeks >= 2, "a replay needs at least two periods to compare anything")
     window_start = origins[0]
     window_end = origins[-1] + timedelta(days=6)
-    # The opening snapshot is the Thursday BEFORE the first period, and the same
-    # 73-hour bridge the observed series gets has to be applied to it. Flows are
-    # therefore loaded from that Thursday, not from the Monday.
-    flow_start = window_start - timedelta(days=3)  # the Friday after the snapshot
 
     connection = connect(curated_root)
     try:
+        # Seed each cell from its own latest observed state strictly before the
+        # first period. Snapshot cadence is source evidence, not an engine
+        # constant: retail happens to publish on Thursday, while another source
+        # may publish Monday, fortnightly, or with a ragged cell-level cadence.
+        opening_rows = connection.execute(
+            """
+            SELECT DISTINCT ON (stock.location_id, stock.sku_id)
+                stock.snapshot_date, stock.location_id, stock.sku_id,
+                stock.on_hand_units
+            FROM stock_snapshots AS stock
+            JOIN locations ON locations.location_id = stock.location_id
+            WHERE locations.market_id = ?
+              AND locations.type = 'store'
+              AND stock.snapshot_date < ?
+              AND stock.known_as_of < ? + INTERVAL 1 DAY
+            ORDER BY stock.location_id, stock.sku_id, stock.snapshot_date DESC
+            """,
+            [market_id, window_start, window_start],
+        ).fetchall()
+        _require(
+            bool(opening_rows),
+            f"{market_id}: no store-grain opening stock before {window_start}; "
+            "the replay would start from a state nothing observed",
+        )
+        # Movements on the snapshot date are already inside its 23:00 reading.
+        # Load from the following day of the earliest selected cell snapshot so
+        # every cell can be advanced independently to Monday 00:00.
+        flow_start = min(_as_day(row[0]) for row in opening_rows) + timedelta(days=1)
+
         # Store-channel demand only. An online order recorded against a store id
         # is not demand the store's own stock served -- policy v2's
         # `directDcFulfillmentRequires` makes DC fulfilment a declared lane, and
@@ -197,20 +262,6 @@ def load_market_history(
             GROUP BY 1, 2, 3
             """,
             [market_id, flow_start, window_end, window_end],
-        ).fetchall()
-        opening_rows = connection.execute(
-            """
-            SELECT DISTINCT ON (stock.location_id, stock.sku_id)
-                stock.location_id, stock.sku_id, stock.on_hand_units
-            FROM stock_snapshots AS stock
-            JOIN locations ON locations.location_id = stock.location_id
-            WHERE locations.market_id = ?
-              AND locations.type = 'store'
-              AND stock.snapshot_date <= ?
-              AND stock.known_as_of < ? + INTERVAL 1 DAY
-            ORDER BY stock.location_id, stock.sku_id, stock.snapshot_date DESC
-            """,
-            [market_id, window_start, window_start],
         ).fetchall()
         # The oracle: what the source says was actually on hand at each period
         # close. Compared against, never used to drive, the replay.
@@ -272,12 +323,6 @@ def load_market_history(
     finally:
         connection.close()
 
-    _require(
-        bool(opening_rows),
-        f"{market_id}: no store-grain opening stock at {window_start}; the replay "
-        "would start from a state nothing observed",
-    )
-
     def period_for(day: date) -> datetime:
         return monday_period_bounds(day, timezone)[0]
 
@@ -321,106 +366,113 @@ def load_market_history(
     for store, sku, day, units in waste_rows:
         waste[period_for(day)][(str(sku), str(store))] += int(units)
 
-    # Bridge the Thursday snapshot to the period close (P4-D5 / policy v2's
-    # `replayClock`). This is the correction that mattered most.
-    #
-    # 984,103 of 986,531 store snapshots in this publication are Thursday-dated,
-    # exactly as `openingSnapshot: immediately_preceding_thursday` declares, and
-    # the policy is explicit that such a snapshot is the OPENING evidence for the
-    # following Monday period, bridged forward 73 hours -- never the period's own
-    # closing state. Taking the last snapshot in the ISO week and calling it the
-    # close compared a Thursday 23:00 instant against a Sunday-midnight one, three
-    # days of demand and arrivals apart. Across ~26,000 units of weekly demand and
-    # 1,238 cells that gap is worth roughly nine units per cell, which is most of
-    # the 13.84 the oracle was reporting.
-    #
-    # So the observed close of period N is derived: the Thursday snapshot inside N,
-    # plus Friday-to-Sunday arrivals, less Friday-to-Sunday demand. Thursday's own
-    # movements are already inside a 23:00 snapshot, so the bridge starts Friday.
-    # Both grains: the market total bridges the observed close, and the per-cell
-    # map bridges the opening state, which has to move cell by cell because the
-    # replay carries one balance per cell.
-    daily_demand: dict[date, int] = defaultdict(int)
+    # Bridge each cell from the snapshot the source actually published. The
+    # previous implementation selected origin+3 and offsets 4/5/6, which encoded
+    # one retailer's Thursday cadence as if it were a replay invariant. Snapshot
+    # movements are already inside the source's 23:00 reading, so only later local
+    # dates belong in the bridge.
     cell_demand: dict[date, dict[tuple[str, str], int]] = defaultdict(
         lambda: defaultdict(int)
     )
     for store, sku, day, units in demand_rows:
         day = _as_day(day)
-        daily_demand[day] += int(units)
         cell_demand[day][(str(sku), str(store))] += int(units)
-    daily_arrivals: dict[date, int] = defaultdict(int)
     cell_arrivals: dict[date, dict[tuple[str, str], int]] = defaultdict(
         lambda: defaultdict(int)
     )
     for store, sku, day, units in arrival_rows:
         day = _as_day(day)
-        daily_arrivals[day] += int(units)
         cell_arrivals[day][(str(sku), str(store))] += int(units)
-    daily_waste: dict[date, int] = defaultdict(int)
     cell_waste: dict[date, dict[tuple[str, str], int]] = defaultdict(
         lambda: defaultdict(int)
     )
     for store, sku, day, units in waste_rows:
         day = _as_day(day)
-        daily_waste[day] += int(units)
         cell_waste[day][(str(sku), str(store))] += int(units)
 
-    snapshot_cells: dict[date, dict[tuple[str, str], int]] = defaultdict(dict)
+    snapshots_by_period: dict[
+        datetime, dict[tuple[str, str], tuple[date, int]]
+    ] = defaultdict(dict)
     for day, store, sku, units in observed_rows:
-        snapshot_cells[_as_day(day)][(str(sku), str(store))] = int(units)
+        snapshot_day = _as_day(day)
+        period_open = period_for(snapshot_day)
+        cell = (str(sku), str(store))
+        current = snapshots_by_period[period_open].get(cell)
+        if current is None or snapshot_day > current[0]:
+            snapshots_by_period[period_open][cell] = (snapshot_day, int(units))
+
     observed: dict[datetime, int] = {}
+    snapshot_bridges: dict[datetime, SnapshotBridgeEvidence] = {}
     for origin in origins:
         period_open = period_for(origin)
-        # The Thursday inside this period, and the three bridge days after it.
-        thursday = origin + timedelta(days=3)
-        cells_at_thursday = snapshot_cells.get(thursday)
-        if not cells_at_thursday:
+        close_day = origin + timedelta(days=6)
+        cells_at_snapshot = snapshots_by_period.get(period_open)
+        if not cells_at_snapshot:
             # No state evidence for this period. Skipped rather than guessed: an
             # interpolated snapshot is exactly what `interpolationFromWeeklyState:
             # forbidden` rules out.
             continue
-        # Identical arithmetic to the opening bridge below, cell by cell, so the
-        # two sides of the comparison mean the same thing.
-        bridged_cells = dict(cells_at_thursday)
-        for offset in (4, 5, 6):
-            bridge_day = origin + timedelta(days=offset)
-            for cell, units in cell_arrivals.get(bridge_day, {}).items():
-                bridged_cells[cell] = bridged_cells.get(cell, 0) + units
-            for cell, units in cell_demand.get(bridge_day, {}).items():
-                bridged_cells[cell] = max(0, bridged_cells.get(cell, 0) - units)
-            for cell, units in cell_waste.get(bridge_day, {}).items():
-                bridged_cells[cell] = max(0, bridged_cells.get(cell, 0) - units)
-        observed[period_open] = sum(bridged_cells.values())
 
-    # Bridge the OPENING the same 73 hours, per cell. The observed series got
-    # this and the opening did not, which is the whole of the offset the oracle
-    # was reporting: `opening_rows` takes the newest snapshot at or before the
-    # first Monday, and that snapshot is the preceding THURSDAY. Used raw it
-    # states the network's position three days early -- and since every arrival
-    # in this source lands Friday 23:00, "three days early" means one entire
-    # weekly delivery has not happened yet.
-    #
-    # The effect is an offset, not a drift, which is what made it readable: the
-    # replay opened 43,932 against a first-period observed close of 56,507 and
-    # then tracked in parallel, -15,804 in the first period and still -12,058
-    # fifty periods later. That is one delivery less three days of demand, held
-    # constant, exactly as a mis-anchored opening behaves.
-    opening: dict[tuple[str, str], int] = {
-        (str(sku), str(store)): int(units)
-        for store, sku, units in opening_rows
-    }
-    # Friday, Saturday, Sunday. `flow_start` IS the Friday -- the Thursday
-    # snapshot is at window_start - 4 and its own movements are already inside a
-    # 23:00 reading, so the bridge starts the next day and stops before the
-    # Monday, whose demand belongs to the first replayed period.
-    for day_offset in range(3):
-        bridge_day = flow_start + timedelta(days=day_offset)
-        for cell, units in cell_arrivals.get(bridge_day, {}).items():
-            opening[cell] = opening.get(cell, 0) + units
-        for cell, units in cell_demand.get(bridge_day, {}).items():
-            opening[cell] = max(0, opening.get(cell, 0) - units)
-        for cell, units in cell_waste.get(bridge_day, {}).items():
-            opening[cell] = max(0, opening.get(cell, 0) - units)
+        bridged_cells: dict[tuple[str, str], int] = {}
+        bridge_days: list[int] = []
+        bridged_arrivals = 0
+        for cell, (snapshot_day, units) in cells_at_snapshot.items():
+            days = (close_day - snapshot_day).days
+            _require(
+                days >= 0,
+                f"{market_id}: snapshot {snapshot_day} is outside period "
+                f"ending {close_day}",
+            )
+            bridge_days.append(days)
+            for offset in range(1, days + 1):
+                bridge_day = snapshot_day + timedelta(days=offset)
+                bridged_arrivals += int(
+                    cell_arrivals.get(bridge_day, {}).get(cell, 0)
+                )
+            bridged_cells[cell] = _bridge_cell_to_close(
+                cell=cell,
+                units=units,
+                snapshot_day=snapshot_day,
+                close_day=close_day,
+                arrivals=cell_arrivals,
+                demand=cell_demand,
+                waste=cell_waste,
+            )
+        observed[period_open] = sum(bridged_cells.values())
+        snapshot_dates = tuple(
+            sorted({snapshot_day for snapshot_day, _ in cells_at_snapshot.values()})
+        )
+        max_days = max(bridge_days)
+        snapshot_bridges[period_open] = SnapshotBridgeEvidence(
+            period_open=period_open,
+            snapshot_dates=snapshot_dates,
+            bridge_start=(
+                min(snapshot_dates) + timedelta(days=1) if max_days else None
+            ),
+            bridge_end=close_day if max_days else None,
+            min_bridge_days=min(bridge_days),
+            max_bridge_days=max_days,
+            snapshot_cells=len(cells_at_snapshot),
+            arrival_units=bridged_arrivals,
+        )
+
+    # Advance each opening cell from its own preceding state to Sunday close.
+    # This uses the same arithmetic as every observed close and makes a ragged
+    # snapshot cadence explicit rather than silently pretending all cells were
+    # observed on Thursday.
+    opening_close = window_start - timedelta(days=1)
+    opening: dict[tuple[str, str], int] = {}
+    for snapshot_day, store, sku, units in opening_rows:
+        cell = (str(sku), str(store))
+        opening[cell] = _bridge_cell_to_close(
+            cell=cell,
+            units=int(units),
+            snapshot_day=_as_day(snapshot_day),
+            close_day=opening_close,
+            arrivals=cell_arrivals,
+            demand=cell_demand,
+            waste=cell_waste,
+        )
     return MarketHistory(
         market_id=market_id,
         timezone=timezone,
@@ -437,6 +489,7 @@ def load_market_history(
         },
         waste_by_period={period: dict(cells) for period, cells in waste.items()},
         observed_closing_units=observed,
+        snapshot_bridges=snapshot_bridges,
         cells=sorted(opening),
     )
 
@@ -707,6 +760,59 @@ def _market_oracle(histories: Sequence[MarketHistory]) -> dict[str, Any]:
     }
 
 
+def oracle_period_diagnostics(history: MarketHistory) -> list[dict[str, Any]]:
+    """Expose the exact snapshot bridge and reconstruction delta per period.
+
+    This stays outside the governed publication schema: it is a diagnosis
+    instrument, not a new serving contract. Arrival and non-arrival weeks are
+    named on every row so a cadence hypothesis can be tested directly.
+    """
+
+    replay = replay_market(
+        policy_id="oracle/no-order-mechanism-check",
+        policy=_no_order_policy,
+        market_id=history.market_id,
+        timezone=history.timezone,
+        origins=history.origins,
+        opening_state=history.opening_state,
+        demand_by_period=history.demand_by_period,
+        arrivals_by_period=history.arrivals_by_period,
+        waste_by_period=history.waste_by_period,
+    )
+    cells = max(1, len(history.cells))
+    rows: list[dict[str, Any]] = []
+    for period in replay.periods:
+        observed = history.observed_closing_units.get(period.period_open)
+        bridge = history.snapshot_bridges.get(period.period_open)
+        if observed is None or bridge is None:
+            continue
+        delta = period.closing_units - observed
+        arrivals = sum(history.arrivals_by_period.get(period.period_open, {}).values())
+        rows.append(
+            {
+                "periodOpen": period.period_open.date().isoformat(),
+                "snapshotDates": [day.isoformat() for day in bridge.snapshot_dates],
+                "bridgeStart": (
+                    bridge.bridge_start.isoformat() if bridge.bridge_start else None
+                ),
+                "bridgeEnd": (
+                    bridge.bridge_end.isoformat() if bridge.bridge_end else None
+                ),
+                "bridgeDaysMin": bridge.min_bridge_days,
+                "bridgeDaysMax": bridge.max_bridge_days,
+                "snapshotCells": bridge.snapshot_cells,
+                "arrivalWeek": arrivals > 0,
+                "arrivalUnits": arrivals,
+                "bridgeArrivalUnits": bridge.arrival_units,
+                "reconstructedClosingUnits": period.closing_units,
+                "observedClosingUnits": observed,
+                "signedDeltaUnits": delta,
+                "absDeltaPerCell": str(Decimal(abs(delta)) / cells),
+            }
+        )
+    return rows
+
+
 def _scope(history: MarketHistory, cells: Sequence[tuple[str, str]]) -> MarketHistory:
     """Restrict a history to one cohort's cells."""
 
@@ -745,6 +851,7 @@ def _scope(history: MarketHistory, cells: Sequence[tuple[str, str]]) -> MarketHi
             for period, by_cell in history.waste_by_period.items()
         },
         observed_closing_units=dict(history.observed_closing_units),
+        snapshot_bridges=dict(history.snapshot_bridges),
         cells=sorted(wanted),
     )
 
@@ -756,8 +863,10 @@ __all__ = [
     "ORACLE_TOLERANCE_PER_CELL",
     "MarketHistory",
     "ReplayDriverError",
+    "SnapshotBridgeEvidence",
     "candidate_policy",
     "incumbent_policy",
     "load_market_history",
+    "oracle_period_diagnostics",
     "run_replay",
 ]

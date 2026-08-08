@@ -24,7 +24,7 @@ from retail_contracts.money_sql import (
     exact_minor_sql,
 )
 
-TRANSFORM_VERSION = "retail-transform/1.2.0"
+TRANSFORM_VERSION = "retail-transform/1.2.1"
 TRANSFORM_MANIFEST_VERSION = "retail-ingestion-candidate/v1"
 
 
@@ -51,6 +51,24 @@ class TransformResult:
 
 def _sql_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def _channel_type_sql(expression: str) -> str:
+    """Classify the business channel without collapsing marketplace into store.
+
+    Standardized merchandise currently carries the native channel key but no
+    separate channel dimension. Keep the existing source-neutral name inference,
+    while preserving the third channel type supported by the source contract.
+    Treating every non-online key as ``store`` makes marketplace demand look like
+    shelf demand and breaks the store-stock accounting identity.
+    """
+
+    lowered = f"lower({expression})"
+    return f"""CASE
+                WHEN {lowered} LIKE '%marketplace%' THEN 'marketplace'
+                WHEN {lowered} LIKE '%online%' THEN 'online'
+                ELSE 'store'
+            END"""
 
 
 def _entity_control(
@@ -240,16 +258,13 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         """
     )
     connection.execute(
-        """
+        f"""
         CREATE TABLE canonical_data.channels AS
         SELECT
             market_id::VARCHAR AS market_id,
             concat(market_id, ':', channel_source_key)::VARCHAR AS channel_id,
             channel_source_key::VARCHAR AS name,
-            CASE
-                WHEN lower(channel_source_key) LIKE '%online%' THEN 'online'
-                ELSE 'store'
-            END::VARCHAR AS type,
+            {_channel_type_sql("channel_source_key")}::VARCHAR AS type,
             'Derived from the native sales channel'::VARCHAR AS description,
             true::BOOLEAN AS active,
             min(known_as_of) AS known_as_of,

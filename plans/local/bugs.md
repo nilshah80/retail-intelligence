@@ -283,6 +283,20 @@ nothing**. Its materiality gate is relative WAPE, which a bias correction can wo
 improving volume accuracy — the same trap as the routing predicate, one level up in the
 governance.
 
+**Decision for the combined run (2026-08-08): do not wire C1.** This run validates the
+volume-routing and launch-age corrections already measured; it does not change what P50 means.
+C1 is governed by relative WAPE, while the open question is expected volume, and BUG-17 proves
+the portfolio has opposite-signed errors: scaling P50 upward for sparse rows while dense rows
+already over-forecast requires explicit cohort ownership and a volume objective, not one
+market×horizon multiplier. The final post-integration run must re-measure these slices, but it
+must not be represented as closing BUG-1.
+
+The follow-on decision record should preserve P50 as a median and evaluate a separately named
+expected-value output for additive planning consumers, with origin-disjoint fitting, a frozen
+volume-bias/materiality objective, a WAPE non-regression guard, and cohort-level gates. Mutating a
+bias-corrected expectation in place and continuing to label it `yhat_p50` is not an admissible
+shortcut. Until that record is approved, C1 stays disconnected and BUG-1 remains open.
+
 **Two measurement errors made while diagnosing this, recorded so they are not repeated:**
 
 1. Bias was first computed filtering `actual_units > 0`. That is invalid for intermittent
@@ -307,38 +321,40 @@ forecast codebase that is still moving underneath it.
 
 - Destination/current Gulf branch: `feature/gulf-oil-india-datagen`.
 - Source of the forecast fixes: `forecast-vs-actual-ragged-evaluation`.
-- Perform the combination on a temporary integration branch cut from
-  `feature/gulf-oil-india-datagen`; merge it back only after the final clean run passes.
+- The user explicitly chose to perform the combination directly on
+  `feature/gulf-oil-india-datagen`. Functional changes remain separate commits so a failed
+  stage is still attributable without an extra integration branch.
 
 ### A. Freeze the current BUG-1 checkpoint
 
-- [ ] Let the in-progress BUG-1 run finish without changing code underneath it.
-- [ ] Retain the pre/post artifacts (`gulf` and `gulf2`) and record routing share, volume
+- [x] Let the in-progress BUG-1 run finish without changing code underneath it.
+- [x] Retain the available pre/post evidence and record routing share, volume
       share, bias by `zero_share_52w`, portfolio regressions, acceptance results and run
-      identities.
-- [ ] Commit the Gulf BUG-1 implementation and findings before starting branch
+      identities. (`gulf2` parquet was deleted in error; its recorded numbers and PostgreSQL
+      row remain, while `gulf` and `gulf4` artifacts are retained.)
+- [x] Commit the Gulf BUG-1 implementation and findings before starting branch
       integration. The current cumulative-volume change is a routing correction, not
       closure of the still-open P50-versus-expectation problem.
 
 ### B. Integrate all portable code in one batch
 
-- [ ] Bring the functional changes from `forecast-vs-actual-ragged-evaluation` into the
+- [x] Bring the functional changes from `forecast-vs-actual-ragged-evaluation` into the
       integration branch in this order:
   1. `8d80b42` — recent h1-h4 ragged evaluation, run/verifier contracts, migration 0021,
      serving projection, API and UI comparison semantics.
   2. `55b8865` — normalize a partial current-origin week to its weekly equivalent before
      current-cycle scoring.
-- [ ] Do **not** import the source branch's retained demo authority as Gulf evidence:
+- [x] Do **not** import the source branch's retained demo authority as Gulf evidence:
   - exclude `a46b6ed`'s demo expected pin and r7/r8 publication-selection records;
   - exclude `e2c277f`'s demo forecast-closure and inventory-entry identities;
   - exclude unrelated local launch configuration and demo-only task prose.
-- [ ] Preserve the existing Gulf r7-r10 history. New Gulf pins, closure records and
+- [x] Preserve the existing Gulf r7-r10 history. New Gulf pins, closure records and
       selection generations must be derived from the final integrated run rather than
       resolved by choosing the demo side of a merge conflict.
-- [ ] Keep BUG-1, ragged evaluation, weekly normalization and later BUG-2 work as
+- [x] Keep BUG-1, ragged evaluation, weekly normalization and later BUG-2 work as
       separate commits even though they will share one final pipeline validation. This
       keeps a failing stage attributable without paying for multiple end-to-end runs.
-- [ ] Add focused tests before BUG-2 work starts:
+- [x] Add focused tests before BUG-2 work starts:
   - seven-day current origin is unchanged;
   - partial current origin uses `weekly_units_equivalent`;
   - null weekly equivalent follows the explicit fallback;
@@ -348,12 +364,12 @@ forecast codebase that is still moving underneath it.
 
 ### C. Diagnose and fix BUG-2 without another full pipeline
 
-- [ ] Use the retained Gulf source, features and inventory artifacts for targeted replay
+- [x] Use the retained Gulf source, features and inventory artifacts for targeted replay
       diagnostics after the integrated forecast code is stable.
-- [ ] Instrument actual snapshot dates, bridge start/end, bridge length and reconstruction
+- [x] Instrument actual snapshot dates, bridge start/end, bridge length and reconstruction
       delta per replay period; split the evidence between arrival and non-arrival weeks.
-- [ ] Prove or refute the 14-day review-cycle hypothesis before changing the oracle.
-- [ ] Implement the data-derived snapshot/bridge correction and validate the replay stage
+- [x] Prove or refute the 14-day review-cycle hypothesis before changing the oracle.
+- [x] Implement the data-derived snapshot/bridge correction and validate the replay stage
       directly. Do not change the Gulf tenant to a weekly delivery cycle to make it pass.
 
 ### D. Run the clean pipeline once, after all code is stable
@@ -369,9 +385,9 @@ forecast codebase that is still moving underneath it.
 - [ ] Generate fresh Gulf expected pins, closure/entry records and publication-selection
       generations from that run. Retain earlier Gulf generations as superseded history;
       never overwrite them with the demo branch's identities.
-- [ ] Merge the validated integration branch back into
-      `feature/gulf-oil-india-datagen`, then begin any remaining BUG-2 closure work from
-      that immutable baseline.
+- [ ] Commit and validate the final clean-run authorities on
+      `feature/gulf-oil-india-datagen`; no integration-branch merge is needed because the user
+      elected to work directly on this branch.
 
 **Run-economy rule.** Unit tests, contract tests, migration tests and targeted replay runs
 are expected during development; they are not substitutes for the final pipeline, but
@@ -386,7 +402,7 @@ as closing BUG-1's remaining forecast-volume semantics.
 
 ---
 
-## BUG-2 · Replay oracle hard-codes a weekly source cadence `[open]`
+## BUG-2 · Replay loses channel semantics and hard-codes snapshot cadence `[fixing — targeted oracle passes; clean run pending]`
 
 **Where:** `ml/src/retail_ml/inventory_run/replay_driver.py`
 
@@ -396,7 +412,7 @@ over, and ~86% of the mean store cell position (49.7 units), so not a scale arti
 `inventory_replay_metrics.parquet` has 0 rows: oracle-first correctly stops before any
 policy comparison is scored.
 
-**Root cause (two hard-coded assumptions).**
+**Original diagnosis — one real latent defect, but not the residual's cause.**
 
 ```python
 thursday = origin + timedelta(days=3)   # snapshot weekday assumed
@@ -404,7 +420,10 @@ for offset in (4, 5, 6):                # bridge span assumed
 ```
 
 plus the documented premise that *"every arrival in this source lands Friday 23:00"*.
-None of these are derived from the data.
+None of these are derived from the data. Removing them is still required for a portable
+replay, but instrumenting the retained Gulf run proved they do **not** explain the 42.74
+residual: every one of the 52 observed snapshots is Thursday-dated and every bridge is
+three days, exactly what the old code assumed.
 
 Consequence already hit: Gulf's horizon originally started on a Monday, so all 522 weekly
 snapshots landed on Mondays, no period found a Thursday snapshot, `weeksCompared` was 0,
@@ -413,23 +432,39 @@ around by moving the horizon start to a Thursday (`2016-08-04`), which cost a fu
 ~6-hour regeneration. After that the oracle runs (`weeksCompared: 52`) but still fails
 tolerance.
 
-**Remaining hypothesis, NOT yet proven.** Gulf uses `reviewCycleDays: 14` where retail
-uses 7; arrivals land in exactly **261 of 522 weeks (50%)**, dispatched Thursday and
-received Sunday. A weekly reconstruction against a fortnightly replenishment cycle is the
-leading explanation for the residual 42.74, but this has not been demonstrated.
+**Actual root cause — canonical collapsed `marketplace` into `store`.** The source config
+correctly declares `gulf-marketplace.type: marketplace`, and the Config Builder carries the
+same value. The canonical transform inferred channel type with `online -> online; everything
+else -> store`, so the retained publication labels both `bazaar-trade` and
+`gulf-marketplace` as store channels. The source's `StoreEchelon.sell()` consumes shelf stock
+only for the true `store` channel; replay therefore charged the similarly sized marketplace
+stream to the shelf a second time. This is why canonical weekly replay demand was roughly
+double the stock movement visible between snapshots.
 
-**Proposed fix.** Derive both the snapshot date and the bridge span from the data — read
-each period's actual snapshot date from `stock_snapshots` and bridge from it to period
-close — so the oracle works for any snapshot cadence and any replenishment cycle.
+**The 14-day hypothesis is refuted.** Period instrumentation split the retained run into 26
+arrival and 26 non-arrival weeks. Before correcting the channel type, mean absolute delta was
+**49.90 units/cell** in arrival weeks and **35.87** in non-arrival weeks: large and one-sided
+in both populations, not concentrated where fortnightly receipts land. Preserving only
+`gulf-marketplace` as `marketplace` makes the same retained 52-week oracle reconcile at
+**exactly 0 units** in both populations, across every compared week.
 
-**Diagnose before fixing.** Instrument the replay to emit per-period deltas and check
-whether error concentrates in arrival weeks. Removing the coupling is correct regardless,
-but it is not established that it resolves the 42.74 delta.
+**Fix implemented.**
 
-**Do not "fix" by changing the tenant.** Setting `reviewCycleDays: 7` would make the gate
-pass by making the scenario less like Gulf's actual operation — lubricant distributors do
-not take weekly depot deliveries. The engine's inability to express a non-weekly cycle is
-the defect.
+1. Ingestion now preserves `marketplace` before applying the existing online/store name
+   inference, with a transform-version bump and a focused canonical-type test.
+2. Replay now selects each cell's actual admitted snapshot, bridges from the following local
+   day to period close, and exposes per-period snapshot dates, bridge bounds/length, arrival
+   classification and reconstruction delta through a targeted diagnostic helper. A fixture
+   proves Saturday, Tuesday and Friday snapshots without a Thursday assumption.
+
+The retained source was validated through a read-only corrected canonical view; no retained
+artifact was mutated. Closure still requires the one clean ingestion/inventory rebuild in
+PRE-BUG-2 Section D. A direct full replay now passes the oracle and emits all 8 cohort/market
+metric rows; the stale `gulf4` policy levels still fail policy acceptance, which is an honest
+downstream verdict rather than BUG-2. Fresh levels from the clean run must adjudicate that gate.
+
+**Do not "fix" by changing the tenant.** `reviewCycleDays` remains 14. The replay must
+reconcile the source actually supplied; changing Gulf to manufacture a pass is forbidden.
 
 ---
 
@@ -536,6 +571,10 @@ BUG-7's no-op guard made a sync's real changes visible instead of burying them i
 preset in `{**PRESETS, **EMBED_ONLY_PRESETS}` equals `load_config(path)` — covering all five
 presets, not just Gulf, and failing with an instruction to re-run the sync.
 
+**Rechecked after forecast integration (2026-08-08).** The Config Builder drift suite passes
+23 tests plus 5 subtests, and a full `sync_presets.py` run produces zero Git diff across the
+HTML and preset YAML. No additional Config Builder fix is required for this change set.
+
 ---
 
 _BUG-9 … BUG-16 were all found in one pass, by serving the `gulf4` forecast through the API
@@ -622,29 +661,35 @@ It was −46.8% before any of the BUG-1 work, so two measured engine fixes moved
 negative FVA says a thirteen-week moving average would serve this tenant better. It is the
 number a client will ask about first, and the answer today is unflattering and correct.
 
-**Relationship to BUG-1.** Same root cause, different lens: the cohort that drags FVA down is
-the cold-start population, under-forecast 53.6% and holding 86.7% of intermittent volume. FVA
-will not recover until that does. Tracked as a *consequence* so it is not double-counted as an
-independent defect.
+**Relationship to BUG-1 — corrected.** BUG-12 is **not** downstream of cold start. At the
+actual `market_portfolio`, horizon-0 grain, the champion is 89.84% accurate at +10.00% bias;
+MA13 is 93.00% accurate at −2.78% bias, producing FVA −45.21%. Cold start is only 3.9% of
+portfolio volume and its −780,253-unit error currently offsets the opposite-signed error in
+the rest of the portfolio. Removing cold start makes champion bias worse, +10.00% -> +12.56%,
+and leaves the MA13 loss intact. The dominant model defect is tracked independently as
+BUG-17.
 
 ---
 
-## BUG-13 · P50–P90 interval covers the actual in 0 of the last 8 weeks `[open]`
+## BUG-13 · P50–P90 interval covers the actual in 0 of the last 8 weeks `[fix integrated — Gulf re-measure pending]`
 
 **Symptom.** The Forecast-vs-Actual card states: *"Last 8 weeks · actual inside the P50–P90
 forecast range in 0 of 8."* Zero of eight, not a marginal miss.
 
-**Tension with the acceptance gates.** `backtestCoveragePct` is **94.56%** and the per-horizon
-coverage column reads 91.1–92.6%, comfortably inside the decision-#58 band of 0.85–0.95. So
-the *backtest* says coverage is calibrated while the *served recent weeks* say the band misses
-every time. Both are computed, neither is obviously wrong, and they disagree.
+**Diagnosis.** This is a display/comparison-semantics defect, not evidence that the calibrated
+series intervals suddenly failed. The chart summed `yhat_p90` across ~2,034 series and treated
+that sum as the 90th percentile of the portfolio total; quantiles are not additive. Its caption
+then counted weekly portfolio actuals against that non-interval. Per-series coverage is 90.8% on
+recent h1-h4 and 89.9% on complete h19-h26, consistent with calibration.
 
-**Why it matters.** Whichever is right, one of the two is misleading a reader. If the served
-view is right, the calibrated interval does not survive contact with the current cycle. If the
-backtest is right, the card's definition or window differs from what its label implies.
+**Why it matters.** The card presented a mathematically invalid aggregate as an interval and
+turned it into a confident count. That can make a calibrated model look broken (“0 of 8”) or
+perfect (“8 of 8”) depending on the portfolio, while neither statement measures coverage.
 
-**Not diagnosed.** Recorded as a contradiction between two measured numbers, to be resolved
-before either is quoted to a client.
+**Fix integrated.** `8d80b42` adds disjoint ragged h1-h4 evaluation, migration 0021 and serving
+semantics that report per-series coverage rather than claiming the summed band is an interval.
+The source demo showed “8 of 8” while Gulf showed “0 of 8”; both are opposite symptoms of the
+same invalid construction. The final Gulf run must re-measure this before the bug is marked fixed.
 
 ---
 
@@ -705,3 +750,35 @@ points the opposite way.
 same blindness one layer up, in the display: `slow_mover` is computed and materialized but
 never surfaced next to the headline. The fix for both is a cohort-aware view, which is why
 they should be decided together.
+
+---
+
+## BUG-17 · Dense established-history forecast loses badly to MA13 `[open — defer experiment; re-measure after integrated run]`
+
+**Symptom at the serving grain.** At `slice_type=market_portfolio, horizon=0`, the retained
+`gulf4` champion is **89.84% accurate with +10.00% bias**. MA13 is **93.00% accurate with
+−2.78% bias**, so FVA is **−45.21%**. This verifies BUG-12 as a real independent model
+failure, not a consequence of BUG-1.
+
+**The exact slices, without relabelling proxies as cohorts.**
+
+- All non-cold-start rows are 96.1% of volume and over-forecast by **4,541,389 units
+  (+12.56%)**. This is the arithmetic quoted during triage, but `non-cold-start` is a filter,
+  not an engine cohort name.
+- The actual dense slice (`zero_share_52w < 0.2`) is 34,373,416 units, 91.4% of portfolio
+  volume, and over-forecasts by **4,769,106 units (+13.87%)**. At portfolio-week grain its
+  champion accuracy is 86.01% versus MA13's 93.66%, with FVA **−120.52%**.
+- Within `established_history`, `lightgbm_horizon_quantile` alone carries 35,826,713 actual
+  units and over-forecasts by **4,803,399 (+13.41%)**. Sparse established-history rows have
+  the opposite sign, so one pooled label would hide the mechanism again.
+
+Cold start under-forecasts by 780,253 units; it partly cancels the much larger dense error.
+Fixing BUG-1 cannot make BUG-12 recover and may make headline portfolio bias look worse while
+improving the affected cohort.
+
+**Decision.** Log and own this as a separate model defect, in the same post-run triage bucket
+as BUG-3/BUG-16. Do **not** add another estimator or calibration experiment to the current
+combined run: BUG-2 and the forecast comparison semantics already need one clean proof, and
+starting a dense-model experiment would move that baseline again. The final integrated run
+must re-measure BUG-12, BUG-13 and these three BUG-17 slices; only then should diagnosis begin
+from served predictions and their SHAP fields.

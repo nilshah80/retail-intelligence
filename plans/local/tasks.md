@@ -2016,8 +2016,10 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       522 weekly snapshots landed on Mondays, the replay oracle found no Thursday snapshot,
       `weeksCompared` was 0 and it returned `NO_ORACLE_WEEKS_AVAILABLE`. The oracle hard-codes
       `thursday = origin + timedelta(days=3)`; moving the horizon start to `2016-08-04` worked
-      around it at the cost of a full regeneration. Recorded as BUG-2 — the engine's inability to
-      express a non-weekly cadence is the defect, not the scenario.
+      around it at the cost of a full regeneration. Recorded as BUG-2. Later retained-artifact
+      diagnosis confirmed this hard-code is a portability defect, while the remaining 42.74-unit
+      residual had a separate cause: ingestion collapsed `marketplace` into `store` and doubled
+      replay shelf demand. Neither defect belongs in the tenant scenario.
 - [ ] Generate the long horizon without overwriting the showcase run; run Gate A and Gate B;
       publish an immutable curated publication with retained evidence; create Decision-#73
       candidate → approved → active selections and a separate Gulf expected-pin per `GOI-D8`.
@@ -2169,18 +2171,36 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       against the pure comparator (0.9044 / −86.6%). All 26 segments chose 1.0 independently. No
       comparator available from existing as-of-origin features beats the champion — `mean13` −86.6%,
       `roll_mean_4` −77.1%, `lag_1` −71.8% — so no blend can help.
-- [~] **Fix 3 running — launch age** (`models/dataset.py`, `models/train_lgbm.py`). The model
+- [x] **Fix 3 measured — launch age** (`models/dataset.py`, `models/train_lgbm.py`). The model
       carried `competitor_age_days` but nothing about its **own** product's lifecycle, so it could
-      not tell a ten-year-old drum line from one that shipped last month. `active_from` was already
-      in the feature parquet and already inside the `known_as_of` boundary, so this needs no schema
-      bump and no feature rebuild. Measuring as `gulf4`.
-- [ ] **Decide the p50 volume basis.** `yhat_p50` is a median summed as though it were a mean, which
+      not tell a ten-year-old drum line from one that shipped last month. The origin-safe feature
+      is valid and kept, but it is not a cure: `gulf4` leaves the sparse cold-start subset at
+      −73.6% and the whole cohort at −53.6%. Horizon bias improves only modestly, from
+      −31.6% -> −67.5% before to −29.9% -> −63.9% after. The remaining p50 volume semantics stay
+      open rather than being relabelled as solved.
+- [x] **BUG-2 targeted oracle fixed; clean rebuild pending.** The 14-day review-cycle hypothesis
+      is refuted. Ingestion collapsed `gulf-marketplace` into `store`, doubling shelf demand; a
+      read-only corrected view makes all 52 retained oracle periods reconcile at exactly zero in
+      both arrival and non-arrival weeks. Channel type is now preserved, and replay derives each
+      snapshot bridge from observed dates instead of assuming Thursday plus offsets 4/5/6. The
+      direct stage emits all 8 metrics; stale `gulf4` levels fail downstream policy gates, so the
+      clean run—not the oracle fix—must decide final replay acceptance.
+- [ ] **BUG-17 logged, deliberately not added to this experiment.** At portfolio grain MA13 is
+      93.00% accurate versus the champion's 89.84% (FVA −45.21%). Dense rows over-forecast by
+      4.77m units while cold start under-forecasts by 0.78m; the errors partly cancel. Re-measure
+      after the integrated run, then triage with BUG-3/BUG-16 rather than moving the baseline again
+      before BUG-2 has one clean end-to-end proof.
+- [~] **Decide the p50 volume basis — explicitly deferred from the combined run.**
+      `yhat_p50` is a median summed as though it were a mean, which
       under-counts by construction on intermittent demand and worsens with sparsity (+13.9% at
       zero-share 0.0–0.2, −83.8% at 0.8–1.0; p90 overshoots at +119.3%). C1 "P50 bias correction"
       is pre-registered in `contracts/ml/forecast-improvement-policy.json`, implemented in
       `models/bias_correction.py`, and **wired to nothing**. Its materiality gate is relative WAPE,
       which a bias correction can worsen while improving volume accuracy — the same trap as the
-      routing predicate, one level up in the governance. Needs a decision record, not a patch.
+      routing predicate, one level up in the governance. Decision for this run: leave C1
+      disconnected, preserve P50's median meaning, and do not claim BUG-1 closure. The follow-on
+      record must evaluate a separately named expected-value output under volume materiality plus
+      WAPE non-regression and cohort-level gates.
 - [x] **Tooling defects fixed in passing:** `tools/dev.py pipeline` now exposes `--rebuild`, so a
       corrected profile no longer replays a cached `critical` gate verdict (BUG-6);
       `datagen/tools/sync_presets.py` only writes a preset whose semantic content actually moved,

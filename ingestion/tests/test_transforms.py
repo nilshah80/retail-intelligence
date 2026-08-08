@@ -6,7 +6,32 @@ from datetime import date
 
 import duckdb
 
-from retail_ingestion.transforms.core import _densify_sales
+from retail_ingestion.transforms.core import _channel_type_sql, _densify_sales
+
+
+def test_channel_type_preserves_marketplace_semantics() -> None:
+    connection = duckdb.connect(":memory:")
+    try:
+        rows = connection.execute(
+            f"""
+            SELECT channel_key, {_channel_type_sql("channel_key")} AS channel_type
+            FROM (VALUES
+                ('bazaar-trade'),
+                ('gulf-online'),
+                ('gulf-marketplace'),
+                ('PARTNER-MARKETPLACE')
+            ) AS source(channel_key)
+            ORDER BY channel_key
+            """
+        ).fetchall()
+        assert rows == [
+            ("PARTNER-MARKETPLACE", "marketplace"),
+            ("bazaar-trade", "store"),
+            ("gulf-marketplace", "marketplace"),
+            ("gulf-online", "online"),
+        ]
+    finally:
+        connection.close()
 
 
 def test_sales_densification_is_limited_to_active_assortment_dates() -> None:
