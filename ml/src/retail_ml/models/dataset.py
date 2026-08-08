@@ -346,6 +346,7 @@ def load_current_horizon(
 __all__ = [
     "BASE_MODEL_COLUMNS",
     "IDENTITY_COLUMNS",
+    "eligible_recent_origins",
     "eligible_scoring_origins",
     "load_current_horizon",
     "load_evaluation_horizon",

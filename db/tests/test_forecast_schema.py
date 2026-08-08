@@ -15,6 +15,7 @@ def test_forecast_serving_schema_integration() -> None:
         "forecast_data_quality",
         "forecast_drivers",
         "forecast_eval_predictions",
+        "forecast_eval_recent",
         "forecast_exceptions",
         "forecast_materializations",
         "forecast_metrics",
@@ -58,7 +59,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0020_safety_stock_drivers",)
+            assert cursor.fetchone() == ("0021_forecast_eval_recent",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -100,10 +101,23 @@ def test_forecast_serving_schema_integration() -> None:
             )
             view_definition = cursor.fetchone()[0]
             assert "verification_contract" in view_definition
-            # Migration 0007 admits decision-#85 verifier-v5 evidence only: a run scored
-            # against the HARD per-cohort coverage gate. Every earlier contract stops
-            # being eligible to serve without being reinterpreted, which is the
-            # fail-closed version boundary #85 promised and originally never created.
-            assert "retail-forecast-verifier/v5" in view_definition
+            # Migration 0021 advances the serving boundary to verifier-v6: a run
+            # must carry the separately governed recent-evaluation artifact. Older
+            # accepted materializations are not reinterpreted; they become ineligible
+            # until rebuilt under run/v4 and verifier/v6.
+            assert "retail-forecast-verifier/v6" in view_definition
+            assert "retail-forecast-verifier/v5" not in view_definition
             assert "retail-forecast-verifier/v4" not in view_definition
             assert "retail-forecast-verifier/v3" not in view_definition
+            cursor.execute(
+                """
+                SELECT check_clause
+                FROM information_schema.check_constraints
+                WHERE constraint_schema = 'retail_serving'
+                  AND constraint_name = 'ck_forecast_eval_recent_horizon'
+                """
+            )
+            recent_horizon_check = cursor.fetchone()
+            assert recent_horizon_check is not None
+            assert "horizon >= 1" in recent_horizon_check[0]
+            assert "horizon <= 4" in recent_horizon_check[0]

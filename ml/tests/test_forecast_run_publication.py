@@ -20,6 +20,7 @@ from retail_ml.publish.run_artifacts import (
     _frame_semantic_fingerprint,
     _json_semantic_fingerprint,
     derive_evaluation_predictions,
+    derive_recent_evaluation_predictions,
     derive_forecast_metrics,
     publish_forecast_run,
 )
@@ -270,6 +271,53 @@ def test_additive_rows_and_fixed_metrics_agree() -> None:
     assert stored["actual_sum"] == additive["actual_sum"].sum()
     assert stored["coverage_hits"] == additive["coverage_hits"].sum()
     assert stored["n"] == additive["n"].sum()
+
+
+def test_recent_artifact_admits_only_h1_h4_and_finite_comparisons() -> None:
+    recent = _recent_schedule()
+    projected = derive_recent_evaluation_predictions(recent)
+
+    assert set(projected["horizon"]) == {1, 2, 3, 4}
+    assert projected[["actual_units", "yhat_p50", "yhat_p90"]].notna().all().all()
+
+    invalid_horizon = recent.copy()
+    invalid_horizon.loc[invalid_horizon.index[0], "horizon"] = 5
+    with pytest.raises(ForecastPublicationError, match="only carry horizons"):
+        derive_recent_evaluation_predictions(invalid_horizon)
+
+    non_finite = recent.copy()
+    non_finite.loc[non_finite.index[0], "yhat_p50"] = float("inf")
+    with pytest.raises(ForecastPublicationError, match="finite numbers"):
+        derive_recent_evaluation_predictions(non_finite)
+
+
+def test_publisher_refuses_an_origin_shared_by_complete_and_recent_schedules(
+    tmp_path: Path,
+) -> None:
+    recent = _recent_schedule()
+    recent.loc[
+        recent["forecast_origin"].eq(recent["forecast_origin"].min()),
+        "forecast_origin",
+    ] = _full_schedule()["forecast_origin"].min()
+
+    with pytest.raises(ForecastPublicationError, match="must be disjoint"):
+        publish_forecast_run(
+            _full_schedule(),
+            recent,
+            _calibration(),
+            _acceptance(),
+            _exceptions(),
+            _quality(),
+            tmp_path / "overlap",
+            current_forecasts=_current_forecasts(),
+            classification_policies=_policies(),
+            input_bundle=_identity(),
+            feature_semantic_fingerprint="e" * 64,
+            decision_as_of=datetime(2026, 1, 25, tzinfo=UTC),
+            runtime_profile=resolve_ml_runtime_profile("safe"),
+            stage_telemetry={},
+            mlflow_run_id=None,
+        )
 
 
 def test_published_seasonal_improvement_uses_paired_champion_rows() -> None:

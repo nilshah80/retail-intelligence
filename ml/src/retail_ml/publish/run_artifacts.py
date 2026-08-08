@@ -369,7 +369,37 @@ def derive_recent_evaluation_predictions(recent: pd.DataFrame) -> pd.DataFrame:
         raise ForecastPublicationError(
             "recent evaluation predictions duplicate the canonical evaluation key"
         )
+    comparison_columns = ("actual_units", "yhat_p50", "yhat_p90")
+    for column in comparison_columns:
+        values = pd.to_numeric(result[column], errors="coerce")
+        if values.isna().any() or not np.isfinite(values).all():
+            raise ForecastPublicationError(
+                "recent evaluation actual/P50/P90 values must all be finite numbers"
+            )
     return result.sort_values(list(EVALUATION_KEY_COLUMNS)).reset_index(drop=True)
+
+
+def _validate_disjoint_evaluation_origins(
+    complete: pd.DataFrame,
+    recent: pd.DataFrame,
+) -> None:
+    """Refuse an origin that appears in both evaluation schedules."""
+
+    if recent.empty:
+        return
+    complete_origins = set(
+        pd.to_datetime(complete["forecast_origin"], errors="raise").dt.date
+    )
+    recent_origins = set(
+        pd.to_datetime(recent["forecast_origin"], errors="raise").dt.date
+    )
+    overlap = sorted(complete_origins & recent_origins)
+    if overlap:
+        rendered = ", ".join(origin.isoformat() for origin in overlap)
+        raise ForecastPublicationError(
+            "complete and recent evaluation origins must be disjoint; "
+            f"overlap: {rendered}"
+        )
 
 
 def derive_evaluation_predictions(
@@ -1602,6 +1632,10 @@ def publish_forecast_run(
         remediation=remediation is not None,
     )
     recent_artifact = derive_recent_evaluation_predictions(recent_evaluation)
+    _validate_disjoint_evaluation_origins(
+        evaluation_artifact,
+        recent_artifact,
+    )
     baseline_artifact = derive_baseline_predictions(evaluation)
     acceptance_frame = _acceptance_frame(
         evaluation_artifact,

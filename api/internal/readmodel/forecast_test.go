@@ -492,6 +492,68 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	if !ok || len(weeklyItems) != 8 {
 		t.Fatalf("weekly actuals returned invalid items: %T %v", weekly["items"], weekly["items"])
 	}
+	var coveredSeries, totalSeries int64
+	seenWeeks := map[string]bool{}
+	for _, item := range weeklyItems {
+		targetWeek, ok := item["targetWeekStart"].(string)
+		if !ok || targetWeek == "" || seenWeeks[targetWeek] {
+			t.Fatalf("weekly actuals must select one row per target week: %v", weeklyItems)
+		}
+		seenWeeks[targetWeek] = true
+		horizon, ok := item["horizonWeeks"].(int)
+		if !ok || horizon < 1 || horizon > 4 {
+			t.Fatalf("weekly actuals must use the h1-h4 comparison: %v", item)
+		}
+
+		var freshest int
+		var expectedCovered, expectedSeries int64
+		err := store.pool.QueryRow(
+			ctx,
+			`
+			WITH scoped AS (
+				SELECT horizon, actual_units, yhat_p90
+				FROM retail_serving.forecast_eval_predictions
+				WHERE forecast_run_id = $1 AND target_week_start = $2
+				UNION ALL
+				SELECT horizon, actual_units, yhat_p90
+				FROM retail_serving.forecast_eval_recent
+				WHERE forecast_run_id = $1 AND target_week_start = $2
+			), freshest AS (
+				SELECT MIN(horizon) AS horizon FROM scoped
+			)
+			SELECT
+				freshest.horizon,
+				COUNT(*) FILTER (WHERE scoped.actual_units <= scoped.yhat_p90),
+				COUNT(*)
+			FROM scoped
+			JOIN freshest ON freshest.horizon = scoped.horizon
+			GROUP BY freshest.horizon
+			`,
+			expectedRunID,
+			targetWeek,
+		).Scan(&freshest, &expectedCovered, &expectedSeries)
+		if err != nil {
+			t.Fatalf("derive freshest weekly comparison for %s: %v", targetWeek, err)
+		}
+		if horizon != freshest {
+			t.Fatalf("%s served h%d, freshest available is h%d", targetWeek, horizon, freshest)
+		}
+		weekCovered, coveredOK := item["seriesCovered"].(int64)
+		weekSeries, seriesOK := item["series"].(int64)
+		if !coveredOK || !seriesOK || weekCovered != expectedCovered || weekSeries != expectedSeries {
+			t.Fatalf("%s per-series coverage disagrees with leaf rows: %v", targetWeek, item)
+		}
+		coveredSeries += weekCovered
+		totalSeries += weekSeries
+	}
+	coverage, ok := weekly["seriesCoverage"].(map[string]any)
+	if !ok || coverage["covered"] != coveredSeries || coverage["series"] != totalSeries {
+		t.Fatalf("weekly actuals must report pooled per-series P90 coverage: %v", weekly)
+	}
+	ratio, ok := coverage["ratio"].(float64)
+	if !ok || ratio != float64(coveredSeries)/float64(totalSeries) {
+		t.Fatalf("weekly per-series coverage ratio is invalid: %v", coverage)
+	}
 
 	storeSlice, err := store.Read(
 		ctx,
