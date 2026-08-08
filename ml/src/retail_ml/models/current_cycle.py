@@ -29,6 +29,8 @@ from retail_ml.models.cold_start_blend import (
     COHORT_COLUMN,
     apply_frozen_blend,
 )
+from retail_ml.models.cohorts import assign_cohorts, attach_cold_start_baseline
+from retail_ml.models.expected_volume import attach_expected_volume
 from retail_ml.models.confidence import forecast_confidence
 from retail_ml.models.forecasting import (
     _history,
@@ -40,7 +42,7 @@ from retail_ml.models.train_lgbm import fit_horizon_model, score_horizon_model
 from retail_ml.runtime.profile import MLRuntimeProfile, model_worker_budget
 from retail_ml.runtime.telemetry import MLStageTelemetry
 
-CURRENT_CYCLE_SCHEMA: Final[str] = "retail-forecast-current-cycle/v1"
+CURRENT_CYCLE_SCHEMA: Final[str] = "retail-forecast-current-cycle/v2"
 CORE_QUALITY_FEATURES: Final[tuple[str, ...]] = (
     "origin_units",
     "weekly_units_equivalent",
@@ -206,9 +208,11 @@ def _classification_input(
     result["promotion_plan_available"] = False
     result["planned_promotion_uplift_pct"] = 0.0
     ma13 = pd.to_numeric(result["ma13_baseline"], errors="coerce").fillna(0.0)
-    result["forecast_uplift_vs_ma13_pct"] = (
-        pd.to_numeric(result["yhat_p50"], errors="coerce") - ma13
-    ) / ma13.clip(lower=1.0)
+    point = pd.to_numeric(
+        result.get("expected_units", result["yhat_p50"]),
+        errors="coerce",
+    )
+    result["forecast_uplift_vs_ma13_pct"] = (point - ma13) / ma13.clip(lower=1.0)
     columns = [
         "sku_id",
         "store_id",
@@ -351,6 +355,18 @@ def run_current_cycle(
                     scored["confidence"] = forecast_confidence(
                         scored["yhat_p50"], scored["yhat_p90"]
                     )
+        # Decision #95. The normal authoritative path already has cohorts from
+        # apply_frozen_blend. Keep the diagnostic no-blend path explicit so it
+        # cannot silently infer a cohort from a different population.
+        if COHORT_COLUMN not in scored.columns:
+            scored = attach_cold_start_baseline(
+                scored,
+                history,
+                _partial_history(feature_path, origin),
+            )
+            scored = assign_cohorts(scored)
+        with telemetry.measure("expected_volume"):
+            scored = attach_expected_volume(scored)
         training_rows = sum(result[2] for result in results)
         calibration_records = [
             record for result in results for record in result[1]

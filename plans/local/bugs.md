@@ -13,7 +13,7 @@ the substantive ones.
 
 ---
 
-## BUG-1 · Cold-start cohort under-forecast by 74% — carries 86.7% of intermittent volume `[open — two fixes measured, one kept]`
+## BUG-1 · Cold-start cohort under-forecast by 74% — carries 86.7% of intermittent volume `[fixing — Decision #95 clean-run gate pending]`
 
 **Where:** `ml/src/retail_ml/models/cold_start_blend.py` (C5) — the cold-start cohort holds
 86.7% of intermittent volume at −74.2%. Secondarily `models/train_lgbm.py` —
@@ -283,19 +283,15 @@ nothing**. Its materiality gate is relative WAPE, which a bias correction can wo
 improving volume accuracy — the same trap as the routing predicate, one level up in the
 governance.
 
-**Decision for the combined run (2026-08-08): do not wire C1.** This run validates the
-volume-routing and launch-age corrections already measured; it does not change what P50 means.
-C1 is governed by relative WAPE, while the open question is expected volume, and BUG-17 proves
-the portfolio has opposite-signed errors: scaling P50 upward for sparse rows while dense rows
-already over-forecast requires explicit cohort ownership and a volume objective, not one
-market×horizon multiplier. The final post-integration run must re-measure these slices, but it
-must not be represented as closing BUG-1.
-
-The follow-on decision record should preserve P50 as a median and evaluate a separately named
-expected-value output for additive planning consumers, with origin-disjoint fitting, a frozen
-volume-bias/materiality objective, a WAPE non-regression guard, and cohort-level gates. Mutating a
-bias-corrected expectation in place and continuing to label it `yhat_p50` is not an admissible
-shortcut. Until that record is approved, C1 stays disconnected and BUG-1 remains open.
+**Decision for the combined run (2026-08-09): do not wire C1; implement Decision #95.** C1
+is governed by relative WAPE, while the open question is expected volume, and BUG-17 proves the
+portfolio has opposite-signed errors: scaling P50 upward for sparse rows while dense rows already
+over-forecast has no valid single multiplier. P50 therefore remains a median. Decision #95 adds
+the separately named `expected_units`: MA13 for established history and a dedicated conditional-
+mean LightGBM head for cold start, with hard A6 non-negative-FVA, cold-bias-improvement and
+no-fallback gates over all 13 and the final-five replay-confirmation origins. The final clean run
+may close BUG-1's **operational additive-volume defect** only if A6 passes; it does not relabel the
+P50 median itself as fixed or as an expectation.
 
 **Two measurement errors made while diagnosing this, recorded so they are not repeated:**
 
@@ -377,8 +373,10 @@ forecast codebase that is still moving underneath it.
 - [x] Clean the generated work/artifact directories and rebuild the serving database only
       after BUG-2's targeted replay validation passes and every code change above is fixed.
       PostgreSQL/MLflow volumes and all prior datagen, ingestion, ML and DuckDB run state were
-      removed; the fresh database is at migration 0021. Gulf datagen then promoted
-      `run-95b856f20766c9e1` under the `performance` profile in **2h 53m 25.3s**.
+      removed; the fresh database was first brought to migration 0021. Gulf datagen then promoted
+      `run-95b856f20766c9e1` under the `performance` profile in **2h 53m 25.3s**. The still-empty
+      serving database was subsequently advanced to Decision #95 migration 0022 before the
+      combined forecast run; no historical materialization was reinterpreted.
 - [x] Rebuild ingestion and the reusable weekly-feature boundary from that source. The
       land-through-features chain completed in **7m 33.2s**, selected curated revision
       `run-95b856f20766c9e1-r2`, reproduced source snapshot `a88758a1…`, and promoted
@@ -390,7 +388,7 @@ forecast codebase that is still moving underneath it.
       complete plus recent backtest, normalized current-cycle score, classification,
       publication, migration/materialization/activation, inventory build and corrected
       replay.
-- [ ] Require migration `0021_forecast_eval_recent`, run schema v4 and verifier v6 to be
+- [ ] Require migration `0022_expected_volume_forecast`, run schema v5 and verifier v7 to be
       active, and require both the forecast and inventory authorities to be unique.
 - [ ] Generate fresh Gulf expected pins, closure/entry records and publication-selection
       generations from that run. Retain earlier Gulf generations as superseded history;
@@ -406,9 +404,8 @@ clean authoritative end-to-end run for the combined change set, not one per comm
 
 **Completion gate before BUG-2.** Sections A and B must be complete before BUG-2 code work
 begins. Section C may use retained artifacts. Section D is the single final proof after
-BUG-2 is repaired. If the expected-value solution for BUG-1 is deferred, record that
-explicitly: this run may validate the routing correction, but it must not be represented
-as closing BUG-1's remaining forecast-volume semantics.
+BUG-2 is repaired. Decision #95 is now part of that single proof: BUG-1/12/17 remain open
+unless the published A6 record and served slices pass, even if the older P50 gates pass.
 
 ---
 
@@ -662,7 +659,7 @@ rather than trigger one.
 
 ---
 
-## BUG-12 · Forecast Value Add is negative — the model loses to a 13-week moving average `[open]`
+## BUG-12 · Forecast Value Add is negative — the model loses to a 13-week moving average `[fixing — Decision #95 clean-run gate pending]`
 
 **Symptom.** The Forecast screen reports **FVA −45.2%** ("relative improvement vs MA13").
 It was −46.8% before any of the BUG-1 work, so two measured engine fixes moved it 1.6 points.
@@ -763,7 +760,7 @@ they should be decided together.
 
 ---
 
-## BUG-17 · Dense established-history forecast loses badly to MA13 `[open — defer experiment; re-measure after integrated run]`
+## BUG-17 · Dense established-history forecast loses badly to MA13 `[fixing — Decision #95 frozen before combined run]`
 
 **Symptom at the serving grain.** At `slice_type=market_portfolio, horizon=0`, the retained
 `gulf4` champion is **89.84% accurate with +10.00% bias**. MA13 is **93.00% accurate with
@@ -786,9 +783,9 @@ Cold start under-forecasts by 780,253 units; it partly cancels the much larger d
 Fixing BUG-1 cannot make BUG-12 recover and may make headline portfolio bias look worse while
 improving the affected cohort.
 
-**Decision.** Log and own this as a separate model defect, in the same post-run triage bucket
-as BUG-3/BUG-16. Do **not** add another estimator or calibration experiment to the current
-combined run: BUG-2 and the forecast comparison semantics already need one clean proof, and
-starting a dense-model experiment would move that baseline again. The final integrated run
-must re-measure BUG-12, BUG-13 and these three BUG-17 slices; only then should diagnosis begin
-from served predictions and their SHAP fields.
+**Decision revised before the expensive run at the user's instruction.** Decision #95 owns the
+additive-volume defect without changing P50. `expected_units` uses MA13 for established history,
+so the dominant dense population cannot lose to MA13 by construction, and a dedicated
+conditional-mean head owns cold start. A new hard A6 gate requires non-negative FVA and improved
+cold-start volume bias on all 13 and the final-five replay-confirmation origins. BUG-17 remains
+`fixing`, not `fixed`, until the clean run re-measures the three slices above from served artifacts.

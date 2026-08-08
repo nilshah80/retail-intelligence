@@ -159,6 +159,11 @@ class HorizonModel:
     #: an absent model is visible rather than looking like a deliberate choice.
     p90_cold_model: LGBMRegressor | None
     cold_start_head_rows: int
+    #: Decision #95. A conditional-mean head is a different statistical object from
+    #: P50, so it is kept separately and is fitted only where the additive-volume
+    #: defect was measured: rows without origin-visible seasonal history.
+    expected_cold_model: LGBMRegressor | None
+    expected_cold_head_rows: int
     categories: dict[str, tuple[str, ...]]
     global_calibration: CalibrationAdjustment
     market_calibrations: dict[str, CalibrationAdjustment]
@@ -322,9 +327,13 @@ def _fit_pair(
     categories: dict[str, tuple[str, ...]],
     threads_per_model: int,
     seed: int,
-) -> tuple[LGBMRegressor, LGBMRegressor, LGBMRegressor | None]:
+) -> tuple[
+    LGBMRegressor,
+    LGBMRegressor,
+    LGBMRegressor | None,
+    LGBMRegressor | None,
+]:
     common: dict[str, Any] = {
-        "objective": "quantile",
         "n_estimators": 400,
         "learning_rate": 0.04,
         "num_leaves": 47,
@@ -338,8 +347,8 @@ def _fit_pair(
         "n_jobs": threads_per_model,
         "verbosity": -1,
     }
-    p50 = LGBMRegressor(alpha=0.50, **common)
-    p90 = LGBMRegressor(alpha=0.90, **common)
+    p50 = LGBMRegressor(objective="quantile", alpha=0.50, **common)
+    p90 = LGBMRegressor(objective="quantile", alpha=0.90, **common)
     fit_kwargs: dict[str, Any] = {
         "categorical_feature": list(CATEGORICAL_FEATURES)
     }
@@ -387,9 +396,36 @@ def _fit_pair(
                 cold_calibration["target_units"], errors="coerce"
             ).fillna(0.0)
             cold_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
-        p90_cold = LGBMRegressor(alpha=0.90, **common)
+        p90_cold = LGBMRegressor(objective="quantile", alpha=0.90, **common)
         p90_cold.fit(train_x[cold_mask.to_numpy()], train_y[cold_mask], **cold_kwargs)
-    return p50, p90, p90_cold
+
+    # Decision #95: expected volume is not a corrected P50. Fit an actual
+    # conditional-mean objective on the cold-start population, using the same
+    # origin-safe split and features as the quantile heads. Established-history
+    # expected volume deliberately uses MA13 downstream: the retained Gulf evidence
+    # shows the learned P50 loses to it on 96% of volume, and the development probes
+    # showed a shared mean head does not transfer through time.
+    expected_cold: LGBMRegressor | None = None
+    if int(cold_mask.sum()) >= MIN_COLD_START_TRAINING_ROWS:
+        expected_kwargs: dict[str, Any] = {
+            "categorical_feature": list(CATEGORICAL_FEATURES)
+        }
+        cold_calibration = calibration[_cold_start_training_mask(calibration)]
+        if not cold_calibration.empty:
+            expected_kwargs["eval_X"] = prepare_model_frame(
+                cold_calibration, categories=categories
+            )
+            expected_kwargs["eval_y"] = pd.to_numeric(
+                cold_calibration["target_units"], errors="coerce"
+            ).fillna(0.0)
+            expected_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
+        expected_cold = LGBMRegressor(objective="regression", **common)
+        expected_cold.fit(
+            train_x[cold_mask.to_numpy()],
+            train_y[cold_mask],
+            **expected_kwargs,
+        )
+    return p50, p90, p90_cold, expected_cold
 
 
 def _tail_replay_preferred_keys(
@@ -529,7 +565,7 @@ def fit_horizon_model(
     calibration = frame[origin_values.isin(calibration_origins)].copy()
     train = frame[~origin_values.isin(calibration_origins)].copy()
     categories = _categories(frame)
-    p50, p90, p90_cold = _fit_pair(
+    p50, p90, p90_cold, expected_cold = _fit_pair(
         train,
         calibration,
         categories=categories,
@@ -598,6 +634,8 @@ def fit_horizon_model(
         p90_model=p90,
         p90_cold_model=p90_cold,
         cold_start_head_rows=int(_cold_start_training_mask(train).sum()),
+        expected_cold_model=expected_cold,
+        expected_cold_head_rows=int(_cold_start_training_mask(train).sum()),
         categories=categories,
         global_calibration=global_adjustment,
         market_calibrations=market_adjustments,
@@ -623,6 +661,14 @@ def score_horizon_model(frame: pd.DataFrame, model: HorizonModel) -> pd.DataFram
             )
             raw_p90 = raw_p90.copy()
             raw_p90[cold] = cold_p90
+    cold = _cold_start_training_mask(frame).to_numpy()
+    cold_expected = np.full(len(result), np.nan, dtype=float)
+    if model.expected_cold_model is not None and cold.any():
+        cold_expected[cold] = np.clip(
+            model.expected_cold_model.predict(prepared[cold]),
+            0.0,
+            None,
+        )
     p50_adjustments = np.array(
         [
             model.market_calibrations.get(
@@ -645,6 +691,10 @@ def score_horizon_model(frame: pd.DataFrame, model: HorizonModel) -> pd.DataFram
     p90 = np.maximum(np.clip(raw_p90 + p90_adjustments, 0.0, None), p50)
     result["lightgbm_p50_raw"] = raw_p50
     result["lightgbm_p90_raw"] = raw_p90
+    result["lightgbm_cold_expected"] = cold_expected
+    result["expected_cold_head_fallback"] = cold & (
+        model.expected_cold_model is None
+    )
     result["lightgbm_p50"] = p50
     result["lightgbm_p90"] = p90
     result["yhat_p50"] = p50

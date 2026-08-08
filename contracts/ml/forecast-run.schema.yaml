@@ -27,7 +27,7 @@ required:
   - artifacts
 properties:
   schemaVersion:
-    const: retail-forecast-run/v4
+    const: retail-forecast-run/v5
   forecastRunId:
     type: string
     pattern: ^fr_[0-9a-f]{16}$
@@ -72,6 +72,7 @@ properties:
       - seriesKeyFields
       - marketFeature
       - metricAggregation
+      - additiveVolumeForecast
       - promotionFeature
       - acceptanceEvaluation
       # Decision #86: every bundle declares its candidate class, so a remediation
@@ -126,10 +127,39 @@ properties:
         const: market_id
       metricAggregation:
         const: additive_components
+      additiveVolumeForecast:
+        type: object
+        additionalProperties: false
+        required:
+          - policyId
+          - decisionIds
+          - expectedColumn
+          - establishedModel
+          - coldStartModel
+          - coldStartMinimumTrainingRows
+          - fallbackModel
+          - p50SemanticsUnchanged
+        properties:
+          policyId:
+            const: retail-forecast-expected-volume/v1
+          decisionIds:
+            const: [95]
+          expectedColumn:
+            const: expected_units
+          establishedModel:
+            const: ma13_established_expectation
+          coldStartModel:
+            const: lightgbm_cold_conditional_mean
+          coldStartMinimumTrainingRows:
+            const: 2000
+          fallbackModel:
+            const: ma13_cold_head_unavailable
+          p50SemanticsUnchanged:
+            const: true
       promotionFeature:
         const: unavailable
       acceptanceEvaluation:
-        const: cohorted-seasonal-cold-start-recomputation/v4
+        const: cohorted-seasonal-cold-start-expected-volume-recomputation/v5
   randomSeeds:
     type: object
     minProperties: 1
@@ -263,13 +293,13 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-v2-forecast-versions/v1
+                const: retail-v2-forecast-versions/v2
       forecast_series:
         allOf:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-v2-forecast-series/v1
+                const: retail-v2-forecast-series/v2
       forecast_drivers:
         allOf:
           - $ref: "#/$defs/artifact"
@@ -281,7 +311,7 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-eval-predictions/v1
+                const: retail-forecast-eval-predictions/v2
               additiveMetricColumns:
                 const:
                   - abs_error_sum
@@ -298,19 +328,19 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-eval-recent/v1
+                const: retail-forecast-eval-recent/v2
       forecast_baseline_predictions:
         allOf:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-baseline-predictions/v1
+                const: retail-forecast-baseline-predictions/v2
       forecast_metrics:
         allOf:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-metrics/v1
+                const: retail-forecast-metrics/v2
       forecast_exceptions:
         allOf:
           - $ref: "#/$defs/artifact"
@@ -337,7 +367,7 @@ properties:
           - $ref: "#/$defs/artifact"
           - properties:
               schemaVersion:
-                const: retail-forecast-acceptance/v5
+                const: retail-forecast-acceptance/v6
 $defs:
   sha256:
     type: string

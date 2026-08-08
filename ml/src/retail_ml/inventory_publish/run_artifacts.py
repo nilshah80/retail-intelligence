@@ -41,6 +41,13 @@ RUN_SCHEMA_VERSION: Final[str] = "retail-inventory-replenishment-run/v1"
 #: different policy version is a different contract, not a newer run.
 POLICY_VERSION: Final[str] = "inventory-policy/2.0.0"
 
+#: Decision #95's forecast acceptance boundary. Inventory records this explicitly
+#: because verifier-v7 alone is not present in the inventory manifest and an
+#: older accepted forecast never proved additive-volume A6.
+FORECAST_ACCEPTANCE_SCHEMA_VERSION: Final[str] = (
+    "retail-forecast-acceptance/v6"
+)
+
 #: Decision #92's calibrated boundary. Named here because the publisher refuses a
 #: manifest that claims a different one: moving the boundary is a preregistered
 #: mechanism change, never a field a run gets to set.
@@ -797,6 +804,12 @@ def publish_inventory_run(
         "the consumed forecast must have been scored under decision #85's hard "
         "per-cohort coverage gate",
     )
+    _require(
+        forecast_authority.get("acceptanceSchemaVersion")
+        == FORECAST_ACCEPTANCE_SCHEMA_VERSION,
+        "the consumed forecast was not scored under decision #95's additive-volume "
+        "acceptance gate",
+    )
 
     root = Path(destination).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -944,6 +957,7 @@ __all__ = [
     "ARTIFACT_SCHEMAS",
     "CALIBRATED_MAX_HORIZON",
     "ERP_STATUS",
+    "FORECAST_ACCEPTANCE_SCHEMA_VERSION",
     "GOVERNED_REASONS",
     "HEALTH_CLASSES",
     "INTERVAL_GATED",

@@ -100,11 +100,15 @@ def test_fractional_protection_rounds_up_never_truncates() -> None:
 # -- reorder and constraints ---------------------------------------------------
 
 def test_reorder_point_and_order_up_to_compose() -> None:
-    p50 = (10.0, 10.0, 10.0, 10.0)
-    point = reorder_point(weekly_p50=p50, protection_days=14, safety_stock=6.0)
+    expected = (10.0, 10.0, 10.0, 10.0)
+    point = reorder_point(
+        weekly_expected=expected, protection_days=14, safety_stock=6.0
+    )
     assert point == pytest.approx(26.0)
     level = order_up_to_level(
-        reorder_point_units=point, weekly_p50=p50, review_period_days=7
+        reorder_point_units=point,
+        weekly_expected=expected,
+        review_period_days=7,
     )
     assert level == pytest.approx(36.0)
 

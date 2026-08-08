@@ -25,7 +25,7 @@ import pytest
 from retail_ml.engines import safety_stock_units
 
 SPREADS = (10.0, 10.0, 10.0, 10.0)
-P50 = (100.0, 100.0, 100.0, 100.0)
+EXPECTED = (100.0, 100.0, 100.0, 100.0)
 LEVEL = "0.95"
 
 
@@ -42,7 +42,7 @@ def test_lead_time_variance_raises_the_buffer() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(2.0 / 7.0) ** 2,
     )
     assert with_variance.total_units > _demand_only().total_units
@@ -60,7 +60,7 @@ def test_adding_the_lead_time_term_does_not_disturb_the_demand_term() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(2.0 / 7.0) ** 2,
     )
     assert with_variance.demand_units == pytest.approx(
@@ -79,7 +79,7 @@ def test_the_drivers_combine_in_quadrature_not_additively() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(3.0 / 7.0) ** 2,
     )
     assert stock.total_units == pytest.approx(
@@ -99,14 +99,14 @@ def test_a_more_erratic_supplier_gets_a_larger_buffer() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(1.0 / 7.0) ** 2,
     )
     erratic = safety_stock_units(
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(9.5 / 7.0) ** 2,
     )
     assert erratic.total_units > steady.total_units
@@ -124,7 +124,7 @@ def test_absent_variability_is_reason_coded_not_treated_as_zero() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=None,
         lead_time_reason_code="LEAD_TIME_VARIABILITY_UNAVAILABLE",
     )
@@ -144,7 +144,7 @@ def test_a_real_lead_time_term_clears_the_reason_code() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=P50,
+        weekly_expected=EXPECTED,
         lead_time_variance_weeks=(2.0 / 7.0) ** 2,
         lead_time_reason_code="LEAD_TIME_VARIABILITY_UNAVAILABLE",
     )
@@ -160,7 +160,7 @@ def test_a_negative_variance_is_refused() -> None:
             weekly_spreads=SPREADS,
             protection_days=14,
             service_level=LEVEL,
-            weekly_p50=P50,
+            weekly_expected=EXPECTED,
             lead_time_variance_weeks=-0.01,
         )
 
@@ -177,7 +177,7 @@ def test_no_demand_forecast_leaves_the_lead_time_term_at_zero() -> None:
         weekly_spreads=SPREADS,
         protection_days=14,
         service_level=LEVEL,
-        weekly_p50=(),
+        weekly_expected=(),
         lead_time_variance_weeks=(2.0 / 7.0) ** 2,
     )
     assert stock.lead_time_units == 0.0

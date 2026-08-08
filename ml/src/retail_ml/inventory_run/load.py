@@ -738,12 +738,12 @@ def load_forecast(
     and the warehouse screen has nothing to show at all.
 
     Policy v2 says how to fix that: `channelPolicy.nodeDemandAggregation:
-    additive_central_p50_scenario_only`. A DC's demand is the additive P50 of the
+    additive_expected_units`. A DC's demand is the additive expectation of the
     stores it supplies over declared lanes. Note what that permits and what it
     does not:
 
-    * P50 sums. It is a central scenario, and the policy labels it as exactly that
-      rather than as a statistical median of the aggregate.
+    * `expected_units` sums. It is the separately governed additive volume
+      estimate from Decision #95; P50 remains a median.
     * P90 does NOT. `sumOfChannelP90: forbidden`, because the sum of upper
       quantiles is not the upper quantile of the sum -- it assumes every store
       peaks in the same week. So an aggregated DC row carries a P50 and no
@@ -761,15 +761,24 @@ def load_forecast(
         "store_id",
         "sku_id",
         "horizon_week",
+        "expected_units",
         "yhat_p50",
         "yhat_p90",
+        "interval_available",
     }
     missing = sorted(required - set(forecast_series.columns))
     if missing:
         raise InventoryLoadError(f"forecast series lacks columns {missing}")
     frame = forecast_series.rename(columns={"store_id": "location_id"}).copy()
-    frame["interval_available"] = frame["yhat_p90"].notna()
-    frame["demand_basis"] = "store_series"
+    available = frame["interval_available"].astype("boolean")
+    if available.isna().any() or not (
+        available.astype(bool) == frame["yhat_p90"].notna()
+    ).all():
+        raise InventoryLoadError(
+            "forecast interval_available disagrees with P90 nullability"
+        )
+    frame["interval_available"] = available.astype(bool)
+    frame["demand_basis"] = "store_expected_volume"
 
     known = set(
         zip(
@@ -783,6 +792,7 @@ def load_forecast(
         "location_id",
         "sku_id",
         "horizon_week",
+        "expected_units",
         "yhat_p50",
         "yhat_p90",
         "interval_available",
@@ -829,13 +839,16 @@ def load_forecast(
     aggregated = (
         supplied.groupby(
             ["market_id", "dc_location_id", "sku_id", "horizon_week"], as_index=False
-        )["yhat_p50"]
+        )[["expected_units", "yhat_p50"]]
         .sum()
         .rename(columns={"dc_location_id": "location_id"})
     )
-    aggregated["yhat_p90"] = pd.NA
+    # Match the numeric dtype carried by store rows. A scalar ``pd.NA`` creates
+    # an object column and makes concat depend on pandas' deprecated all-NA dtype
+    # inference, even though the semantic value here is simply a missing float.
+    aggregated["yhat_p90"] = float("nan")
     aggregated["interval_available"] = False
-    aggregated["demand_basis"] = "aggregated_supplied_stores_p50"
+    aggregated["demand_basis"] = "aggregated_supplied_stores_expected_units"
     aggregated = aggregated.loc[
         [
             key in known

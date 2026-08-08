@@ -204,7 +204,9 @@ globalDefaults:
   # P4-D16. Channel is never silently discarded.
   channelPolicy:
     preserveChannelThroughReplay: true
-    nodeDemandAggregation: additive_central_p50_scenario_only
+    # Decision #95. Expected volume is additive; P50 remains a median and may
+    # not be reinterpreted as a mean by replenishment or node aggregation.
+    nodeDemandAggregation: additive_expected_units
     sumOfChannelP90: forbidden
     aggregatedSumIsStatisticalP50: false
     nodeSafetyStockBasis: accepted_aggregate_residual_variability

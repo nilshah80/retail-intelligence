@@ -129,9 +129,9 @@ assert {
     NO_NODE_INTERVAL_REASON,
 } <= GOVERNED_REASONS
 
-#: Set by the loader when a node's demand is the additive P50 of the stores it
-#: supplies. Such a node has a central scenario and, by policy, no interval.
-AGGREGATED_BASIS: Final[str] = "aggregated_supplied_stores_p50"
+#: Set by the loader when a node's demand is the additive expectation of the
+#: stores it supplies. Such a node has expected volume and, by policy, no interval.
+AGGREGATED_BASIS: Final[str] = "aggregated_supplied_stores_expected_units"
 
 #: Reasons a non-interval value can be absent. Each names a real gap so a screen
 #: can say which one instead of showing a plausible zero.
@@ -166,8 +166,8 @@ class InventoryInputs:
     positions: pd.DataFrame
     #: market_id, location_id, sku_id, trailing_avg_daily_units
     trailing_demand: pd.DataFrame
-    #: market_id, location_id, sku_id, horizon_week, yhat_p50, yhat_p90,
-    #: interval_available
+    #: market_id, location_id, sku_id, horizon_week, expected_units, yhat_p50,
+    #: yhat_p90, interval_available
     forecast: pd.DataFrame
     #: market_id, location_id, sku_id, batch_id, received_on, expires_on,
     #: on_hand_units, unit_cost_minor
@@ -315,13 +315,14 @@ def _index_forecast(
     for row in inputs.forecast.itertuples(index=False):
         key = (str(row.market_id), str(row.location_id), str(row.sku_id))
         nested[key][int(row.horizon_week)] = {
+            "expected_units": float(row.expected_units),
             "yhat_p50": float(row.yhat_p50),
             "yhat_p90": None if pd.isna(row.yhat_p90) else float(row.yhat_p90),
             "interval_available": bool(row.interval_available),
             # Absent on a store series; the loader stamps it on an aggregated
             # node so the builder can name the right reason for a missing
             # interval instead of reporting every one as cold-start.
-            "demand_basis": getattr(row, "demand_basis", "store_series"),
+            "demand_basis": getattr(row, "demand_basis", "store_expected_volume"),
         }
     return dict(nested)
 
@@ -534,6 +535,7 @@ def _build_demand_at_risk(
                     "interval_available": bool(
                         cell and cell["interval_available"] and horizon <= weeks
                     ),
+                    "expected_units": None if cell is None else cell["expected_units"],
                     "yhat_p50": None if cell is None else cell["yhat_p50"],
                     "yhat_p90": None if cell is None else cell["yhat_p90"],
                     "atp_units": int(row["atp_units"]),
@@ -613,7 +615,7 @@ def _build_demand_at_risk(
                             "no forecast series exists for this node, so it has "
                             "no interval to assess risk from"
                             if absent
-                            else "node demand is the additive P50 of supplied "
+                            else "node demand is the additive expectation of supplied "
                             "stores; summing their P90s is forbidden"
                             if aggregated
                             else f"demand-at-risk needs horizons 1..{weeks}; the "
@@ -1080,7 +1082,8 @@ def _replenishment_plan(
         severity = "info"
         evidence = ""
         spreads: tuple[float, ...] | None = None
-        centre: tuple[float, ...] | None = None
+        expected: tuple[float, ...] | None = None
+        p50: tuple[float, ...] | None = None
         if not cell.resolved:
             gate_reason = UNRESOLVED_ROUTE_REASON
             exception_class = "supply_route_unresolved"
@@ -1103,7 +1106,10 @@ def _replenishment_plan(
                 )
             if gate_reason is None:
                 upper = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
-                centre = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
+                p50 = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
+                expected = _weekly(
+                    horizons, weeks=weeks, field_name="expected_units"
+                )
                 if not horizons:
                     # Nothing forecast this node at all. A DC's demand is derived
                     # from the stores it supplies rather than forecast directly, so
@@ -1117,19 +1123,19 @@ def _replenishment_plan(
                         "interval of its own at any horizon"
                     )
                 elif _is_aggregated(horizons):
-                    # A node whose demand is the additive P50 of its stores has a
-                    # central scenario and no interval, because policy v2 forbids
-                    # summing channel P90s. Its P50 is still published, so the
-                    # warehouse screen shows real demand; only the safety stock
+                    # A node whose demand is the additive expectation of its stores
+                    # has volume and no interval, because policy v2 forbids
+                    # summing channel P90s. Expected volume is still published, so
+                    # the warehouse screen shows real demand; only the safety stock
                     # that needs a spread is withheld.
                     gate_reason = NO_NODE_INTERVAL_REASON
                     exception_class = "node_interval_basis_unavailable"
                     evidence = (
-                        "node demand is the additive P50 of supplied stores; "
+                        "node demand is the additive expectation of supplied stores; "
                         "summing their P90s is forbidden because the sum of upper "
                         "quantiles assumes every store peaks in the same week"
                     )
-                elif upper is None or centre is None:
+                elif upper is None or p50 is None or expected is None:
                     gate_reason = COLD_START_REASON
                     evidence = (
                         f"the forecast covers this node but not every horizon in "
@@ -1137,7 +1143,7 @@ def _replenishment_plan(
                     )
                 else:
                     spreads = tuple(
-                        max(0.0, high - mid) for high, mid in zip(upper, centre)
+                        max(0.0, high - mid) for high, mid in zip(upper, p50)
                     )
             if gate_reason is None and service_level is None:
                 # No ABC class means no service level, and inventing one would set
@@ -1153,7 +1159,7 @@ def _replenishment_plan(
                     "cannot rank this cell and no service level applies"
                 )
 
-        if gate_reason is not None or spreads is None or centre is None:
+        if gate_reason is not None or spreads is None or expected is None:
             governed = gate_reason or COLD_START_REASON
             safety_rows.append(
                 {
@@ -1225,18 +1231,18 @@ def _replenishment_plan(
             weekly_spreads=spreads,
             protection_days=protection,
             service_level=service_level,
-            weekly_p50=centre,
+            weekly_expected=expected,
             lead_time_variance_weeks=variance,
             lead_time_reason_code=variance_reason,
         )
         point = reorder_point(
-            weekly_p50=centre,
+            weekly_expected=expected,
             protection_days=protection,
             safety_stock=stock.total_units,
         )
         level = order_up_to_level(
             reorder_point_units=point,
-            weekly_p50=centre,
+            weekly_expected=expected,
             review_period_days=int(market_policy["reviewPeriodDays"]),
         )
         position_units = int(row["position_units"])

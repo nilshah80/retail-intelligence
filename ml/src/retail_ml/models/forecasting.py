@@ -41,6 +41,7 @@ from retail_ml.models.cold_start_blend import (
     apply_cold_start_blend,
     remediate_cold_start,
 )
+from retail_ml.models.expected_volume import attach_expected_volume
 from retail_ml.models.dataset import (
     eligible_recent_origins,
     eligible_scoring_origins,
@@ -305,6 +306,7 @@ def _score_recent_schedule(
     with telemetry.measure("recent_remediation"):
         recent = apply_cold_start_blend(recent, blend_model)
         recent = apply_quantile_calibration(recent, coverage_model)
+        recent = attach_expected_volume(recent)
     return recent.sort_values(
         [
             "forecast_origin",
@@ -495,6 +497,11 @@ def run_backtest(
             # P90-only, so section 2.4's display-cell accuracy cannot move.
             with telemetry.measure("coverage_remediation"):
                 evaluation, coverage_model = remediate_coverage(evaluation)
+            # Decision #95. Additive consumers receive an explicitly named
+            # expectation; P50/P90 remain untouched and retain their quantile
+            # semantics. C5 above assigns the decision-#82 cohort used here.
+            with telemetry.measure("expected_volume"):
+                evaluation = attach_expected_volume(evaluation)
             with telemetry.measure("acceptance"):
                 acceptance = evaluate_acceptance(
                     evaluation,

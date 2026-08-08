@@ -29,7 +29,10 @@ from retail_ml.inventory_publish.postgres import (
     activate_inventory_version,
     materialize_inventory_run,
 )
-from retail_ml.inventory_publish.run_artifacts import publish_inventory_run
+from retail_ml.inventory_publish.run_artifacts import (
+    FORECAST_ACCEPTANCE_SCHEMA_VERSION,
+    publish_inventory_run,
+)
 from retail_ml.inventory_publish.verify import verify_inventory_run
 from retail_ml.inventory_run.build import build_artifacts, coverage_summary
 from retail_ml.inventory_run.load import (
@@ -85,7 +88,7 @@ def _active_forecast(dsn: str) -> dict[str, str]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT forecast_run_id, version_id
+                SELECT forecast_run_id, version_id, run_semantic_fingerprint
                 FROM retail_serving.active_forecast_versions
                 """
             )
@@ -97,7 +100,9 @@ def _active_forecast(dsn: str) -> dict[str, str]:
     return {
         "forecastRunId": str(rows[0][0]),
         "forecastVersionId": str(rows[0][1]),
+        "runSemanticFingerprint": str(rows[0][2]),
         "coverageGateMode": "hard",
+        "acceptanceSchemaVersion": FORECAST_ACCEPTANCE_SCHEMA_VERSION,
     }
 
 
@@ -117,7 +122,9 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
             cursor.execute(
                 """
                 SELECT series.market_id, series.store_id, series.sku_id,
-                       series.horizon_week, series.yhat_p50, series.yhat_p90
+                       series.horizon_week, series.expected_units,
+                       series.yhat_p50, series.yhat_p90,
+                       series.interval_available
                 FROM retail_serving.forecast_series AS series
                 JOIN retail_serving.active_forecast_versions AS active
                   ON active.forecast_run_id = series.forecast_run_id
@@ -132,8 +139,10 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
             "store_id",
             "sku_id",
             "horizon_week",
+            "expected_units",
             "yhat_p50",
             "yhat_p90",
+            "interval_available",
         ],
     )
     if frame.empty:
@@ -141,8 +150,19 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
             "the active forecast projection is empty; materialize and activate a "
             "forecast before running inventory against it"
         )
-    for column in ("yhat_p50", "yhat_p90"):
+    for column in ("expected_units", "yhat_p50", "yhat_p90"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if frame[["expected_units", "yhat_p50"]].isna().any().any():
+        raise SystemExit(
+            "the active forecast carries a null expected_units or P50 value"
+        )
+    if frame["interval_available"].isna().any() or not (
+        frame["interval_available"].astype(bool) == frame["yhat_p90"].notna()
+    ).all():
+        raise SystemExit(
+            "the active forecast interval flag disagrees with its stored P90"
+        )
+    frame["interval_available"] = frame["interval_available"].astype(bool)
     frame["horizon_week"] = frame["horizon_week"].astype(int)
     return frame
 

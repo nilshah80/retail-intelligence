@@ -31,7 +31,7 @@ def demand_at_risk(
     """Risk units/value per row and the disclosed unassessed remainder.
 
     Each row carries the SeriesKey, `horizon_week`, `interval_available`,
-    `yhat_p50`, `yhat_p90`, `atp_units`, `unit_price_minor` and
+    `expected_units`, `yhat_p50`, `yhat_p90`, `atp_units`, `unit_price_minor` and
     `currency_code`. Money stays market-local; a caller wanting a global figure
     converts under approved reporting FX after this returns.
     """

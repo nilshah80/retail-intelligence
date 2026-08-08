@@ -195,6 +195,7 @@ def _inputs(**overrides: Any) -> InventoryInputs:
                 "location_id": location,
                 "sku_id": sku,
                 "horizon_week": horizon,
+                "expected_units": 10.0,
                 "yhat_p50": 10.0,
                 "yhat_p90": 16.0 if horizon <= 4 else None,
                 "interval_available": horizon <= 4,
@@ -442,6 +443,42 @@ def test_a_cell_inside_the_calibrated_horizon_is_fully_assessed(
     assert float(row["safety_stock_units"]) > 0
     assert row["reason_code"] is None
     assert row["abc_class"] in {"A", "B", "C"}
+
+
+def test_expected_volume_drives_reorder_without_redefining_p50_spread() -> None:
+    """Decision #95 separates demand level from quantile uncertainty."""
+
+    base_inputs = _inputs()
+    base = build_artifacts(base_inputs, replay_metrics=_metrics())
+    changed_forecast = base_inputs.forecast.copy()
+    mask = (
+        changed_forecast["location_id"].eq(STORE)
+        & changed_forecast["sku_id"].eq("sku-1")
+    )
+    changed_forecast.loc[mask, "expected_units"] = 20.0
+    changed = build_artifacts(
+        _inputs(forecast=changed_forecast), replay_metrics=_metrics()
+    )
+
+    def recommendation(artifacts):
+        rows = artifacts["replenishment_recommendations"]
+        return rows[
+            rows["destination_location_id"].eq(STORE)
+            & rows["sku_id"].eq("sku-1")
+        ].iloc[0]
+
+    def safety(artifacts):
+        rows = artifacts["replenishment_safety_stock"]
+        return rows[
+            rows["location_id"].eq(STORE) & rows["sku_id"].eq("sku-1")
+        ].iloc[0]
+
+    assert float(recommendation(changed)["reorder_point_units"]) > float(
+        recommendation(base)["reorder_point_units"]
+    )
+    assert float(safety(changed)["safety_stock_demand_units"]) == pytest.approx(
+        float(safety(base)["safety_stock_demand_units"])
+    )
 
 
 def test_the_interval_truth_table_holds_on_every_gated_artifact(artifacts) -> None:

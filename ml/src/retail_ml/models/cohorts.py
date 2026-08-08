@@ -212,6 +212,9 @@ def assign_cohorts(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 ACCEPTANCE_BASELINES: Final[dict[str, str]] = {
+    # Decision #95 A6 compares the additive expectation with MA13 from the same
+    # immutable baseline artifact used by publication and verification.
+    "ma13": "ma13_baseline",
     "seasonal_naive": "seasonal_naive_baseline",
     "cold_start_mean": COLD_START_BASELINE_COLUMN,
 }

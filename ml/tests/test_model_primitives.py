@@ -69,6 +69,9 @@ def test_decision_82_splits_cohorts_and_gates_them_separately() -> None:
                 "actual_units": 10.0,
                 "yhat_p50": 8.0,
                 "yhat_p90": 12.0,
+                "expected_units": 8.0,
+                "ma13_baseline": 8.0,
+                "expected_cold_head_fallback": False,
                 "seasonal_naive_baseline": 5.0,
                 "cold_start_baseline": 5.0,
                 "zero_share_52w": 0.1,
@@ -83,6 +86,9 @@ def test_decision_82_splits_cohorts_and_gates_them_separately() -> None:
                 "actual_units": 10.0,
                 "yhat_p50": 100.0,
                 "yhat_p90": 101.0,
+                "expected_units": 12.0,
+                "ma13_baseline": 12.0,
+                "expected_cold_head_fallback": False,
                 "seasonal_naive_baseline": np.nan,
                 "cold_start_baseline": 12.0,
                 "zero_share_52w": 0.1,
@@ -141,6 +147,9 @@ def test_a_row_with_no_prior_observation_is_evaluation_ineligible() -> None:
                 "actual_units": 10.0,
                 "yhat_p50": 9.0,
                 "yhat_p90": 12.0,
+                "expected_units": 9.0,
+                "ma13_baseline": 9.0,
+                "expected_cold_head_fallback": False,
                 "seasonal_naive_baseline": 5.0,
                 "cold_start_baseline": 5.0,
                 "zero_share_52w": 0.1,
@@ -158,6 +167,9 @@ def test_a_row_with_no_prior_observation_is_evaluation_ineligible() -> None:
             "actual_units": 10.0,
             "yhat_p50": 9.0,
             "yhat_p90": 12.0,
+            "expected_units": 0.0,
+            "ma13_baseline": 0.0,
+            "expected_cold_head_fallback": False,
             "seasonal_naive_baseline": np.nan,
             "cold_start_baseline": np.nan,
             "zero_share_52w": 0.1,
@@ -192,6 +204,9 @@ def test_a_systemic_lack_of_observation_fails_closed() -> None:
                 "actual_units": 10.0,
                 "yhat_p50": 9.0,
                 "yhat_p90": 12.0,
+                "expected_units": 0.0,
+                "ma13_baseline": 0.0,
+                "expected_cold_head_fallback": False,
                 "seasonal_naive_baseline": np.nan,
                 "cold_start_baseline": np.nan,
                 "zero_share_52w": 0.1,
@@ -220,6 +235,9 @@ def _passing_acceptance_frame() -> pd.DataFrame:
                         "actual_units": 10.0,
                         "yhat_p50": 9.0,
                         "yhat_p90": 10.0 if series < 90 else 9.5,
+                        "expected_units": 9.0,
+                        "ma13_baseline": 9.0,
+                        "expected_cold_head_fallback": False,
                         "seasonal_naive_baseline": 5.0,
                         "cold_start_baseline": 5.0,
                         "zero_share_52w": 0.7,
@@ -245,7 +263,43 @@ def test_all_acceptance_gates_accept_a_legitimate_run(monkeypatch) -> None:
     assert result["global"]["gates"]["A2"]["passed"] is True
     assert result["global"]["gates"]["A3"]["passed"] is True
     assert result["global"]["gates"]["A4"]["passed"] is True
+    assert result["global"]["gates"]["A6_expected_volume"]["passed"] is True
     assert result["A5"]["passed"] is True
+
+
+def test_a6_refuses_negative_additive_fva_even_when_p50_gates_pass(
+    monkeypatch,
+) -> None:
+    _disable_bootstrap(monkeypatch)
+    frame = _passing_acceptance_frame()
+    frame["expected_units"] = 12.0
+
+    result = evaluate_acceptance(frame)
+
+    assert result["global"]["gates"]["A1_established"]["passed"] is True
+    a6 = result["global"]["gates"]["A6_expected_volume"]
+    assert a6["passed"] is False
+    assert a6["populations"]["all_13_origins"]["fvaVsMa13Pct"] < 0
+    assert result["passed"] is False
+
+
+def test_a6_requires_cold_bias_improvement_and_no_head_fallback(monkeypatch) -> None:
+    _disable_bootstrap(monkeypatch)
+    frame = _passing_acceptance_frame()
+    cold_index = frame.index[0]
+    frame.loc[cold_index, "seasonal_naive_baseline"] = np.nan
+    frame.loc[cold_index, "expected_units"] = 10.0
+
+    passing = evaluate_acceptance(frame)
+    assert passing["global"]["gates"]["A6_expected_volume"]["passed"] is True
+
+    frame.loc[cold_index, "expected_cold_head_fallback"] = True
+    failing = evaluate_acceptance(frame)
+    population = failing["global"]["gates"]["A6_expected_volume"][
+        "populations"
+    ]["all_13_origins"]
+    assert population["coldStartFallbackRows"] == 1
+    assert failing["global"]["gates"]["A6_expected_volume"]["passed"] is False
 
 
 def test_a1_enforces_threshold_and_complete_pairing(monkeypatch) -> None:

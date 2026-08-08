@@ -32,6 +32,7 @@ from retail_ml.inventory_publish.run_artifacts import (
     REPLAY_CAPABILITY,
     ARTIFACT_SCHEMAS,
     CALIBRATED_MAX_HORIZON,
+    FORECAST_ACCEPTANCE_SCHEMA_VERSION,
     POLICY_VERSION,
     RUN_SCHEMA_VERSION,
     RUN_VOLATILE_POINTERS,
@@ -390,7 +391,11 @@ def verify_inventory_run(
         "source pin without an active selection is not authority",
     )
     forecast = manifest.get("forecastAuthority") or {}
-    for field in ("forecastRunId", "forecastVersionId"):
+    for field in (
+        "forecastRunId",
+        "forecastVersionId",
+        "runSemanticFingerprint",
+    ):
         _require(
             forecast.get(field) == active_forecast.get(field),
             f"forecastAuthority.{field} is not the live active forecast; an "
@@ -400,6 +405,12 @@ def verify_inventory_run(
         forecast.get("coverageGateMode") == "hard",
         "the consumed forecast was not scored under decision #85's hard "
         "per-cohort coverage gate",
+    )
+    _require(
+        forecast.get("acceptanceSchemaVersion")
+        == FORECAST_ACCEPTANCE_SCHEMA_VERSION,
+        "the consumed forecast was not scored under decision #95's additive-volume "
+        "acceptance gate",
     )
 
     # -- decision #92 and the frozen policy -----------------------------------

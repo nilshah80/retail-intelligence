@@ -28,8 +28,9 @@ MIGRATIONS = REPO_ROOT / "db" / "migrations" / "versions"
 
 #: Regression floor. Each of these was the required head once and is now
 #: inherited history: 0006 was v4-only, 0007 established the verifier-v5
-#: boundary, and 0008 made the withheld interval storable without making
-#: availability explicit. Naming any of them as the *current required head* is
+#: boundary, 0008 made the withheld interval storable without making
+#: availability explicit, and 0021 introduced ragged recent evaluation before
+#: Decision #95's additive expectation. Naming any of them as the *current required head* is
 #: the specific regression this test exists to catch, so it is asserted
 #: explicitly rather than left to the graph comparison.
 RETIRED_HEADS = frozenset(
@@ -38,6 +39,7 @@ RETIRED_HEADS = frozenset(
         "0007_activation_and_coverage",
         "0008_nullable_withheld_interval",
         "0009_forecast_interval_contract",
+        "0021_forecast_eval_recent",
     }
 )
 

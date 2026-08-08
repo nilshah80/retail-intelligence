@@ -90,8 +90,11 @@ class PartialConsumerLedger:
                 "row carries no interval_available flag; a partial consumer "
                 "may not infer availability from P90 nullability"
             )
-        p50 = row.get("yhat_p50")
-        demand = float(p50) if p50 is not None else 0.0
+        # Decision #95: skipped-volume disclosure uses additive expected demand.
+        # The fallback preserves the standalone guard's compatibility with older
+        # callers while run-v5 inventory always supplies expected_units.
+        point = row.get("expected_units", row.get("yhat_p50"))
+        demand = float(point) if point is not None else 0.0
         self.total_rows += 1
         self.total_demand_units += demand
         if available:

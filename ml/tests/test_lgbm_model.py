@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from retail_ml.models.train_lgbm import fit_horizon_model, score_horizon_model
+from retail_ml.models import train_lgbm
 from retail_ml.models.drivers import LIVE_DRIVER_GROUPS
 
 
@@ -103,6 +104,8 @@ def test_model_outputs_are_invariant_to_threads_per_model() -> None:
     columns = [
         "lightgbm_p50_raw",
         "lightgbm_p90_raw",
+        "lightgbm_cold_expected",
+        "expected_cold_head_fallback",
         "yhat_p50",
         "yhat_p90",
         "confidence",
@@ -118,3 +121,20 @@ def test_model_outputs_are_invariant_to_threads_per_model() -> None:
         performance_model.global_calibration
     )
     assert safe_model.market_calibrations == performance_model.market_calibrations
+
+
+def test_cold_start_rows_receive_a_dedicated_conditional_mean_head(
+    monkeypatch,
+) -> None:
+    frame = _training_frame()
+    frame["units_lag_52"] = np.nan
+    monkeypatch.setattr(train_lgbm, "MIN_COLD_START_TRAINING_ROWS", 10)
+
+    model = fit_horizon_model(frame, horizon=1, threads_per_model=1)
+    scored = score_horizon_model(frame.tail(200), model)
+
+    assert model.expected_cold_model is not None
+    assert model.expected_cold_head_rows >= 10
+    assert scored["lightgbm_cold_expected"].notna().all()
+    assert (scored["lightgbm_cold_expected"] >= 0).all()
+    assert not scored["expected_cold_head_fallback"].any()

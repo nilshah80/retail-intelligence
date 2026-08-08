@@ -2190,7 +2190,9 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       generation; the fresh database was migrated through `0021_forecast_eval_recent`. The
       `performance` profile promoted `run-95b856f20766c9e1` in **2h 53m 25.3s** on
       2026-08-09 (9,981,587 orders, 41,815,212 units, 4,814 objects). The disposable staging
-      spool was removed on promotion and the retained source is 29 GB.
+      spool was removed on promotion and the retained source is 29 GB. Before the combined
+      forecast run, the empty serving database advanced to
+      `0022_expected_volume_forecast` / verifier v7.
 - [x] **Fresh ingestion/features boundary promoted.** Land through features completed in
       **7m 33.2s** under the `performance` profile. Curated revision
       `run-95b856f20766c9e1-r2` reproduced source snapshot `a88758a1…`; generation r11 now
@@ -2198,22 +2200,23 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       3,372,399 rows / 9,603 SeriesKeys and the clean curated database proves
       `gulf-marketplace → marketplace`, `bazaar-trade → store`, and
       `gulf-online → online`.
-- [ ] **BUG-17 logged, deliberately not added to this experiment.** At portfolio grain MA13 is
-      93.00% accurate versus the champion's 89.84% (FVA −45.21%). Dense rows over-forecast by
-      4.77m units while cold start under-forecasts by 0.78m; the errors partly cancel. Re-measure
-      after the integrated run, then triage with BUG-3/BUG-16 rather than moving the baseline again
-      before BUG-2 has one clean end-to-end proof.
-- [~] **Decide the p50 volume basis — explicitly deferred from the combined run.**
+- [~] **BUG-17 moved into the combined run under Decision #95; implementation is wired and
+      focused tests pass.** At portfolio grain MA13 is
+      93.00% accurate versus the P50 champion's 89.84% (FVA −45.21%). The frozen fix does not
+      tune P50: a separately named `expected_units` uses MA13 for established history and a
+      dedicated conditional-mean head for cold start. A6 must prove non-negative FVA and improved
+      cold-start volume bias before activation; the served dense slices still decide closure.
+- [~] **Decide the p50 volume basis — Decision #95 frozen and implemented; clean-run A6
+      evidence pending.**
       `yhat_p50` is a median summed as though it were a mean, which
       under-counts by construction on intermittent demand and worsens with sparsity (+13.9% at
       zero-share 0.0–0.2, −83.8% at 0.8–1.0; p90 overshoots at +119.3%). C1 "P50 bias correction"
       is pre-registered in `contracts/ml/forecast-improvement-policy.json`, implemented in
       `models/bias_correction.py`, and **wired to nothing**. Its materiality gate is relative WAPE,
       which a bias correction can worsen while improving volume accuracy — the same trap as the
-      routing predicate, one level up in the governance. Decision for this run: leave C1
-      disconnected, preserve P50's median meaning, and do not claim BUG-1 closure. The follow-on
-      record must evaluate a separately named expected-value output under volume materiality plus
-      WAPE non-regression and cohort-level gates.
+      routing predicate, one level up in the governance. C1 stays disconnected and P50 remains a
+      median. Decision #95 instead adds `expected_units`, with A6 volume non-regression and
+      cohort-level improvement gates, before the one authoritative ML run.
 - [x] **Tooling defects fixed in passing:** `tools/dev.py pipeline` now exposes `--rebuild`, so a
       corrected profile no longer replays a cached `critical` gate verdict (BUG-6);
       `datagen/tools/sync_presets.py` only writes a preset whose semantic content actually moved,

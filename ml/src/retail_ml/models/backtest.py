@@ -27,6 +27,7 @@ from retail_ml.models.cohorts import (
     assign_cohorts,
     cohort_population,
 )
+from retail_ml.models.expected_volume import EXPECTED_COLUMN, FALLBACK_COLUMN
 
 EVALUATION_WINDOW_WEEKS: Final[int] = 26
 ORIGIN_STEP_WEEKS: Final[int] = 2
@@ -66,7 +67,7 @@ SLOW_MOVER_THRESHOLD: Final[float] = 0.60
 #: predated it, which is tolerable only while the gate is report-only. Making the gate
 #: hard without the boundary would leave every report-only-era run still eligible to
 #: serve under a policy it was never scored against.
-ACCEPTANCE_SCHEMA_VERSION: Final[str] = "retail-forecast-acceptance/v5"
+ACCEPTANCE_SCHEMA_VERSION: Final[str] = "retail-forecast-acceptance/v6"
 
 #: Decision #85. Per-cohort P90 coverage is computed and published at every scope,
 #: but does not fail acceptance for this version. The gate turns hard at Phase 4
@@ -461,6 +462,7 @@ def _scope_gates(frame: pd.DataFrame) -> dict[str, Any]:
         "A3": slow_mover_diagnostics(eligible),
         "A4": {"passed": monotonic},
     }
+    gates["A6_expected_volume"] = expected_volume_diagnostics(eligible)
     # Decision #85: the same 0.85-0.95 band applied per cohort. Published with an
     # explicit verdict even while report-only, so a reader cannot mistake a
     # measured failure for a pass.
@@ -634,6 +636,126 @@ def _scope_gates(frame: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def _additive_volume_metrics(
+    frame: pd.DataFrame,
+    prediction_column: str,
+) -> AdditiveMetrics:
+    """Decision #95 market-portfolio error: aggregate before differencing."""
+
+    cell_columns = [
+        column
+        for column in (
+            "market_id",
+            "forecast_origin",
+            "target_week_start",
+            "horizon",
+        )
+        if column in frame.columns
+    ]
+    working = frame[cell_columns + ["actual_units", prediction_column]].copy()
+    working["actual_units"] = pd.to_numeric(
+        working["actual_units"], errors="coerce"
+    )
+    working[prediction_column] = pd.to_numeric(
+        working[prediction_column], errors="coerce"
+    )
+    if cell_columns:
+        working = (
+            working.groupby(cell_columns, observed=True, dropna=False, sort=True)
+            [["actual_units", prediction_column]]
+            .sum()
+            .reset_index()
+        )
+    return metric_for_column(
+        working.rename(columns={prediction_column: "_prediction"}),
+        "_prediction",
+    )
+
+
+def _volume_bias(frame: pd.DataFrame, prediction_column: str) -> float | None:
+    actual = float(pd.to_numeric(frame["actual_units"], errors="coerce").sum())
+    if actual <= 0:
+        return None
+    predicted = float(
+        pd.to_numeric(frame[prediction_column], errors="coerce").sum()
+    )
+    return (predicted - actual) / actual
+
+
+def expected_volume_diagnostics(frame: pd.DataFrame) -> dict[str, Any]:
+    """Decision #95 A6 over all origins and the final-five replay check."""
+
+    origins = tuple(sorted(frame["forecast_origin"].unique()))
+    final_origins = set(origins[-5:])
+    populations = {
+        "all_13_origins": frame,
+        "final_5_replay_confirmation": frame[
+            frame["forecast_origin"].isin(final_origins)
+        ],
+    }
+    results: dict[str, Any] = {}
+    for label, population in populations.items():
+        expected = _additive_volume_metrics(population, EXPECTED_COLUMN)
+        ma13 = _additive_volume_metrics(population, "ma13_baseline")
+        fva = (
+            100.0 * (ma13.wape - expected.wape) / ma13.wape
+            if expected.wape is not None and ma13.wape not in (None, 0)
+            else None
+        )
+        cold = population[
+            population["cohort"].astype(str).eq(COLD_START)
+        ]
+        cold_actual = float(
+            pd.to_numeric(cold.get("actual_units"), errors="coerce").sum()
+        )
+        cold_expected_bias = _volume_bias(cold, EXPECTED_COLUMN) if len(cold) else None
+        cold_p50_bias = _volume_bias(cold, "yhat_p50") if len(cold) else None
+        cold_improved = (
+            abs(cold_expected_bias) < abs(cold_p50_bias)
+            if cold_actual > 0
+            and cold_expected_bias is not None
+            and cold_p50_bias is not None
+            else None
+        )
+        fallback_rows = int(
+            pd.Series(cold.get(FALLBACK_COLUMN, False), index=cold.index)
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        passed = bool(
+            fva is not None
+            and fva >= -1e-12
+            and fallback_rows == 0
+            and (cold_actual <= 0 or cold_improved is True)
+        )
+        results[label] = {
+            "passed": passed,
+            "expectedWape": expected.wape,
+            "ma13Wape": ma13.wape,
+            "fvaVsMa13Pct": fva,
+            "coldStartActualSum": cold_actual,
+            "coldStartExpectedBias": cold_expected_bias,
+            "coldStartP50Bias": cold_p50_bias,
+            "coldStartAbsoluteBiasImproved": cold_improved,
+            "coldStartFallbackRows": fallback_rows,
+            "confirmationStatus": (
+                "replay_confirmation_after_prior_exposure"
+                if label == "final_5_replay_confirmation"
+                else "complete_schedule"
+            ),
+        }
+    return {
+        "passed": all(value["passed"] for value in results.values()),
+        "aggregationGrain": (
+            "market_id x forecast_origin x target_week_start x horizon"
+        ),
+        "predictionColumn": EXPECTED_COLUMN,
+        "comparatorColumn": "ma13_baseline",
+        "populations": results,
+    }
+
+
 def evaluate_acceptance(
     frame: pd.DataFrame,
     *,
@@ -648,6 +770,9 @@ def evaluate_acceptance(
         "actual_units",
         "yhat_p50",
         "yhat_p90",
+        EXPECTED_COLUMN,
+        "ma13_baseline",
+        FALLBACK_COLUMN,
         "seasonal_naive_baseline",
         COLD_START_BASELINE_COLUMN,
         "zero_share_52w",
@@ -698,6 +823,7 @@ __all__ = [
     "SLOW_MOVER_THRESHOLD",
     "TRAINING_ORIGINS",
     "evaluate_acceptance",
+    "expected_volume_diagnostics",
     "rolling_origin_schedule",
     "slow_mover_diagnostics",
 ]

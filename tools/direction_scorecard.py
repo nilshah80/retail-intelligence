@@ -292,7 +292,7 @@ def gate_b_evidence(root: Path) -> tuple[dict[str, Any] | None, Path | None]:
 def forecast_state(root: Path) -> dict[str, Any]:
     """Determine whether an accepted forecast exists under the current authority."""
 
-    from_policy = "cohorted-seasonal-cold-start-recomputation/v4"
+    from_policy = "cohorted-seasonal-cold-start-expected-volume-recomputation/v5"
     accepted: list[str] = []
     rejected: list[str] = []
     for manifest_path in (root / "ml/data/artifacts").glob(

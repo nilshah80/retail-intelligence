@@ -397,6 +397,36 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
             ),
             f"{label} confidence violates decision #12",
         )
+        _require(
+            {"expected_units", "expected_model"} <= set(frame.columns),
+            f"{label} does not publish decision #95 expected volume",
+        )
+        expected_units = pd.to_numeric(frame["expected_units"], errors="coerce")
+        expected_models = frame["expected_model"].astype("string")
+        _require(
+            bool(
+                expected_units.notna().all()
+                and (expected_units >= 0).all()
+                and expected_models.notna().all()
+                and expected_models.str.len().gt(0).all()
+            ),
+            f"{label} expected volume violates decision #95",
+        )
+    recent = frames["forecast_eval_recent"]
+    _require(
+        {"expected_units", "expected_model"} <= set(recent.columns),
+        "recent evaluation does not publish decision #95 expected volume",
+    )
+    recent_expected = pd.to_numeric(recent["expected_units"], errors="coerce")
+    _require(
+        bool(recent_expected.notna().all() and (recent_expected >= 0).all()),
+        "recent evaluation expected volume violates decision #95",
+    )
+    _require(
+        "expected_cold_head_fallback" in evaluation.columns
+        and bool(evaluation["expected_cold_head_fallback"].notna().all()),
+        "evaluation does not publish the decision #95 cold-head fallback audit",
+    )
     lifecycle_status = manifest.get("lifecycleStatus")
     _require(
         lifecycle_status in {"accepted", "rejected"},
@@ -429,11 +459,11 @@ def verify_forecast_run(path: str | Path) -> VerifiedForecastRun:
         )
     except (TypeError, ValueError, RuntimeError) as exc:
         raise ForecastRunVerificationError(
-            f"cannot recompute A1-A5 acceptance gates: {exc}"
+            f"cannot recompute A1-A6 acceptance gates: {exc}"
         ) from exc
     _require(
         derived_acceptance == acceptance,
-        "forecast acceptance document does not match recomputed A1-A5 gates",
+        "forecast acceptance document does not match recomputed A1-A6 gates",
     )
     if declared_remediation is not None:
         _recompute_remediation_checks(evaluation, declared_remediation)

@@ -59,7 +59,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0021_forecast_eval_recent",)
+            assert cursor.fetchone() == ("0022_expected_volume_forecast",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -101,14 +101,37 @@ def test_forecast_serving_schema_integration() -> None:
             )
             view_definition = cursor.fetchone()[0]
             assert "verification_contract" in view_definition
-            # Migration 0021 advances the serving boundary to verifier-v6: a run
-            # must carry the separately governed recent-evaluation artifact. Older
+            # Migration 0022 advances the serving boundary to verifier-v7: a run
+            # must carry Decision #95's separately named additive expectation. Older
             # accepted materializations are not reinterpreted; they become ineligible
-            # until rebuilt under run/v4 and verifier/v6.
-            assert "retail-forecast-verifier/v6" in view_definition
+            # until rebuilt under run/v5 and verifier/v7.
+            assert "retail-forecast-verifier/v7" in view_definition
+            assert "retail-forecast-verifier/v6" not in view_definition
             assert "retail-forecast-verifier/v5" not in view_definition
             assert "retail-forecast-verifier/v4" not in view_definition
             assert "retail-forecast-verifier/v3" not in view_definition
+            cursor.execute(
+                """
+                SELECT table_name, column_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'retail_serving'
+                  AND column_name IN ('expected_units', 'expected_model')
+                  AND table_name IN (
+                    'forecast_series',
+                    'forecast_eval_predictions',
+                    'forecast_eval_recent'
+                  )
+                ORDER BY table_name, column_name
+                """
+            )
+            assert cursor.fetchall() == [
+                ("forecast_eval_predictions", "expected_model", "YES"),
+                ("forecast_eval_predictions", "expected_units", "YES"),
+                ("forecast_eval_recent", "expected_model", "YES"),
+                ("forecast_eval_recent", "expected_units", "YES"),
+                ("forecast_series", "expected_model", "YES"),
+                ("forecast_series", "expected_units", "YES"),
+            ]
             cursor.execute(
                 """
                 SELECT check_clause

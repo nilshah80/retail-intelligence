@@ -73,12 +73,12 @@ COMPOSE_FILE = REPO_ROOT / "deploy" / "compose.yaml"
 COMPOSE_ENV = REPO_ROOT / "deploy" / ".env"
 COMPOSE_ENV_EXAMPLE = REPO_ROOT / "deploy" / ".env.example"
 ACCEPTANCE_EVALUATION_VERSION = (
-    "cohorted-seasonal-cold-start-recomputation/v4"
+    "cohorted-seasonal-cold-start-expected-volume-recomputation/v5"
 )
 
-#: Kept beside the evaluation version because the two move together: the hard per-cohort
-#: coverage gate is what acceptance-v5 means, and a v4 document was scored before it bound.
-ACCEPTANCE_SCHEMA_GENERATION = "retail-forecast-acceptance/v5"
+#: Kept beside the evaluation version because the two move together. Acceptance-v6
+#: adds Decision #95's hard additive-volume A6 gate; a v5 document never measured it.
+ACCEPTANCE_SCHEMA_GENERATION = "retail-forecast-acceptance/v6"
 
 
 def venv_python(root: Path) -> Path:
@@ -474,11 +474,10 @@ def _discover_forecast_run() -> tuple[Path, str]:
             acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        # Decision #85's hard coverage gate ships as acceptance-v5, paired with
-        # verifier-v5 and migration 0007. A v4 bundle was scored while the gate was
-        # report-only, so the current verifier refuses it and materialisation refuses it:
-        # offering it here would fail the gate on a superseded bundle instead of on the
-        # one that would actually serve. Same intent as the filters above.
+        # Decision #95's additive-volume gate ships as acceptance-v6, paired with
+        # verifier-v7 and migration 0022. Older bundles were never scored on the
+        # separately named expectation, so offering one here would fail verification
+        # on a superseded shape instead of on the bundle that can actually serve.
         if acceptance.get("schemaVersion") != ACCEPTANCE_SCHEMA_GENERATION:
             continue
         if acceptance.get("candidateClass") != model_policy["candidateClass"]:

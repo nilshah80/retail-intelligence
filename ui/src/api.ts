@@ -190,7 +190,10 @@ export const forecastActualsSchema = z.object({
   schemaVersion: z.literal("retail-forecast-actuals/v1"),
   items: z.array(z.object({
     targetWeekStart: z.string(),
+    // Decision #95's additive planning expectation. This is the value compared
+    // with actual volume; P50 remains a median and is carried separately.
     forecast: z.number(),
+    forecastP50: z.number().optional(),
     // The P90. Optional so a bundle published before the read model served it
     // still validates rather than blanking the chart.
     forecastP90: z.number().optional(),

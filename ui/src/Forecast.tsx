@@ -603,54 +603,29 @@ function Overview({
   setModal: (modal: Modal) => void;
 }) {
   const summary = data.summary!.items[0];
-  // `forecast` is the P50 -- a MEDIAN. This demand is heavily right-skewed (mean
-  // 27.68 against median 6.00), so summing medians against realised totals lands
-  // below them by construction, and a two-bar chart reads as a forecast that is
-  // always wrong in one direction. It is not: P(actual <= P50) is 52.8 per cent,
-  // which is what a median should do. Carrying the P90 turns the forecast into
-  // the RANGE it actually is, so the week is read as covered or not covered
-  // rather than over or under.
+  // Decision #95 makes `forecast` the additive expected-volume estimate. P50 and
+  // P90 remain quantiles in the payload, but their sums are not quantiles of the
+  // aggregate, so the chart does not draw them as an aggregate interval. Coverage
+  // is stated separately from per-SeriesKey P90 hits below.
   const chartData = granularity === "Monthly"
     ? Object.values(data.actuals!.items.reduce<Record<string, {
       week: string;
       forecast: number;
-      forecastP90: number;
       actual: number;
-      bandBase: number;
-      bandSpan: number;
     }>>((months, item) => {
       const month = item.targetWeekStart.slice(0, 7);
       const existing = months[month]
-        ?? {week: month, forecast: 0, forecastP90: 0, actual: 0,
-            bandBase: 0, bandSpan: 0};
+        ?? {week: month, forecast: 0, actual: 0};
       existing.forecast += item.forecast;
-      existing.forecastP90 += item.forecastP90 ?? item.forecast;
       existing.actual += item.actual;
-      existing.bandBase = existing.forecast;
-      existing.bandSpan = Math.max(0, existing.forecastP90 - existing.forecast);
       months[month] = existing;
       return months;
     }, {}))
-    : data.actuals!.items.map((item) => {
-      const p90 = item.forecastP90 ?? item.forecast;
-      return {
-        week: shortDate(item.targetWeekStart),
-        forecast: item.forecast,
-        forecastP90: p90,
-        actual: item.actual,
-        // The band is drawn as two stacked segments: an invisible base up to P50,
-        // then a visible span from P50 to P90. Recharts has no floating-bar type,
-        // and a stack is the only way to start a bar off the axis.
-        bandBase: item.forecast,
-        bandSpan: Math.max(0, p90 - item.forecast)
-      };
-    });
-  // P50 is a MEDIAN, so it sits below the realised total whenever demand is
-  // right-skewed -- which it heavily is here (mean 27.68, median 6.00). Read on
-  // its own, the forecast bar looks permanently short. What actually matters is
-  // whether the week landed inside the published interval, so the card says so
-  // rather than leaving a reader to infer it from two bars that cannot show it.
-  //
+    : data.actuals!.items.map((item) => ({
+      week: shortDate(item.targetWeekStart),
+      forecast: item.forecast,
+      actual: item.actual
+    }));
   // Counted PER SERIES by the read model, not by asking whether the eight summed
   // weeks fell inside the summed band. Those bars sum ~2,034 per-series P90s, and
   // a sum of quantiles is not the quantile of the sum -- errors diversify, so the
@@ -740,50 +715,19 @@ function Overview({
                 } />
                 <Tooltip formatter={(value) => count(Number(value))} />
                 <Legend />
-                {/*
-                  The forecast column is stacked: solid blue to P50, then a light
-                  blue segment carrying the rest of the way to the SUMMED P90.
-
-                  That upper segment is NOT an interval and must not be labelled
-                  as one. A P90 is a per-series quantile, and summing ~2,034 of
-                  them lands far above the 90th percentile of their sum because
-                  errors diversify -- the rule the inventory policy states as
-                  sumOfChannelP90: forbidden. Read as an interval it said the
-                  actual fell inside the range in 8 of 8 weeks, implying a
-                  near-perfect forecast; counted per series the coverage is
-                  89.9 per cent at h19-h26 and 90.8 per cent at h1-h4. The series
-                  name now says what the segment is, and the coverage claim has
-                  moved to the caption where it is counted per series.
-
-                  Actual carries its own stackId rather than none, so every Bar is
-                  on the same layout path; a lone unstacked bar beside a stacked
-                  pair rendered Actual as an empty `inactive-bar`.
-
-                  isAnimationActive={false} on all three is required, not styling.
-                  Verified by A/B on this exact chart under Recharts 3.10 / React
-                  19: with animation left on, all three stacked groups render eight
-                  wrappers each containing an EMPTY `recharts-inactive-bar` and the
-                  chart draws no columns at all; with it off, all 24 shapes appear.
-                  Unstacked bars animate fine, so it is the combination that fails.
-                */}
+                {/* Expected volume is additive; P50/P90 are not. Drawing the sum
+                    of per-series quantiles as an aggregate band caused BUG-13, so
+                    the visual compares only like-for-like additive quantities.
+                    P90 coverage remains in the caption at SeriesKey grain. */}
                 <Bar
                   dataKey="forecast"
-                  stackId="forecast"
-                  name="Forecast (P50)"
+                  name="Expected volume"
                   fill="#2f80ed"
-                  isAnimationActive={false}
-                />
-                <Bar
-                  dataKey="bandSpan"
-                  stackId="forecast"
-                  name="P50 → Σ per-series P90 (not an interval)"
-                  fill="#9dc3f7"
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={false}
                 />
                 <Bar
                   dataKey="actual"
-                  stackId="actual"
                   name="Actual"
                   fill="#1fbf75"
                   radius={[4, 4, 0, 0]}

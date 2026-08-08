@@ -53,6 +53,9 @@ def _full_schedule() -> pd.DataFrame:
                     "actual_units": actual,
                     "yhat_p50": actual - 1,
                     "yhat_p90": actual + 2,
+                    "expected_units": actual - 1,
+                    "expected_model": "ma13_established_expectation",
+                    "expected_cold_head_fallback": False,
                     "confidence": float(
                         forecast_confidence(actual - 1, actual + 2)
                     ),
@@ -96,6 +99,9 @@ def _recent_schedule() -> pd.DataFrame:
                     "actual_units": actual,
                     "yhat_p50": actual - 1,
                     "yhat_p90": actual + 2,
+                    "expected_units": actual - 1,
+                    "expected_model": "ma13_established_expectation",
+                    "expected_cold_head_fallback": False,
                 }
             )
     return pd.DataFrame(rows)
@@ -125,6 +131,9 @@ def _accepted_schedule() -> pd.DataFrame:
                         "actual_units": actual,
                         "yhat_p50": p50,
                         "yhat_p90": p90,
+                        "expected_units": p50,
+                        "expected_model": "ma13_established_expectation",
+                        "expected_cold_head_fallback": False,
                         "confidence": float(forecast_confidence(p50, p90)),
                         "selected_model": "lightgbm_horizon_quantile",
                         "zero_share_52w": 0.7,
@@ -238,6 +247,9 @@ def _current_forecasts() -> pd.DataFrame:
                 "horizon": horizon,
                 "yhat_p50": 10.0,
                 "yhat_p90": 12.0,
+                "expected_units": 10.0,
+                "expected_model": "ma13_established_expectation",
+                "expected_cold_head_fallback": False,
                 "confidence": float(forecast_confidence(10.0, 12.0)),
                 "selected_model": "lightgbm_horizon_quantile",
                 "shap_demand_trend": 1.0,
@@ -530,7 +542,7 @@ def test_publisher_rejects_forged_acceptance_verdict(tmp_path: Path) -> None:
 
     with pytest.raises(
         ForecastPublicationError,
-        match="does not match independently recomputed A1-A5",
+        match="does not match independently recomputed A1-A6",
     ):
         publish_forecast_run(
             _full_schedule(),
@@ -631,7 +643,7 @@ def test_verifier_recomputes_acceptance_after_hashes_are_resigned(
 
     with pytest.raises(
         ForecastRunVerificationError,
-        match="does not match recomputed A1-A5",
+        match="does not match recomputed A1-A6",
     ):
         verify_forecast_run(output)
 

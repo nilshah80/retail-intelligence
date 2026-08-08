@@ -334,8 +334,8 @@ func TestWorkbenchIntervalAggregatesAtEverySelection(t *testing.T) {
 					horizonWeeks, *covered,
 				)
 			}
-			// P50 is never withdrawn. A withheld interval retracts a distribution
-			// claim, never a forecast.
+			// Expected volume is never withdrawn. A withheld interval retracts a
+			// distribution claim, never the operational forecast.
 			if central == nil {
 				t.Fatalf("%d weeks: a withheld interval also removed the central forecast", horizonWeeks)
 			}
@@ -507,15 +507,16 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 
 		var freshest int
 		var expectedCovered, expectedSeries int64
+		var expectedForecast float64
 		err := store.pool.QueryRow(
 			ctx,
 			`
 			WITH scoped AS (
-				SELECT horizon, actual_units, yhat_p90
+				SELECT horizon, actual_units, expected_units, yhat_p90
 				FROM retail_serving.forecast_eval_predictions
 				WHERE forecast_run_id = $1 AND target_week_start = $2
 				UNION ALL
-				SELECT horizon, actual_units, yhat_p90
+				SELECT horizon, actual_units, expected_units, yhat_p90
 				FROM retail_serving.forecast_eval_recent
 				WHERE forecast_run_id = $1 AND target_week_start = $2
 			), freshest AS (
@@ -523,6 +524,7 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			)
 			SELECT
 				freshest.horizon,
+				SUM(scoped.expected_units),
 				COUNT(*) FILTER (WHERE scoped.actual_units <= scoped.yhat_p90),
 				COUNT(*)
 			FROM scoped
@@ -531,12 +533,19 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			`,
 			expectedRunID,
 			targetWeek,
-		).Scan(&freshest, &expectedCovered, &expectedSeries)
+		).Scan(&freshest, &expectedForecast, &expectedCovered, &expectedSeries)
 		if err != nil {
 			t.Fatalf("derive freshest weekly comparison for %s: %v", targetWeek, err)
 		}
 		if horizon != freshest {
 			t.Fatalf("%s served h%d, freshest available is h%d", targetWeek, horizon, freshest)
+		}
+		servedForecast, ok := item["forecast"].(float64)
+		if !ok || servedForecast != expectedForecast {
+			t.Fatalf(
+				"%s served forecast %v, expected_units sum is %v",
+				targetWeek, item["forecast"], expectedForecast,
+			)
 		}
 		weekCovered, coveredOK := item["seriesCovered"].(int64)
 		weekSeries, seriesOK := item["series"].(int64)

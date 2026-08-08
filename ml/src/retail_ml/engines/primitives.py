@@ -182,7 +182,7 @@ def safety_stock_units(
     weekly_spreads: tuple[float, ...],
     protection_days: int,
     service_level: str | float,
-    weekly_p50: tuple[float, ...] = (),
+    weekly_expected: tuple[float, ...] = (),
     lead_time_variance_weeks: float | None = None,
     lead_time_reason_code: str | None = None,
 ) -> SafetyStock:
@@ -207,6 +207,10 @@ def safety_stock_units(
     entirely, so `leadTime.variabilityMethod`, `leadTime.minimumObservations` and
     `leadTime.zeroVarianceBehavior` had no consumer and a supplier whose lead time
     swung by nine days got the same buffer as a metronomic one.
+
+    `weekly_expected` supplies the mean-demand term and is deliberately separate
+    from P50. Decision #95 keeps `(P90 - P50)` as the quantile-derived dispersion
+    while expected volume drives the additive demand level.
 
     `lead_time_variance_weeks` is None when the variability is not knowable -- an
     internal lane has no supplier performance, and an under-observed supplier has
@@ -238,8 +242,8 @@ def safety_stock_units(
         # so the two drivers describe one horizon rather than two.
         weeks = protection_days / 7.0
         mean_weekly_demand = (
-            fractional_horizon_sum(weekly_p50, protection_days) / weeks
-            if weeks > 0 and weekly_p50
+            fractional_horizon_sum(weekly_expected, protection_days) / weeks
+            if weeks > 0 and weekly_expected
             else 0.0
         )
         lead_time_sigma = mean_weekly_demand * math.sqrt(lead_time_variance_weeks)
@@ -255,21 +259,21 @@ def safety_stock_units(
 
 def reorder_point(
     *,
-    weekly_p50: tuple[float, ...],
+    weekly_expected: tuple[float, ...],
     protection_days: int,
     safety_stock: float,
 ) -> float:
-    return fractional_horizon_sum(weekly_p50, protection_days) + safety_stock
+    return fractional_horizon_sum(weekly_expected, protection_days) + safety_stock
 
 
 def order_up_to_level(
     *,
     reorder_point_units: float,
-    weekly_p50: tuple[float, ...],
+    weekly_expected: tuple[float, ...],
     review_period_days: int,
 ) -> float:
     return reorder_point_units + fractional_horizon_sum(
-        weekly_p50, review_period_days
+        weekly_expected, review_period_days
     )
 
 

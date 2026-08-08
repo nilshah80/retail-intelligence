@@ -1689,7 +1689,7 @@ class TestScorecardAuthorityBoundary:
                     "lifecycleStatus": "accepted",
                     "modelPolicy": {
                         "acceptanceEvaluation": (
-                            "cohorted-seasonal-cold-start-recomputation/v4"
+                            "cohorted-seasonal-cold-start-expected-volume-recomputation/v5"
                         )
                     },
                 }

@@ -46,7 +46,9 @@ SELECTION_ID = "sel-2026-07-27-current"
 FORECAST = {
     "forecastRunId": "fr_0123456789abcdef",
     "forecastVersionId": "fv_0123456789abcdef",
+    "runSemanticFingerprint": "f" * 64,
     "coverageGateMode": "hard",
+    "acceptanceSchemaVersion": "retail-forecast-acceptance/v6",
 }
 POLICY_FINGERPRINTS = {"india-west": "d" * 64, "us-new-york": "e" * 64}
 REPLAY: dict[str, Any] = {

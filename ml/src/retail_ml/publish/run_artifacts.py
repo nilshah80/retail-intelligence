@@ -42,29 +42,37 @@ from retail_ml.models.cohorts import (
 )
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.confidence import forecast_confidence
+from retail_ml.models.expected_volume import (
+    EXPECTED_COLUMN,
+    EXPECTED_MODEL_COLUMN,
+    FALLBACK_COLUMN,
+    policy_identity as expected_volume_policy_identity,
+)
 from retail_ml.models.backtest import RECENT_HORIZONS
 from retail_ml.policies.classification import load_classification_policy
 from retail_ml.runtime.profile import MLRuntimeProfile
 
-#: v4 adds `forecast_eval_recent`: the ragged recent schedule, scored at the
-#: horizons a recent origin can actually evaluate. The artifact SET changed, so the
-#: run schema moves with it rather than a v3 bundle silently meaning two shapes.
-RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v4"
+#: v5 adds Decision #95's separately named additive expectation and A6. Older
+#: bundles remain historical evidence but cannot be reinterpreted as carrying a
+#: planning expectation they never published.
+RUN_SCHEMA_VERSION: Final[str] = "retail-forecast-run/v5"
 ACCEPTANCE_EVALUATION_VERSION: Final[str] = (
-    "cohorted-seasonal-cold-start-recomputation/v4"
+    "cohorted-seasonal-cold-start-expected-volume-recomputation/v5"
 )
 ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
-    "forecast_versions": "retail-v2-forecast-versions/v1",
-    "forecast_series": "retail-v2-forecast-series/v1",
+    "forecast_versions": "retail-v2-forecast-versions/v2",
+    "forecast_series": "retail-v2-forecast-series/v2",
     "forecast_drivers": "retail-v2-forecast-drivers/v1",
-    "forecast_eval_predictions": "retail-forecast-eval-predictions/v1",
+    "forecast_eval_predictions": "retail-forecast-eval-predictions/v2",
     # Ragged by construction and never pooled with the complete grid. Its own
     # artifact rather than extra rows in forecast_eval_predictions, because that
     # one is contractually a complete 13 x 26 rectangle and acceptance depends on
     # it staying that way.
-    "forecast_eval_recent": "retail-forecast-eval-recent/v1",
-    "forecast_baseline_predictions": "retail-forecast-baseline-predictions/v1",
-    "forecast_metrics": "retail-forecast-metrics/v1",
+    "forecast_eval_recent": "retail-forecast-eval-recent/v2",
+    # Decision #95 adds MA13 to the immutable acceptance join so A6 can be
+    # independently replayed from published artifacts.
+    "forecast_baseline_predictions": "retail-forecast-baseline-predictions/v2",
+    "forecast_metrics": "retail-forecast-metrics/v2",
     "forecast_exceptions": "retail-forecast-exceptions/v1",
     "forecast_data_quality": "retail-forecast-data-quality/v1",
     "forecast_calibration": "retail-forecast-calibration/v1",
@@ -104,6 +112,8 @@ RECENT_EVALUATION_COLUMNS: Final[tuple[str, ...]] = (
     "dept_id",
     "category",
     "actual_units",
+    EXPECTED_COLUMN,
+    EXPECTED_MODEL_COLUMN,
     "yhat_p50",
     "yhat_p90",
 )
@@ -164,6 +174,7 @@ def model_policy(
         "seriesKeyFields": list(SERIES_COLUMNS),
         "marketFeature": "market_id",
         "metricAggregation": "additive_components",
+        "additiveVolumeForecast": expected_volume_policy_identity(),
         "promotionFeature": "unavailable",
         "acceptanceEvaluation": ACCEPTANCE_EVALUATION_VERSION,
         "candidateClass": CANDIDATE_CLASS_CHAMPION,
@@ -369,12 +380,17 @@ def derive_recent_evaluation_predictions(recent: pd.DataFrame) -> pd.DataFrame:
         raise ForecastPublicationError(
             "recent evaluation predictions duplicate the canonical evaluation key"
         )
-    comparison_columns = ("actual_units", "yhat_p50", "yhat_p90")
+    comparison_columns = (
+        "actual_units",
+        EXPECTED_COLUMN,
+        "yhat_p50",
+        "yhat_p90",
+    )
     for column in comparison_columns:
         values = pd.to_numeric(result[column], errors="coerce")
         if values.isna().any() or not np.isfinite(values).all():
             raise ForecastPublicationError(
-                "recent evaluation actual/P50/P90 values must all be finite numbers"
+                "recent evaluation actual/expected/P50/P90 values must all be finite numbers"
             )
     return result.sort_values(list(EVALUATION_KEY_COLUMNS)).reset_index(drop=True)
 
@@ -412,6 +428,9 @@ def derive_evaluation_predictions(
         "dept_id",
         "category",
         "actual_units",
+        EXPECTED_COLUMN,
+        EXPECTED_MODEL_COLUMN,
+        FALLBACK_COLUMN,
         "yhat_p50",
         "yhat_p90",
         "confidence",
@@ -425,6 +444,9 @@ def derive_evaluation_predictions(
         "dept_id",
         "category",
         "actual_units",
+        EXPECTED_COLUMN,
+        EXPECTED_MODEL_COLUMN,
+        FALLBACK_COLUMN,
         "yhat_p50",
         "yhat_p90",
         "confidence",
@@ -449,22 +471,25 @@ def derive_evaluation_predictions(
             "evaluation predictions duplicate the canonical evaluation key"
         )
     actual = pd.to_numeric(result["actual_units"], errors="coerce")
-    prediction = pd.to_numeric(result["yhat_p50"], errors="coerce")
+    p50 = pd.to_numeric(result["yhat_p50"], errors="coerce")
+    expected = pd.to_numeric(result[EXPECTED_COLUMN], errors="coerce")
     upper = pd.to_numeric(result["yhat_p90"], errors="coerce")
     confidence = pd.to_numeric(result["confidence"], errors="coerce")
     if (
         actual.isna().any()
-        or prediction.isna().any()
+        or p50.isna().any()
         or upper.isna().any()
         or confidence.isna().any()
+        or expected.isna().any()
         or not np.isfinite(actual).all()
-        or not np.isfinite(prediction).all()
+        or not np.isfinite(p50).all()
         or not np.isfinite(upper).all()
+        or not np.isfinite(expected).all()
     ):
         raise ForecastPublicationError(
-            "evaluation actual/P50/P90/confidence values must all be finite numbers"
+            "evaluation actual/expected/P50/P90/confidence values must all be finite numbers"
         )
-    expected_confidence = forecast_confidence(prediction, upper)
+    expected_confidence = forecast_confidence(p50, upper)
     if not np.allclose(
         confidence.to_numpy(dtype=float),
         expected_confidence,
@@ -474,8 +499,10 @@ def derive_evaluation_predictions(
         raise ForecastPublicationError(
             "evaluation confidence violates decision #12"
         )
-    result["abs_error_sum"] = (prediction - actual).abs()
-    result["signed_error_sum"] = prediction - actual
+    # Decision #95: these generic additive components belong to the operational
+    # volume forecast. P50-specific metrics remain available under model_id=p50.
+    result["abs_error_sum"] = (expected - actual).abs()
+    result["signed_error_sum"] = expected - actual
     result["actual_sum"] = actual
     result["coverage_hits"] = (actual <= upper).astype("int64")
     result["n"] = np.int64(1)
@@ -673,6 +700,7 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
         "dept_id",
         "category",
         "actual_units",
+        EXPECTED_COLUMN,
         "yhat_p50",
         "yhat_p90",
         "zero_share_52w",
@@ -710,7 +738,11 @@ def derive_forecast_metrics(evaluation: pd.DataFrame) -> pd.DataFrame:
             ],
         ),
     )
-    models = (("champion", "yhat_p50"), *BASELINE_COLUMNS.items())
+    models = (
+        ("champion", EXPECTED_COLUMN),
+        ("p50", "yhat_p50"),
+        *BASELINE_COLUMNS.items(),
+    )
     rows: list[dict[str, Any]] = []
     # Additive slices first so a reader of the emitted frame sees the grain-correct
     # figures alongside the leaf ones rather than having to know which is which.
@@ -824,6 +856,9 @@ def _validated_current_forecasts(
         "forecast_origin",
         "target_week_start",
         "horizon",
+        EXPECTED_COLUMN,
+        EXPECTED_MODEL_COLUMN,
+        FALLBACK_COLUMN,
         "yhat_p50",
         "yhat_p90",
         "confidence",
@@ -876,18 +911,21 @@ def _validated_current_forecasts(
             "every current horizon must contain the same SeriesKey set"
         )
     p50 = pd.to_numeric(result["yhat_p50"], errors="coerce")
+    expected = pd.to_numeric(result[EXPECTED_COLUMN], errors="coerce")
     p90 = pd.to_numeric(result["yhat_p90"], errors="coerce")
     confidence = pd.to_numeric(result["confidence"], errors="coerce")
     if (
-        p50.isna().any()
+        expected.isna().any()
+        or p50.isna().any()
         or p90.isna().any()
         or confidence.isna().any()
+        or (expected < 0).any()
         or (p50 < 0).any()
         or (p90 < p50).any()
         or ((confidence < 0) | (confidence > 1)).any()
     ):
         raise ForecastPublicationError(
-            "current P50/P90/confidence values violate the canonical domain"
+            "current expected/P50/P90/confidence values violate the canonical domain"
         )
     if not np.allclose(
         confidence.to_numpy(dtype=float),
@@ -990,7 +1028,7 @@ def withhold_uncalibrated_cold_start_intervals(
         # while the gate was already scoped to the calibrated range.
         "servingLayer": {
             "withholdingEffective": True,
-            "servingMigration": "0020_safety_stock_drivers",
+            "servingMigration": "0022_expected_volume_forecast",
             "storage": (
                 "retail_serving.forecast_series.yhat_p90 and confidence are nullable and "
                 "paired by CHECK constraint; a withheld row must carry "
@@ -1025,7 +1063,7 @@ def _canonical_current_artifacts(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     current_fingerprint = _frame_semantic_fingerprint(
         current,
-        schema_version="retail-forecast-current-predictions/v1",
+        schema_version="retail-forecast-current-predictions/v2",
     )
     origin = pd.Timestamp(current["forecast_origin"].iloc[0]).date()
     version_seed = {
@@ -1090,7 +1128,7 @@ def _canonical_current_artifacts(
                     round(
                         float(
                             pd.to_numeric(
-                                current["yhat_p50"],
+                                current[EXPECTED_COLUMN],
                                 errors="coerce",
                             ).sum()
                         )
@@ -1105,6 +1143,8 @@ def _canonical_current_artifacts(
         [
             *SERIES_COLUMNS,
             "horizon",
+            EXPECTED_COLUMN,
+            EXPECTED_MODEL_COLUMN,
             "yhat_p50",
             "yhat_p90",
             "confidence",
@@ -1664,7 +1704,7 @@ def publish_forecast_run(
     ):
         raise ForecastPublicationError(
             "supplied acceptance verdict does not match independently "
-            "recomputed A1-A5 gates"
+            "recomputed A1-A6 gates"
         )
     acceptance = derived_acceptance
     if remediation is not None:

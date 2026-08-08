@@ -35,7 +35,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
 #: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
 #: interval can be stored, and pairs them with an attributable reason.
-MIGRATION_REVISION: Final[str] = "0021_forecast_eval_recent"
+MIGRATION_REVISION: Final[str] = "0022_expected_volume_forecast"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
@@ -62,7 +62,12 @@ ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v2"
 #: is the defect the artifact exists to remove. Same shape of boundary as v5: no
 #: accepted artifact is rewritten and no verdict is reinterpreted, prior
 #: materialisations just stop being eligible until they are rebuilt on v4.
-FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v6"
+#:
+#: v7 pairs with run-schema v5 and migration 0022. Decision #95 publishes a
+#: separately named additive expectation instead of summing a conditional median.
+#: Older materialisations remain immutable evidence, but cannot serve through a
+#: projection whose volume, FVA, UI and inventory consumers require expected_units.
+FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v7"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     "forecast_versions": (
@@ -89,6 +94,8 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "category",
         "horizon_week",
         "target_week_start",
+        "expected_units",
+        "expected_model",
         "yhat_p50",
         "yhat_p90",
         "confidence",
@@ -115,6 +122,8 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "dept_id",
         "category",
         "actual_units",
+        "expected_units",
+        "expected_model",
         "yhat_p50",
         "yhat_p90",
     ),
@@ -130,6 +139,9 @@ TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "dept_id",
         "category",
         "actual_units",
+        "expected_units",
+        "expected_model",
+        "expected_cold_head_fallback",
         "yhat_p50",
         "yhat_p90",
         "confidence",

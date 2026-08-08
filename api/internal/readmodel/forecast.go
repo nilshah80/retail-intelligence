@@ -15,11 +15,11 @@ import (
 
 const (
 	ForecastUnavailableSchema = "retail-forecast-unavailable/v1"
-	// Decision #82 made 0006 v4-only: the cohorted verifier and v4 acceptance
-	// generation are the only shapes serving accepts. 0005 stays immutable but is
-	// no longer eligible to back an activation, so this pin must move with it or
-	// the API fails closed against a correctly migrated database.
-	ForecastMigrationRevision = "0021_forecast_eval_recent"
+	// Decision #95 makes 0022 verifier-v7-only: only a run with the separately
+	// published additive expectation may serve volume, FVA and inventory. Older
+	// runs stay immutable but are ineligible, so this pin moves with the database
+	// boundary or the API fails closed against a correctly migrated schema.
+	ForecastMigrationRevision = "0022_expected_volume_forecast"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -876,7 +876,10 @@ func (s *ForecastStore) workbench(
 				dimensions.channel_type,
 				stores.name AS store_name,
 				stores.city AS store_city,
-				SUM(series.yhat_p50) AS ai_forecast,
+				-- Decision #95: operational volume is a separately named additive
+				-- expectation. P50 remains a median and is retained below only for
+				-- interval-derived confidence weighting.
+				SUM(series.expected_units) AS ai_forecast,
 				-- Decision #92 withholds the cold-start interval beyond h4 while
 				-- retaining P50 at every horizon, so a selected window of 8, 13 or
 				-- 26 weeks mixes horizons that carry an interval with horizons that
@@ -1297,7 +1300,8 @@ func (s *ForecastStore) series(
 		SELECT
 			COUNT(*) OVER(),
 			market_id, sku_id, store_id, channel_id, dept_id, category,
-			horizon_week, target_week_start, yhat_p50, yhat_p90,
+			horizon_week, target_week_start, expected_units, expected_model,
+			yhat_p50, yhat_p90,
 			confidence, interval_available, interval_unavailable_reason,
 			data_quality_class
 		FROM retail_serving.forecast_series
@@ -1322,7 +1326,8 @@ func (s *ForecastStore) series(
 			qualityClass                                          string
 			horizon                                               int
 			targetWeek                                            time.Time
-			p50                                                   float64
+			expectedUnits, p50                                    float64
+			expectedModel                                         string
 			// Decision #92 withholds the cold-start interval beyond the calibrated
 			// horizon, so these arrive NULL. Non-pointer float64 made the scan fail
 			// outright with "converting NULL to float64 is unsupported", which is why
@@ -1342,7 +1347,8 @@ func (s *ForecastStore) series(
 		if err := rows.Scan(
 			&rowTotal,
 			&marketID, &skuID, &storeID, &channelID, &deptID, &category,
-			&horizon, &targetWeek, &p50, &p90, &confidence,
+			&horizon, &targetWeek, &expectedUnits, &expectedModel,
+			&p50, &p90, &confidence,
 			&intervalAvailable, &intervalReason,
 			&qualityClass,
 		); err != nil {
@@ -1363,6 +1369,7 @@ func (s *ForecastStore) series(
 			"marketId": marketID, "skuId": skuID, "storeId": storeID,
 			"channelId": channelID, "departmentId": deptID, "category": category,
 			"horizonWeek": horizon, "targetWeekStart": targetWeek.Format("2006-01-02"),
+			"expectedUnits": expectedUnits, "expectedModel": expectedModel,
 			"p50": p50, "p90": p90, "confidence": confidence,
 			// Present so a client can distinguish "no interval was published, here is
 			// why" from "the field is missing", per decision #92.
@@ -1483,8 +1490,9 @@ func (s *ForecastStore) weeklyActuals(
 	// reported the actual inside the range in 8 of 8 weeks, implying a
 	// well-covered forecast; counted per series it is 89.9 per cent at h19-h26 and
 	// 90.8 per cent at h1-h4, both sitting on the 90 a P90 owes, at every horizon.
-	// The sums stay because the columns are a central scenario and legitimate as
-	// one; only the coverage claim moves off them.
+	// Decision #95 adds the separately additive expected-units sum used for the
+	// visible comparison. The quantile sums remain explicitly named diagnostics,
+	// never an aggregate interval; the coverage claim is computed from leaf rows.
 	//
 	// Both schedules are unioned before `freshest` picks the smallest horizon per
 	// week. That is the whole point of the ragged table: a recent week the complete
@@ -1502,6 +1510,7 @@ func (s *ForecastStore) weeklyActuals(
 				SELECT
 					evaluation.target_week_start,
 					evaluation.horizon,
+					evaluation.expected_units,
 					evaluation.yhat_p50,
 					evaluation.yhat_p90,
 					evaluation.actual_units
@@ -1511,6 +1520,7 @@ func (s *ForecastStore) weeklyActuals(
 				SELECT
 					evaluation.target_week_start,
 					evaluation.horizon,
+					evaluation.expected_units,
 					evaluation.yhat_p50,
 					evaluation.yhat_p90,
 					evaluation.actual_units
@@ -1526,6 +1536,7 @@ func (s *ForecastStore) weeklyActuals(
 			SELECT
 				scoped.target_week_start,
 				MIN(scoped.horizon),
+				SUM(scoped.expected_units),
 				SUM(scoped.yhat_p50),
 				SUM(scoped.yhat_p90),
 				SUM(scoped.actual_units),
@@ -1556,10 +1567,10 @@ func (s *ForecastStore) weeklyActuals(
 	for rows.Next() {
 		var targetWeek time.Time
 		var horizon int
-		var forecast, forecastP90, actual float64
+		var forecast, forecastP50, forecastP90, actual float64
 		var weekCovered, weekSeries int64
 		if err := rows.Scan(
-			&targetWeek, &horizon, &forecast, &forecastP90, &actual,
+			&targetWeek, &horizon, &forecast, &forecastP50, &forecastP90, &actual,
 			&weekCovered, &weekSeries,
 		); err != nil {
 			return nil, err
@@ -1572,13 +1583,10 @@ func (s *ForecastStore) weeklyActuals(
 		if horizon > maxHorizon {
 			maxHorizon = horizon
 		}
-		// P90 alongside P50 because the two answer different questions and the
-		// chart needs both to be honest. `forecast` is a MEDIAN, and this demand is
-		// heavily right-skewed -- mean 27.68 against median 6.00 -- so summing
-		// medians against realised totals must land low. It reads as a forecast
-		// that is always wrong in one direction when in fact P(actual <= P50) is
-		// 52.8 per cent, which is a median doing its job. Serving the interval lets
-		// the screen show the actual falling INSIDE it rather than above a point.
+		// Decision #95 separates additive volume from the quantiles. `forecast` is
+		// expected_units and is therefore the point compared with realised volume;
+		// P50/P90 remain explicitly named distribution summaries. Coverage is still
+		// counted per SeriesKey from P90, never against these aggregate sums.
 		items = append(items, map[string]any{
 			"targetWeekStart": targetWeek.Format("2006-01-02"),
 			// How far ahead this week's number was made. Per row because it VARIES
@@ -1587,6 +1595,7 @@ func (s *ForecastStore) weeklyActuals(
 			// how far ahead the forecast was made.
 			"horizonWeeks": horizon,
 			"forecast":     forecast,
+			"forecastP50":  forecastP50,
 			"forecastP90":  forecastP90,
 			"actual":       actual,
 			// Per week as well as pooled, so a reader can see one bad week rather
@@ -1643,7 +1652,8 @@ func (s *ForecastStore) actuals(
 			COUNT(*) OVER(),
 			forecast_origin, target_week_start, market_id, sku_id, store_id,
 			channel_id, horizon, dept_id, category, actual_units,
-			yhat_p50, yhat_p90, confidence, selected_model
+			expected_units, expected_model, yhat_p50, yhat_p90,
+			confidence, selected_model
 		FROM retail_serving.forecast_eval_predictions
 		WHERE %s
 		ORDER BY forecast_origin DESC, target_week_start, market_id, store_id,
@@ -1666,14 +1676,14 @@ func (s *ForecastStore) actuals(
 			rowTotal                                              int64
 			origin, target                                        time.Time
 			marketID, skuID, storeID, channelID, deptID, category string
-			model                                                 string
+			model, expectedModel                                  string
 			horizon                                               int
-			actual, p50, p90, confidence                          float64
+			actual, expectedUnits, p50, p90, confidence           float64
 		)
 		if err := rows.Scan(
 			&rowTotal, &origin, &target, &marketID, &skuID, &storeID,
 			&channelID, &horizon, &deptID, &category, &actual,
-			&p50, &p90, &confidence, &model,
+			&expectedUnits, &expectedModel, &p50, &p90, &confidence, &model,
 		); err != nil {
 			return nil, err
 		}
@@ -1684,7 +1694,9 @@ func (s *ForecastStore) actuals(
 			"marketId":        marketID, "skuId": skuID, "storeId": storeID,
 			"channelId": channelID, "horizon": horizon,
 			"departmentId": deptID, "category": category,
-			"actualUnits": actual, "p50": p50, "p90": p90,
+			"actualUnits":   actual,
+			"expectedUnits": expectedUnits, "expectedModel": expectedModel,
+			"p50": p50, "p90": p90,
 			"confidence": confidence, "selectedModel": model,
 		})
 	}
@@ -1843,7 +1855,7 @@ func (s *ForecastStore) horizons(
 				evaluation.store_id,
 				evaluation.category,
 				evaluation.actual_units,
-				evaluation.yhat_p50,
+				evaluation.expected_units,
 				evaluation.coverage_hits,
 				evaluation.n
 			FROM retail_serving.forecast_eval_predictions AS evaluation%s
@@ -1853,7 +1865,7 @@ func (s *ForecastStore) horizons(
 			SELECT
 				horizon,
 				SUM(actual_units) AS actual,
-				SUM(yhat_p50) AS predicted
+				SUM(expected_units) AS predicted
 			FROM scoped
 			GROUP BY %s
 		),
@@ -2010,7 +2022,7 @@ func (s *ForecastStore) stores(
 					evaluation.target_week_start,
 					evaluation.horizon,
 					SUM(evaluation.actual_units) AS actual,
-					SUM(evaluation.yhat_p50) AS predicted,
+					SUM(evaluation.expected_units) AS predicted,
 					SUM(evaluation.coverage_hits) AS coverage_hits,
 					SUM(evaluation.n) AS n
 				FROM retail_serving.forecast_eval_predictions AS evaluation%s

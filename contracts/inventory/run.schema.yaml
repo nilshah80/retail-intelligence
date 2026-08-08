@@ -111,7 +111,7 @@ properties:
       runSemanticFingerprint:
         $ref: "#/$defs/sha256"
       acceptanceSchemaVersion:
-        const: retail-forecast-acceptance/v5
+        const: retail-forecast-acceptance/v6
       coverageGateMode:
         const: hard
   intervalAvailability:
