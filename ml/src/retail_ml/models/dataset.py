@@ -50,6 +50,11 @@ BASE_MODEL_COLUMNS: Final[tuple[str, ...]] = (
     "competitor_in_stock",
     "competitor_age_days",
     "origin_year",
+    # Assortment start, carried so the model can derive its own product's age.
+    # The feature builder already reads it inside the known_as_of boundary to
+    # compute exposure_days, so it adds no leakage the exposure weighting does
+    # not already carry.
+    "active_from",
     "market_id",
     "store_id",
     "channel_id",

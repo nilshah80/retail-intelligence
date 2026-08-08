@@ -42,6 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
 
 from retail_datagen.catalog_packs import (  # noqa: E402
     CATALOG_PACK_METADATA,
@@ -54,8 +55,12 @@ from retail_datagen.catalog_packs import (  # noqa: E402
     _partial_combinations,
     resolve_catalog_pack,
 )
-from retail_datagen.config import SUPPORTED_TAX_CATEGORIES  # noqa: E402
+from retail_datagen.config import (  # noqa: E402
+    SUPPORTED_TAX_CATEGORIES,
+    load_config,
+)
 from retail_datagen.locale_packs import LOCALE_PACKS  # noqa: E402
+from tools.sync_presets import EMBED_ONLY_PRESETS, PRESETS  # noqa: E402
 
 GULF_FAMILIES = {
     "lubricants-adblue",
@@ -303,6 +308,21 @@ class ConfigBuilderDriftTests(unittest.TestCase):
         assert match is not None
         embedded = tuple(re.findall(r'"([a-z]+)"', match.group(1)))
         self.assertEqual(SUPPORTED_TAX_CATEGORIES, embedded)
+
+    def test_embedded_presets_match_their_yaml(self) -> None:
+        # The vocabularies above were guarded; the embedded *presets* were not.
+        # The builder shipped the Gulf showcase with startDate 2025-08-01 (a
+        # Friday) while the YAML had been corrected to 2025-08-07 (a Thursday),
+        # so exporting from the builder would have handed back a Friday-start
+        # config -- reintroducing the replay-oracle failure that the Thursday
+        # move was made to fix, at the cost of a full regeneration.
+        for element_id, path in {**PRESETS, **EMBED_ONLY_PRESETS}.items():
+            with self.subTest(preset=element_id):
+                self.assertEqual(
+                    load_config(path),
+                    self._embedded(element_id),
+                    f"{element_id} is stale -- re-run datagen/tools/sync_presets.py",
+                )
 
     def test_inline_dimension_vocabulary_matches_python(self) -> None:
         # This list is inline JavaScript, not a JSON script element, so

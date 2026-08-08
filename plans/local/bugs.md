@@ -13,10 +13,14 @@ the substantive ones.
 
 ---
 
-## BUG-1 · Slow movers under-forecast by 77%; Croston routed to only 4% `[open — diagnosing]`
+## BUG-1 · Cold-start cohort under-forecast by 74% — carries 86.7% of intermittent volume `[open — two fixes measured, one kept]`
 
-**Where:** `ml/src/retail_ml/models/train_lgbm.py` — `_tail_replay_preferred_keys`
-(originally suspected `models/intermittent.py` — `croston_beats_seasonal_naive`; ruled out below)
+**Where:** `ml/src/retail_ml/models/cold_start_blend.py` (C5) — the cold-start cohort holds
+86.7% of intermittent volume at −74.2%. Secondarily `models/train_lgbm.py` —
+`_tail_replay_preferred_keys`, fixed and kept (+19 points on `established_history`).
+
+_This entry is kept in the order the investigation actually ran, including two diagnoses
+that were measured and overturned. The corrections are the useful part._
 
 **Symptom.** Slow-moving series are under-forecast by **77%**. On the Gulf ten-year run,
 `slow_mover` slice bias is **−71.6%** with WAPE 1.082, across 2,216 series.
@@ -78,6 +82,207 @@ conditions eliminates. Shapes a real fix might take, none yet supported by evide
 - the predicate is selecting correctly → then Croston is not the answer, and the fix
   belongs in the LightGBM intermittent branch that serves 95.8% of these rows at −77%.
 
+**Instrumentation result — the binding condition is the LightGBM comparison.**
+Each condition's pass rate over the WAPE-eligible population, with "sole blocker"
+counting series where that condition alone fails and the other three pass:
+
+| condition | pass % | sole blocker |
+|---|---|---|
+| `rows >= 8` | 100.0% | 0 |
+| `actual_units > 0` | 95.2% | 0 |
+| `croston_error <= lightgbm_error` | **0.2%** | **777** |
+| `croston_error <= seasonal_error` | 64.5% | 0 |
+
+`rows >= 8` — the condition the original note guessed at — eliminates *nothing*.
+The collapse is entirely `croston_error <= lightgbm_error`, and it is the same
+point-accuracy trap one level down: summed per-origin absolute error rewards
+forecasting near-zero on a mostly-zero series, so it selects for exactly the
+downward bias it is supposed to detect. Served evidence:
+
+| model | err/zero-week | err/nonzero-week | % zero weeks |
+|---|---|---|---|
+| `croston_sba_replay_selected` | 0.386 | 0.869 | 68.1% |
+| `lightgbm_intermittent_fallback` | 0.115 | **5.255** | 76.3% |
+
+LightGBM wins the 76% of weeks that are zero by predicting ~nothing, and loses
+6× on the weeks that carry the volume. Summed, it wins — and Croston is rejected.
+
+**Fix applied.** Compare the two on *cumulative volume* over the calibration
+window rather than summed per-origin error, which is the quantity replenishment
+depends on:
+
+```python
+croston_volume_gap  = |Σ croston_p50  − Σ actual|
+lightgbm_volume_gap = |Σ lightgbm_p50 − Σ actual|
+... & (croston_volume_gap <= lightgbm_volume_gap) & ...
+```
+
+The other three conditions are unchanged: two eliminate nothing, and
+`croston_error <= seasonal_error` still removes a third of candidates on point
+accuracy, which is real work. Offline replay of old vs new predicate on the same
+population: **20.3% → 48.4% of eligible routed**, a 2.4× increase.
+
+**MEASURED — the fix works mechanically and does not solve the problem.**
+A/B on identical features and origins, `gulf` (pre-fix) vs `gulf2` (fixed):
+
+| sparse population | routed rows | share | actual | pred | bias |
+|---|---|---|---|---|---|
+| `gulf` pre-fix | 31,574 | 4.2% | 13,232 | 12,778 | −3.4% |
+| `gulf2` fixed | 139,681 | **18.7%** | 45,966 | 40,355 | −12.2% |
+| overall `gulf` | — | — | 1,047,737 | 249,047 | **−76.2%** |
+| overall `gulf2` | — | — | 1,047,737 | 276,137 | **−73.6%** |
+
+Routing rose 4.4×, bias moved 2.6 points. The prediction stated before the run was
+that ~−45% would confirm the model and ~−70% would refute it: **it refutes it.**
+
+The fix moved *rows*, not *volume*. Croston now covers 45,966 of 1,047,737 sparse
+units — 4.4% of the volume. The fallback still holds 95.6% at −76.5%, essentially
+unchanged from −77.2%. Croston's own bias degraded −3.4% → −12.2%, as expected: the
+original 4.2% was the subset it had been selected on.
+
+**Counterfactual settles it.** `tail_candidate_p50` carries Croston's prediction on
+rows where it was *not* selected, so full routing can be scored without a re-run:
+
+| sparse population | actual | pred | bias |
+|---|---|---|---|
+| as shipped (18.7% routed) | 1,047,737 | 276,137 | −73.6% |
+| **every sparse row routed to Croston** | 1,047,737 | 323,746 | **−69.1%** |
+
+Maximum possible routing buys 4.5 points. **Croston is not the lever**, and the
+earlier offline estimate of −15.1% for full routing was wrong — it used a crude
+`0.23 × actual` stand-in for LightGBM rather than real per-origin predictions.
+
+---
+
+### The actual root cause: p50 is a median, and replenishment needs an expectation
+
+Bias tracks `zero_share_52w` smoothly and monotonically, which model routing cannot
+produce:
+
+| zero-share band | actual | bias @ p50 | bias @ p90 | mean nonzero wk | median nonzero wk |
+|---|---|---|---|---|---|
+| 0.0–0.2 | 34,373,416 | +13.9% | +56.4% | 26.2 | 11.0 |
+| 0.2–0.4 | 1,481,636 | +1.0% | +78.5% | 5.8 | 2.0 |
+| 0.4–0.6 | 518,661 | −21.7% | +112.6% | 3.4 | 1.0 |
+| 0.6–0.8 | 461,913 | −64.2% | +96.7% | 4.5 | 1.0 |
+| 0.8–1.0 | 763,509 | **−83.8%** | **+119.3%** | 8.8 | 2.0 |
+
+For a series that is zero 80–100% of weeks, the **median week is zero** while the mean
+is not. Summing `yhat_p50` over a horizon therefore under-counts volume by
+construction, and the shortfall grows with sparsity — exactly the observed gradient.
+`p90` overshoots in every band (+119.3% where p50 gives −83.8%), so the correct
+volume basis lies between the two: the **expected value**, which is what replenishment
+consumes. Every model in the stack is being asked for a quantile and then summed as
+though it were a mean.
+
+**Proven:** the monotonic p50 gradient; p90 overshoot in all five bands; mean ≫ median
+on nonzero weeks (8.8 vs 2.0 in the sparsest band); routing is not the lever (−69.1%).
+**Inferred, not yet built or measured:** that an expectation-based volume basis closes
+the gap.
+
+**These are not slow movers.** Quintile 5 holds 84% of the sparse volume in 611 series
+at 12.22 units/week — the top one, `GLF-EVOLT-DRIVE-2-PRM-20L`, runs 65.7 units/week at
+89% zero weeks. They are 20L drums, 5L coolant packs and EV fluids: lumpy distributor
+demand, nothing for weeks then a large batch order. The `slow_mover` label is itself a
+mislabel, which is why BUG-3's cohort gate would not have caught this either.
+
+**Status of the shipped change.** The volume-basis comparison is more defensible than
+summed point error on its own merits — point accuracy demonstrably selects for the bias
+it should detect — so it is kept, but it must be judged as a routing correction and
+**not** as a fix for the bias.
+
+---
+
+### The dominant cause, found after the above: the seasonal-lag eligibility precondition
+
+The p50/median analysis above is correct but governs only **13.3%** of sparse volume.
+Splitting the population by how much history each series has:
+
+| history band | series | rows | actual | % of sparse volume |
+|---|---|---|---|---|
+| 27–52 weeks | 1,062 | 122,278 | 907,985 | **86.7%** |
+| > 52 weeks | 1,993 | 623,610 | 139,752 | 13.3% |
+
+Of the sparse rows carrying no Croston candidate at all, **96.4% of the missing volume**
+comes from series whose history is ≤ 52 origins — not from the WAPE gate, which accounts
+for 3.6%. The cause is the first line of `croston_beats_seasonal_naive`:
+
+```python
+if len(observations) <= seasonal_lag:
+    return False
+```
+
+A series younger than the 52-week lag has no seasonal baseline to compare against, so the
+function abstains — and the caller reads that abstention as *ineligible*, sending the
+series to `lightgbm_intermittent_fallback` by default. Those series are the twelve
+lubricant lines launched inside the horizon (EVOLT EV fluids, ENDURANCE coolants,
+36–46 weeks old). `GLF-EVOLT-DRIVE-2-PRM-20L`: 36 weeks of history, 210,037 units.
+
+This is a **cold-start × intermittent gap** — past the cold-start estimator's window,
+below the seasonal lag the intermittent path demands, covered by neither.
+
+Measured on the engine's own `croston_sba`, all 1,062 series matched:
+
+| basis | predicted | actual | bias |
+|---|---|---|---|
+| `lightgbm_intermittent_fallback` (ships) | 234,045 | 907,985 | **−74.2%** |
+| croston candidate | 528,045 | 907,985 | **−41.8%** |
+
+**Fix attempted (`gulf3`) and REVERTED — it was inert.** `seasonal_baseline_unavailable`
+admitted series with 26–52 origins beside the seasonal test. The run produced
+`forecast_eval_predictions.parquet` **byte-identical to `gulf2`** (same md5). Two hours,
+zero change, `pct_with_candidate` still 0.0% in the target band.
+
+**Why it was inert, and the error behind it.** The 36–46 week history lengths above were
+measured over the *whole* feature file. The backtest scores origins **2025-08-04 →
+2026-01-19**, and these lines launch 2025-11-24 — so *at every scored origin* they hold
+0–8 origins of history, not 36–46. The `minimum_history=26` floor excluded them everywhere.
+`_history(feature_path, origin)` filters `forecast_origin < origin`; history length must be
+measured **as-of-origin**, never over the full file.
+
+**The engine had already classified them correctly.** The `cohort` column says exactly
+what the history-band split was re-deriving by hand:
+
+| cohort | rows | actual | pred | bias |
+|---|---|---|---|---|
+| `cold_start` | 122,278 | 907,985 | 234,045 | **−74.2%** |
+| `established_history` | 623,610 | 139,752 | 42,093 | −69.9% |
+
+The 86.7%-of-volume population **is the cold-start cohort** — new products forecast at or
+before launch. Croston cannot help: there is no history to fit. The intermittent path was
+never the lever, and neither was the seasonal-lag precondition.
+
+**Where the real fix belongs:** the cold-start estimator (C5, `models/cold_start_blend.py`),
+which is fitted and active but leaves its cohort 74% under-forecast on this tenant. That is
+a separate piece of work with its own measurement.
+
+**Correction to this document.** Two claims above are wrong and are kept for the lesson.
+`croston_beats_seasonal_naive` was ruled out as a *WAPE gate* — correct — and then blamed
+for its *length precondition* — also wrong, because the affected series never reach that
+code path at scoring time.
+
+The single error behind every wrong diagnosis in this entry is **measuring the wrong
+slice**:
+
+1. bias filtered to `actual_units > 0` — wrong rows;
+2. eligibility counted by **series** (66.8% admit) when the quantity of interest was
+   **volume** (90% excluded);
+3. full-history proxies for LightGBM (`0.23 × actual`) instead of real per-origin predictions;
+4. history length over the **whole file** instead of **as-of-origin**.
+
+Each produced a confident number that did not survive the run. The reliable instruments were
+the served artifacts themselves — `tail_candidate_p50`, `cohort`, `zero_share_52w` — which
+carry the engine's own verdict and needed no reimplementation.
+
+Changing the volume basis from p50 to an expectation remains open for the
+`established_history` cohort. It touches the serving contract and what a "forecast" means
+downstream, so it needs its own decision record — and note that C1 ("P50 bias correction")
+is a pre-registered candidate in `contracts/ml/forecast-improvement-policy.json` whose
+implementation exists in `ml/src/retail_ml/models/bias_correction.py` but is **wired to
+nothing**. Its materiality gate is relative WAPE, which a bias correction can worsen while
+improving volume accuracy — the same trap as the routing predicate, one level up in the
+governance.
+
 **Two measurement errors made while diagnosing this, recorded so they are not repeated:**
 
 1. Bias was first computed filtering `actual_units > 0`. That is invalid for intermittent
@@ -88,6 +293,96 @@ conditions eliminates. Shapes a real fix might take, none yet supported by evide
    interval via leading zeros. Tested against six real Gulf sparse series: aggregate
    predicted/true rate **1.184**, i.e. Croston slightly over-forecasts if anything. The
    hypothesis is **wrong** and the initialisation is not implicated.
+
+---
+
+## PRE-BUG-2 · Integrate the forecast branches, then validate once `[planned — blocks BUG-2]`
+
+**Required order.** Finish the current BUG-1 experiment, integrate the portable forecast
+fixes, diagnose and repair BUG-2 with targeted replay work, and only then spend the time
+on one authoritative clean end-to-end pipeline. BUG-2 must not be developed against a
+forecast codebase that is still moving underneath it.
+
+**Branches.**
+
+- Destination/current Gulf branch: `feature/gulf-oil-india-datagen`.
+- Source of the forecast fixes: `forecast-vs-actual-ragged-evaluation`.
+- Perform the combination on a temporary integration branch cut from
+  `feature/gulf-oil-india-datagen`; merge it back only after the final clean run passes.
+
+### A. Freeze the current BUG-1 checkpoint
+
+- [ ] Let the in-progress BUG-1 run finish without changing code underneath it.
+- [ ] Retain the pre/post artifacts (`gulf` and `gulf2`) and record routing share, volume
+      share, bias by `zero_share_52w`, portfolio regressions, acceptance results and run
+      identities.
+- [ ] Commit the Gulf BUG-1 implementation and findings before starting branch
+      integration. The current cumulative-volume change is a routing correction, not
+      closure of the still-open P50-versus-expectation problem.
+
+### B. Integrate all portable code in one batch
+
+- [ ] Bring the functional changes from `forecast-vs-actual-ragged-evaluation` into the
+      integration branch in this order:
+  1. `8d80b42` — recent h1-h4 ragged evaluation, run/verifier contracts, migration 0021,
+     serving projection, API and UI comparison semantics.
+  2. `55b8865` — normalize a partial current-origin week to its weekly equivalent before
+     current-cycle scoring.
+- [ ] Do **not** import the source branch's retained demo authority as Gulf evidence:
+  - exclude `a46b6ed`'s demo expected pin and r7/r8 publication-selection records;
+  - exclude `e2c277f`'s demo forecast-closure and inventory-entry identities;
+  - exclude unrelated local launch configuration and demo-only task prose.
+- [ ] Preserve the existing Gulf r7-r10 history. New Gulf pins, closure records and
+      selection generations must be derived from the final integrated run rather than
+      resolved by choosing the demo side of a merge conflict.
+- [ ] Keep BUG-1, ragged evaluation, weekly normalization and later BUG-2 work as
+      separate commits even though they will share one final pipeline validation. This
+      keeps a failing stage attributable without paying for multiple end-to-end runs.
+- [ ] Add focused tests before BUG-2 work starts:
+  - seven-day current origin is unchanged;
+  - partial current origin uses `weekly_units_equivalent`;
+  - null weekly equivalent follows the explicit fallback;
+  - recent origins cannot overlap the complete acceptance grid;
+  - the recent artifact admits only the intended horizons and finite comparison values;
+  - the weekly API selects one freshest horizon and reports per-series P90 coverage.
+
+### C. Diagnose and fix BUG-2 without another full pipeline
+
+- [ ] Use the retained Gulf source, features and inventory artifacts for targeted replay
+      diagnostics after the integrated forecast code is stable.
+- [ ] Instrument actual snapshot dates, bridge start/end, bridge length and reconstruction
+      delta per replay period; split the evidence between arrival and non-arrival weeks.
+- [ ] Prove or refute the 14-day review-cycle hypothesis before changing the oracle.
+- [ ] Implement the data-derived snapshot/bridge correction and validate the replay stage
+      directly. Do not change the Gulf tenant to a weekly delivery cycle to make it pass.
+
+### D. Run the clean pipeline once, after all code is stable
+
+- [ ] Clean the generated work/artifact directories and rebuild the serving database only
+      after BUG-2's targeted replay validation passes and every code change above is fixed.
+- [ ] Run the full Gulf flow once from the agreed clean boundary: ingestion, feature build,
+      complete plus recent backtest, normalized current-cycle score, classification,
+      publication, migration/materialization/activation, inventory build and corrected
+      replay.
+- [ ] Require migration `0021_forecast_eval_recent`, run schema v4 and verifier v6 to be
+      active, and require both the forecast and inventory authorities to be unique.
+- [ ] Generate fresh Gulf expected pins, closure/entry records and publication-selection
+      generations from that run. Retain earlier Gulf generations as superseded history;
+      never overwrite them with the demo branch's identities.
+- [ ] Merge the validated integration branch back into
+      `feature/gulf-oil-india-datagen`, then begin any remaining BUG-2 closure work from
+      that immutable baseline.
+
+**Run-economy rule.** Unit tests, contract tests, migration tests and targeted replay runs
+are expected during development; they are not substitutes for the final pipeline, but
+they avoid paying for repeated ingestion and multi-hour backtests. There should be one
+clean authoritative end-to-end run for the combined change set, not one per commit.
+
+**Completion gate before BUG-2.** Sections A and B must be complete before BUG-2 code work
+begins. Section C may use retained artifacts. Section D is the single final proof after
+BUG-2 is repaired. If the expected-value solution for BUG-1 is deferred, record that
+explicitly: this run may validate the routing correction, but it must not be represented
+as closing BUG-1's remaining forecast-volume semantics.
 
 ---
 
@@ -189,21 +484,224 @@ drift tests for both. The dimension drift test caught its target on first run.
 
 ---
 
-## BUG-6 · `retail_ingestion.cli run` replays cached gate verdicts `[open]`
+## BUG-6 · `retail_ingestion.cli run` replays cached gate verdicts `[fixed]`
 
 After a Gate A failure, the work root retains `gate-a.json`. A subsequent run with a
 *corrected* profile replays the stale `critical` verdict rather than re-running the gate —
 Gate A passed standalone while the pipeline kept refusing. The work root must be cleared
 by hand after any profile change.
 
-**Proposed fix.** Fingerprint the gate inputs (profile + snapshot) into the cached report
-and invalidate on mismatch, or expose `--rebuild` through `tools/dev.py pipeline`.
+**Fixed** by the second route: `tools/dev.py pipeline` now takes `--rebuild` and threads it
+to `retail_ingestion.cli run`. Input fingerprinting remains the better long-term answer —
+it would invalidate automatically instead of relying on the operator remembering the flag —
+but that belongs to the ingestion contract, not the dev harness.
 
 ---
 
-## BUG-7 · `sync_presets.py` strips YAML comments `[open]`
+## BUG-7 · `sync_presets.py` strips YAML comments `[fixed]`
 
 Running it rewrote `multi-market-10-year-demo.yaml` and deleted a P4-11 rationale comment
 block explaining why the store replenishment policy was tightened. The tool round-trips
 through `safe_load`/`safe_dump`, which is lossy for comments. Pre-existing; worked around
 by restoring retail presets from `main` after each sync.
+
+**Fixed** by making the write conditional: `_sync_yaml` keeps the parsed original, deep-copies
+it before stamping, and writes only when the semantic content actually moved. A preset already
+in sync keeps its comments and its formatting. Verified — a full sync now leaves every preset
+YAML byte-identical. This does not make `safe_dump` round-trip comments, so a preset that
+genuinely changes still loses them; that would need `ruamel.yaml`, a new dependency for a
+dev-only tool, and the unconditional rewrite was the whole of the observed harm.
+
+---
+
+## BUG-8 · Config Builder shipped a stale Gulf preset — the Thursday fix was not embedded `[fixed]`
+
+**Where:** `datagen/config-builder.html`, `datagen/tests/test_gulf_catalog.py`
+
+**Symptom.** The builder embedded the Gulf showcase with `startDate: 2025-08-01` — a
+**Friday** — while the YAML had been corrected to `2025-08-07`, a **Thursday**. Exporting
+the Gulf showcase from the Config Builder handed back a Friday-start config.
+
+**Why it matters.** The Thursday start is not cosmetic. BUG-2's replay oracle looks for a
+Thursday snapshot; a non-Thursday horizon start produces `weeksCompared: 0` and
+`NO_ORACLE_WEEKS_AVAILABLE`. Correcting it the first time cost a full ~6-hour regeneration.
+The builder would have silently reintroduced it.
+
+**Root cause.** Same shape as BUG-5 — the builder carries a serialized copy — but BUG-5's
+fix guarded the *vocabularies* (`catalogPacks`, `localePacks`, the dimension Set, the tax
+dropdown) and not the embedded **presets**, which are the larger payload. Found only because
+BUG-7's no-op guard made a sync's real changes visible instead of burying them in noise.
+
+**Fixed.** Re-synced, and added `test_embedded_presets_match_their_yaml`, which asserts every
+preset in `{**PRESETS, **EMBED_ONLY_PRESETS}` equals `load_config(path)` — covering all five
+presets, not just Gulf, and failing with an instruction to re-run the sync.
+
+---
+
+_BUG-9 … BUG-16 were all found in one pass, by serving the `gulf4` forecast through the API
+and UI and reading what the screens actually showed. None of them were visible from the
+pipeline logs or the artifacts — they needed the stack running and someone looking at it._
+
+---
+
+## BUG-9 · `forecast/summary` takes ~13 s and blocks the Forecast screen `[open]`
+
+**Where:** the Go API's `/api/v1/forecast/summary` handler.
+
+**Symptom.** Measured twice: **13.8 s and 13.1 s**. The Forecast screen renders
+"Loading the accepted forecast…" for that whole time and its five KPI tiles read
+`Not available`. Every other call on the screen — `horizons`, `stores`, `series`, `drivers`,
+`signals`, `versions`, `actuals` — returns 200 in under a second, so the screen is gated on
+one slow query.
+
+**Why it matters.** It is the first screen a demo opens, and for thirteen seconds it looks
+broken rather than slow. Not tenant-specific — the query would be slow for any tenant of this
+size — but Gulf's grain is what made it visible.
+
+**Not diagnosed.** No profiling was done; the handler was not read. Recorded as measured.
+
+---
+
+## BUG-10 · Inventory filters show the *other* tenant's categories `[open]`
+
+**Where:** `ui/src/generated/inventoryScreenLayout.ts:34`, generated by
+`tools/extract_reference_layout.py` from
+`docs/ai_retail_intelligence_dashboard_multicurrency_v6.html`.
+
+**Symptom.** On a lubricants tenant, Inventory Overview offers
+`All Categories: Footwear, Apparel, Electronics, Beauty` and
+`All Regions: West, North, South, East`. The Forecast screen, which builds its category list
+from the API, correctly shows `gulf-adblue … gulf-tractor`.
+
+**Root cause.** The generated file's own header states the contract it breaks:
+
+> Structure only. Every VALUE on these screens comes from the live API — the reference's
+> illustrative figures are deliberately not extracted, so sample data is never one import
+> away from a screen.
+
+The extractor honours that for *figures* and not for *filter option lists*, which are equally
+illustrative. So the first tenant's sample categories are compiled into the second tenant's UI.
+
+**Not fixed deliberately.** `GOI-11` says: *if a screen needs a code change to show Gulf data,
+escalate — do not patch the UI.* The fix belongs in the extractor (emit option lists as
+structure, populate from the API), not in a hand-edit of a generated file.
+
+---
+
+## BUG-11 · Every Gulf distributor is located in Mumbai `[open]`
+
+**Where:** `datagen/configs/gulf-oil-india-ten-year.yaml` — store definitions.
+
+**Symptom.** The UI renders "Chennai Distributor, Mumbai", "Guwahati Distributor, Mumbai",
+and so on for all 13. Confirmed in curated data, not a display artifact:
+
+```
+store_id                     market_id   region  city
+gulf-india:ahmedabad-dist    gulf-india  MH      Mumbai
+gulf-india:chennai-dist      gulf-india  MH      Mumbai
+gulf-india:guwahati-dist     gulf-india  MH      Mumbai   (all 13 identical)
+```
+
+**Why it matters.** Two ways. It is visibly wrong in a demo to an Indian client — Chennai is
+not in Maharashtra. And it collapses the region dimension: `All Regions` offers exactly one
+value, so any regional analysis is degenerate, and weather/local-event features resolve to a
+single city for a country-wide distribution network.
+
+**Fix.** Datagen config only — assign each distributor its real city and state. Cheap, but it
+needs a regeneration to reach curated data, so it should ride along with the next full rebuild
+rather than trigger one.
+
+---
+
+## BUG-12 · Forecast Value Add is negative — the model loses to a 13-week moving average `[open]`
+
+**Symptom.** The Forecast screen reports **FVA −45.2%** ("relative improvement vs MA13").
+It was −46.8% before any of the BUG-1 work, so two measured engine fixes moved it 1.6 points.
+
+**Why it matters.** FVA is the honest summary of whether the model is worth running. A
+negative FVA says a thirteen-week moving average would serve this tenant better. It is the
+number a client will ask about first, and the answer today is unflattering and correct.
+
+**Relationship to BUG-1.** Same root cause, different lens: the cohort that drags FVA down is
+the cold-start population, under-forecast 53.6% and holding 86.7% of intermittent volume. FVA
+will not recover until that does. Tracked as a *consequence* so it is not double-counted as an
+independent defect.
+
+---
+
+## BUG-13 · P50–P90 interval covers the actual in 0 of the last 8 weeks `[open]`
+
+**Symptom.** The Forecast-vs-Actual card states: *"Last 8 weeks · actual inside the P50–P90
+forecast range in 0 of 8."* Zero of eight, not a marginal miss.
+
+**Tension with the acceptance gates.** `backtestCoveragePct` is **94.56%** and the per-horizon
+coverage column reads 91.1–92.6%, comfortably inside the decision-#58 band of 0.85–0.95. So
+the *backtest* says coverage is calibrated while the *served recent weeks* say the band misses
+every time. Both are computed, neither is obviously wrong, and they disagree.
+
+**Why it matters.** Whichever is right, one of the two is misleading a reader. If the served
+view is right, the calibrated interval does not survive contact with the current cycle. If the
+backtest is right, the card's definition or window differs from what its label implies.
+
+**Not diagnosed.** Recorded as a contradiction between two measured numbers, to be resolved
+before either is quoted to a client.
+
+---
+
+## BUG-14 · Stock Turn 84.2x does not reconcile with the curated data `[open]`
+
+**Symptom.** The Inventory screen reports **84.2x**, labelled *"trailing demand over units on
+hand, annualised"*. Computed directly from curated data:
+
+| denominator | units on hand | implied turn |
+|---|---|---|
+| all locations | 480,152 | **12.4x** |
+| warehouses only | 331,071 | 18.0x |
+| stores only | 149,081 | 39.9x |
+
+against 5,947,366 units sold in the trailing year. No denominator reaches 84.2x.
+
+**Why it matters.** 12.4x is a plausible, healthy turn for a lubricants distributor. 84.2x is
+not plausible for any physical-goods business — it implies the entire inventory turning over
+every 4.3 days. A client who knows their own business will notice immediately.
+
+**Not diagnosed.** Either the metric's definition differs from its label (a shorter trailing
+window annualised, or a different scope) or it is a defect. The label is what makes it wrong
+either way.
+
+---
+
+## BUG-15 · The Ageing Inventory card appears to be warehouse-only `[open]`
+
+**Symptom.** The card's five buckets sum to **331,071 units**, which is *exactly* warehouse
+on-hand at the latest snapshot (stores hold 149,081; the total is 480,152). An exact six-digit
+match is not coincidence.
+
+**Why it matters.** The card sits under a header reading "Enterprise inventory position, risk,
+working capital and actions", and its recommended actions — "Markdown / clearance",
+"Transfer / promote" — would be read as applying to the whole estate. Store-held ageing stock,
+31% of units, is invisible.
+
+**Not diagnosed.** The scoping may be deliberate; if so the heading is wrong. Either way the
+card and its header disagree.
+
+---
+
+## BUG-16 · Pooled bias hides a cohort with the opposite sign `[open]`
+
+**Symptom.** The Forecast screen reports **Forecast Bias +6.8%** at h1–h4 against a ±5%
+target — over-forecasting, flagged `Watch`. The cold-start cohort in the same run is
+**−53.6%** — under-forecasting by half.
+
+Both are correct. The dense population dominates the volume-weighted pooled figure, so the
+tile is over-forecasting and the cohort that carries the intermittent volume is severely
+under-forecasting, and the screen shows only the first.
+
+**Why it matters.** A planner reading +6.8% would trim orders — the exact wrong action for the
+drum lines that are already short by half. The pooled tile does not merely omit the cohort, it
+points the opposite way.
+
+**Relationship to BUG-3.** BUG-3 says no acceptance gate can see slow-mover error. This is the
+same blindness one layer up, in the display: `slow_mover` is computed and materialized but
+never surfaced next to the headline. The fix for both is a cohort-aware view, which is why
+they should be decided together.

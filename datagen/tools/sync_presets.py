@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -276,9 +277,11 @@ def _real_lifecycle_templates(end_date: str) -> list[dict[str, Any]]:
 
 
 def _sync_yaml(path: Path) -> None:
-    config = _migrate_category_references(
-        yaml.load(path.read_text(encoding="utf-8"), Loader=_ConfigYamlLoader)
+    original_text = path.read_text(encoding="utf-8")
+    original = _migrate_category_references(
+        yaml.load(original_text, Loader=_ConfigYamlLoader)
     )
+    config = copy.deepcopy(original)
     config["specVersion"] = SOURCE_SPEC_VERSION
     generation = config["catalog"]["generation"]
     generation["catalogPackVersion"] = CATALOG_PACK_VERSION
@@ -390,10 +393,17 @@ def _sync_yaml(path: Path) -> None:
         config["catalog"]["productTemplates"] = _real_lifecycle_templates(
             config["time"]["endDate"]
         )
+    # safe_dump cannot round-trip comments, so every write costs the file its
+    # rationale blocks -- a P4-11 note explaining a tightened replenishment policy
+    # was lost this way. Write only when the semantic content actually moved, so a
+    # preset that is already in sync keeps its comments and its formatting.
+    if config == original:
+        return
     path.write_text(
         yaml.safe_dump(config, sort_keys=False, allow_unicode=True, width=100),
         encoding="utf-8",
     )
+    print(f"  updated {path.name}")
 
 
 def _replace_json_script(html: str, element_id: str, value: Any) -> str:

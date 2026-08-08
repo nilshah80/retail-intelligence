@@ -352,6 +352,64 @@ def test_croston_sba_is_nonnegative() -> None:
     assert croston_sba([0, 0, 4, 0, 0, 5, 0]) >= 0
 
 
+def test_launch_age_reaches_the_model_instead_of_defaulting_to_zero() -> None:
+    # `prepare_model_frame` fills any absent NUMERIC_FEATURE with 0.0, so a
+    # feature can be declared and silently never computed -- which is exactly how
+    # an earlier intermittent-routing change shipped inert. This pins that the
+    # value is derived, distinguishes a new cell from an established one, and
+    # that the target-week age leads the origin age by the horizon.
+    from retail_ml.models.train_lgbm import attach_launch_age, prepare_model_frame
+
+    frame = pd.DataFrame(
+        [
+            {
+                "forecast_origin": date(2026, 1, 19),
+                "active_from": date(2025, 11, 24),
+                "horizon": 13,
+            },
+            {
+                "forecast_origin": date(2026, 1, 19),
+                "active_from": date(2016, 8, 4),
+                "horizon": 13,
+            },
+        ]
+    )
+
+    aged = attach_launch_age(frame)
+
+    assert aged["weeks_since_launch"].tolist() == pytest.approx([8.0, 493.571429])
+    assert aged["weeks_since_launch_target"].tolist() == pytest.approx(
+        [21.0, 506.571429]
+    )
+
+    prepared = prepare_model_frame(
+        frame,
+        categories={name: ("unknown",) for name in ("market_id", "store_id",
+                                                     "channel_id", "dept_id",
+                                                     "category", "sub_cat")},
+    )
+    assert prepared["weeks_since_launch"].tolist() == pytest.approx(
+        [8.0, 493.571429]
+    )
+
+
+def test_launch_age_is_negative_before_a_launch_rather_than_clipped() -> None:
+    # A calendar published ahead of a launch is real information; clipping to
+    # zero would make "launches in six weeks" indistinguishable from "launched
+    # today".
+    from retail_ml.models.train_lgbm import attach_launch_age
+
+    aged = attach_launch_age(
+        pd.DataFrame(
+            [{"forecast_origin": date(2026, 1, 19),
+              "active_from": date(2026, 3, 2), "horizon": 4}]
+        )
+    )
+
+    assert aged["weeks_since_launch"].iloc[0] == -6.0
+    assert aged["weeks_since_launch_target"].iloc[0] == -2.0
+
+
 def test_held_out_replay_can_route_at_the_first_formal_origin() -> None:
     origins = [date(2023, 1, 2) + timedelta(weeks=index) for index in range(120)]
     history = pd.DataFrame(

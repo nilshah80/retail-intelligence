@@ -2709,6 +2709,9 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     str(ingestion), "-m", "retail_ingestion.cli", "run",
                     "--snapshot-root", str(snapshot),
                     "--source-profile", str(source_profile),
+                    # `run` resumes from a cached gate report, so a corrected
+                    # profile replays the stale verdict unless this is passed.
+                    *(["--rebuild"] if getattr(args, "rebuild", False) else []),
                     "--work-root", str(work),
                     "--publication-root", str(curated),
                     "--execution-profile", profile,
@@ -3389,6 +3392,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="tenant source profile; defaults to the retail datagen profile",
+    )
+    pipeline.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="recompute governed ingest stages instead of resuming cached gate reports",
     )
     pipeline.add_argument(
         "--expected-pin",

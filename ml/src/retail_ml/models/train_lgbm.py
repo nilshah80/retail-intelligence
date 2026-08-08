@@ -50,6 +50,8 @@ NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "competitor_available",
     "competitor_in_stock",
     "competitor_age_days",
+    "weeks_since_launch",
+    "weeks_since_launch_target",
     "origin_year",
 )
 CATEGORICAL_FEATURES: Final[tuple[str, ...]] = (
@@ -75,6 +77,13 @@ DRIVER_FEATURE_GROUPS: Final[dict[str, frozenset[str]]] = {
             "zero_share_52w",
             "demand_trend_4v13",
             "macro_index_value",
+            # Lifecycle position belongs here rather than in a new group: for a
+            # product still climbing its launch ramp, age *is* the base demand
+            # trend. A separate group would also need `driverOrder` and
+            # `driverLabels` in ui/src/Forecast.tsx, which is not worth a
+            # contract change for a driver whose weight is not yet measured.
+            "weeks_since_launch",
+            "weeks_since_launch_target",
         }
     ),
     "seasonality": frozenset(
@@ -189,12 +198,44 @@ def _categories(frame: pd.DataFrame) -> dict[str, tuple[str, ...]]:
     }
 
 
+def attach_launch_age(frame: pd.DataFrame) -> pd.DataFrame:
+    """Weeks from the cell's assortment start to the origin and to the target week.
+
+    The model carried `competitor_age_days` but nothing about its **own**
+    product's lifecycle, so it could not tell a ten-year-old drum line from one
+    that shipped last month. On the Gulf tenant that left the cold-start cohort
+    at -55.5% bias: a launch climbing a ramp is forecast flat from the low weeks
+    that immediately follow it, and the shortfall widens with horizon (-31.6% at
+    h1 to -67.5% at h26) exactly as a flat projection against a rising curve does.
+
+    Both ages are origin-safe. `active_from` is an assortment-calendar attribute
+    the feature builder already reads inside its `known_as_of` boundary, where it
+    computes `exposure_days`, so this adds no visibility the exposure weighting
+    does not already carry. Target-week age is supplied explicitly rather than
+    left as `weeks_since_launch + horizon` because trees split, they do not add.
+
+    Negative before launch -- a calendar published ahead of a launch is real
+    information, so it is kept rather than clipped to zero.
+    """
+
+    result = frame.copy()
+    if "active_from" not in result or "forecast_origin" not in result:
+        return result
+    origin = pd.to_datetime(result["forecast_origin"], errors="coerce")
+    active = pd.to_datetime(result["active_from"], errors="coerce")
+    age = (origin - active).dt.days / 7.0
+    result["weeks_since_launch"] = age
+    horizon = pd.to_numeric(result.get("horizon"), errors="coerce")
+    result["weeks_since_launch_target"] = age + horizon
+    return result
+
+
 def prepare_model_frame(
     frame: pd.DataFrame,
     *,
     categories: dict[str, tuple[str, ...]],
 ) -> pd.DataFrame:
-    prepared = frame.copy()
+    prepared = attach_launch_age(frame)
     for column in NUMERIC_FEATURES:
         if column not in prepared:
             prepared[column] = 0.0
@@ -437,11 +478,32 @@ def _tail_replay_preferred_keys(
         croston_error=("croston_error", "sum"),
         lightgbm_error=("lightgbm_error", "sum"),
         seasonal_error=("seasonal_error", "sum"),
+        croston_volume=("croston_p50", "sum"),
+        lightgbm_volume=("lightgbm_p50", "sum"),
     )
+    # Croston is compared with LightGBM on CUMULATIVE VOLUME, not on summed
+    # per-origin absolute error.
+    #
+    # Point accuracy is unwinnable for intermittent demand, and it selects for
+    # the bias it is supposed to detect. Measured on the served Gulf fallback
+    # population: 76.3% of rows are zero weeks, where LightGBM's near-zero
+    # prediction costs 0.115 of error against Croston's rate at 0.386. That 3.4x
+    # advantage over three quarters of the sample is unrecoverable, even though
+    # on the weeks demand actually arrives LightGBM is six times worse -- 5.255
+    # against 0.869. So the old predicate admitted 2 of 1,249 eligible series,
+    # and the 714,314 rows it sent to the fallback are under-forecast by 77%.
+    #
+    # Replenishment depends on how much stock is needed over a horizon, not on
+    # which week it lands in, so the horizon total is the honest basis. The other
+    # three conditions keep their original meaning: `croston_error <=
+    # seasonal_error` still eliminates a third of candidates on point accuracy,
+    # which is real work, and is left alone deliberately.
+    croston_volume_gap = (grouped["croston_volume"] - grouped["actual_units"]).abs()
+    lightgbm_volume_gap = (grouped["lightgbm_volume"] - grouped["actual_units"]).abs()
     winners = grouped[
         (grouped["rows"] >= int(minimum_rows))
         & (grouped["actual_units"] > 0)
-        & (grouped["croston_error"] <= grouped["lightgbm_error"])
+        & (croston_volume_gap <= lightgbm_volume_gap)
         & (grouped["croston_error"] <= grouped["seasonal_error"])
     ]
     return frozenset(

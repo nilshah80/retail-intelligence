@@ -1988,7 +1988,13 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       `0020_safety_stock_drivers` with 0 forecast activations, 0 active versions, 0 inventory
       activations. Clean slate verified.
 
-**GOI-5 Short-horizon publication and sizing evidence**
+**GOI-5 Short-horizon publication and sizing evidence** `[NOT RUN — superseded by GOI-6]`
+- [~] **The showcase horizon was authored but never generated.** `gulf-oil-india-showcase.yaml` and
+      `gulf_oil_india_showcase.yaml` exist and stay valid, but generation went straight to the ten
+      year run. The sizing risk this task existed to retire — thin segments discovered after a long
+      generation — did not materialise: the long run cleared `MIN_SEGMENT_SERIES` and trained. The
+      cost of skipping it was paid elsewhere instead, in three full 2h ML cycles spent on engine
+      defects that a short horizon would not have surfaced either.
 - [ ] Generate the showcase horizon and take it to a curated publication. Record per-stage wall
       time, peak memory, row counts and control totals; append to `docs/pipeline-stage-timings.md`.
 - [ ] Compute the SKU × location × week grid and compare every intended analysis segment against
@@ -2001,7 +2007,17 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       `native_extracted` or stronger; non-degenerate lead-time distribution; reconstructible
       inbound positions at replay origins.
 
-**GOI-6 Long-horizon publication, selection and pin**
+**GOI-6 Long-horizon publication, selection and pin** `[DONE 2026-08-07]`
+- [x] **Generated `run-95b856f20766c9e1`** — 2016-08-04 → 2026-07-31, 2h54m, 29 GB, 4,812 objects.
+      Gate A and Gate B both pass; curated publication created with retained evidence; Decision-#73
+      candidate → approved → active selections minted and a **separate Gulf expected-pin** written
+      per `GOI-D8`, leaving the retail pin untouched.
+- [x] **The start date is a Thursday on purpose.** The first attempt started on a Monday, so all
+      522 weekly snapshots landed on Mondays, the replay oracle found no Thursday snapshot,
+      `weeksCompared` was 0 and it returned `NO_ORACLE_WEEKS_AVAILABLE`. The oracle hard-codes
+      `thursday = origin + timedelta(days=3)`; moving the horizon start to `2016-08-04` worked
+      around it at the cost of a full regeneration. Recorded as BUG-2 — the engine's inability to
+      express a non-weekly cadence is the defect, not the scenario.
 - [ ] Generate the long horizon without overwriting the showcase run; run Gate A and Gate B;
       publish an immutable curated publication with retained evidence; create Decision-#73
       candidate → approved → active selections and a separate Gulf expected-pin per `GOI-D8`.
@@ -2064,7 +2080,24 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
 - [x] Confirms `GOI-D8`'s separate-pin design works: Gulf gets its own pin document and the retail
       pin is never repointed.
 
-**GOI-10 Run the ML pipeline on Gulf data**
+**GOI-10 Run the ML pipeline on Gulf data** `[DONE 2026-08-07 — accepted, with a reported defect]`
+- [x] Features built against the Gulf pin; manifest binds the Gulf publication fingerprint.
+- [x] **Trained, backtested, published, verified, materialized and activated.** 13 scoring origins
+      (2025-08-04 → 2026-01-19, step 2 weeks), 2,882,334 forecast rows, backtest ~2h02m.
+      `fr_51c901afeb5a0234` accepted and activated; inventory chain through `inventory-activate`
+      as `ir_e56314fcaf9b5368`. Per-market non-regression scored on the single Gulf market as
+      `forecast-improvement-policy.json:61` requires.
+- [x] **C5 needed a real cold-start population to fit.** The first attempt died with `no development
+      cold-start rows available to fit C5` because the scenario had `incumbentProductPct: 1` and
+      `launchSpreadPct: 0` — every SKU present from day one. Fixed by authoring 12 product lines
+      launching 2025-09 → 2026-04. Those same lines later turned out to carry 86.7% of the
+      intermittent volume and to be the tenant's largest forecast defect (see GOI-13).
+- [x] **`--decision-as-of` must clear the landing lag.** `score-current` failed with `no
+      current-cycle rows are available at decision_as_of`: origin 2026-07-27 is not visible until
+      2026-08-01. Run at `2026-08-02`.
+- [x] **No gate was weakened.** The run is accepted on its own gates. The −55.5% cold-start bias is
+      reported as a defect (GOI-13), not gated away — which is the correct outcome under the stop
+      rule below, and is only visible *because* no gate was relaxed.
 - [ ] Build features against the Gulf pin and verify the manifest binds the Gulf publication
       fingerprint.
 - [ ] **Characterize the Gulf series population before training** — intermittency, cold-start
@@ -2078,7 +2111,17 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
 - [ ] **Stop:** do not weaken, re-scope or bypass any acceptance gate to make Gulf pass. A
       reason-coded acceptance failure is a valid, reportable deliverable; a relaxed gate is not.
 
-**GOI-11 Serve the Gulf API and UI**
+**GOI-11 Serve the Gulf API and UI** `[DONE 2026-08-07 — zero code change, as predicted]`
+- [x] Stack served at `http://127.0.0.1:5173` (UI) and `:8080` (API) on real Gulf data: **292 SKUs,
+      13 distributors, Rs 411.82 Cr on-hand, 59% healthy.** The API returned Gulf markets, locations
+      and categories with **no code change** — markets are data-driven and the API holds no
+      allowlist, exactly as `GOI-11` predicted.
+- [x] Display names resolve through the migration-0013 columns; tables show lubricant names and
+      depot names rather than slugs and ids.
+- [x] **One operational trap worth recording.** A pre-teardown API process was still bound to 8080,
+      so a restart silently failed to bind while the stale server kept answering health checks —
+      the UI showed plausible but superseded data. Both listeners had to be killed. Port binding is
+      not evidence that *your* server is the one answering.
 - [ ] Start the stack (`serve --with-ui`); confirm the API reads PostgreSQL only and returns Gulf
       markets, locations and categories with no code change — markets are data-driven
       (`ui/src/api.ts:147`) and the API holds no allowlist.
@@ -2099,6 +2142,60 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       stale `README.md:24` NO-GO status block. Runs **before** `GOI-12` so the demo is delivered
       from a live Gulf stack rather than from screenshots.
 
+**GOI-13 Engine defects exposed by the second tenant** `[IN PROGRESS — one fix kept, one reverted]`
+
+_Not in the original plan. The plan assumed `ml/` was unchanged; running a second tenant through it
+proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view._
+
+- [x] **The headline defect.** The `cold_start` cohort is under-forecast by **55.5%** and carries
+      **86.7%** of all intermittent volume — 1,062 cells, 907,985 units. These are the 12 lines
+      launched inside the horizon (EVOLT EV fluids, ENDURANCE coolants), sold to distributors in
+      20 L drums. They climb a launch ramp while every estimator projects flat, so bias widens with
+      horizon: −31.6% at h1 to −67.5% at h26.
+- [x] **Fix 1 kept — volume-basis routing** (`models/train_lgbm.py`). The Croston-vs-LightGBM
+      comparison used summed per-origin absolute error, which on a mostly-zero series rewards
+      forecasting near-nothing and so selects for the bias it should detect: LightGBM costs 0.115
+      per zero week against Croston's 0.386, and 5.255 per *nonzero* week against 0.869. Replaced
+      with a cumulative-volume comparison. Measured `gulf` → `gulf2`: routing 5.1% → 22.4% and
+      **`established_history` bias −89.3% → −69.9%, 19 points**, with the dense population
+      byte-identical at +12.8%. Real, and far short of a cure.
+- [x] **Fix 2 reverted — seasonal-lag eligibility** (`models/intermittent.py`). Shipped, ran 2h, and
+      produced `forecast_eval_predictions.parquet` **byte-identical to `gulf2`**. It was inert
+      because the affected series' history was measured over the whole feature file (36–46 weeks)
+      rather than as-of-origin, where at every scored origin they hold 0–8. Reverted rather than
+      left in a shared engine with a docstring claiming a fix it does not deliver; patch retained.
+- [x] **C5 is not the lever, and is not broken.** Its grid was measured on the served cohort before
+      being touched: WAPE and bias are both monotonically best at weight 1.0 (0.7878 / −55.5%)
+      against the pure comparator (0.9044 / −86.6%). All 26 segments chose 1.0 independently. No
+      comparator available from existing as-of-origin features beats the champion — `mean13` −86.6%,
+      `roll_mean_4` −77.1%, `lag_1` −71.8% — so no blend can help.
+- [~] **Fix 3 running — launch age** (`models/dataset.py`, `models/train_lgbm.py`). The model
+      carried `competitor_age_days` but nothing about its **own** product's lifecycle, so it could
+      not tell a ten-year-old drum line from one that shipped last month. `active_from` was already
+      in the feature parquet and already inside the `known_as_of` boundary, so this needs no schema
+      bump and no feature rebuild. Measuring as `gulf4`.
+- [ ] **Decide the p50 volume basis.** `yhat_p50` is a median summed as though it were a mean, which
+      under-counts by construction on intermittent demand and worsens with sparsity (+13.9% at
+      zero-share 0.0–0.2, −83.8% at 0.8–1.0; p90 overshoots at +119.3%). C1 "P50 bias correction"
+      is pre-registered in `contracts/ml/forecast-improvement-policy.json`, implemented in
+      `models/bias_correction.py`, and **wired to nothing**. Its materiality gate is relative WAPE,
+      which a bias correction can worsen while improving volume accuracy — the same trap as the
+      routing predicate, one level up in the governance. Needs a decision record, not a patch.
+- [x] **Tooling defects fixed in passing:** `tools/dev.py pipeline` now exposes `--rebuild`, so a
+      corrected profile no longer replays a cached `critical` gate verdict (BUG-6);
+      `datagen/tools/sync_presets.py` only writes a preset whose semantic content actually moved,
+      so it stops deleting rationale comments (BUG-7). That sync also caught the Config Builder
+      shipping the Gulf showcase with a **Friday** start while the YAML had been corrected to a
+      Thursday — an export would have reintroduced the oracle failure of GOI-6. A drift test now
+      pins every embedded preset against its YAML.
+- [ ] **Method note, recorded because it recurred four times.** Every wrong diagnosis in this work
+      came from measuring the wrong slice: bias filtered to `actual_units > 0`; eligibility counted
+      by *series* (66.8% admit) when the question was *volume* (90% excluded); a `0.23 × actual`
+      proxy standing in for real LightGBM predictions; history length over the whole file instead of
+      as-of-origin. Each produced a confident number that did not survive the run. The instruments
+      that held were the served artifacts themselves — `cohort`, `tail_candidate_p50`,
+      `zero_share_52w` — which carry the engine's own verdict and need no reimplementation.
+
 **GOI-12 Restore the retail tenant** `[REQUIRED — THE BRANCH IS NOT DONE WITHOUT IT]`
 - [ ] Archive the Gulf state first — publication, bundles, schema — so the demo stays reproducible
       without a full regeneration.
@@ -2107,6 +2204,12 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       or rebuild from `main`. Switch off this branch to restore the git-tracked retail selection
       records, expected-pin and closure record; revert the `GOI-9` guardrail extension if it moved
       the retail policy fingerprint.
+- [ ] **Decide what happens to the `GOI-13` engine changes.** The plan assumed `ml/` was untouched;
+      it is not. The kept fixes are tenant-neutral by construction — the routing change moved the
+      retail-shaped dense population not at all (+12.8% before and after) — but "unmoved on Gulf's
+      dense cohort" is not the same as "unmoved on retail". Either re-verify the retail lineage with
+      the changes in place, or carry them on a separate branch. Do not decide this by leaving them
+      in and hoping.
 - [ ] **Exit:** every `GOI-4T` baseline value is reproduced — accepted run/version ids, active
       selection ids, expected-pin fingerprints, publication control totals — `tools/dev.py verify`
       exits 0, and the retail screens serve their accepted values again. Fresh activation event ids
