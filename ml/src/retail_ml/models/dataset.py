@@ -311,6 +311,30 @@ def load_current_horizon(
     )
     if duplicate.any():
         raise ValueError("current-cycle feature rows duplicate a SeriesKey")
+    # Present the origin week at its WEEKLY rate, because that is the only thing
+    # `origin_units` has ever meant to this model.
+    #
+    # `training_eligible` is `exposure_days = 7`, so every one of the 1,062,988
+    # rows the model trains on has `origin_units` and `weekly_units_equivalent`
+    # identical -- 100 per cent, not almost. The model therefore never saw the two
+    # disagree and cannot have learned what a disagreement means. Scoring is the
+    # one place they can: `_current_origin` picks the week holding the decision
+    # date without requiring it to be whole, and on this bundle that week carries
+    # two days. Fed raw, `origin_units` read 7.14 against a 29.5 weekly level and
+    # the forward forecast came out 27 per cent low across every series -- an
+    # out-of-distribution input, not a demand signal.
+    #
+    # This is the exposure normalisation `weekly_units_equivalent` already IS
+    # (`units * 7 / exposure_days`), not a substituted value: on a complete week
+    # the two columns are equal and this is a no-op, and on a short week it states
+    # the same rate the rest of the feature row is expressed in. Guarded because
+    # the normalisation is null at zero exposure, where there is no rate to state.
+    if {"origin_units", "weekly_units_equivalent"} <= set(frame.columns):
+        weekly = pd.to_numeric(frame["weekly_units_equivalent"], errors="coerce")
+        frame["origin_units"] = weekly.where(
+            weekly.notna(),
+            frame["origin_units"],
+        )
     return frame
 
 
