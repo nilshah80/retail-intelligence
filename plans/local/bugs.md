@@ -809,3 +809,17 @@ moves all serving pins together, and adds a live-schema assertion for all three 
 already-completed ML artifacts will be republished under the new migration identity and the
 pipeline resumed from materialization; no datagen, feature build, backtest or current scoring
 is repeated.
+
+---
+
+## BUG-19 · Relative publication root crashes pipeline after inventory activation `[fixed]`
+
+**Observed on the clean inventory run.** Build, verification, materialization and activation
+all succeeded, then `tools/dev.py pipeline` returned exit 1 while printing its closing API
+hint. A relative `--publication-root` was passed unchanged to `Path.relative_to(REPO_ROOT)`,
+which accepts only an absolute path under that absolute root.
+
+**Fix.** Pipeline publication roots are expanded and resolved once before both stage commands
+and closing hints use them. The regression test passes a relative `run-r2` override and the
+pipeline slice test now correctly treats forecast activation as an intermediate boundary
+rather than the end of the post-datagen stage list.

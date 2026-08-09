@@ -20,7 +20,10 @@ import dev  # noqa: E402
 
 
 def test_stage_slice_is_inclusive_and_ordered() -> None:
-    assert dev._stage_slice("land", "activate") == dev.PIPELINE_STAGES
+    through_activate = dev.PIPELINE_STAGES[
+        : dev.PIPELINE_STAGES.index("activate") + 1
+    ]
+    assert dev._stage_slice("land", "activate") == through_activate
     assert dev._stage_slice("publish", "activate") == (
         "publish",
         "materialize",
@@ -37,6 +40,18 @@ def test_datagen_is_not_a_pipeline_stage() -> None:
 
     assert "datagen" not in dev.PIPELINE_STAGES
     assert "generate" not in dev.PIPELINE_STAGES
+
+
+def test_relative_publication_root_is_resolved_before_closing_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative override must not crash after inventory was already activated."""
+
+    monkeypatch.chdir(tmp_path)
+    assert dev._resolved_pipeline_path(
+        Path("ingestion/data/curated/run-r2"),
+        tmp_path / "unused",
+    ) == tmp_path / "ingestion/data/curated/run-r2"
 
 
 def test_stage_order_puts_finalize_before_the_ml_stages() -> None:

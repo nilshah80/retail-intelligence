@@ -2424,6 +2424,18 @@ class _PipelineFailure(RuntimeError):
         self.code = code
 
 
+def _resolved_pipeline_path(value: Path | None, default: Path) -> Path:
+    """Return an absolute path for pipeline hints as well as stage commands.
+
+    Stage CLIs resolve their path arguments internally, but the closing API hint
+    calls ``relative_to(REPO_ROOT)``. Keeping a caller-supplied relative
+    ``--publication-root`` here therefore let every inventory stage succeed and
+    then crashed the orchestrator after activation while printing the hint.
+    """
+
+    return (value if value is not None else default).expanduser().resolve()
+
+
 def command_pipeline(args: argparse.Namespace) -> int:
     """Report stage timings on EVERY exit, then return the inner result.
 
@@ -2543,8 +2555,9 @@ def _command_pipeline(args: argparse.Namespace) -> int:
         )
 
     work = args.work_root or REPO_ROOT / "ingestion" / "data" / "work" / run_id
-    curated = (
-        args.publication_root or REPO_ROOT / "ingestion" / "data" / "curated" / run_id
+    curated = _resolved_pipeline_path(
+        args.publication_root,
+        REPO_ROOT / "ingestion" / "data" / "curated" / run_id,
     )
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
     artifacts = REPO_ROOT / "ml" / "data" / "artifacts"
