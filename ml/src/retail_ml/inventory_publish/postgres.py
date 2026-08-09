@@ -42,7 +42,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: Moves with the forecast writer even when a forecast migration adds no inventory
 #: table: the two writers share one schema, and a pair pinned to different heads
 #: would each refuse the other's, leaving no head that can serve both halves.
-MIGRATION_REVISION: Final[str] = "0023_marketplace_channel_type"
+MIGRATION_REVISION: Final[str] = "0024_warehouse_service_metrics"
 
 
 class InventoryServingError(RuntimeError):

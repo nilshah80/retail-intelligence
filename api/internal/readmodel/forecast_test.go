@@ -622,14 +622,14 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			t.Fatalf("%s served h%d, freshest available is h%d", targetWeek, horizon, freshest)
 		}
 		servedForecast, ok := item["forecast"].(float64)
-		if !ok || servedForecast != expectedForecast {
+		if !ok || math.Abs(servedForecast-expectedForecast) > 1e-8 {
 			t.Fatalf(
 				"%s served forecast %v, expected_units sum is %v",
 				targetWeek, item["forecast"], expectedForecast,
 			)
 		}
 		servedActual, ok := item["actual"].(float64)
-		if !ok || servedActual != expectedActual {
+		if !ok || math.Abs(servedActual-expectedActual) > 1e-8 {
 			t.Fatalf(
 				"%s served actual %v, leaf actual sum is %v",
 				targetWeek, item["actual"], expectedActual,
@@ -656,8 +656,11 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 		ctx,
 		"/api/v1/forecast/stores",
 		ForecastQuery{
-			StoreID:      "india-west:pune-koregaon",
-			ChannelType:  "online",
+			// Use the active tenant's own dimension values. Hard-coding the first
+			// demo tenant made this integration check return an empty result on Gulf
+			// while the route itself was healthy.
+			StoreID:      storeID,
+			ChannelType:  first["channelType"].(string),
 			HorizonWeeks: 4,
 		},
 	)

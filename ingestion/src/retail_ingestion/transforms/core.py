@@ -24,7 +24,7 @@ from retail_contracts.money_sql import (
     exact_minor_sql,
 )
 
-TRANSFORM_VERSION = "retail-transform/1.2.1"
+TRANSFORM_VERSION = "retail-transform/1.2.3"
 TRANSFORM_MANIFEST_VERSION = "retail-ingestion-candidate/v1"
 
 
@@ -69,6 +69,132 @@ def _channel_type_sql(expression: str) -> str:
                 WHEN {lowered} LIKE '%online%' THEN 'online'
                 ELSE 'store'
             END"""
+
+
+def _create_stock_snapshots(connection: duckdb.DuckDBPyConnection) -> None:
+    """Build disjoint position buckets at every snapshot's own as-of clock.
+
+    Status events carry two clocks: when the transition happened and when it
+    became knowable. A snapshot may use a transition only when both clocks are
+    no later than the snapshot observation. This makes historical positions
+    replayable and avoids tying every row to the publication's maximum date.
+    """
+
+    inventory_columns = {
+        str(description[0])
+        for description in connection.execute(
+            "SELECT * FROM stage.stage_data.inventory LIMIT 0"
+        ).description
+    }
+    # `oldest_receipt_date` is optional in staging. A mapped-files retailer that
+    # does not provide it must still build a canonical position; its age remains
+    # unavailable rather than making the whole source fail on a missing column.
+    oldest_receipt_sql = (
+        "try_cast(i.oldest_receipt_date AS DATE)"
+        if "oldest_receipt_date" in inventory_columns
+        else "NULL::DATE"
+    )
+    connection.execute(
+        f"""
+        CREATE TABLE canonical_data.stock_snapshots AS
+        WITH visible_inbound_status AS (
+            SELECT
+                i.source_system,
+                i.source_instance,
+                i.market_id,
+                i.sku_source_key,
+                i.location_source_key,
+                i.snapshot_date,
+                event.source_shipment_id,
+                event.qty,
+                event.status
+            FROM stage.stage_data.inventory AS i
+            JOIN stage.stage_data.inbound_status_events AS event
+              ON event.source_system = i.source_system
+             AND event.source_instance = i.source_instance
+             AND event.market_id = i.market_id
+             AND event.sku_source_key = i.sku_source_key
+             AND event.location_source_key = i.location_source_key
+             AND event.status_effective_at <= i.known_as_of
+             AND event.known_as_of <= i.known_as_of
+            QUALIFY row_number() OVER (
+                PARTITION BY
+                    i.source_system, i.source_instance, i.market_id,
+                    i.sku_source_key, i.location_source_key, i.snapshot_date,
+                    event.source_shipment_id
+                ORDER BY
+                    event.status_effective_at DESC,
+                    event.known_as_of DESC,
+                    event.native_record_id DESC
+            ) = 1
+        ),
+        in_transit_at_snapshot AS (
+            SELECT
+                source_system,
+                source_instance,
+                market_id,
+                sku_source_key,
+                location_source_key,
+                snapshot_date,
+                sum(qty)::BIGINT AS units
+            FROM visible_inbound_status
+            WHERE replace(lower(status), ' ', '_') IN (
+                'in_transit', 'dispatched', 'shipped'
+            )
+            GROUP BY
+                source_system, source_instance, market_id, sku_source_key,
+                location_source_key, snapshot_date
+        )
+        SELECT
+            concat(i.market_id, ':', i.sku_source_key)::VARCHAR AS sku_id,
+            concat(i.market_id, ':', x.canonical_location_key)::VARCHAR
+                AS location_id,
+            i.snapshot_date::DATE AS snapshot_date,
+            {oldest_receipt_sql} AS oldest_receipt_date,
+            i.on_hand_units::BIGINT AS on_hand_units,
+            greatest(
+                i.incoming_units
+                - least(i.incoming_units, coalesce(transit.units, 0)),
+                0
+            )::BIGINT AS on_order_units,
+            i.committed_units::BIGINT AS committed_units,
+            (
+                coalesce(i.reserved_units, 0)
+                + coalesce(i.safety_stock_units, 0)
+            )::BIGINT AS reserved_units,
+            (
+                coalesce(i.damaged_units, 0)
+                + coalesce(i.quality_control_units, 0)
+            )::BIGINT AS damaged_units,
+            least(
+                i.incoming_units,
+                coalesce(transit.units, 0)
+            )::BIGINT AS in_transit_units,
+            greatest(
+                0,
+                i.on_hand_units - coalesce(i.committed_units, 0)
+                    - coalesce(i.reserved_units, 0)
+                    - coalesce(i.quality_control_units, 0)
+                    - coalesce(i.safety_stock_units, 0)
+                    - coalesce(i.damaged_units, 0)
+            )::BIGINT AS atp_units,
+            'derived_buckets'::VARCHAR AS atp_method,
+            i.known_as_of,
+            i.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+        FROM stage.stage_data.inventory AS i
+        JOIN stage.stage_data.location_crosswalk AS x
+          ON x.source_system = i.source_system
+         AND x.market_id = i.market_id
+         AND x.source_location_key = i.location_source_key
+        LEFT JOIN in_transit_at_snapshot AS transit
+          ON transit.source_system = i.source_system
+         AND transit.source_instance = i.source_instance
+         AND transit.market_id = i.market_id
+         AND transit.sku_source_key = i.sku_source_key
+         AND transit.location_source_key = i.location_source_key
+         AND transit.snapshot_date = i.snapshot_date
+        """
+    )
 
 
 def _entity_control(
@@ -515,85 +641,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         ) = 1
         """
     )
-    connection.execute(
-        """
-        CREATE TABLE canonical_data.stock_snapshots AS
-        WITH inventory_boundary AS (
-            SELECT market_id, max(snapshot_date) AS snapshot_date
-            FROM stage.stage_data.inventory
-            GROUP BY market_id
-        ),
-        current_in_transit AS (
-            SELECT
-                s.market_id,
-                s.sku_source_key,
-                x.canonical_location_key,
-                sum(s.qty)::BIGINT AS units
-            FROM stage.stage_data.inbound_shipments AS s
-            JOIN stage.stage_data.location_crosswalk AS x
-              ON x.source_system = s.source_system
-             AND x.market_id = s.market_id
-             AND x.source_location_key = s.to_location_source_key
-            WHERE replace(lower(s.status), ' ', '_') IN (
-                'in_transit', 'dispatched', 'shipped'
-            )
-            GROUP BY s.market_id, s.sku_source_key, x.canonical_location_key
-        )
-        SELECT
-            concat(i.market_id, ':', i.sku_source_key)::VARCHAR AS sku_id,
-            concat(i.market_id, ':', x.canonical_location_key)::VARCHAR
-                AS location_id,
-            i.snapshot_date::DATE AS snapshot_date,
-            on_hand_units::BIGINT AS on_hand_units,
-            CASE
-                WHEN i.snapshot_date = boundary.snapshot_date
-                THEN greatest(
-                    i.incoming_units
-                    - least(
-                        i.incoming_units,
-                        coalesce(transit.units, 0)
-                    ),
-                    0
-                )
-                ELSE i.incoming_units
-            END::BIGINT AS on_order_units,
-            committed_units::BIGINT AS committed_units,
-            (
-                reserved_units
-                + quality_control_units
-                + safety_stock_units
-            )::BIGINT AS reserved_units,
-            damaged_units::BIGINT AS damaged_units,
-            CASE
-                WHEN i.snapshot_date = boundary.snapshot_date
-                THEN least(
-                    i.incoming_units,
-                    coalesce(transit.units, 0)
-                )
-                ELSE 0
-            END::BIGINT AS in_transit_units,
-            greatest(
-                0,
-                on_hand_units - committed_units - reserved_units
-                    - quality_control_units - safety_stock_units
-                    - damaged_units
-            )::BIGINT AS atp_units,
-            'derived_buckets'::VARCHAR AS atp_method,
-            known_as_of,
-            evidence_grade::VARCHAR AS known_as_of_evidence_grade
-        FROM stage.stage_data.inventory AS i
-        JOIN inventory_boundary AS boundary
-          ON boundary.market_id = i.market_id
-        JOIN stage.stage_data.location_crosswalk AS x
-          ON x.source_system = i.source_system
-         AND x.market_id = i.market_id
-         AND x.source_location_key = i.location_source_key
-        LEFT JOIN current_in_transit AS transit
-          ON transit.market_id = i.market_id
-         AND transit.sku_source_key = i.sku_source_key
-         AND transit.canonical_location_key = x.canonical_location_key
-        """
-    )
+    _create_stock_snapshots(connection)
     connection.execute(
         """
         CREATE TABLE canonical_data.suppliers_leadtimes AS

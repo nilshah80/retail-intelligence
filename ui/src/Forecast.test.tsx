@@ -115,6 +115,8 @@ const responses: Record<string, unknown> = {
     metricSemantics: "exact_horizon_additive",
     coverageGrain: "series_key",
     coverageNote: "P90 coverage is measured at SeriesKey grain because quantiles do not aggregate; a sum of P90 bounds is not the P90 of the sum.",
+    slowMoverThreshold: .60,
+    slowMoverDefinition: "origin-visible zero_share_52w > 0.60" as const,
     items: Array.from({length: 26}, (_, index) => ({
       horizon: index + 1,
       metricGrain: "market_portfolio",
@@ -128,7 +130,17 @@ const responses: Record<string, unknown> = {
       wape: .05,
       bias: .01,
       accuracy: 95,
-      p90Coverage: .9
+      p90Coverage: .9,
+      slowMover: {
+        horizon: index + 1,
+        grainCells: 10,
+        absErrorSum: 3,
+        signedErrorSum: -2.5,
+        actualSum: 10,
+        wape: .3,
+        bias: -.25,
+        accuracy: 70
+      }
     }))
   },
   stores: {
@@ -303,6 +315,8 @@ describe("Demand Forecast parity contract", () => {
     expect(screen.getByRole("button", {name: "Accept Forecast"})).toBeDisabled();
     // Both FVA figures read portfolio grain, so both show the same value.
     expect(screen.getAllByText("+25.3%")).toHaveLength(2);
+    expect(screen.getByText("Slow / intermittent: -25.0% · 10.0% of actual volume"))
+      .toBeInTheDocument();
     expect(screen.getAllByText("Not available").length).toBeGreaterThan(4);
 
     const tabLabels = screen.getAllByRole("tab").map((tab) => tab.textContent);

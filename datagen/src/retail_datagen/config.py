@@ -645,6 +645,15 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             _required(store, "name", path, errors)
             _required(store, "addressLine1", path, errors)
             _required(store, "postcode", path, errors)
+            # A national market may contain stores in several states and cities.
+            # Both fields are optional for backwards-compatible single-city
+            # scenarios, but one without the other is ambiguous: the generator
+            # must either use a complete store override or the complete market
+            # fallback, never a city from one and a region from the other.
+            geography = (store.get("city"), store.get("regionCode"))
+            if any(value is not None for value in geography):
+                _required(store, "city", path, errors)
+                _required(store, "regionCode", path, errors)
             # Source contract v13. A store that holds stock must be addressable as
             # a Business-Central location, because that is where the inventory
             # snapshot is shaped. Required only when the feature is on, so an
@@ -1653,10 +1662,12 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         # Backward-compatible resolution for early configs authored before this
         # Config Builder control was exposed. New exports always carry it.
         inventory.setdefault("replenishmentDemandBufferPct", 0.05)
+        inventory.setdefault("qualityControlHoldDays", 1)
     for field in (
         "snapshotCadenceDays",
         "replenishmentCycleDays",
         "supplierLeadTimeDays",
+        "qualityControlHoldDays",
     ):
         _positive_int(
             inventory.get(field),

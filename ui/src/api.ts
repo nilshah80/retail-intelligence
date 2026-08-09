@@ -231,6 +231,8 @@ export const forecastHorizonsSchema = z.object({
   metricSemantics: z.literal("exact_horizon_additive"),
   coverageGrain: z.literal("series_key"),
   coverageNote: z.string(),
+  slowMoverThreshold: z.number(),
+  slowMoverDefinition: z.literal("origin-visible zero_share_52w > 0.60"),
   items: z.array(z.object({
     horizon: z.number().int(),
     metricGrain: z.enum(["series_key", "store_category", "market_portfolio"]),
@@ -244,7 +246,17 @@ export const forecastHorizonsSchema = z.object({
     wape: nullableNumber,
     bias: nullableNumber,
     accuracy: nullableNumber,
-    p90Coverage: nullableNumber
+    p90Coverage: nullableNumber,
+    slowMover: z.object({
+      horizon: z.number().int(),
+      grainCells: z.number().int(),
+      absErrorSum: z.number(),
+      signedErrorSum: z.number(),
+      actualSum: z.number(),
+      wape: nullableNumber,
+      bias: nullableNumber,
+      accuracy: nullableNumber
+    }).optional()
   }))
 });
 
@@ -518,7 +530,13 @@ export const inventorySliceSchema = z.object({
   cards: z.record(
     z.string(),
     z.array(z.record(z.string(), z.unknown()))
-  ).optional()
+  ).optional(),
+  filterOptions: z.object({
+    regions: z.array(z.string()),
+    categories: z.array(z.string()),
+    healthStatuses: z.array(z.string()),
+    locationKinds: z.array(z.string())
+  }).optional()
 });
 
 export type InventorySlice = z.infer<typeof inventorySliceSchema>;

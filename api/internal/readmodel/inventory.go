@@ -25,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0023_marketplace_channel_type"
+	InventoryMigrationRevision = "0024_warehouse_service_metrics"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -497,6 +497,7 @@ func (s *InventoryStore) Read(
 						'% + transfer'
 					WHEN 'watch' THEN 'Watch cover'
 					WHEN 'hold' THEN 'Hold'
+					WHEN 'age_evidence_unavailable' THEN 'Age evidence unavailable'
 				END AS action_label`,
 			rankByAge)
 	case "/api/v1/inventory/transfers":
@@ -677,6 +678,11 @@ func (s *InventoryStore) tableSlice(
 			projected = strings.ReplaceAll(
 				projected, "%[2]s", s.rowFXMoney("risk.risk_value_minor"),
 			)
+			if secondary, present := rowSecondaryMoneyUnits[table]; present {
+				projected = strings.ReplaceAll(
+					projected, "%[5]s", s.rowFXExpr(secondary),
+				)
+			}
 			// %[3]s values a UNIT variance at a rolled-up category cost: it
 			// multiplies like a quantity, but reads its cost from the rollup rather
 			// than the per-cell dimension, because valuation has no single SKU.
@@ -766,6 +772,13 @@ func (s *InventoryStore) tableSlice(
 	// buyer cannot tell whether the rows are the worst offenders or the first
 	// twenty SKU codes in the alphabet.
 	payload["ranking"] = ranking.criterion
+	if table == "inventory_positions" || table == "inventory_stock_health" {
+		options, err := s.filterOptions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		payload["filterOptions"] = options
+	}
 	// KPI tiles are aggregated HERE, in SQL, over every scoped row of the active
 	// version -- not client-side over the returned page. Summing 100 of 4,741 rows
 	// in the browser and rendering the result as "On-Hand Inventory" would be a
@@ -817,6 +830,53 @@ func (s *InventoryStore) tableSlice(
 	return payload, nil
 }
 
+// filterOptions are values from the active authorities, never the illustrative
+// reference document. Forecast stores carry the source region; the inventory
+// dimension and health projection carry categories, echelons and health classes.
+func (s *InventoryStore) filterOptions(
+	ctx context.Context,
+) (map[string]any, error) {
+	var regions, categories, health, kinds []string
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			ARRAY(
+				SELECT DISTINCT region
+				FROM retail_serving.forecast_stores
+				WHERE forecast_run_id = $1 AND region <> ''
+				ORDER BY region
+			),
+			ARRAY(
+				SELECT DISTINCT category_label
+				FROM retail_serving.inventory_sku_dimension
+				WHERE inventory_version_id = $2 AND category_label <> ''
+				ORDER BY category_label
+			),
+			ARRAY(
+				SELECT DISTINCT health_class
+				FROM retail_serving.inventory_stock_health
+				WHERE inventory_version_id = $2
+				ORDER BY health_class
+			),
+			ARRAY(
+				SELECT DISTINCT location_kind
+				FROM retail_serving.inventory_sku_dimension
+				WHERE inventory_version_id = $2 AND location_kind <> ''
+				ORDER BY location_kind
+			)
+	`, s.forecastRunID, s.inventoryVersionID).Scan(
+		&regions, &categories, &health, &kinds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"regions":        regions,
+		"categories":     categories,
+		"healthStatuses": health,
+		"locationKinds":  kinds,
+	}, nil
+}
+
 // inventoryRanking is how one route decides which rows make the page, and the
 // sentence the screen shows so a reader knows what "top 20" means here.
 //
@@ -839,7 +899,7 @@ var (
 	}
 	rankByAge = inventoryRanking{
 		orderBy: `CASE age_bucket WHEN '180-plus' THEN 0 WHEN '90-180' THEN 1
-			WHEN '60-90' THEN 2 WHEN '30-60' THEN 3 ELSE 4 END,
+			WHEN '60-90' THEN 2 WHEN '30-60' THEN 3 WHEN '0-30' THEN 4 ELSE 5 END,
 			on_hand_units DESC, market_id, location_id, sku_id`,
 		criterion: "the oldest stock first, then the largest quantity held",
 	}
@@ -853,9 +913,9 @@ var (
 		criterion: "the highest gross inventory value",
 	}
 	rankByExposure = inventoryRanking{
-		orderBy: "exposure_minor DESC NULLS LAST, expiring_units DESC, " +
+		orderBy: "GREATEST(expiring_units, waste_units) DESC, " +
 			"market_id, location_id, sku_id",
-		criterion: "the largest financial exposure to expiry and waste",
+		criterion: "the largest near-expiry or realised-waste quantity",
 	}
 	// Health class FIRST made page one a single class: 174 stock-outs outrank
 	// everything, so every row read "stockout / High / Replenish immediately" and
@@ -950,36 +1010,6 @@ type groupedCard struct {
 const costJoin = `LEFT JOIN retail_serving.inventory_sku_dimension AS dim
 	USING (inventory_version_id, market_id, location_id, sku_id)`
 
-// outboundNeedJoin attaches, to each warehouse cell, the units the stores that
-// warehouse supplies need from it for that SKU. The recommendations are rolled
-// up to the supplying node first, so the join lands on the position's own grain
-// -- one row per version x market x location x SKU -- and cannot multiply rows.
-//
-// It is the input to the reference's "Warehouse Fill Rate". Deliberately NOT
-// allocated over requested from replenishment_allocations: every one of those
-// rows sits at a DEMANDING store and names no supply node, so grouping them by
-// supply_location_id attributes four stores' horizon channel demand to a
-// warehouse and reads 2.6 per cent -- an authoritative-looking number answering
-// a different question.
-const outboundNeedJoin = `
-	LEFT JOIN (
-		SELECT rec.inventory_version_id AS need_version,
-		       rec.market_id AS need_market,
-		       rec.supply_location_id AS need_location,
-		       rec.sku_id AS need_sku,
-		       SUM(rec.recommended_units) AS need_units
-		FROM retail_serving.replenishment_recommendations AS rec
-		WHERE rec.supply_location_id IS NOT NULL
-		  AND rec.recommended_units > 0
-		  AND rec.%[8]s
-		GROUP BY rec.inventory_version_id, rec.market_id,
-		         rec.supply_location_id, rec.sku_id
-	) AS need
-	  ON need.need_version = inventory_positions.inventory_version_id
-	 AND need.need_market = inventory_positions.market_id
-	 AND need.need_location = inventory_positions.location_id
-	 AND need.need_sku = inventory_positions.sku_id`
-
 // safeVersionID guards an identifier that is interpolated into SQL rather than
 // bound as a parameter. Every id here is minted by the platform itself and is
 // hex-shaped, but the join text is assembled before the argument list exists, so
@@ -1052,16 +1082,41 @@ const inboundJoin = `
 // filter -- becomes ambiguous and the route serves a governed 503.
 const capacityJoin = `
 	LEFT JOIN (
-		SELECT inventory_version_id AS cap_version,
-		       market_id AS cap_market,
-		       location_id AS cap_location,
-		       capacity_units
-		FROM retail_serving.inventory_warehouse_capacity
-		WHERE %[8]s
+		SELECT cap.inventory_version_id AS cap_version,
+		       cap.market_id AS cap_market,
+		       cap.location_id AS cap_location,
+		       cap.capacity_units,
+		       cap.blocked_units,
+		       cap.fill_demand_units,
+		       cap.fill_served_units,
+		       cap.fill_window_start,
+		       cap.fill_window_end,
+		       marker.metric_sku AS cap_metric_sku
+		FROM (
+			SELECT inventory_version_id, market_id, location_id,
+			       capacity_units, blocked_units, fill_demand_units,
+			       fill_served_units, fill_window_start, fill_window_end
+			FROM retail_serving.inventory_warehouse_capacity
+			WHERE %[8]s
+		) AS cap
+		LEFT JOIN (
+			-- Capacity/service is one row per node while positions is one row per
+			-- SKU. Attach the node facts to one deterministic marker cell so a
+			-- SUM across warehouses neither repeats nor loses equal denominators.
+			SELECT inventory_version_id, market_id, location_id,
+			       MIN(sku_id) AS metric_sku
+			FROM retail_serving.inventory_positions
+			WHERE %[8]s
+			GROUP BY inventory_version_id, market_id, location_id
+		) AS marker
+		  ON marker.inventory_version_id = cap.inventory_version_id
+		 AND marker.market_id = cap.market_id
+		 AND marker.location_id = cap.location_id
 	) AS capacity
 	  ON capacity.cap_version = inventory_positions.inventory_version_id
 	 AND capacity.cap_market = inventory_positions.market_id
-	 AND capacity.cap_location = inventory_positions.location_id`
+	 AND capacity.cap_location = inventory_positions.location_id
+	 AND capacity.cap_metric_sku = inventory_positions.sku_id`
 
 // Utilisation divides the holding this card already values by the published
 // ceiling. The numerator is the card's own SUM, not the source's `used_units`,
@@ -1096,22 +1151,27 @@ const valuationCostJoin = `
 	 AND catcost.vc_location = inventory_valuation.location_id
 	 AND catcost.vc_category = inventory_valuation.category`
 
-// A line fill rate: of the units the stores a warehouse supplies need from it,
-// the share it can ship from its own stock. The cap is per SKU line, because
-// surplus of one SKU cannot fill a shortfall of another -- summing both sides
-// first and capping once would report a warehouse as able to fill orders it
-// holds nothing for. Cells with no outbound need contribute nothing to either
-// side rather than counting as filled.
-// The FILTER is load-bearing, not defensive. LEAST ignores its NULL arguments
-// rather than returning NULL, so on a cell with no outbound need
-// LEAST(NULL, on_hand_units) is the whole on-hand: every warehouse cell nobody
-// ordered from added its full holding to the numerator and nothing to the
-// denominator, and the rate read 308% overall and 770% at Newark.
-const fillRateExpr = `CASE WHEN SUM(need.need_units) > 0
-	THEN (SUM(LEAST(need.need_units, COALESCE(on_hand_units, 0)))
-	      FILTER (WHERE need.need_units IS NOT NULL))::numeric
-	     / SUM(need.need_units)
+// Realised service over the inventory run's frozen trailing 91-day window.
+// Capacity/service facts are attached to one deterministic marker SKU per node,
+// so SUM is additive across warehouses without multiplying each node by its SKU
+// count. A zero denominator remains NULL/Not available rather than becoming 0%
+// or 100%.
+const fillRateExpr = `CASE WHEN SUM(capacity.fill_demand_units) > 0
+	THEN SUM(capacity.fill_served_units)::numeric
+	     / SUM(capacity.fill_demand_units)
 END`
+
+// Customer demand exists at stores. The SKU dimension also attributes that
+// demand to every warehouse for node-level cover displays; those attributed rows
+// must never be added again in an enterprise/category numerator.
+const enterpriseDailyDemandExpr = `COALESCE(SUM(dim.trailing_daily_units)
+	FILTER (WHERE inventory_positions.location_kind = 'store'), 0)`
+
+const enterpriseDaysOfSupplyExpr = `CASE WHEN ` + enterpriseDailyDemandExpr + ` > 0
+	THEN SUM(on_hand_units) / ` + enterpriseDailyDemandExpr + ` END`
+
+const enterpriseStockTurnExpr = `CASE WHEN SUM(on_hand_units) > 0
+	THEN (` + enterpriseDailyDemandExpr + ` * 365.0) / SUM(on_hand_units) END`
 
 // The reference draws Ageing Inventory on the Inventory Overview AND on the
 // Inventory Ageing page. A card names its own source, so one declaration serves
@@ -1141,13 +1201,15 @@ CASE age_bucket
 	WHEN '0-30' THEN 'Monitor'
 	WHEN '30-60' THEN 'Optimize replenishment'
 	WHEN '60-90' THEN 'Transfer / promote'
-	ELSE 'Markdown / clearance'
+	WHEN '90-180' THEN 'Markdown / clearance'
+	WHEN '180-plus' THEN 'Markdown / clearance'
+	ELSE 'Age evidence unavailable'
 END AS recommended_action,
 MAX(dim.currency_code) AS currency_code`,
 	// Oldest first, and by bucket ORDER not alphabetically: '180-plus'
 	// sorts before '30-60' as text.
 	orderBy: `CASE age_bucket WHEN '0-30' THEN 0 WHEN '30-60' THEN 1
-WHEN '60-90' THEN 2 WHEN '90-180' THEN 3 ELSE 4 END`,
+WHEN '60-90' THEN 2 WHEN '90-180' THEN 3 WHEN '180-plus' THEN 4 ELSE 5 END`,
 	limit: 20,
 }
 
@@ -1167,7 +1229,7 @@ var groupedCards = map[string][]groupedCard{
 			// chases. on_order_units answered "how many units are coming".
 			name: "warehouses",
 			source: "retail_serving.inventory_positions " + costJoin +
-				outboundNeedJoin + capacityJoin + inboundJoin,
+				capacityJoin + inboundJoin,
 			groupBy: "market_id, location_id, dim.location_name",
 			columns: `%[1]s AS value_minor,
 				-- The damaged holding at cost. This valued the whole ON-HAND of any
@@ -1184,6 +1246,11 @@ var groupedCards = map[string][]groupedCard{
 				-- disjoint, so it counted 100% of open lines as delayed.
 				MAX(inbound.late_shipments) AS delayed_receipts,
 				MAX(inbound.open_shipments) AS open_shipments,
+				MAX(capacity.blocked_units) AS source_blocked_units,
+				SUM(capacity.fill_demand_units) AS fill_demand_units,
+				SUM(capacity.fill_served_units) AS fill_served_units,
+				MAX(capacity.fill_window_start) AS fill_window_start,
+				MAX(capacity.fill_window_end) AS fill_window_end,
 				` + fillRateExpr + ` AS fill_rate,
 				` + capacityUtilizationExpr + ` AS capacity_utilization,
 				-- The reference's Action column names what to do about the state
@@ -1310,9 +1377,7 @@ var groupedCards = map[string][]groupedCard{
 			columns: `SUM(on_hand_units) AS on_hand_units,
 				%[1]s AS value_minor,
 				SUM(atp_units) AS atp_units,
-				CASE WHEN SUM(dim.trailing_daily_units) > 0
-					THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units)
-				END AS days_of_supply,
+				` + enterpriseDaysOfSupplyExpr + ` AS days_of_supply,
 				AVG(health.cover_days) AS cover_days,
 				-- Risk and action, paired exactly as the reference pairs them: Healthy
 				-- with Protect availability, Watch with Target transfers, Mixed with
@@ -1551,6 +1616,13 @@ var rowMoneyUnits = map[string]string{
 	"inventory_expiry_waste": "inventory_expiry_waste.expiring_units",
 }
 
+// A second independently visible fact on a row. Expiry/Waste can carry stock
+// still inside its expiry window and realised waste at the same cell; choosing
+// one quantity as the row's value silently drops the other.
+var rowSecondaryMoneyUnits = map[string]string{
+	"inventory_expiry_waste": "inventory_expiry_waste.waste_units",
+}
+
 // %[4]s on a ROW page: a column that is ALREADY money, with the currency column it
 // is denominated in. Distinct from %[1]s, which multiplies a unit count by a cost.
 var rowMoneyAmounts = map[string]struct{ amount, currency string }{
@@ -1592,6 +1664,7 @@ var rowExtraJoins = map[string]struct {
 					   + inventory_ageing.on_hand_units)
 			END AS sell_through_pct,
 			CASE
+				WHEN age_bucket = 'unavailable' THEN 'Unassessed'
 				WHEN residual_only THEN 'High'
 				WHEN age_bucket = '180-plus' THEN 'High'
 				WHEN age_bucket = '90-180' THEN 'Medium'
@@ -1610,6 +1683,8 @@ var rowExtraJoins = map[string]struct {
 			LEFT JOIN retail_serving.inventory_positions AS wastepos
 			USING (inventory_version_id, market_id, location_id, sku_id)`,
 		columns: `, %[1]s AS value_minor,
+			%[1]s AS near_expiry_value_minor,
+			%[5]s AS waste_value_minor,
 			-- The same trailing-quarter sell-through the ageing row carries, so the
 			-- two pages cannot disagree about one cell. Withheld, not zeroed, where
 			-- the cell has no position to measure against.
@@ -1637,6 +1712,9 @@ var rowExtraJoins = map[string]struct {
 			-- transferring stock that no longer exists.
 			CASE
 				WHEN inventory_expiry_waste.expired_units > 0
+				 AND inventory_expiry_waste.expiring_units > 0
+					THEN 'Write off expired units; protect remaining exposure'
+				WHEN inventory_expiry_waste.expired_units > 0
 					THEN 'Write off and record waste'
 				WHEN inventory_expiry_waste.expiring_units = 0
 					THEN 'Review waste cause'
@@ -1652,10 +1730,15 @@ var rowExtraJoins = map[string]struct {
 			-- alone, with nothing expiring and nothing expired. Those rows had no
 			-- branch and printed an empty window.
 			CASE
-				WHEN expired_units > 0 THEN 'Expired'
+				WHEN expired_units > 0 AND expiring_units > 0
+					THEN 'Expired + within window'
+				WHEN expired_units > 0 AND waste_units > expired_units
+					THEN 'Expired + other waste'
+				WHEN expired_units > 0 THEN 'Expired waste'
 				WHEN expiring_units > 0 THEN 'Within shelf life'
-				WHEN waste_units > 0 THEN 'Written off'
+				WHEN waste_units > 0 THEN 'Other waste'
 			END AS expiry_window,
+			GREATEST(waste_units - expired_units, 0) AS other_waste_units,
 			CASE
 				WHEN expired_units > 0 THEN 'High'
 				WHEN expiring_units > 0 THEN 'Medium'
@@ -2014,6 +2097,7 @@ var rowExtraJoins = map[string]struct {
 				WHEN '60-90' THEN '61-90 days'
 				WHEN '90-180' THEN '91-180 days'
 				WHEN '180-plus' THEN '180+ days'
+				WHEN 'unavailable' THEN 'Age unavailable'
 			END AS ageing_band,
 			CASE health_class
 				WHEN 'stockout' THEN 'High'
@@ -2234,8 +2318,9 @@ var inventoryAggregates = map[string]map[string]string{
 		// warehouse rows carry. It reads over whatever the route scopes to, so
 		// the warehouse page's dc/3pl restriction and any market filter both
 		// apply -- the tile and the rows under it cannot disagree.
-		"warehouseFillRate": fillRateExpr,
-		"outboundNeedUnits": "COALESCE(SUM(need.need_units), 0)",
+		"warehouseFillRate":        fillRateExpr,
+		"warehouseFillDemandUnits": "COALESCE(SUM(capacity.fill_demand_units), 0)",
+		"warehouseFillServedUnits": "COALESCE(SUM(capacity.fill_served_units), 0)",
 	},
 	"inventory_stock_health": {
 		"cells":           "COUNT(*)",
@@ -2574,7 +2659,7 @@ var aggregateSource = map[string]string{
 		USING (inventory_version_id, market_id, location_id, sku_id)
 		LEFT JOIN retail_serving.inventory_stock_health AS health
 		USING (inventory_version_id, market_id, location_id, sku_id)` +
-		outboundNeedJoin,
+		capacityJoin,
 
 	// The reference's ageing tiles are ALL money -- "60+ Day Inventory Rs 14.1
 	// Cr", not a unit count -- and the ageing projection carries no cost, so it
@@ -2856,10 +2941,13 @@ func (s *InventoryStore) aggregate(
 			merged["categories"] = "COUNT(DISTINCT dim.category)"
 			// Days of supply and stock turn are the same fact twice: cover is
 			// on-hand over daily demand, turn is a year divided by cover.
-			merged["daysOfSupply"] = "CASE WHEN SUM(dim.trailing_daily_units) > 0 " +
-				"THEN SUM(on_hand_units) / SUM(dim.trailing_daily_units) END"
-			merged["stockTurn"] = "CASE WHEN SUM(on_hand_units) > 0 " +
-				"THEN (SUM(dim.trailing_daily_units) * 365.0) / SUM(on_hand_units) END"
+			merged["daysOfSupply"] = enterpriseDaysOfSupplyExpr
+			// A warehouse's display demand is the additive store demand it serves.
+			// Summing that attributed rate over the enterprise counts the same sell-
+			// through once per warehouse (six times on Gulf), which produced 84.2x.
+			// Enterprise turn has one customer-demand numerator and all physical
+			// inventory in the denominator.
+			merged["stockTurn"] = enterpriseStockTurnExpr
 		}
 		if table == "inventory_positions" {
 			// The reference's own note scopes this tile: "Overstock, ageing,

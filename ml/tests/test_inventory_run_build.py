@@ -8,7 +8,7 @@ horizon 4 is enough to prove decision #92 withholds rather than zeroes.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -323,6 +323,10 @@ def _inputs(**overrides: Any) -> InventoryInputs:
     warehouse_capacity = pd.DataFrame(
         [
             {"market_id": MARKET, "location_id": DC, "capacity_units": 750_000,
+             "blocked_units": 12, "fill_demand_units": 500,
+             "fill_served_units": 460,
+             "fill_window_start": AS_OF - timedelta(days=90),
+             "fill_window_end": AS_OF,
              "snapshot_date": AS_OF},
         ]
     )
@@ -814,7 +818,7 @@ def test_ageing_handles_pandas_timestamps_not_only_date_literals() -> None:
         for lower, upper in AGE_BUCKETS
         for days in (lower, (upper - 1) if upper else lower + 1)
     }
-    assert set(ageing["age_bucket"]) <= labels
+    assert set(ageing["age_bucket"]) <= labels | {"unavailable"}
     expiry = artifacts["inventory_expiry_waste"]
     assert int(expiry[expiry["sku_id"] == "sku-1"].iloc[0]["expiring_units"]) == 2
 
@@ -825,6 +829,41 @@ def test_ageing_buckets_are_keyed_by_receipt_age(artifacts) -> None:
     assert old["age_bucket"] not in {"0-30"}
     assert int(old["on_hand_units"]) == 5
     assert bool(old["residual_only"]) is True
+
+
+def test_ageing_uses_snapshot_receipt_age_only_for_uncovered_holding() -> None:
+    inputs = _inputs()
+    positions = inputs.positions.copy()
+    positions["oldest_receipt_date"] = pd.NaT
+    # No batch ledger exists for this store cell, so the source snapshot's own
+    # oldest receipt must bring all 80 units into enterprise ageing.
+    positions.loc[
+        (positions["location_id"] == OTHER_STORE)
+        & (positions["sku_id"] == "sku-1"),
+        "oldest_receipt_date",
+    ] = pd.Timestamp(2026, 6, 1)
+    # This cell already has a two-unit batch. Receipt fallback must not add the
+    # same holding a second time even when the snapshot carries a date too.
+    positions.loc[
+        (positions["location_id"] == STORE)
+        & (positions["sku_id"] == "sku-1"),
+        "oldest_receipt_date",
+    ] = pd.Timestamp(2026, 5, 1)
+
+    ageing = build_artifacts(
+        _inputs(positions=positions), replay_metrics=_metrics()
+    )["inventory_ageing"]
+    uncovered = ageing[
+        (ageing["location_id"] == OTHER_STORE) & (ageing["sku_id"] == "sku-1")
+    ]
+    batch_covered = ageing[
+        (ageing["location_id"] == STORE) & (ageing["sku_id"] == "sku-1")
+    ]
+    assert int(uncovered["on_hand_units"].sum()) == 80
+    assert int(batch_covered["on_hand_units"].sum()) == 2
+    assert int(ageing["on_hand_units"].sum()) == int(
+        positions.loc[positions["on_hand_units"] > 0, "on_hand_units"].sum()
+    )
 
 
 # -- allocation and suppliers --------------------------------------------------

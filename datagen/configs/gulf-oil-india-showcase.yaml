@@ -474,6 +474,8 @@ stores:
   - silvassa-plant
   addressLine1: Andheri Kurla Road, Andheri East
   postcode: '400059'
+  city: Mumbai
+  regionCode: MH
   assortmentCoverage: 0.94
   demandScale: 1.0
 - storeId: pune-dist
@@ -487,6 +489,8 @@ stores:
   - silvassa-plant
   addressLine1: Nagar Road, Kharadi
   postcode: '411014'
+  city: Pune
+  regionCode: MH
   assortmentCoverage: 0.88
   demandScale: 0.72
 - storeId: ahmedabad-dist
@@ -500,6 +504,8 @@ stores:
   - mumbai-depot
   addressLine1: Sarkhej Gandhinagar Highway
   postcode: '380054'
+  city: Ahmedabad
+  regionCode: GJ
   assortmentCoverage: 0.86
   demandScale: 0.68
 - storeId: indore-dist
@@ -513,6 +519,8 @@ stores:
   - delhi-depot
   addressLine1: AB Road, Vijay Nagar
   postcode: '452010'
+  city: Indore
+  regionCode: MP
   assortmentCoverage: 0.78
   demandScale: 0.48
 - storeId: delhi-dist
@@ -526,6 +534,8 @@ stores:
   - silvassa-plant
   addressLine1: Mathura Road, Faridabad
   postcode: '121003'
+  city: Faridabad
+  regionCode: HR
   assortmentCoverage: 0.92
   demandScale: 0.94
 - storeId: jaipur-dist
@@ -539,6 +549,8 @@ stores:
   - silvassa-plant
   addressLine1: Tonk Road, Sanganer
   postcode: '302029'
+  city: Jaipur
+  regionCode: RJ
   assortmentCoverage: 0.8
   demandScale: 0.52
 - storeId: ludhiana-dist
@@ -552,6 +564,8 @@ stores:
   - silvassa-plant
   addressLine1: Gill Road, Industrial Area
   postcode: '141003'
+  city: Ludhiana
+  regionCode: PB
   assortmentCoverage: 0.82
   demandScale: 0.58
 - storeId: chennai-dist
@@ -565,6 +579,8 @@ stores:
   - bengaluru-depot
   addressLine1: GST Road, Guindy
   postcode: '600032'
+  city: Chennai
+  regionCode: TN
   assortmentCoverage: 0.92
   demandScale: 0.86
 - storeId: bengaluru-dist
@@ -578,6 +594,8 @@ stores:
   - chennai-plant
   addressLine1: Hosur Road, Bommanahalli
   postcode: '560068'
+  city: Bengaluru
+  regionCode: KA
   assortmentCoverage: 0.9
   demandScale: 0.82
 - storeId: hyderabad-dist
@@ -591,6 +609,8 @@ stores:
   - chennai-plant
   addressLine1: Balanagar, Kukatpally
   postcode: '500037'
+  city: Hyderabad
+  regionCode: TS
   assortmentCoverage: 0.86
   demandScale: 0.7
 - storeId: coimbatore-dist
@@ -604,6 +624,8 @@ stores:
   - bengaluru-depot
   addressLine1: Avinashi Road, Peelamedu
   postcode: '641004'
+  city: Coimbatore
+  regionCode: TN
   assortmentCoverage: 0.76
   demandScale: 0.44
 - storeId: kolkata-dist
@@ -617,6 +639,8 @@ stores:
   - silvassa-plant
   addressLine1: Diamond Harbour Road, Behala
   postcode: '700034'
+  city: Kolkata
+  regionCode: WB
   assortmentCoverage: 0.84
   demandScale: 0.62
 - storeId: guwahati-dist
@@ -630,6 +654,8 @@ stores:
   - delhi-depot
   addressLine1: GS Road, Dispur
   postcode: '781006'
+  city: Guwahati
+  regionCode: AS
   assortmentCoverage: 0.7
   demandScale: 0.34
 warehouses:
@@ -3555,6 +3581,7 @@ operations:
     replenishmentCycleDays: 14
     supplierLeadTimeDays: 9
     supplierLeadTimeJitterDays: 4
+    qualityControlHoldDays: 5
     stockoutSkuRate: 0.03
     safetyStockUnits: 24
     replenishmentDemandBufferPct: 0.3

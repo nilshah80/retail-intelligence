@@ -117,3 +117,54 @@ func TestDefaultPageIsAShortlist(t *testing.T) {
 			DefaultInventoryPageSize)
 	}
 }
+
+func TestWarehouseFillUsesPublishedRealisedService(t *testing.T) {
+	if strings.Contains(fillRateExpr, "need.") ||
+		strings.Contains(fillRateExpr, "recommended_units") {
+		t.Fatalf("fill rate still depends on reorder suggestions: %q", fillRateExpr)
+	}
+	for _, column := range []string{
+		"capacity.fill_demand_units", "capacity.fill_served_units",
+	} {
+		if !strings.Contains(fillRateExpr, column) {
+			t.Errorf("fill rate omits governed service column %s: %q",
+				column, fillRateExpr)
+		}
+	}
+	if !strings.Contains(fillRateExpr, "> 0") {
+		t.Errorf("fill rate has no zero-denominator guard: %q", fillRateExpr)
+	}
+}
+
+func TestEnterpriseTurnCountsCustomerDemandOnce(t *testing.T) {
+	for _, expression := range []string{
+		enterpriseDailyDemandExpr,
+		enterpriseDaysOfSupplyExpr,
+		enterpriseStockTurnExpr,
+	} {
+		if !strings.Contains(expression, "location_kind = 'store'") {
+			t.Errorf("enterprise inventory rate includes attributed warehouse demand: %q",
+				expression)
+		}
+	}
+	if strings.Contains(enterpriseStockTurnExpr,
+		"SUM(dim.trailing_daily_units) * 365") {
+		t.Errorf("stock turn still sums every node's display demand: %q",
+			enterpriseStockTurnExpr)
+	}
+}
+
+func TestExpiryWasteRowsValueBothFactsIndependently(t *testing.T) {
+	extra := rowExtraJoins["inventory_expiry_waste"].columns
+	for _, projection := range []string{
+		"near_expiry_value_minor", "waste_value_minor", "other_waste_units",
+	} {
+		if !strings.Contains(extra, projection) {
+			t.Errorf("expiry/waste row omits %s: %q", projection, extra)
+		}
+	}
+	if rowSecondaryMoneyUnits["inventory_expiry_waste"] !=
+		"inventory_expiry_waste.waste_units" {
+		t.Fatal("realised waste value is not based on waste_units")
+	}
+}

@@ -312,6 +312,7 @@ roles:
       - damaged_units
       - in_transit_units
       - source_observed_atp_units
+      - oldest_receipt_date
     quantity:
       - on_hand_units
       - on_order_units

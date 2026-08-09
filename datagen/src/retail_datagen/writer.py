@@ -47,6 +47,7 @@ PARTITION_DATE_FIELDS = (
     "discontinuedDate",
     "snapshotDate",
     "eventDate",
+    "occurredAt",
     "rateDate",
 )
 
@@ -266,10 +267,18 @@ class SourceWriter:
         self.reused = self.target.is_dir() and not overwrite
         self.objects: list[dict[str, Any]] = []
         self.schemas: dict[str, dict[str, Any]] = {}
-        self.telemetry: dict[str, float | int] = {
+        self.telemetry: dict[str, Any] = {
             "datasetsPublished": 0,
             "sourcePublicationSeconds": 0.0,
             "duckdbMirrorSeconds": 0.0,
+            "duckdbMirrorUnattributedSeconds": 0.0,
+            "datasetPublications": [],
+            "peakTemporaryDiskBytes": 0,
+            "temporaryDiskMeasurementBasis": (
+                "constant-time conservative upper bound: live spool backing bytes "
+                "+ final staged CSV bytes + measured sort-run peak + up to one "
+                "temporary output per active partition worker"
+            ),
         }
         self._stage: Path | None = None
         self._spools: list[RowSpool] = []
@@ -320,6 +329,24 @@ class SourceWriter:
             for path in work.rglob("*")
             if path.is_file()
         )
+
+    def _temporary_baseline_bytes(self, staged_csv_bytes: int) -> int:
+        """Constant-time private-disk bound; telemetry must not become workload."""
+
+        snapshots = self.spool_telemetry()
+        return (
+            sum(int(row["backingBytes"]) for row in snapshots)
+            + staged_csv_bytes
+            + max(
+                (int(row["sortPeakTemporaryBytes"]) for row in snapshots),
+                default=0,
+            )
+        )
+
+    def spool_telemetry(self) -> list[dict[str, Any]]:
+        """Execution-only counters for every private repeatable row stream."""
+
+        return [spool.telemetry_snapshot() for spool in self._spools]
 
     def _register(
         self,
@@ -407,24 +434,31 @@ class SourceWriter:
 
         partition_field = None
         if first is not None and dataset not in UNPARTITIONED_DATASETS:
+            # Resolve against the ORIGINAL row. The public schema intentionally
+            # removes internal fields, so looking there makes __partitionDate
+            # unreachable and collapses ten years into one serial object.
             partition_field = next(
                 (
                     field
                     for field in PARTITION_DATE_FIELDS
-                    if field in resolved_fieldnames
+                    if field in first
                 ),
                 None,
             )
         staged: dict[str, dict[str, Any]] = {}
         open_states: OrderedDict[str, dict[str, Any]] = OrderedDict()
         max_open_partition_files = 16
+        fsync_seconds = 0.0
 
         def close_state(state: dict[str, Any]) -> None:
+            nonlocal fsync_seconds
             handle = state.get("handle")
             if handle is None:
                 return
             handle.flush()
+            fsync_started = time.perf_counter()
             os.fsync(handle.fileno())
+            fsync_seconds += time.perf_counter() - fsync_started
             handle.close()
             state["handle"] = None
             state["writer"] = None
@@ -529,8 +563,15 @@ class SourceWriter:
         for state in list(open_states.values()):
             close_state(state)
         open_states.clear()
+        projection_csv_seconds = time.perf_counter() - started
+        staged_csv_bytes = sum(
+            int(state["path"].stat().st_size) for state in staged.values()
+        )
+        temporary_baseline = self._temporary_baseline_bytes(staged_csv_bytes)
 
-        def publish(item: tuple[str, dict[str, Any]]) -> tuple[str, int]:
+        def publish(
+            item: tuple[str, dict[str, Any]],
+        ) -> tuple[str, int, dict[str, float], int]:
             partition, state = item
             if partition:
                 base = Path(logical_path).with_suffix("").as_posix()
@@ -551,20 +592,34 @@ class SourceWriter:
             output_path = self._require_stage() / relative
             output_path.parent.mkdir(parents=True, exist_ok=True)
             csv_path = state["path"]
+            metrics = {"csvParseSeconds": 0.0, "parquetEncodeSeconds": 0.0}
             if self._source_format == "csv":
                 os.replace(csv_path, output_path)
             elif self._source_format == "parquet":
-                self._csv_to_parquet(csv_path, output_path)
+                metrics = self._csv_to_parquet(csv_path, output_path)
                 csv_path.unlink(missing_ok=True)
             else:
                 raise ValueError(f"unsupported source format {self._source_format!r}")
             if restricted:
                 output_path.chmod(0o600)
-            return relative, state["rows"]
+            return relative, state["rows"], metrics, output_path.stat().st_size
 
+        publish_started = time.perf_counter()
         with ThreadPoolExecutor(max_workers=self._workers) as executor:
             published = list(executor.map(publish, sorted(staged.items())))
-        for relative, row_count in sorted(published):
+        publish_seconds = time.perf_counter() - publish_started
+        concurrent_output_bound = sum(
+            sorted((item[3] for item in published), reverse=True)[
+                : min(self._workers, len(published))
+            ]
+        )
+        self.telemetry["peakTemporaryDiskBytes"] = max(
+            int(self.telemetry["peakTemporaryDiskBytes"]),
+            temporary_baseline + concurrent_output_bound,
+        )
+        hash_seconds = 0.0
+        for relative, row_count, _, _ in sorted(published):
+            hash_started = time.perf_counter()
             self._register(
                 self._require_stage() / relative,
                 source_system=source_system,
@@ -573,17 +628,47 @@ class SourceWriter:
                 restricted=restricted,
                 logical_path=logical_path,
             )
+            hash_seconds += time.perf_counter() - hash_started
+        total_seconds = time.perf_counter() - started
+        dataset_telemetry = {
+            "logicalPath": logical_path,
+            "sourceSystem": source_system,
+            "dataset": dataset,
+            "logicalRows": sum(int(state["rows"]) for state in staged.values()),
+            "partitions": len(staged),
+            "stagedCsvBytes": staged_csv_bytes,
+            "publishedBytes": sum(item[3] for item in published),
+            "projectionCsvSeconds": round(projection_csv_seconds, 6),
+            "fsyncSeconds": round(fsync_seconds, 6),
+            "csvParseSeconds": round(sum(item[2]["csvParseSeconds"] for item in published), 6),
+            "parquetEncodeSeconds": round(
+                sum(item[2]["parquetEncodeSeconds"] for item in published), 6
+            ),
+            "partitionPublishWallSeconds": round(publish_seconds, 6),
+            "hashSeconds": round(hash_seconds, 6),
+            "duckdbMirrorSeconds": 0.0,
+            "mirrorInputBytes": 0,
+            "queueWaitSeconds": 0.0,
+            "queueWaitBasis": "synchronous_dataset_submission",
+            "workerConcurrency": min(self._workers, len(staged)),
+            "inputSpoolPasses": None,
+            "inputSpillBytes": None,
+            "inputMeasurementReasonCode": "ITERABLE_PROVENANCE_NOT_EXPOSED_TO_WRITER",
+            "totalSeconds": round(total_seconds, 6),
+        }
+        self.telemetry["datasetPublications"].append(dataset_telemetry)
         self.telemetry["datasetsPublished"] = (
             int(self.telemetry["datasetsPublished"]) + 1
         )
         self.telemetry["sourcePublicationSeconds"] = round(
             float(self.telemetry["sourcePublicationSeconds"])
-            + time.perf_counter()
-            - started,
+            + total_seconds,
             6,
         )
 
-    def _csv_to_parquet(self, staging_csv: Path, path: Path) -> None:
+    def _csv_to_parquet(
+        self, staging_csv: Path, path: Path
+    ) -> dict[str, float]:
         """Convert one staged partition with an isolated, memory-capped worker."""
 
         try:
@@ -601,25 +686,33 @@ class SourceWriter:
             )
             connection.execute(f"SET memory_limit='{per_worker_gb:.3f}GB'")
             connection.execute("SET threads=1")
+            csv_started = time.perf_counter()
             connection.execute(
                 "CREATE TABLE payload AS "
                 "SELECT * FROM read_csv_auto(?, header=true, all_varchar=true, "
                 "sample_size=-1, hive_partitioning=false)",
                 [str(staging_csv)],
             )
+            csv_seconds = time.perf_counter() - csv_started
             compression = (
                 "uncompressed"
                 if self._compression == "none"
                 else self._compression
             )
             output_path = str(temp).replace("'", "''")
+            parquet_started = time.perf_counter()
             connection.execute(
                 f"COPY payload TO '{output_path}' "
                 f"(FORMAT PARQUET, COMPRESSION {compression.upper()})"
             )
+            parquet_seconds = time.perf_counter() - parquet_started
         finally:
             connection.close()
         os.replace(temp, path)
+        return {
+            "csvParseSeconds": csv_seconds,
+            "parquetEncodeSeconds": parquet_seconds,
+        }
 
     def write_json(
         self,
@@ -733,6 +826,10 @@ class SourceWriter:
                 "threads": str(self._duckdb_threads),
             },
         )
+        telemetry_by_path = {
+            str(row["logicalPath"]): row
+            for row in self.telemetry["datasetPublications"]
+        }
         try:
             connection.execute(
                 """
@@ -753,6 +850,7 @@ class SourceWriter:
             logical_by_table: dict[str, str] = {}
             created_tables: set[str] = set()
             for source_object in sorted(source_objects, key=lambda row: row["path"]):
+                mirror_started = time.perf_counter()
                 logical_path = source_object["logicalPath"]
                 table_name = self._duckdb_table_name(logical_path)
                 prior_logical = logical_by_table.setdefault(table_name, logical_path)
@@ -801,6 +899,16 @@ class SourceWriter:
                         source_object["restricted"],
                     ],
                 )
+                elapsed = time.perf_counter() - mirror_started
+                if logical_path in telemetry_by_path:
+                    record = telemetry_by_path[logical_path]
+                    record["duckdbMirrorSeconds"] = round(
+                        float(record["duckdbMirrorSeconds"]) + elapsed, 6
+                    )
+                    record["mirrorInputBytes"] = (
+                        int(record["mirrorInputBytes"])
+                        + int(source_object["bytes"])
+                    )
             connection.execute(
                 """
                 CREATE TABLE source_dataset_catalog AS
@@ -876,9 +984,14 @@ class SourceWriter:
                 "source-run.duckdb",
                 source_objects,
             )
-        self.telemetry["duckdbMirrorSeconds"] = round(
-            time.perf_counter() - started,
-            6,
+        total = time.perf_counter() - started
+        attributed = sum(
+            float(row["duckdbMirrorSeconds"])
+            for row in self.telemetry["datasetPublications"]
+        )
+        self.telemetry["duckdbMirrorSeconds"] = round(total, 6)
+        self.telemetry["duckdbMirrorUnattributedSeconds"] = round(
+            max(0.0, total - attributed), 6
         )
 
     def write_source_schema(self) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pickle
 import re
 import shutil
+import time
 from heapq import merge as heap_merge
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -46,6 +47,21 @@ class RowSpool:
         self._count = 0
         self._last: dict[str, Any] | None = None
         self._closed = False
+        self._telemetry: dict[str, float | int] = {
+            "flushes": 0,
+            "flushSeconds": 0.0,
+            "spillBytesWritten": 0,
+            "iterationPasses": 0,
+            "iterationRowsDecoded": 0,
+            "iterationBytesRead": 0,
+            "iterationSeconds": 0.0,
+            "sortCalls": 0,
+            "sortSeconds": 0.0,
+            "sortInputBytes": 0,
+            "sortSpillBytesWritten": 0,
+            "sortPeakTemporaryBytes": 0,
+            "sortMergePasses": 0,
+        }
 
     def append(self, row: dict[str, Any]) -> None:
         if self._closed:
@@ -63,21 +79,48 @@ class RowSpool:
     def flush(self) -> None:
         if not self._buffer:
             return
+        before = self.path.stat().st_size
+        started = time.perf_counter()
         with self.path.open("ab") as handle:
             pickle.dump(self._buffer, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        self._telemetry["flushes"] = int(self._telemetry["flushes"]) + 1
+        self._telemetry["flushSeconds"] = float(
+            self._telemetry["flushSeconds"]
+        ) + time.perf_counter() - started
+        self._telemetry["spillBytesWritten"] = int(
+            self._telemetry["spillBytesWritten"]
+        ) + self.path.stat().st_size - before
         self._buffer = []
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         self.flush()
         if not self.path.exists():
             return
-        with self.path.open("rb") as handle:
-            while True:
-                try:
-                    chunk = pickle.load(handle)
-                except EOFError:
-                    break
-                yield from chunk
+        started = time.perf_counter()
+        rows = 0
+        size = self.path.stat().st_size
+        try:
+            with self.path.open("rb") as handle:
+                while True:
+                    try:
+                        chunk = pickle.load(handle)
+                    except EOFError:
+                        break
+                    rows += len(chunk)
+                    yield from chunk
+        finally:
+            self._telemetry["iterationPasses"] = int(
+                self._telemetry["iterationPasses"]
+            ) + 1
+            self._telemetry["iterationRowsDecoded"] = int(
+                self._telemetry["iterationRowsDecoded"]
+            ) + rows
+            self._telemetry["iterationBytesRead"] = int(
+                self._telemetry["iterationBytesRead"]
+            ) + size
+            self._telemetry["iterationSeconds"] = float(
+                self._telemetry["iterationSeconds"]
+            ) + time.perf_counter() - started
 
     @staticmethod
     def _iter_sort_run(path: Path) -> Iterator[dict[str, Any]]:
@@ -125,6 +168,12 @@ class RowSpool:
         if max_open_runs < 2:
             raise ValueError("max_open_runs must be at least 2")
         self.flush()
+        sort_started = time.perf_counter()
+        sort_input_bytes = self.path.stat().st_size
+        sort_spill_bytes = 0
+        live_sort_bytes = 0
+        sort_peak_bytes = 0
+        pass_index = 0
         sort_directory = self.path.parent / f".{self.path.name}.sort"
         sort_directory.mkdir(exist_ok=False)
         try:
@@ -137,14 +186,21 @@ class RowSpool:
                 buffer.sort(key=key)
                 run = sort_directory / f"run-{len(runs):06d}.rows"
                 self._write_sort_run(run, buffer)
+                run_size = run.stat().st_size
+                sort_spill_bytes += run_size
+                live_sort_bytes += run_size
+                sort_peak_bytes = max(sort_peak_bytes, live_sort_bytes)
                 runs.append(run)
                 buffer = []
             if buffer:
                 buffer.sort(key=key)
                 run = sort_directory / f"run-{len(runs):06d}.rows"
                 self._write_sort_run(run, buffer)
+                run_size = run.stat().st_size
+                sort_spill_bytes += run_size
+                live_sort_bytes += run_size
+                sort_peak_bytes = max(sort_peak_bytes, live_sort_bytes)
                 runs.append(run)
-            pass_index = 0
             while len(runs) > max_open_runs:
                 merged_runs: list[Path] = []
                 for offset in range(0, len(runs), max_open_runs):
@@ -160,8 +216,13 @@ class RowSpool:
                             key=key,
                         ),
                     )
+                    merged_size = merged_path.stat().st_size
+                    sort_spill_bytes += merged_size
+                    live_sort_bytes += merged_size
+                    sort_peak_bytes = max(sort_peak_bytes, live_sort_bytes)
                     merged_runs.append(merged_path)
                     for path in group:
+                        live_sort_bytes -= path.stat().st_size
                         path.unlink()
                 runs = merged_runs
                 pass_index += 1
@@ -171,7 +232,38 @@ class RowSpool:
                     key=key,
                 )
         finally:
+            self._telemetry["sortCalls"] = int(self._telemetry["sortCalls"]) + 1
+            self._telemetry["sortSeconds"] = float(
+                self._telemetry["sortSeconds"]
+            ) + time.perf_counter() - sort_started
+            self._telemetry["sortInputBytes"] = int(
+                self._telemetry["sortInputBytes"]
+            ) + sort_input_bytes
+            self._telemetry["sortSpillBytesWritten"] = int(
+                self._telemetry["sortSpillBytesWritten"]
+            ) + sort_spill_bytes
+            self._telemetry["sortPeakTemporaryBytes"] = max(
+                int(self._telemetry["sortPeakTemporaryBytes"]),
+                sort_peak_bytes,
+            )
+            self._telemetry["sortMergePasses"] = int(
+                self._telemetry["sortMergePasses"]
+            ) + pass_index
             shutil.rmtree(sort_directory, ignore_errors=True)
+
+    def telemetry_snapshot(self) -> dict[str, Any]:
+        """Stable shape, unstable measurements; excluded from run identity."""
+
+        return {
+            "spool": self.path.name,
+            "logicalRows": self._count,
+            "bufferRows": len(self._buffer),
+            "backingBytes": self.path.stat().st_size if self.path.exists() else 0,
+            **{
+                key: round(value, 6) if isinstance(value, float) else value
+                for key, value in self._telemetry.items()
+            },
+        }
 
     def __len__(self) -> int:
         return self._count

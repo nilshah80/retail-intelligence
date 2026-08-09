@@ -211,6 +211,7 @@ type StockSnapshots struct {
 	SKUID string `json:"sku_id"`
 	LocationID string `json:"location_id"`
 	SnapshotDate string `json:"snapshot_date"`
+	OldestReceiptDate *string `json:"oldest_receipt_date,omitempty"`
 	OnHandUnits int64 `json:"on_hand_units"`
 	OnOrderUnits int64 `json:"on_order_units"`
 	CommittedUnits *int64 `json:"committed_units,omitempty"`

@@ -2450,6 +2450,52 @@ def _pipeline_run_id(source_root: Path | None, override: str | None) -> str:
     return source_root.name if source_root is not None else "run-unknown"
 
 
+def _iso_date(value: str) -> str:
+    """Validate a date-valued CLI argument without widening it to a timestamp."""
+
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected an ISO date such as 2026-07-30, got {value!r}"
+        ) from exc
+    return value
+
+
+def _pipeline_inventory_as_of(
+    decision_as_of: str,
+    explicit_inventory_as_of: str | None,
+) -> str:
+    """Keep forecast-instant and inventory-date origins independently governed."""
+
+    return explicit_inventory_as_of or _iso_date(decision_as_of.split("T", 1)[0])
+
+
+def _pipeline_finalize_command(
+    ingestion: Path,
+    work: Path,
+    publication: Path,
+    evidence: Path,
+    *,
+    prune_work: bool,
+) -> list[str]:
+    """Finalize first; prune only through retention's verified success path."""
+
+    return [
+        str(ingestion),
+        "-m",
+        "retail_ingestion.cli",
+        "finalize",
+        "--work-root",
+        str(work),
+        "--publication-root",
+        str(publication),
+        "--evidence-root",
+        str(evidence),
+        *(["--prune-work"] if prune_work else []),
+    ]
+
+
 def command_pipeline(args: argparse.Namespace) -> int:
     """Report stage timings on EVERY exit, then return the inner result.
 
@@ -2626,7 +2672,10 @@ def _command_pipeline(args: argparse.Namespace) -> int:
     # here rather than widening the ML parser: a date is the type that stage means,
     # and accepting a timestamp would let a non-midnight instant pass and be
     # silently floored.
-    inventory_as_of = decision_as_of.split("T", 1)[0]
+    inventory_as_of = _pipeline_inventory_as_of(
+        decision_as_of,
+        args.inventory_as_of,
+    )
 
     # Preflight: every immutable output this slice would write, checked before the
     # first stage runs.
@@ -2750,12 +2799,13 @@ def _command_pipeline(args: argparse.Namespace) -> int:
             # tests read directly, so two of them failed on a complete pipeline.
             _pipeline_step(
                 "finalize",
-                [
-                    str(ingestion), "-m", "retail_ingestion.cli", "finalize",
-                    "--work-root", str(work),
-                    "--publication-root", str(curated),
-                    "--evidence-root", str(evidence),
-                ],
+                _pipeline_finalize_command(
+                    ingestion,
+                    Path(work),
+                    curated,
+                    evidence,
+                    prune_work=args.prune_work,
+                ),
             )
 
         if "repin" in stages:
@@ -3435,6 +3485,15 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--publication-root", type=Path, default=None)
     pipeline.add_argument("--run-id", default=None)
     pipeline.add_argument(
+        "--prune-work",
+        action="store_true",
+        help=(
+            "after successful ingestion finalization and retained-evidence "
+            "verification, remove only the resolved disposable work directory; "
+            "raw landing and curated publication are retained"
+        ),
+    )
+    pipeline.add_argument(
         "--feature-dir",
         type=Path,
         default=None,
@@ -3463,6 +3522,15 @@ def build_parser() -> argparse.ArgumentParser:
                           help="horizon COUNT; the comma list is derived")
     pipeline.add_argument("--origin-count", type=int, default=13)
     pipeline.add_argument("--decision-as-of", default="2026-07-31T00:00:00Z")
+    pipeline.add_argument(
+        "--inventory-as-of",
+        type=_iso_date,
+        default=None,
+        help=(
+            "inventory snapshot date; defaults to the date portion of "
+            "--decision-as-of, but can be governed independently"
+        ),
+    )
     pipeline.add_argument("--tracking-uri", default="http://127.0.0.1:5000")
     pipeline.add_argument("--actor", default=os.environ.get("USER", "developer"))
     pipeline.add_argument(

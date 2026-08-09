@@ -90,14 +90,27 @@ def load_positions(
     The canonical `atp_units` is loaded rather than recomputed, and checked below.
     """
 
+    stock_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info('stock_snapshots')").fetchall()
+    }
+    # Retained pre-fix curated publications remain readable for diagnosis. Their
+    # missing field is represented as unavailable; it is never backfilled with a
+    # guessed receipt date.
+    oldest_receipt_sql = (
+        "stock.oldest_receipt_date"
+        if "oldest_receipt_date" in stock_columns
+        else "NULL::DATE"
+    )
     frame = _frame(
         connection,
-        """
+        f"""
         WITH latest AS (
             SELECT DISTINCT ON (stock.sku_id, stock.location_id)
                 stock.sku_id,
                 stock.location_id,
                 stock.snapshot_date,
+                {oldest_receipt_sql} AS oldest_receipt_date,
                 stock.on_hand_units,
                 stock.committed_units,
                 stock.reserved_units,
@@ -121,6 +134,7 @@ def load_positions(
             locations.name AS location_name,
             locations.city AS location_city,
             latest.sku_id,
+            latest.oldest_receipt_date,
             products.dept_id,
             products.category,
             products.product_name,
@@ -738,7 +752,7 @@ def load_inbound_summary(
 def load_warehouse_capacity(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> pd.DataFrame:
-    """The storage ceiling per warehouse, at the latest snapshot the origin admits.
+    """Warehouse capacity, blocked stock and realised trailing service.
 
     The source writes one snapshot per warehouse per week over a decade, so
     "capacity now" is the most recent row at or before the origin. Loading the
@@ -748,23 +762,49 @@ def load_warehouse_capacity(
     position artifact already publishes -- identical to the unit at both India
     DCs -- so utilisation divides the holding this screen already values by the
     ceiling here, and the numerator cannot disagree with the column beside it.
+
+    Fill is frozen to the same 91-day trailing window as the inventory run's
+    demand and waste evidence. `store_shortfall_events` records both demanded and
+    served-from-store units and names the supply node responsible for that store;
+    aggregating at that node gives every warehouse one supported denominator.
+    A zero denominator stays zero here and is rendered as unavailable downstream.
     """
 
+    start = as_of - timedelta(days=TRAILING_DAYS - 1)
     return _frame(
         connection,
         """
+        WITH service AS (
+            SELECT
+                shortfall.supply_location_id AS location_id,
+                SUM(shortfall.demand_units)::BIGINT AS fill_demand_units,
+                SUM(shortfall.served_units)::BIGINT AS fill_served_units
+            FROM store_shortfall_events AS shortfall
+            WHERE shortfall.event_date BETWEEN ? AND ?
+              AND shortfall.known_as_of < ? + INTERVAL 1 DAY
+              AND shortfall.supply_location_id IS NOT NULL
+            GROUP BY shortfall.supply_location_id
+        )
         SELECT DISTINCT ON (capacity.location_id)
             locations.market_id,
             capacity.location_id,
             capacity.capacity_units,
+            capacity.blocked_units,
+            COALESCE(service.fill_demand_units, 0)::BIGINT
+                AS fill_demand_units,
+            COALESCE(service.fill_served_units, 0)::BIGINT
+                AS fill_served_units,
+            ?::DATE AS fill_window_start,
+            ?::DATE AS fill_window_end,
             capacity.snapshot_date
         FROM warehouse_capacity_snapshots AS capacity
         JOIN locations ON locations.location_id = capacity.location_id
+        LEFT JOIN service ON service.location_id = capacity.location_id
         WHERE capacity.snapshot_date <= ?
           AND capacity.known_as_of < ? + INTERVAL 1 DAY
         ORDER BY capacity.location_id, capacity.snapshot_date DESC
         """,
-        [as_of, as_of],
+        [start, as_of, as_of, start, as_of, as_of, as_of],
     )
 
 

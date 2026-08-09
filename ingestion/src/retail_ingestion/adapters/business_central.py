@@ -9,7 +9,7 @@ from .registry import register_adapter
 @register_adapter
 class BusinessCentralAdapter(SourceAdapter):
     source_system = "businessCentral"
-    adapter_version = "business-central-adapter/1.2.0"
+    adapter_version = "business-central-adapter/1.2.1"
     raw_schema = "raw_business_central"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -56,6 +56,10 @@ class BusinessCentralAdapter(SourceAdapter):
                     AS quality_control_units,
                 try_cast(safetyStockInventory AS BIGINT) AS safety_stock_units,
                 try_cast(availableInventory AS BIGINT) AS source_observed_atp_units,
+                -- DC snapshots do not publish a single oldest-receipt date: their
+                -- batch ledger is the age authority. Keep the neutral field
+                -- explicit so store and DC rows share one staging relation.
+                NULL::DATE AS oldest_receipt_date,
                 _raw_object_path AS raw_object_path
             FROM raw_business_central.inventory_snapshots
             """
@@ -108,6 +112,7 @@ class BusinessCentralAdapter(SourceAdapter):
                     try_cast(qualityControlInventory AS BIGINT),
                     try_cast(safetyStockInventory AS BIGINT),
                     try_cast(availableInventory AS BIGINT),
+                    try_cast(oldestReceiptDate AS DATE),
                     _raw_object_path
                 FROM raw_business_central.store_inventory_snapshots
                 """

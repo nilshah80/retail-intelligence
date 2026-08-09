@@ -2011,7 +2011,12 @@ def simulate(
                     ),
                 )
                 quality_control_inventory[key] += quality_quantity
-                quality_releases_by_date[day + timedelta(days=1)].append(
+                quality_releases_by_date[
+                    day
+                    + timedelta(
+                        days=inventory_policy["qualityControlHoldDays"]
+                    )
+                ].append(
                     {
                         "warehouseId": receipt["warehouseId"],
                         "sku": receipt["sku"],

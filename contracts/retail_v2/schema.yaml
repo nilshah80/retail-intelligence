@@ -244,6 +244,7 @@ entities:
       sku_id: {type: string, required: true}
       location_id: {type: string, required: true}
       snapshot_date: {type: date, required: true}
+      oldest_receipt_date: {type: date, required: false}
       on_hand_units: {type: int64, required: true}
       on_order_units: {type: int64, required: true}
       committed_units: {type: int64, required: false}

@@ -79,6 +79,21 @@ GULF_FAMILIES = {
 
 GRADE_DIMENSIONS = {"viscosity", "gearGrade", "nlgiGrade", "isoViscosityGrade"}
 FILL_DIMENSIONS = {"packVolume", "packWeight"}
+GULF_DISTRIBUTOR_GEOGRAPHY = {
+    ("Ahmedabad", "GJ"),
+    ("Bengaluru", "KA"),
+    ("Chennai", "TN"),
+    ("Coimbatore", "TN"),
+    ("Faridabad", "HR"),
+    ("Guwahati", "AS"),
+    ("Hyderabad", "TS"),
+    ("Indore", "MP"),
+    ("Jaipur", "RJ"),
+    ("Kolkata", "WB"),
+    ("Ludhiana", "PB"),
+    ("Mumbai", "MH"),
+    ("Pune", "MH"),
+}
 
 
 class GulfVocabularyTests(unittest.TestCase):
@@ -268,6 +283,26 @@ class RetailStabilityTests(unittest.TestCase):
         self.assertEqual("0.18", tax["defaultRate"])
         self.assertEqual("0.28", tax["categoryRates"]["automotive"])
 
+    def test_gulf_distributors_declare_national_geography(self) -> None:
+        for preset in (
+            ROOT / "configs" / "gulf-oil-india-showcase.yaml",
+            ROOT / "configs" / "gulf-oil-india-ten-year.yaml",
+        ):
+            with self.subTest(preset=preset.name):
+                stores = load_config(preset)["stores"]
+                actual = {(store["city"], store["regionCode"]) for store in stores}
+                self.assertEqual(GULF_DISTRIBUTOR_GEOGRAPHY, actual)
+                self.assertEqual(13, len(stores))
+
+    def test_gulf_batches_have_a_governed_quality_control_hold(self) -> None:
+        for preset in (
+            ROOT / "configs" / "gulf-oil-india-showcase.yaml",
+            ROOT / "configs" / "gulf-oil-india-ten-year.yaml",
+        ):
+            with self.subTest(preset=preset.name):
+                inventory = load_config(preset)["operations"]["inventory"]
+                self.assertEqual(5, inventory["qualityControlHoldDays"])
+
 
 class ConfigBuilderDriftTests(unittest.TestCase):
     """The Config Builder carries a serialized copy of the generator contract.
@@ -333,6 +368,11 @@ class ConfigBuilderDriftTests(unittest.TestCase):
         assert match is not None
         embedded = set(re.findall(r'"([A-Za-z]+)"', match.group(1)))
         self.assertEqual(SUPPORTED_OPTION_DIMENSIONS, embedded)
+
+    def test_store_editor_preserves_geography_overrides(self) -> None:
+        self.assertIn('["City","city"]', self.HTML)
+        self.assertIn('["State / region code","regionCode"]', self.HTML)
+        self.assertIn("city and state / region must be supplied together", self.HTML)
 
 
 if __name__ == "__main__":

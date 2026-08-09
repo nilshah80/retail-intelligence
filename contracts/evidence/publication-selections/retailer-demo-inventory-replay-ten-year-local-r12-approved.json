@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "actor": "nilayshah",
+    "approvedAt": "2026-08-09T13:24:16Z",
+    "reason": "Gate A, Gate B, the capability mask, the publication fingerprint and the curated DuckDB hash were all derived from this run's own retained evidence rather than transcribed: Gate A ef5333d5, Gate B 46e0f18b, publication 7381e88a, DuckDB bd6149cb, 2309 curated objects."
+  },
+  "lifecycle": {
+    "reasonCode": "HUMAN_REPIN_ADOPTION",
+    "recordId": "rec_95172ac15d07ea05",
+    "state": "approved",
+    "supersedes": "rec_65602bd808fe7cea"
+  },
+  "publication": {
+    "duckdbSha256": "bd6149cb048f78d63030c3d91ce3bcfdb7473c80fbd9d3e39e5944d760efe111",
+    "gateASemanticFingerprint": "ef5333d51fcdb8dc857ea0c8bdef932c1d18bb2d1d98798ee7475d2acf4500d6",
+    "gateBSemanticFingerprint": "46e0f18b2194cd02ea35f0df76c8b972073b3caffb2354f14bd848c5ae9f356a",
+    "logicalPath": "ingestion/data/curated/run-1430a7ddabc5d4ff",
+    "objectCount": 2309,
+    "publicationSemanticFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
+    "sourceSnapshotId": "7d8ade35bf61ef7a569be1251874a600819eb9e83976f64eb31149574ddcda50"
+  },
+  "readiness": {
+    "capabilityReadiness": "ready",
+    "capabilitySufficiency": "sufficient",
+    "reportFingerprint": "46e0f18b2194cd02ea35f0df76c8b972073b3caffb2354f14bd848c5ae9f356a"
+  },
+  "schemaVersion": "retail-publication-selection/v1",
+  "scope": {
+    "capability": "inventory_replenishment_replay",
+    "environment": "local",
+    "retailerId": "retailer-demo",
+    "tenantId": "tenant-demo"
+  },
+  "selectionId": "sel_21bd8a5a025896aa"
+}

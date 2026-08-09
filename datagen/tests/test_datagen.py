@@ -30,7 +30,12 @@ from retail_datagen.config import ConfigError, load_config, validate_config
 from retail_datagen.cli import main as cli_main
 from retail_datagen.customers import CustomerPopulation
 from retail_datagen.extensions import _allocate_tax_components
-from retail_datagen.generator import _effective_list_price, generate
+from retail_datagen.generator import (
+    _effective_list_price,
+    _effective_market_workers,
+    _store_geography,
+    generate,
+)
 from retail_datagen.identity import (
     bc_uuid,
     shopify_gid,
@@ -229,6 +234,16 @@ class ConfigTests(unittest.TestCase):
             volume_warehouses["newark-dc"]["openingStockDaysOfCover"],
             28,
         )
+
+    def test_store_geography_uses_complete_override_or_market_fallback(self) -> None:
+        market = {"city": "Mumbai", "regionCode": "MH"}
+        self.assertEqual(
+            ("Ahmedabad", "GJ"),
+            _store_geography(
+                {"city": "Ahmedabad", "regionCode": "GJ"}, market
+            ),
+        )
+        self.assertEqual(("Mumbai", "MH"), _store_geography({}, market))
 
     def test_country_controls_resolved_locale(self) -> None:
         config = load_config(SHOWCASE)
@@ -1007,6 +1022,11 @@ class CustomerPopulationTests(unittest.TestCase):
             self.assertEqual(len(spool), 25)
             self.assertEqual(list(spool), expected)
             self.assertEqual(list(spool), expected)
+            telemetry = spool.telemetry_snapshot()
+            self.assertEqual(telemetry["iterationPasses"], 2)
+            self.assertEqual(telemetry["iterationRowsDecoded"], 50)
+            self.assertGreater(telemetry["iterationBytesRead"], 0)
+            self.assertGreater(telemetry["spillBytesWritten"], 0)
             self.assertEqual(spool[-1], expected[-1])
             path = spool.path
             self.assertTrue(path.is_file())
@@ -1030,10 +1050,18 @@ class CustomerPopulationTests(unittest.TestCase):
                 list(spool.iter_sorted(key=lambda row: row["key"], max_open_runs=2)),
                 sorted(rows, key=lambda row: row["key"]),
             )
+            telemetry = spool.telemetry_snapshot()
+            self.assertEqual(telemetry["sortCalls"], 1)
+            self.assertGreater(telemetry["sortSpillBytesWritten"], 0)
             spool.close()
 
 
 class CliAndWriterTests(unittest.TestCase):
+    def test_market_worker_topology_never_spawns_idle_processes(self) -> None:
+        self.assertEqual(_effective_market_workers(2, 1), 1)
+        self.assertEqual(_effective_market_workers(8, 3), 3)
+        self.assertEqual(_effective_market_workers(1, 4), 1)
+
     def test_plan_cli_accepts_the_same_execution_overrides_as_generate(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -1118,6 +1146,75 @@ class CliAndWriterTests(unittest.TestCase):
                     row["path"] == "companion/test/events.csv"
                     for row in writer.objects
                 )
+            )
+            writer.abort()
+
+    def test_private_partition_date_is_used_but_never_published(self) -> None:
+        with tempfile.TemporaryDirectory() as output_root:
+            writer = SourceWriter(
+                output_root,
+                "writer-private-partition-test",
+                "run-writer-private-partition-test",
+                generation_partition="month",
+                source_format="csv",
+                workers=2,
+            )
+            writer.write_dataset(
+                "shopify/test/order_lines.csv",
+                [
+                    {"id": "1", "value": "a", "__partitionDate": "2025-01-31"},
+                    {"id": "2", "value": "b", "__partitionDate": "2025-02-01"},
+                ],
+                source_system="shopify",
+                dataset="orderLines",
+            )
+
+            self.assertEqual(
+                {row["path"] for row in writer.objects},
+                {
+                    "shopify/test/order_lines/year=2025/month=01/part.csv",
+                    "shopify/test/order_lines/year=2025/month=02/part.csv",
+                },
+            )
+            fields = writer.schemas["shopify/test/order_lines.csv"]["fields"]
+            self.assertNotIn("__partitionDate", {row["name"] for row in fields})
+            telemetry = writer.telemetry["datasetPublications"][0]
+            self.assertEqual(telemetry["logicalRows"], 2)
+            self.assertEqual(telemetry["partitions"], 2)
+            for field in (
+                "stagedCsvBytes",
+                "publishedBytes",
+                "projectionCsvSeconds",
+                "fsyncSeconds",
+                "hashSeconds",
+                "workerConcurrency",
+                "inputMeasurementReasonCode",
+            ):
+                self.assertIn(field, telemetry)
+            writer.abort()
+
+    def test_occurred_at_is_a_deliberate_partition_field(self) -> None:
+        with tempfile.TemporaryDirectory() as output_root:
+            writer = SourceWriter(
+                output_root,
+                "writer-status-partition-test",
+                "run-writer-status-partition-test",
+                generation_partition="month",
+                source_format="csv",
+            )
+            writer.write_dataset(
+                "shopify/test/fulfillment_status_history.csv",
+                [
+                    {"id": "1", "occurredAt": "2025-03-31T23:00:00Z"},
+                    {"id": "2", "occurredAt": "2025-04-01T00:00:00Z"},
+                ],
+                source_system="shopify",
+                dataset="fulfillmentStatusHistory",
+            )
+            self.assertEqual(len(writer.objects), 2)
+            self.assertEqual(
+                {Path(row["path"]).parts[-3:-1] for row in writer.objects},
+                {("year=2025", "month=03"), ("year=2025", "month=04")},
             )
             writer.abort()
 
@@ -1917,6 +2014,19 @@ class GenerationTests(unittest.TestCase):
             self.assertGreater(
                 serial["manifest"]["executionTelemetry"]["peakProcessRssBytes"],
                 0,
+            )
+            telemetry = serial["manifest"]["executionTelemetry"]
+            self.assertTrue(telemetry["sourcePublicationDatasets"])
+            self.assertTrue(telemetry["spoolTelemetry"])
+            self.assertGreater(telemetry["peakTemporaryDiskBytes"], 0)
+            self.assertIsNone(telemetry["aggregateProcessTreePeakRssBytes"])
+            self.assertEqual(
+                telemetry["aggregateProcessTreePeakRssReasonCode"],
+                "CONCURRENT_PROCESS_TREE_RSS_SAMPLING_UNAVAILABLE",
+            )
+            self.assertEqual(
+                telemetry["configuredMarketWorkers"],
+                serial["manifest"]["executionProfile"]["marketWorkers"],
             )
 
     def test_csv_is_retained_as_an_authoritative_output_option(self) -> None:

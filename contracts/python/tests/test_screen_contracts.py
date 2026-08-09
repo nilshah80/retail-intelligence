@@ -39,12 +39,12 @@ def test_the_activation_block_matches_the_forecast_that_actually_serves() -> Non
 
     activation = _forecast()["activation"]
     assert activation["currentState"] == "accepted_forecast_active"
-    assert activation["forecastRunId"] == "fr_357575f586905b11"
-    assert activation["versionId"] == "fv_3d66e3bd9939430d"
+    assert activation["forecastRunId"] == "fr_d2441088e0771b76"
+    assert activation["versionId"] == "fv_e35461a7e76416bd"
     assert activation["semanticFingerprint"] is not None
     assert activation["acceptanceSchemaVersion"] == "retail-forecast-acceptance/v6"
     assert activation["coverageGateMode"] == "hard"
-    assert activation["servingMigration"] == "0023_marketplace_channel_type"
+    assert activation["servingMigration"] == "0024_warehouse_service_metrics"
     # The rejected historical candidate stays disclosed; acceptance of a later run
     # does not erase the rejection that preceded it.
     assert activation["rejectedHistoricalRunId"] == "fr_92135aa7b5215b69"
@@ -54,8 +54,8 @@ def test_the_interval_availability_block_matches_decision_92() -> None:
     interval = _forecast()["activation"]["intervalAvailability"]
     assert interval["policyId"] == "retail-forecast-interval-availability/v1"
     assert interval["calibratedMaxHorizon"] == 4
-    assert interval["withheldRows"] == 8756
-    assert interval["withheldSeries"] == 398
+    assert interval["withheldRows"] == 23364
+    assert interval["withheldSeries"] == 1062
     assert interval["reasonCode"] == "COLD_START_INTERVAL_UNCALIBRATED"
 
 

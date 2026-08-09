@@ -112,6 +112,30 @@ describe("inventory & replenishment destinations", () => {
     ]);
   });
 
+  it("populates inventory filters only from the active tenant", async () => {
+    const payload = {
+      ...partialPayload,
+      filterOptions: {
+        regions: ["GJ", "MH", "TN"],
+        categories: ["Gulf - Adblue", "Gulf - Pcmo"],
+        healthStatuses: ["healthy", "stockout"],
+        locationKinds: ["dc", "store"]
+      }
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => payload
+    }));
+    renderPage("inventoryOverview");
+
+    const category = await screen.findByLabelText("All Categories");
+    expect(await within(category).findByText("Gulf - Adblue"))
+      .toBeInTheDocument();
+    expect(within(category).queryByText("Footwear")).not.toBeInTheDocument();
+    const region = screen.getByLabelText("All Regions");
+    expect(within(region).getByText("GJ")).toBeInTheDocument();
+    expect(within(region).queryByText("West")).not.toBeInTheDocument();
+  });
+
   it("renders every reference table column, in order, headers included", async () => {
     // A column the platform cannot fill still renders with its header and a
     // governed cell. Dropping it would silently change the approved layout, which
@@ -224,9 +248,11 @@ describe("inventory & replenishment destinations", () => {
           expiringUnits: 37,
           expiredUnits: 42,
           wasteUnits: 42,
-          expiryWindow: "Expired",
+          expiryWindow: "Expired + within window",
           wastePriority: "High",
-          valueMinor: 123456
+          valueMinor: 123456,
+          nearExpiryValueMinor: 123456,
+          wasteValueMinor: 654321
         }
       ],
       pagination: {offset: 0, limit: 100, total: 1}
@@ -242,11 +268,11 @@ describe("inventory & replenishment destinations", () => {
     renderPage("expiryWaste");
 
     const table = await findRowsTable();
-    // The EXPIRING count, which is what the Units column binds: the page is about
-    // stock still sellable, its headline tile totals the near-expiry holding, and
-    // the Value beside this column is that same holding at cost. Probed with a
-    // distinctive number so it cannot pass on some other cell's digits.
+    // Both independent facts remain visible when one cell carries both.
     expect(within(table).getByText("37")).toBeInTheDocument();
+    expect(within(table).getByText("42")).toBeInTheDocument();
+    expect(within(table).getByText("Expired + within window"))
+      .toBeInTheDocument();
     // The NAME, not the identifier. Every reference table names a node --
     // "Phoenix Market City, Mumbai", "West DC, Ahmedabad" -- and shipping
     // "india-west:mumbai-bandra" put a database key in front of a buyer.

@@ -15,7 +15,12 @@
 # orders -- and the planner's Lead Time and Expected Receipt columns were one
 # value repeated down the page. The spread is deterministic in the lane's own
 # identity and additive on the policy floor, so the declared minimum still holds.
-GENERATOR_VERSION = "0.16.0"
+#
+# 0.17.0: internal partition dates are resolved before private fields are removed,
+# status history recognises occurredAt, distributor city/region overrides flow to
+# source locations, and the configurable QC hold can preserve a truthful blocked
+# position at the inventory origin. These all change immutable source bytes.
+GENERATOR_VERSION = "0.17.0"
 SOURCE_SPEC_VERSION = "retail-source-config/v13"
 
 __all__ = ["GENERATOR_VERSION", "SOURCE_SPEC_VERSION"]

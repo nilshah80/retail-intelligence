@@ -693,36 +693,57 @@ def run_gate_b(
         incoming_split_mismatch = _scalar(
             connection,
             """
-            WITH boundary AS (
-                SELECT market_id, max(snapshot_date) AS snapshot_date
-                FROM stage.stage_data.inventory
-                GROUP BY market_id
+            WITH visible_status AS (
+                SELECT
+                    source.source_system,
+                    source.source_instance,
+                    source.market_id,
+                    source.sku_source_key,
+                    source.location_source_key,
+                    source.snapshot_date,
+                    event.source_shipment_id,
+                    event.qty,
+                    event.status
+                FROM stage.stage_data.inventory AS source
+                JOIN stage.stage_data.inbound_status_events AS event
+                  ON event.source_system = source.source_system
+                 AND event.source_instance = source.source_instance
+                 AND event.market_id = source.market_id
+                 AND event.sku_source_key = source.sku_source_key
+                 AND event.location_source_key = source.location_source_key
+                 AND event.status_effective_at <= source.known_as_of
+                 AND event.known_as_of <= source.known_as_of
+                QUALIFY row_number() OVER (
+                    PARTITION BY
+                        source.source_system, source.source_instance,
+                        source.market_id, source.sku_source_key,
+                        source.location_source_key, source.snapshot_date,
+                        event.source_shipment_id
+                    ORDER BY
+                        event.status_effective_at DESC,
+                        event.known_as_of DESC,
+                        event.native_record_id DESC
+                ) = 1
             ),
             transit AS (
                 SELECT
-                    shipment.market_id,
-                    shipment.sku_source_key,
-                    crosswalk.canonical_location_key,
-                    sum(shipment.qty)::BIGINT AS units
-                FROM stage.stage_data.inbound_shipments AS shipment
-                JOIN stage.stage_data.location_crosswalk AS crosswalk
-                  ON crosswalk.source_system = shipment.source_system
-                 AND crosswalk.market_id = shipment.market_id
-                 AND crosswalk.source_location_key =
-                     shipment.to_location_source_key
-                WHERE replace(lower(shipment.status), ' ', '_') IN (
+                    source_system,
+                    source_instance,
+                    market_id,
+                    sku_source_key,
+                    location_source_key,
+                    snapshot_date,
+                    sum(qty)::BIGINT AS units
+                FROM visible_status
+                WHERE replace(lower(status), ' ', '_') IN (
                     'in_transit', 'dispatched', 'shipped'
                 )
                 GROUP BY
-                    shipment.market_id,
-                    shipment.sku_source_key,
-                    crosswalk.canonical_location_key
+                    source_system, source_instance, market_id, sku_source_key,
+                    location_source_key, snapshot_date
             )
             SELECT count(*)
             FROM stage.stage_data.inventory AS source
-            JOIN boundary
-              ON boundary.market_id = source.market_id
-             AND boundary.snapshot_date = source.snapshot_date
             JOIN stage.stage_data.location_crosswalk AS crosswalk
               ON crosswalk.source_system = source.source_system
              AND crosswalk.market_id = source.market_id
@@ -736,10 +757,12 @@ def run_gate_b(
                  )
              AND canonical.snapshot_date = source.snapshot_date
             LEFT JOIN transit
-              ON transit.market_id = source.market_id
+              ON transit.source_system = source.source_system
+             AND transit.source_instance = source.source_instance
+             AND transit.market_id = source.market_id
              AND transit.sku_source_key = source.sku_source_key
-             AND transit.canonical_location_key =
-                 crosswalk.canonical_location_key
+             AND transit.location_source_key = source.location_source_key
+             AND transit.snapshot_date = source.snapshot_date
             WHERE canonical.in_transit_units <> least(
                     source.incoming_units, coalesce(transit.units, 0)
                   )
@@ -758,15 +781,15 @@ def run_gate_b(
             _critical(
                 "B07",
                 "on-order/in-transit source-status split failed",
-                [f"{incoming_split_mismatch} current snapshot rows mismatch"],
+                [f"{incoming_split_mismatch} snapshot rows mismatch"],
             )
             if incoming_split_mismatch
             else _pass(
                 "B07",
-                "current on-order and in-transit buckets are disjoint",
-                sourceSplit="current_extract_boundary_inbound_status_v1",
+                "snapshot on-order and in-transit buckets are disjoint",
+                sourceSplit="snapshot_visible_inbound_status_v2",
                 inTransitSourceRows=inbound_status_rows,
-                historicalStatusVersioned=False,
+                historicalStatusVersioned=inbound_status_rows > 0,
             )
         )
 

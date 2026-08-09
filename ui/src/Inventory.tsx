@@ -402,7 +402,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       // Turn is a year over days of supply, and days of supply is on-hand over
       // daily demand. Both became computable once trailing demand was published.
       {caption: "Stock Turn", field: "stockTurn", format: "turns",
-       note: "Trailing demand over units on hand, annualised"}
+       note: "Last 91 days of customer demand over enterprise on-hand, annualised"}
     ],
     breakdown: [
       // "Inventory Position" -- rupees and a share, exactly as the reference.
@@ -532,7 +532,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        unavailableReason: "DOCK_TO_STOCK_NOT_INSTRUMENTED",
        note: "Needs receipt-to-putaway timestamps"},
       {caption: "Warehouse Fill Rate", field: "warehouseFillRate", format: "percent",
-       note: "Outbound need fillable from own stock"}
+       note: "Served units ÷ demand · trailing 91 days"}
     ],
     // The reference's table is one row per WAREHOUSE -- three of them -- with
     // money in Inventory Value and Blocked Stock. This was the positions
@@ -678,8 +678,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Near-Expiry Inventory", field: "nearExpiryValueMinor", format: "money",
        note: "Units expiring inside the policy window"},
-      {caption: "Waste This Month", field: "wasteValueMinor", format: "money",
-       note: "Written off in the trailing window"},
+      {caption: "Waste · Last 91 Days", field: "wasteValueMinor", format: "money",
+       note: "Realised write-offs from the exact 91-day trailing window"},
       {caption: "Waste Reduction", field: null, format: "percent",
        unavailableReason: "PRIOR_PERIOD_NOT_COMPARED",
        note: "Needs a prior-period comparison"},
@@ -696,13 +696,13 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Product", field: "productName"},
         {header: "Location", field: "locationName"},
         {header: "Expiry Window", field: "expiryWindow"},
-        // Both columns on the NEAR-EXPIRY basis, which is what the page is about
-        // and what its headline tile totals. Units was the already-expired count
-        // while Value was the expiring holding, so the two disagreed on the same
-        // row; and Value read `exposureMinor`, which the artifact publishes NULL
-        // on every row, so the column was blank on every row.
-        {header: "Units", field: "expiringUnits", format: "units"},
-        {header: "Value", field: "valueMinor", format: "money"},
+        // Forward exposure and realised loss are independent facts. A cell can
+        // carry both; separate columns prevent a status-priority branch from
+        // hiding either quantity or valuing realised waste as zero.
+        {header: "Near-Expiry Units", field: "expiringUnits", format: "units"},
+        {header: "Near-Expiry Value", field: "nearExpiryValueMinor", format: "money"},
+        {header: "Waste Units · 91 Days", field: "wasteUnits", format: "units"},
+        {header: "Waste Value · 91 Days", field: "wasteValueMinor", format: "money"},
         {header: "Sell-through", field: "sellThroughPct", format: "percent"},
         {header: "Recommended Action", field: "wasteAction"},
         {header: "Priority", field: "wastePriority", badge: true}
@@ -1352,7 +1352,39 @@ function DataCard({
  * natively disabled with no mutation handler (P4-D9/P4-D11): the workflow belongs
  * to a later phase, and hiding the controls would misrepresent the product.
  */
-function ActionStrip({reference}: {reference: ReferenceScreen}) {
+function filterValues(
+  caption: string,
+  options: InventorySlice["filterOptions"]
+): readonly string[] {
+  if (!options) return [];
+  if (caption.includes("Region")) return options.regions;
+  if (caption.includes("Categor")) return options.categories;
+  if (caption.includes("Health")) {
+    return options.healthStatuses.map((value) => ({
+      healthy: "Healthy",
+      understock: "Understock",
+      overstock: "Overstock",
+      stockout: "Out of Stock",
+      dead: "Dead Stock"
+    })[value] ?? value);
+  }
+  if (caption.includes("Location")) {
+    return options.locationKinds.map((value) => ({
+      store: "Stores",
+      dc: "Warehouses",
+      "3pl": "Warehouses (3PL)"
+    })[value] ?? value);
+  }
+  return [];
+}
+
+function ActionStrip({
+  reference,
+  options
+}: {
+  reference: ReferenceScreen;
+  options?: InventorySlice["filterOptions"];
+}) {
   return (
     <>
       <div
@@ -1374,16 +1406,16 @@ function ActionStrip({reference}: {reference: ReferenceScreen}) {
       </div>
       {reference.filters.length > 0 && (
         <div className="filters" style={{justifyContent: "flex-start"}}>
-          {reference.filters.map((options, index) => (
+          {reference.filters.map((caption) => (
             <select
-              key={index}
+              key={caption}
               className="filter"
               disabled
               aria-disabled="true"
-              aria-label={options[0]}
-              defaultValue={options[0]}
+              aria-label={caption}
+              value={caption}
             >
-              {options.map((option) => (
+              {[caption, ...filterValues(caption, options)].map((option) => (
                 <option key={option}>{option}</option>
               ))}
             </select>
@@ -1405,7 +1437,9 @@ export function InventoryPage({pageId}: {pageId: InventoryPageId}) {
 
   return (
     <>
-      {reference && <ActionStrip reference={reference} />}
+      {reference && (
+        <ActionStrip reference={reference} options={slice.data?.filterOptions} />
+      )}
       {slice.isPending ? (
         <div className="state-card">Loading live inventory data…</div>
       ) : slice.error ? (

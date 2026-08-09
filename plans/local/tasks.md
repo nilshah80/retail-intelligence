@@ -491,6 +491,138 @@ manual/human/evidence gates; Phases 4–8 remain future work unless a line says 
 - [x] **Demo checkpoint 1:** use the Config Builder HTML to create, export, re-import and generate
       the Mumbai + New York scenario; show locale-correct source outputs and the run manifest.
 
+## Datagen Rust migration track [GATED — PROFILE, PROVE, THEN CUT OVER]
+
+This is a measured migration option for reducing datagen wall time, peak memory and temporary
+I/O on both macOS and Windows. It does not authorize an immediate rewrite or a change to the
+published source contract. BUG-23 (partition selection) and BUG-28 (stage/dataset telemetry) are
+entry-gate work; BUG-24 through BUG-27 must each be measured and explicitly assigned either to a
+Python correction, the Rust engine, or an evidence-backed no-change decision before full porting.
+
+**R0. Baseline, Python ceiling and go/no-go gate**
+- [ ] Capture reproducible macOS and Windows baselines from the same pinned config, source-contract
+      version, generator version, execution profile and clean output state. Record total and
+      per-stage wall time, rows/second, process-tree CPU core-seconds, average CPU utilization,
+      aggregate peak RSS, temporary bytes, published bytes and per-dataset object/row counts. Keep
+      the measured 2h53m25s Gulf run and the reported >6-hour Windows run as starting evidence, but
+      do not compare unlike hardware/configurations as if they were equivalent benchmarks.
+- [ ] Correct and benchmark BUG-23 first, including `__partitionDate` and
+      `fulfillmentStatusHistory.occurredAt`, then prove that intended monthly partitions are
+      produced and that large datasets receive useful conversion concurrency without changing
+      their logical rows.
+- [ ] Add BUG-28 telemetry before choosing the migration boundary. Use it to quantify simulation,
+      extensions, each source projection, spool scans/sorts, CSV conversion, Parquet publication,
+      DuckDB mirroring and final manifest work on both operating systems.
+- [ ] Run bounded Python experiments for BUG-24 through BUG-27: safe source-lane/partition
+      scheduling, direct typed batches that bypass CSV reparsing, fewer spool rescans plus a k-way
+      item-ledger merge, and aggregate worker/buffer limits. Record which bottlenecks remain after
+      the low-risk fixes and estimate the maximum end-to-end gain available from a native engine.
+- [ ] Agree measurable Rust go/no-go and cutover targets before implementation: macOS and Windows
+      wall time, peak aggregate RSS, temporary disk usage, logical parity and operational
+      reliability. Stop after the spike if the corrected Python path meets those targets or if the
+      native path cannot demonstrate a material end-to-end improvement on representative data.
+
+**R1. Freeze the native-engine boundary and compatibility contract**
+- [ ] Record an architecture decision for a standalone Rust executable as the initial integration
+      boundary. Keep Python responsible for config/schema validation, CLI compatibility and process
+      orchestration; pass one canonical, versioned resolved-config document to Rust. Do not use
+      PyO3 or expose Rust/Python in-process ABI coupling unless a measured need later justifies it.
+- [ ] Define the hot-path ownership explicitly. The candidate Rust boundary includes causal
+      simulation, extensions, Shopify/Business Central/companion/hidden-truth projections and
+      direct Arrow/Parquet publication; porting only `simulate()` is not an acceptable performance
+      experiment because most measured time is outside that function. Decide separately whether
+      DuckDB mirror construction remains in Python for the first cut or moves behind the same
+      engine protocol.
+- [ ] Version and validate the Python↔Rust protocol, executable capability handshake, error model,
+      progress/telemetry events and manifest fields. Fail closed on incompatible protocol,
+      generator, source-contract or writer versions, and require the Rust process to operate
+      without network access.
+- [ ] Choose one determinism policy before porting generators: either reproduce the current Python
+      logical rows, including CPython RNG/distribution and decimal-rounding behavior, or define an
+      intentional new RNG/fixed-point specification with golden vectors and a generator-version
+      bump. Treat semantic rows, ordered digests and controls as the primary equality contract;
+      require byte-identical Parquet only when the writer version and all physical settings are
+      deliberately pinned.
+- [ ] Define the Rust workspace/crate boundaries, pinned toolchain and locked dependencies, plus
+      supported macOS and Windows architectures and a reproducible local build/package procedure.
+      Keep the repository's current no-CI decision unless that decision is explicitly reopened.
+
+**R2. Deterministic-primitives and direct-Parquet vertical slice**
+- [ ] Implement golden-tested stable IDs, seed derivation, date/calendar behavior, fixed-point
+      money/quantity arithmetic, rounding modes, overflow bounds and canonical sorting. Include
+      adversarial vectors for Unicode, time zones, negative adjustments, midpoint rounding and
+      cross-platform integer conversion.
+- [ ] Implement the selected RNG compatibility policy with golden vectors for every primitive and
+      distribution actually used by datagen. Prove repeated-process and macOS/Windows equality
+      before relying on generated end-to-end comparisons.
+- [ ] Build one representative vertical slice from causal event through extensions and all affected
+      source lanes to Parquet. Include order lines, taxes, fulfillment history, BC invoice/ledger
+      output and companion/hidden-truth crosswalks so the slice exercises shared-event projection,
+      partition selection, one-to-many relationships and stable ordering rather than only a simple
+      dimension table.
+- [ ] Write bounded Arrow record batches directly to deterministic month partitions with explicit
+      schema, compression, row-group and file-rotation settings. Demonstrate that the slice removes
+      the Python dict → CSV → inferred DuckDB scan → Parquet bridge and does not create a new
+      unbounded in-memory accumulator.
+- [ ] Run the slice in shadow mode behind an explicit engine selector, compare semantic row digests,
+      controls, schemas, partitions and resource telemetry against Python, and hold an R2 go/no-go
+      review before authorizing the full port.
+
+**R3. Port the complete hot path with bounded parallelism**
+- [ ] Port the causally ordered simulation loop without parallelizing state transitions that depend
+      on prior events. Parallelize only proven-independent work, use stable shard ownership and
+      deterministic reductions, and make results invariant across supported execution profiles and
+      worker counts.
+- [ ] Port the extension pass and replace pickle `RowSpool` traffic with typed, bounded,
+      partition-addressable storage or streaming batches. Preserve stable ordering while removing
+      repeated full-spool deserialization where a single pass or indexed access is sufficient.
+- [ ] Port Shopify, Business Central, companion and hidden-truth projection as consumers of one
+      immutable causal event stream. Give each lane isolated mutable sinks and metadata, use a
+      bounded scheduler across lanes/partitions, then merge manifests and controls in canonical
+      order; never allow concurrent mutation of shared Python-era generator state.
+- [ ] Replace the all-row Python item-ledger sort with deterministic sorted runs and a bounded k-way
+      merge, and prove its stable tie-breaking with duplicate-key and high-volume fixtures.
+- [ ] Enforce one aggregate memory/concurrency budget across simulation, lanes, partitions, record
+      batches, compression and mirror work. Clamp workers to useful units of work and expose the
+      same safe/balanced/performance intent through the resolved execution profile without making
+      profile choice part of logical run identity.
+- [ ] Preserve atomic staging, immutable promotion, cleanup-on-failure and retry behavior. Emit
+      structured stage/dataset telemetry compatible with BUG-28 so performance regressions remain
+      diagnosable after the Python hot path is removed.
+
+**R4. Cross-platform correctness, performance and downstream acceptance**
+- [ ] Differential-test every public and restricted dataset for schema, keys, row counts, sorted
+      semantic digests, controls, partition coverage and relationship integrity. Add focused tests
+      for nulls, empty partitions, month/year boundaries, DST, leap years, Unicode paths, Windows
+      path/handle semantics, case behavior and interrupted publication.
+- [ ] Prove repeatability across fresh processes and supported macOS/Windows machines, then prove
+      safe/balanced/performance profile invariance. When a new generator/RNG/writer version is
+      intentional, compare against reviewed golden fixtures rather than silently relaxing parity.
+- [ ] Benchmark the corrected Python path and Rust candidate using the same representative fixture
+      and at least one full Gulf-shaped run on each operating system. Report cold/warm conditions,
+      hardware, toolchain, wall time by stage, CPU core-seconds, utilization, peak aggregate RSS,
+      temporary bytes, output bytes and rows/second; include downstream mirror time in end-to-end
+      claims even when it remains Python-owned.
+- [ ] Land the Rust-produced immutable source snapshot through unchanged Phase-2 landing, Gate A,
+      Gate B, reconciliation and curated-publication checks. Investigate any downstream exception;
+      do not add engine-specific waivers to make the new output pass.
+
+**R5. Controlled cutover and rollback**
+- [ ] Keep the Python engine available as an explicit fallback during shadowing and the first
+      accepted Rust release. Make engine selection visible in the manifest and logs, but keep
+      retries/reuse from accidentally mixing partial outputs from different engines or versions.
+- [ ] Bump the generator/writer version whenever logical semantics or physical snapshot identity
+      changes, generate a new immutable run, review its hashes/controls/performance, and change the
+      downstream pin only after all acceptance gates pass. Never overwrite or relabel an accepted
+      Python-generated snapshot as Rust-generated output.
+- [ ] Document installation, binary discovery, version diagnostics, offline operation, supported
+      targets, profiling, failure recovery and rollback for macOS and Windows. Pin the Rust
+      toolchain/dependencies and complete dependency-license review before distributing binaries.
+- [ ] Retire Python hot-path code only after the Rust engine has passed repeated full runs on both
+      platforms and the rollback drill can select the prior immutable Python snapshot. Retain the
+      Python config/CLI contract and differential fixtures for at least the agreed compatibility
+      window.
+
 ## Phase 2 — Ingestion, transformation & data quality (`ingestion/`)
 
 **2.0 Scaffolding and boundaries**
@@ -2144,7 +2276,7 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       stale `README.md:24` NO-GO status block. Runs **before** `GOI-12` so the demo is delivered
       from a live Gulf stack rather than from screenshots.
 
-**GOI-13 Engine defects exposed by the second tenant** `[COMPLETE — clean Decision #95 run active]`
+**GOI-13 Engine defects exposed by the second tenant** `[FINAL RUN COMPLETE — BUG-34 DEFERRED BY USER]`
 
 _Not in the original plan. The plan assumed `ml/` was unchanged; running a second tenant through it
 proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view._
@@ -2186,29 +2318,27 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       clean stage emits all 8 metrics. Its fresh policy candidate loses six service/stockout
       comparisons and wins both mean-inventory comparisons, so `replayPassed=false` is a valid
       downstream policy verdict after a successful oracle, not a residual BUG-2 failure.
-- [x] **Clean Gulf source regenerated from empty runtime state.** PostgreSQL and MLflow volumes,
-      prior datagen/ingestion/ML artifacts, shared features and DuckDB files were removed before
-      generation; the fresh database was migrated through `0021_forecast_eval_recent`. The
-      `performance` profile promoted `run-95b856f20766c9e1` in **2h 53m 25.3s** on
-      2026-08-09 (9,981,587 orders, 41,815,212 units, 4,814 objects). The disposable staging
-      spool was removed on promotion and the retained source is 29 GB. Before the combined
-      forecast run, the empty serving database advanced to
-      `0023_marketplace_channel_type` / verifier v7. Migration 0022 introduces the
-      expected-volume columns; 0023 aligns the serving channel domain with the
-      already-authoritative marketplace value used by datagen and ingestion.
+- [x] **Final Gulf source regenerated from clean runtime state.** Prior Gulf datagen, ingestion,
+      ML, PostgreSQL, MLflow and DuckDB run state was removed before generation. The unrelated
+      372 MiB shared feature cache was retained for safety but was not selected or reused. The
+      `performance` profile promoted `run-1430a7ddabc5d4ff` in **2h43m07.7s** on
+      2026-08-09: 509,349,149 logical rows, 5,842 objects and 31,623,440,797 published bytes.
+      This is **10m17.6s / 5.9% faster** than the 2h53m25.3s authoritative Gulf baseline; the
+      retail-ecommerce 79-minute run is deliberately not used as a comparison. The retained source
+      is 29 GB and the generator's disposable staging spool was removed on promotion.
 - [x] **Fresh ingestion/features boundary promoted.** Land through features completed in
-      **7m 33.2s** under the `performance` profile. Curated revision
-      `run-95b856f20766c9e1-r2` reproduced source snapshot `a88758a1…`; generation r11 now
-      pins publication `1b88e7f5…` and DuckDB `ff32f88d…`. The feature bundle contains
-      3,372,399 rows / 9,603 SeriesKeys and the clean curated database proves
+      **7m33.8s** under the `performance` profile. Curated run
+      `run-1430a7ddabc5d4ff` pins source snapshot `7d8ade35…`, publication `7381e88a…` and
+      DuckDB `bd6149cb…` as selection generation r12 / `sel_89c28021ed2cf33f`. The feature
+      bundle contains 3,372,399 rows / 9,603 SeriesKeys and the clean curated database proves
       `gulf-marketplace → marketplace`, `bazaar-trade → store`, and
       `gulf-online → online`.
 - [x] **BUG-17 closed in the combined Decision #95 run.** At portfolio grain MA13 was
       93.00% accurate versus the P50 champion's 89.84% (FVA −45.21%). The frozen fix does not
       tune P50: a separately named `expected_units` uses MA13 for established history and a
       dedicated conditional-mean head for cold start. The clean dense slice now reaches
-      **93.6580% accuracy** versus MA13's **93.6563%**, moving FVA from P50's **−120.5198%**
-      to **+0.0264%**; the full served portfolio reaches **+14.7361% FVA**.
+      **93.6717% accuracy** versus MA13's **93.6701%**, moving FVA from P50's **−120.2858%**
+      to **+0.0250%**; the full served portfolio reaches **+14.7505% FVA**.
 - [x] **P50 volume basis decided and verified under Decision #95.**
       `yhat_p50` is a median summed as though it were a mean, which
       under-counts by construction on intermittent demand and worsens with sparsity (+13.9% at
@@ -2219,16 +2349,38 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       routing predicate, one level up in the governance. C1 stays disconnected and P50 remains a
       median. Decision #95 instead adds `expected_units`, with A6 volume non-regression and
       cohort-level improvement gates. A6 passed all 13 and final-five confirmation origins with
-      zero fallback: cold-start bias improved **−53.63% → −9.56%** and
-      **−49.22% → −18.48%**, respectively.
-- [x] **One authoritative forecast/inventory chain activated.** The complete backtest took
-      **2h 27m 53.3s** and current scoring took **9m 34.0s**. Marketplace migration 0023 was
-      discovered at first materialization, fixed without repeating ML, and the republished bundle
-      materialized in **10m 42.2s** and activated in **3.2s**. Forecast authority is
-      `fr_d2441088e0771b76` / `fv_e35461a7e76416bd`; inventory authority is
-      `ir_7eb687be5aef566c` / `iv_7eb687be5aef566c`. Inventory build through activation took
-      **12.8s**. Fresh generated closure/entry records name those authorities and r11 selection
-      `sel_6e5dc72ef5354c7a`.
+      zero fallback: cold-start bias improved **−53.9610% → −9.4591%** and
+      **−49.4577% → −18.3846%**, respectively.
+- [x] **One authoritative forecast/inventory chain activated.** The one final land-through-entry
+      pipeline took **3h19m03.7s**. Its complete backtest took **2h30m00.9s**, current scoring
+      **9m50.5s**, publication **19m47.0s**, forecast materialization **11m22.5s**, and forecast
+      activation **4.3s**. Forecast authority is `fr_546a32b4b120fd7a` /
+      `fv_fe8e951c1f54b89e`; inventory authority is `ir_5f4ab51f0677dca7` /
+      `iv_5f4ab51f0677dca7`. Inventory build, verification, materialization and activation all
+      completed, migration `0024_warehouse_service_metrics` is live, replay emitted all eight
+      metrics, and fresh closure/entry records name the r12 authorities. `replayPassed=false`
+      remains an honest downstream policy comparison, not the repaired BUG-2 oracle defect.
+- [x] **Final authority values reconciled after activation.** PostgreSQL,
+      live API and rendered UI agree on ₹177.71 Cr demand at risk across all 13 distributors;
+      eleven real region codes; 95.8% recent h1-h4 P90 coverage; a Forecast-labelled actuals
+      chart with no redundant selector; estimator-aligned SKU P50/accuracy/bias/confidence; 135
+      in-transit units; 42 blocked units; six measured warehouse fill rates; enterprise ageing
+      conservation; four governed transfers; and 406 realised waste units / ₹17.14 lakh. The API
+      and UI remain live at `127.0.0.1:8080` / `127.0.0.1:5173` for review.
+- [ ] **BUG-34 deferred at the user's direction after final browser verification.** Region values
+      are correct, but selecting `TN` eagerly starts the SKU workbench query and leaves the entire
+      Forecast page loading. Actuals, horizons and stores return in 0.117–0.291s; only the filtered
+      workbench exceeds 30s. A first scoped-CTE attempt also missed a 10s live deadline and was
+      removed. Fix later at the API access-path/projection and tab-scoped UI-query boundary; no
+      datagen or ML pipeline replay is required.
+- [x] **Retention result.** The final pipeline used `--prune-work`: immutable raw remains 29 GB,
+      accepted curated data 4.5 GB and evidence 552 KB, while disposable ingestion work is reduced
+      to its 12 KB empty directory structure. Raw is required replay/audit input; work is not.
+- [x] **Datagen performance scope recorded honestly.** BUG-23's monthly publication partitioning
+      is fixed and the full Gulf timing above is improved. Top-level Shopify, Business Central,
+      companion and truth projections remain serialized (BUG-24); BUG-25/26 and the aggregate
+      resource-governor part of BUG-27 are also explicit deferrals. They are not reported as fixed
+      and did not trigger a second authoritative generation.
 - [x] **Tooling defects fixed in passing:** `tools/dev.py pipeline` now exposes `--rebuild`, so a
       corrected profile no longer replays a cached `critical` gate verdict (BUG-6);
       `datagen/tools/sync_presets.py` only writes a preset whose semantic content actually moved,

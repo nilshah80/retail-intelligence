@@ -3534,7 +3534,8 @@
       "supplierLeadTimeJitterDays": 3,
       "stockoutSkuRate": 0,
       "safetyStockUnits": 4,
-      "replenishmentDemandBufferPct": 0.2
+      "replenishmentDemandBufferPct": 0.2,
+      "qualityControlHoldDays": 1
     },
     "fulfillment": {
       "splitRate": 0.14,
@@ -5986,7 +5987,8 @@
       "supplierLeadTimeJitterDays": 3,
       "stockoutSkuRate": 0.08,
       "safetyStockUnits": 4,
-      "replenishmentDemandBufferPct": 0.05
+      "replenishmentDemandBufferPct": 0.05,
+      "qualityControlHoldDays": 1
     },
     "fulfillment": {
       "splitRate": 0.14,
@@ -9153,7 +9155,8 @@
       "supplierLeadTimeJitterDays": 2,
       "stockoutSkuRate": 0,
       "safetyStockUnits": 6,
-      "replenishmentDemandBufferPct": 0.25
+      "replenishmentDemandBufferPct": 0.25,
+      "qualityControlHoldDays": 1
     },
     "fulfillment": {
       "splitRate": 0.14,
@@ -10035,6 +10038,8 @@
       ],
       "addressLine1": "Andheri Kurla Road, Andheri East",
       "postcode": "400059",
+      "city": "Mumbai",
+      "regionCode": "MH",
       "assortmentCoverage": 0.94,
       "demandScale": 1.0
     },
@@ -10055,6 +10060,8 @@
       ],
       "addressLine1": "Nagar Road, Kharadi",
       "postcode": "411014",
+      "city": "Pune",
+      "regionCode": "MH",
       "assortmentCoverage": 0.88,
       "demandScale": 0.72
     },
@@ -10075,6 +10082,8 @@
       ],
       "addressLine1": "Sarkhej Gandhinagar Highway",
       "postcode": "380054",
+      "city": "Ahmedabad",
+      "regionCode": "GJ",
       "assortmentCoverage": 0.86,
       "demandScale": 0.68
     },
@@ -10095,6 +10104,8 @@
       ],
       "addressLine1": "AB Road, Vijay Nagar",
       "postcode": "452010",
+      "city": "Indore",
+      "regionCode": "MP",
       "assortmentCoverage": 0.78,
       "demandScale": 0.48
     },
@@ -10115,6 +10126,8 @@
       ],
       "addressLine1": "Mathura Road, Faridabad",
       "postcode": "121003",
+      "city": "Faridabad",
+      "regionCode": "HR",
       "assortmentCoverage": 0.92,
       "demandScale": 0.94
     },
@@ -10135,6 +10148,8 @@
       ],
       "addressLine1": "Tonk Road, Sanganer",
       "postcode": "302029",
+      "city": "Jaipur",
+      "regionCode": "RJ",
       "assortmentCoverage": 0.8,
       "demandScale": 0.52
     },
@@ -10155,6 +10170,8 @@
       ],
       "addressLine1": "Gill Road, Industrial Area",
       "postcode": "141003",
+      "city": "Ludhiana",
+      "regionCode": "PB",
       "assortmentCoverage": 0.82,
       "demandScale": 0.58
     },
@@ -10175,6 +10192,8 @@
       ],
       "addressLine1": "GST Road, Guindy",
       "postcode": "600032",
+      "city": "Chennai",
+      "regionCode": "TN",
       "assortmentCoverage": 0.92,
       "demandScale": 0.86
     },
@@ -10195,6 +10214,8 @@
       ],
       "addressLine1": "Hosur Road, Bommanahalli",
       "postcode": "560068",
+      "city": "Bengaluru",
+      "regionCode": "KA",
       "assortmentCoverage": 0.9,
       "demandScale": 0.82
     },
@@ -10215,6 +10236,8 @@
       ],
       "addressLine1": "Balanagar, Kukatpally",
       "postcode": "500037",
+      "city": "Hyderabad",
+      "regionCode": "TS",
       "assortmentCoverage": 0.86,
       "demandScale": 0.7
     },
@@ -10235,6 +10258,8 @@
       ],
       "addressLine1": "Avinashi Road, Peelamedu",
       "postcode": "641004",
+      "city": "Coimbatore",
+      "regionCode": "TN",
       "assortmentCoverage": 0.76,
       "demandScale": 0.44
     },
@@ -10255,6 +10280,8 @@
       ],
       "addressLine1": "Diamond Harbour Road, Behala",
       "postcode": "700034",
+      "city": "Kolkata",
+      "regionCode": "WB",
       "assortmentCoverage": 0.84,
       "demandScale": 0.62
     },
@@ -10275,6 +10302,8 @@
       ],
       "addressLine1": "GS Road, Dispur",
       "postcode": "781006",
+      "city": "Guwahati",
+      "regionCode": "AS",
       "assortmentCoverage": 0.7,
       "demandScale": 0.34
     }
@@ -14441,6 +14470,7 @@
       "replenishmentCycleDays": 14,
       "supplierLeadTimeDays": 9,
       "supplierLeadTimeJitterDays": 4,
+      "qualityControlHoldDays": 5,
       "stockoutSkuRate": 0.03,
       "safetyStockUnits": 24,
       "replenishmentDemandBufferPct": 0.3
@@ -17676,7 +17706,8 @@
       "supplierLeadTimeJitterDays": 3,
       "stockoutSkuRate": 0.02,
       "safetyStockUnits": 8,
-      "replenishmentDemandBufferPct": 0.25
+      "replenishmentDemandBufferPct": 0.25,
+      "qualityControlHoldDays": 1
     },
     "fulfillment": {
       "splitRate": 0.14,
@@ -18244,7 +18275,8 @@ function renderTopology() {
   const stores=renderSimpleRows("Stores","03C","stores",cfg.stores,[
     ["Store ID","storeId"],["Name","name"],["Market ID","marketId","select",()=>cfg.markets.map(row=>row.marketId)],
     ["Legal entity","legalEntityId","select",()=>cfg.legalEntities.map(row=>row.legalEntityId)],["Channel IDs","channelIds","list"],["Warehouse priority","warehousePriority","list"],
-    ["Address","addressLine1"],["Postcode","postcode"],["Assortment coverage","assortmentCoverage","number"],["Demand scale","demandScale","number"]
+    ["Address","addressLine1"],["Postcode","postcode"],["City","city"],["State / region code","regionCode"],
+    ["Assortment coverage","assortmentCoverage","number"],["Demand scale","demandScale","number"]
   ]);
   const warehouses=renderSimpleRows("Warehouses / DCs","03D","warehouses",cfg.warehouses,[
     ["Warehouse ID","warehouseId"],["Name","name"],["Market ID","marketId","select",()=>cfg.markets.map(row=>row.marketId)],
@@ -18398,6 +18430,7 @@ function renderOperations() {
     ${field("Replenishment cycle days","operations.inventory.replenishmentCycleDays","number")}
     ${field("Supplier lead days","operations.inventory.supplierLeadTimeDays","number")}
     ${field("Lead-time jitter days","operations.inventory.supplierLeadTimeJitterDays","number")}
+    ${field("Quality-control hold days","operations.inventory.qualityControlHoldDays","number")}
     ${field("Stockout SKU rate","operations.inventory.stockoutSkuRate","number")}
     ${field("Safety stock units","operations.inventory.safetyStockUnits","number")}
     ${field("Replenishment demand buffer","operations.inventory.replenishmentDemandBufferPct","number")}
@@ -18627,7 +18660,7 @@ function validate() {
   const refs=(values,allowed,path,required=true)=>{if(required&&!values.length)errors.push(`${path} needs a reference`);values.forEach(value=>{if(!allowed.has(value))errors.push(`${path} unknown ${value}`);});};
   cfg.legalEntities.forEach((row,i)=>refs(row.marketIds,marketIds,`legalEntities[${i}].marketIds`));
   cfg.channels.forEach((row,i)=>{if(!marketIds.has(row.marketId))errors.push(`channels[${i}] unknown market`);});
-  cfg.stores.forEach((row,i)=>{if(!marketIds.has(row.marketId))errors.push(`stores[${i}] unknown market`);if(!entityIds.has(row.legalEntityId))errors.push(`stores[${i}] unknown legal entity`);else if(!entityMap[row.legalEntityId].marketIds.includes(row.marketId))errors.push(`stores[${i}] legal entity does not cover market`);refs(row.channelIds,channelIds,`stores[${i}].channelIds`);refs(row.warehousePriority,warehouseIds,`stores[${i}].warehousePriority`);if(row.assortmentCoverage<.05||row.assortmentCoverage>1)errors.push(`stores[${i}] assortment coverage must be in [.05,1]`);if(row.demandScale<.1||row.demandScale>10)errors.push(`stores[${i}] demand scale must be in [.1,10]`);row.channelIds.forEach(id=>{if(channelMap[id]&&channelMap[id].marketId!==row.marketId)errors.push(`stores[${i}] channel ${id} is from another market`);});row.warehousePriority.forEach(id=>{if(warehouseMap[id]&&warehouseMap[id].marketId!==row.marketId)errors.push(`stores[${i}] warehouse ${id} is from another market`);});});
+  cfg.stores.forEach((row,i)=>{if(!marketIds.has(row.marketId))errors.push(`stores[${i}] unknown market`);if(!entityIds.has(row.legalEntityId))errors.push(`stores[${i}] unknown legal entity`);else if(!entityMap[row.legalEntityId].marketIds.includes(row.marketId))errors.push(`stores[${i}] legal entity does not cover market`);refs(row.channelIds,channelIds,`stores[${i}].channelIds`);refs(row.warehousePriority,warehouseIds,`stores[${i}].warehousePriority`);if(Boolean(row.city)!==Boolean(row.regionCode))errors.push(`stores[${i}] city and state / region must be supplied together`);if(row.assortmentCoverage<.05||row.assortmentCoverage>1)errors.push(`stores[${i}] assortment coverage must be in [.05,1]`);if(row.demandScale<.1||row.demandScale>10)errors.push(`stores[${i}] demand scale must be in [.1,10]`);row.channelIds.forEach(id=>{if(channelMap[id]&&channelMap[id].marketId!==row.marketId)errors.push(`stores[${i}] channel ${id} is from another market`);});row.warehousePriority.forEach(id=>{if(warehouseMap[id]&&warehouseMap[id].marketId!==row.marketId)errors.push(`stores[${i}] warehouse ${id} is from another market`);});});
   cfg.stores.forEach((row,i)=>{const market=cfg.markets.find(item=>item.marketId===row.marketId);if(market&&!new RegExp(market.localePack.postcodePattern).test(row.postcode))errors.push(`stores[${i}] postcode does not match locale`);});
   cfg.warehouses.forEach((row,i)=>{if(!marketIds.has(row.marketId))errors.push(`warehouses[${i}] unknown market`);if(!entityIds.has(row.legalEntityId))errors.push(`warehouses[${i}] unknown legal entity`);refs(row.servesLocations,storeIds,`warehouses[${i}].servesLocations`);if(row.capacityUnits<1||row.openingStockPerSku<0||!Number.isInteger(row.openingStockDaysOfCover)||row.openingStockDaysOfCover<0||row.replenishmentPackSize<1)errors.push(`warehouses[${i}] inventory controls are invalid`);row.servesLocations.forEach(id=>{if(storeMap[id]&&storeMap[id].marketId!==row.marketId)errors.push(`warehouses[${i}] store ${id} is from another market`);});});
   cfg.sourceInstances.shopify.forEach((row,i)=>{if(!marketIds.has(row.marketId))errors.push(`shopify[${i}] unknown market`);refs(row.storeIds,storeIds,`shopify[${i}].storeIds`);row.storeIds.forEach(id=>{if(storeMap[id]&&storeMap[id].marketId!==row.marketId)errors.push(`shopify[${i}] store ${id} is from another market`);});});
@@ -18730,7 +18763,7 @@ function validate() {
   });
   const ratePaths=[cfg.operations.inventory.stockoutSkuRate,cfg.operations.inventory.replenishmentDemandBufferPct,cfg.operations.fulfillment.splitRate,cfg.operations.returns.processingRate,cfg.operations.returns.refundFailureRate,cfg.operations.supplyChain.transferSkuRate,cfg.operations.supplyChain.wasteRate,cfg.operations.supplyChain.supplierDelayRate,cfg.operations.webhook.invalidFixtureRate];
   if(ratePaths.some(value=>value<0||value>1)) errors.push("operations rates must be in [0,1]");
-  const positiveOperations=[cfg.operations.inventory.snapshotCadenceDays,cfg.operations.inventory.replenishmentCycleDays,cfg.operations.inventory.supplierLeadTimeDays,cfg.operations.supplyChain.transferCycleDays,cfg.operations.supplyChain.weatherForecastHorizonDays];
+  const positiveOperations=[cfg.operations.inventory.snapshotCadenceDays,cfg.operations.inventory.replenishmentCycleDays,cfg.operations.inventory.supplierLeadTimeDays,cfg.operations.inventory.qualityControlHoldDays,cfg.operations.supplyChain.transferCycleDays,cfg.operations.supplyChain.weatherForecastHorizonDays];
   if(positiveOperations.some(value=>!Number.isInteger(value)||value<1)) errors.push("operation cadence and horizon values must be positive integers");
   if(!cfg.operations.webhook.fixtureSecret) errors.push("webhook fixture secret is required");
   if(Object.values(cfg.operations.features).some(value=>typeof value!=="boolean")) errors.push("all operation features must be boolean");

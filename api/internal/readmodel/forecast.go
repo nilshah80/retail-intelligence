@@ -19,7 +19,7 @@ const (
 	// domain with datagen and ingestion by admitting marketplace. Older runs stay
 	// immutable but are ineligible, so this pin moves with the database boundary or
 	// the API fails closed against a correctly migrated schema.
-	ForecastMigrationRevision = "0023_marketplace_channel_type"
+	ForecastMigrationRevision = "0024_warehouse_service_metrics"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -551,23 +551,17 @@ func (s *ForecastStore) summary(ctx context.Context) (map[string]any, error) {
 			),
 			(
 				SELECT
-					100.0 * COUNT(DISTINCT (sku_id, store_id, channel_id))
+					100.0 * COUNT(*)
 					/ NULLIF((
 						SELECT COUNT(*)
 						FROM retail_serving.forecast_data_quality
 						WHERE version_id = versions.version_id
 					), 0)
-				FROM retail_serving.forecast_eval_predictions AS evaluation
-				WHERE evaluation.forecast_run_id = versions.forecast_run_id
-				  AND EXISTS (
-					SELECT 1
-					FROM retail_serving.forecast_series AS current_series
-					WHERE current_series.version_id = versions.version_id
-					  AND current_series.horizon_week = 1
-					  AND current_series.sku_id = evaluation.sku_id
-					  AND current_series.store_id = evaluation.store_id
-					  AND current_series.channel_id = evaluation.channel_id
-				  )
+				FROM retail_serving.forecast_metrics AS series_metrics
+				WHERE series_metrics.forecast_run_id = versions.forecast_run_id
+				  AND series_metrics.slice_type = 'series'
+				  AND series_metrics.horizon = 0
+				  AND series_metrics.model_id = 'champion'
 			)
 		FROM retail_serving.forecast_versions AS versions
 		WHERE versions.version_id = $1
@@ -1725,6 +1719,10 @@ type additiveMetric struct {
 	N              int64
 }
 
+// The accepted A3 definition. Kept beside the query that exposes the same cohort
+// so governance and display cannot silently use different populations.
+const slowMoverZeroShareThreshold = 0.60
+
 func ratio(numerator, denominator float64) *float64 {
 	if denominator == 0 {
 		return nil
@@ -1831,6 +1829,8 @@ func (s *ForecastStore) horizons(
 		}
 		horizonScoped += " AND " + clause
 	}
+	args = append(args, slowMoverZeroShareThreshold)
+	slowMoverThresholdIndex := len(args)
 
 	// Decision #77 declares exact_horizon_additive semantics: at a grain above
 	// SeriesKey, actual and predicted are summed into the grain cell BEFORE any
@@ -1861,6 +1861,7 @@ func (s *ForecastStore) horizons(
 				evaluation.category,
 				evaluation.actual_units,
 				evaluation.expected_units,
+				evaluation.zero_share_52w,
 				evaluation.coverage_hits,
 				evaluation.n
 			FROM retail_serving.forecast_eval_predictions AS evaluation%s
@@ -1874,26 +1875,61 @@ func (s *ForecastStore) horizons(
 			FROM scoped
 			GROUP BY %s
 		),
+		slow_cells AS (
+			SELECT
+				horizon,
+				SUM(actual_units) AS actual,
+				SUM(expected_units) AS predicted
+			FROM scoped
+			WHERE zero_share_52w > $%d
+			GROUP BY %s
+		),
 		leaf AS (
 			SELECT horizon, SUM(coverage_hits) AS hits, SUM(n) AS rows_counted
 			FROM scoped
 			GROUP BY horizon
+		),
+		metrics AS (
+			SELECT
+				horizon,
+				SUM(ABS(predicted - actual)) AS abs_error_sum,
+				SUM(predicted - actual) AS signed_error_sum,
+				SUM(actual) AS actual_sum,
+				COUNT(*) AS grain_cells
+			FROM cells
+			GROUP BY horizon
+		),
+		slow_metrics AS (
+			SELECT
+				horizon,
+				SUM(ABS(predicted - actual)) AS abs_error_sum,
+				SUM(predicted - actual) AS signed_error_sum,
+				SUM(actual) AS actual_sum,
+				COUNT(*) AS grain_cells
+			FROM slow_cells
+			GROUP BY horizon
 		)
 		SELECT
-			cells.horizon,
-			SUM(ABS(cells.predicted - cells.actual)),
-			SUM(cells.predicted - cells.actual),
-			SUM(cells.actual),
-			COALESCE(MAX(leaf.hits), 0),
-			COALESCE(MAX(leaf.rows_counted), 0),
-			COUNT(*)
-		FROM cells
-		LEFT JOIN leaf ON leaf.horizon = cells.horizon
-		GROUP BY cells.horizon
-		ORDER BY cells.horizon
+			metrics.horizon,
+			metrics.abs_error_sum,
+			metrics.signed_error_sum,
+			metrics.actual_sum,
+			COALESCE(leaf.hits, 0),
+			COALESCE(leaf.rows_counted, 0),
+			metrics.grain_cells,
+			slow_metrics.abs_error_sum,
+			slow_metrics.signed_error_sum,
+			slow_metrics.actual_sum,
+			slow_metrics.grain_cells
+		FROM metrics
+		LEFT JOIN leaf ON leaf.horizon = metrics.horizon
+		LEFT JOIN slow_metrics ON slow_metrics.horizon = metrics.horizon
+		ORDER BY metrics.horizon
 		`,
 		horizonJoins,
 		horizonScoped,
+		strings.Join(cellGrouping, ", "),
+		slowMoverThresholdIndex,
 		strings.Join(cellGrouping, ", "),
 	)
 	rows, err := s.pool.Query(ctx, statement, args...)
@@ -1905,9 +1941,12 @@ func (s *ForecastStore) horizons(
 	for rows.Next() {
 		var metric additiveMetric
 		var cellCount int64
+		var slowAbsError, slowSignedError, slowActual *float64
+		var slowCellCount *int64
 		if err := rows.Scan(
 			&metric.Horizon, &metric.AbsErrorSum, &metric.SignedErrorSum,
 			&metric.ActualSum, &metric.CoverageHits, &metric.N, &cellCount,
+			&slowAbsError, &slowSignedError, &slowActual, &slowCellCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1915,6 +1954,16 @@ func (s *ForecastStore) horizons(
 		item["metricGrain"] = grain
 		item["coverageGrain"] = "series_key"
 		item["grainCells"] = cellCount
+		if slowAbsError != nil && slowSignedError != nil && slowActual != nil &&
+			slowCellCount != nil {
+			slowMetric := additiveMetric{
+				Horizon: metric.Horizon, AbsErrorSum: *slowAbsError,
+				SignedErrorSum: *slowSignedError, ActualSum: *slowActual,
+			}
+			slowItem := metricItem(slowMetric)
+			slowItem["grainCells"] = *slowCellCount
+			item["slowMover"] = slowItem
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -1926,6 +1975,8 @@ func (s *ForecastStore) horizons(
 	payload["metricSemantics"] = "exact_horizon_additive"
 	payload["coverageGrain"] = "series_key"
 	payload["coverageNote"] = "P90 coverage is measured at SeriesKey grain because quantiles do not aggregate; a sum of P90 bounds is not the P90 of the sum."
+	payload["slowMoverThreshold"] = slowMoverZeroShareThreshold
+	payload["slowMoverDefinition"] = "origin-visible zero_share_52w > 0.60"
 	return payload, nil
 }
 

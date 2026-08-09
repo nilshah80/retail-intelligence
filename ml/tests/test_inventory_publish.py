@@ -421,6 +421,11 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "market_id": market,
                     "location_id": f"{market}-dc-1",
                     "capacity_units": 750_000,
+                    "blocked_units": 12,
+                    "fill_demand_units": 500,
+                    "fill_served_units": 460,
+                    "fill_window_start": date(2026, 4, 29),
+                    "fill_window_end": date(2026, 7, 28),
                     "snapshot_date": date(2026, 7, 28),
                 }
             ]

@@ -1005,6 +1005,23 @@ export function DemandForecast({
       bias: actual ? 100 * signedError / actual : null
     };
   }, [data.horizons?.items, horizonWeeks]);
+  const slowMoverMetrics = useMemo(() => {
+    const rows = data.horizons?.items.filter((item) =>
+      item.horizon <= horizonWeeks && item.slowMover
+    ) ?? [];
+    const actual = rows.reduce((sum, row) => sum + (row.slowMover?.actualSum ?? 0), 0);
+    const signedError = rows.reduce(
+      (sum, row) => sum + (row.slowMover?.signedErrorSum ?? 0),
+      0
+    );
+    const allActual = data.horizons?.items
+      .filter((item) => item.horizon <= horizonWeeks)
+      .reduce((sum, row) => sum + row.actualSum, 0) ?? 0;
+    return {
+      bias: actual ? 100 * signedError / actual : null,
+      actualSharePct: actual && allActual ? 100 * actual / allActual : null
+    };
+  }, [data.horizons?.items, horizonWeeks]);
 
   // Derived from the live selector and the grain the API reports, never hard-coded, so
   // the label cannot drift from the number beside it.
@@ -1126,7 +1143,11 @@ export function DemandForecast({
         <div className="kpi">
           <small>Forecast Bias</small>
           <div className="value">{percentage(scopedMetrics.bias, true)}</div>
-          <span className="delta unavailable">Delta: Not available</span>
+          <span className="delta down">
+            Slow / intermittent: {percentage(slowMoverMetrics.bias, true)} · {percentage(
+              slowMoverMetrics.actualSharePct
+            )} of actual volume
+          </span>
           <p>Target range: ±5% · {metricScopeLabel}</p>
         </div>
         <div className="kpi">

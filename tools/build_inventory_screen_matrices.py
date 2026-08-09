@@ -120,7 +120,15 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Age bucket table", "status": "live", "source": "inventory_ageing deterministic buckets from batch/receipt dates; store rows use oldest_receipt_date"},
             {"label": "De-assorted residual stock rows", "status": "live", "source": "residualOnly cells preserved -- dead stock is the point of this screen"},
             {"label": "Action ladder", "status": "live", "source": "deterministic ladder from inventory-policy/2.0.0 hold/markdown thresholds"},
-            {"label": "Non-batch scope note", "status": "live", "source": "reason-coded scope: rows without batch lineage age by receipt evidence"},
+            {
+                "label": "Non-batch scope note",
+                "status": "live",
+                "source": (
+                    "rows without batch lineage age by oldest-receipt evidence; any remaining "
+                    "holding is retained in the explicit age-evidence-unavailable bucket rather "
+                    "than dropped or assigned a guessed age"
+                ),
+            },
         ],
         "actions": ["Ageing Export"],
     },
@@ -165,7 +173,15 @@ SCREENS: list[dict[str, Any]] = [
         "grain": "batch",
         "elements": [
             {"label": "Expiry exposure", "status": "live", "source": "batches with expiry inside the policy window"},
-            {"label": "Waste actuals", "status": "live", "source": "waste_events plus store waste, reason-coded"},
+            {
+                "label": "Waste actuals",
+                "status": "live",
+                "source": (
+                    "waste_events plus store waste, reason-coded, valued at accepted unit cost "
+                    "over the exact trailing 91-day window; expiry-caused waste is a subset, "
+                    "never added twice"
+                ),
+            },
             {"label": "Non-expiring SKUs", "status": "not_applicable", "decision": "a SKU without shelf-life rules has no expiry; rendered as not applicable rather than zero risk"},
         ],
         "actions": ["Expiry Export"],

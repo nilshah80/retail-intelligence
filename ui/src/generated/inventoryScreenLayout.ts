@@ -22,7 +22,7 @@ export interface ReferenceCard {
 export interface ReferenceScreen {
   readonly screenId: string;
   readonly actions: readonly string[];
-  readonly filters: readonly (readonly string[])[];
+  readonly filters: readonly string[];
   readonly kpiCaptions: readonly string[];
   readonly cards: readonly ReferenceCard[];
 }
@@ -31,7 +31,7 @@ export const REFERENCE_SCREENS: readonly ReferenceScreen[] = [
   {
     screenId: "inventoryOverview",
     actions: ["Inventory Action Center", "Store Drilldown", "Warehouse Drilldown", "Run Inventory Scenario", "Export Inventory Report"],
-    filters: [["All Regions", "West", "North", "South", "East"], ["All Categories", "Footwear", "Apparel", "Electronics", "Beauty"], ["All Health Statuses", "Healthy", "At Risk", "Overstock", "Understock", "Out of Stock"], ["All Locations", "Stores", "Warehouses", "In Transit"]],
+    filters: ["All Regions", "All Categories", "All Health Statuses", "All Locations"],
     kpiCaptions: ["On-Hand Inventory", "Available to Promise", "Inventory in Transit", "Inventory at Risk", "Stock Turn"],
     cards: [
       {kind: "donut", heading: "Inventory by Health", link: "Enterprise view", layout: "grid-3", columns: [], labels: ["Healthy", "At Risk", "Overstock", "Out of Stock"]},
@@ -101,7 +101,7 @@ export const REFERENCE_SCREENS: readonly ReferenceScreen[] = [
   {
     screenId: "stockHealth",
     actions: ["Assign Owner", "Create Action"],
-    filters: [["All Health Statuses", "Overstock", "Understock", "Near Expiry"]],
+    filters: ["All Health Statuses"],
     kpiCaptions: [],
     cards: [
       {kind: "rows", heading: null, link: null, layout: "full", columns: ["SKU", "Store", "Days of Supply", "Ageing", "Health", "Financial Exposure", "Recommended Action", "Priority"], labels: []},

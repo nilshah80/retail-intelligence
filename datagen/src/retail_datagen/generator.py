@@ -81,6 +81,25 @@ _SIMULATION_MARKET_STREAM_FIELDS = (
 )
 
 
+def _store_geography(
+    store: dict[str, Any], market: dict[str, Any]
+) -> tuple[str, str]:
+    """Resolve a complete store override or the market-level fallback."""
+
+    return (
+        store.get("city") or market["city"],
+        store.get("regionCode") or market["regionCode"],
+    )
+
+
+def _effective_market_workers(configured: int, market_count: int) -> int:
+    """Bound process topology to useful, non-empty market work."""
+
+    if configured < 1 or market_count < 1:
+        raise ValueError("configured workers and market count must be positive")
+    return min(configured, market_count)
+
+
 class _ChainedRows:
     """Repeatable, bounded view over market-local row spools."""
 
@@ -1095,14 +1114,19 @@ def generate(
                 dict[str, float | int],
             ]
         ] = []
-        market_workers = datagen_execution["marketWorkers"]
-        if market_workers == 1:
+        configured_market_workers = datagen_execution["marketWorkers"]
+        effective_market_workers = _effective_market_workers(
+            configured_market_workers, len(markets)
+        )
+        if effective_market_workers == 1:
             market_results = [
                 _simulate_market(*arguments)
                 for arguments in market_arguments
             ]
         else:
-            with ProcessPoolExecutor(max_workers=market_workers) as executor:
+            with ProcessPoolExecutor(
+                max_workers=effective_market_workers
+            ) as executor:
                 futures = [
                     executor.submit(_simulate_market, *arguments)
                     for arguments in market_arguments
@@ -1233,8 +1257,8 @@ def generate(
                         "name": store["name"],
                         "active": "true",
                         "address1": store["addressLine1"],
-                        "city": market["city"],
-                        "provinceCode": market["regionCode"],
+                        "city": _store_geography(store, market)[0],
+                        "provinceCode": _store_geography(store, market)[1],
                         "countryCode": market["countryCode"],
                         "zip": store["postcode"],
                         "timezone": market["timezone"],
@@ -2683,12 +2707,16 @@ def generate(
         lost_units = sum(row["lostSalesUnits"] for row in demand_truth)
         usage = process_usage()
         peak_parent_rss_bytes = usage.peak_rss_bytes
-        peak_child_rss_bytes = max(
-            (
-                int(telemetry["peakRssBytes"])
-                for _, _, _, telemetry in market_results
-            ),
-            default=0,
+        peak_child_rss_bytes = (
+            max(
+                (
+                    int(telemetry["peakRssBytes"])
+                    for _, _, _, telemetry in market_results
+                ),
+                default=0,
+            )
+            if effective_market_workers > 1
+            else 0
         )
         elapsed_before_manifest = (
             runtime_time.perf_counter() - generation_started
@@ -2699,7 +2727,7 @@ def generate(
             + sum(
                 float(telemetry["cpuSeconds"])
                 for _, _, _, telemetry in market_results
-                if datagen_execution["marketWorkers"] > 1
+                if effective_market_workers > 1
             )
         )
         manifest = {
@@ -2739,9 +2767,30 @@ def generate(
                     for source_object in writer.objects
                 ),
                 "temporaryWorkBytesBeforeCleanup": writer.work_size_bytes(),
-                "marketWorkerProcessesUsed": min(
-                    datagen_execution["marketWorkers"],
-                    len(markets),
+                "peakTemporaryDiskBytes": writer.telemetry[
+                    "peakTemporaryDiskBytes"
+                ],
+                "temporaryDiskMeasurementBasis": writer.telemetry[
+                    "temporaryDiskMeasurementBasis"
+                ],
+                "sourcePublicationDatasets": sorted(
+                    writer.telemetry["datasetPublications"],
+                    key=lambda row: row["logicalPath"],
+                ),
+                "duckdbMirrorUnattributedSeconds": writer.telemetry[
+                    "duckdbMirrorUnattributedSeconds"
+                ],
+                "spoolTelemetry": sorted(
+                    writer.spool_telemetry(), key=lambda row: row["spool"]
+                ),
+                "configuredMarketWorkers": configured_market_workers,
+                "effectiveMarketWorkers": effective_market_workers,
+                "marketWorkerProcessesUsed": (
+                    effective_market_workers if effective_market_workers > 1 else 0
+                ),
+                "aggregateProcessTreePeakRssBytes": None,
+                "aggregateProcessTreePeakRssReasonCode": (
+                    "CONCURRENT_PROCESS_TREE_RSS_SAMPLING_UNAVAILABLE"
                 ),
                 "marketWorkers": {
                     market_id: telemetry
@@ -2750,7 +2799,8 @@ def generate(
                 "measurementScope": (
                     "parent and market-worker process metrics; peak RSS is the "
                     "largest observed process, not concurrent aggregate RSS; "
-                    "operating-system cache is excluded"
+                    "the unavailable aggregate is reason-coded; operating-system "
+                    "cache is excluded"
                 ),
             },
             "logicalStartDate": config["time"]["startDate"],

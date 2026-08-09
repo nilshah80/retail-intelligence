@@ -145,6 +145,7 @@ class StockSnapshots(TypedDict):
     sku_id: str
     location_id: str
     snapshot_date: str
+    oldest_receipt_date: NotRequired[str]
     on_hand_units: int
     on_order_units: int
     committed_units: NotRequired[int]

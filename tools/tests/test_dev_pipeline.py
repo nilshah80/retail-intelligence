@@ -70,6 +70,57 @@ def test_stage_order_puts_finalize_before_the_ml_stages() -> None:
     assert order.index("publish") < order.index("materialize") < order.index("activate")
 
 
+def test_pipeline_prune_work_reaches_finalize_only() -> None:
+    command = dev._pipeline_finalize_command(
+        Path("/python"),
+        Path("/work/run-1"),
+        Path("/curated/run-1"),
+        Path("/evidence/run-1"),
+        prune_work=True,
+    )
+    assert command[-1] == "--prune-work"
+    assert command.count("--prune-work") == 1
+    args = dev.build_parser().parse_args(["pipeline", "--prune-work"])
+    assert args.prune_work is True
+
+
+def test_pipeline_keeps_work_without_explicit_prune_flag() -> None:
+    command = dev._pipeline_finalize_command(
+        Path("/python"),
+        Path("/work/run-1"),
+        Path("/curated/run-1"),
+        Path("/evidence/run-1"),
+        prune_work=False,
+    )
+    assert "--prune-work" not in command
+
+
+def test_pipeline_inventory_origin_can_differ_from_forecast_origin() -> None:
+    args = dev.build_parser().parse_args(
+        [
+            "pipeline",
+            "--decision-as-of",
+            "2026-08-02T00:00:00Z",
+            "--inventory-as-of",
+            "2026-07-30",
+        ]
+    )
+    assert dev._pipeline_inventory_as_of(
+        args.decision_as_of,
+        args.inventory_as_of,
+    ) == "2026-07-30"
+
+
+def test_pipeline_inventory_origin_defaults_to_forecast_date() -> None:
+    args = dev.build_parser().parse_args(
+        ["pipeline", "--decision-as-of", "2026-08-02T00:00:00Z"]
+    )
+    assert dev._pipeline_inventory_as_of(
+        args.decision_as_of,
+        args.inventory_as_of,
+    ) == "2026-08-02"
+
+
 def test_host_profile_never_returns_ultra_performance() -> None:
     """ultra-performance asks for 6 model workers x 4 threads regardless of core count,
     so on a 16-core host it oversubscribes and contends rather than going faster."""

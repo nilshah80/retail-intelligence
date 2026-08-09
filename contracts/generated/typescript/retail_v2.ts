@@ -155,6 +155,7 @@ export interface StockSnapshots {
   sku_id: string;
   location_id: string;
   snapshot_date: string;
+  oldest_receipt_date?: string;
   on_hand_units: Int64String;
   on_order_units: Int64String;
   committed_units?: Int64String;

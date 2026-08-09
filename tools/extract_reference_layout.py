@@ -17,7 +17,7 @@ is the source of truth for structure; this emits it as TypeScript the screens
 render from, and `--check` fails when the two diverge. A label can no longer drift
 by being retyped, because nothing retypes it.
 
-What is extracted is structure only -- button labels, filter options, KPI captions
+What is extracted is structure only -- button labels, filter captions, KPI captions
 and table column headers, in document order. The reference's hard-coded VALUES are
 deliberately not extracted: every number on the built screens comes from the live
 API, and lifting the reference's illustrative figures into generated code would
@@ -114,10 +114,17 @@ def _extract(block: str, screen_id: str) -> dict[str, Any]:
         for label in re.findall(r"<button[^>]*>(.*?)</button>", block, re.S)
         if _strip_tags(label)
     ]
-    filters = [
-        [option.strip() for option in re.findall(r"<option>(.*?)</option>", select)]
-        for select in re.findall(r'<select class="filter">(.*?)</select>', block, re.S)
-    ]
+    # The first option is the structural caption ("All Categories"). Every later
+    # option is illustrative tenant data from the reference and must not be
+    # compiled into another tenant's UI. Live options come from the active API.
+    filters = []
+    for select in re.findall(r'<select class="filter">(.*?)</select>', block, re.S):
+        options = [
+            _strip_tags(option)
+            for option in re.findall(r"<option>(.*?)</option>", select, re.S)
+        ]
+        if options:
+            filters.append(options[0])
     kpis = [
         _strip_tags(caption)
         for caption in re.findall(r"<small>(.*?)</small>", block, re.S)
@@ -267,7 +274,7 @@ def render() -> str:
         "export interface ReferenceScreen {",
         "  readonly screenId: string;",
         "  readonly actions: readonly string[];",
-        "  readonly filters: readonly (readonly string[])[];",
+        "  readonly filters: readonly string[];",
         "  readonly kpiCaptions: readonly string[];",
         "  readonly cards: readonly ReferenceCard[];",
         "}",

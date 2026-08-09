@@ -161,7 +161,8 @@ class InventoryInputs:
     """
 
     as_of: date
-    #: market_id, location_id, location_kind, sku_id, dept_id, category,
+    #: market_id, location_id, location_kind, sku_id, oldest_receipt_date,
+    #: dept_id, category,
     #: on_hand_units, committed_units, reserved_units, damaged_units,
     #: on_order_units, in_transit_units, assortment_active
     positions: pd.DataFrame
@@ -872,6 +873,7 @@ def _build_ageing(
     }
     aggregated: dict[tuple[str, str, str, str], int] = defaultdict(int)
     oldest: dict[tuple[str, str, str, str], int] = {}
+    batch_units_by_cell: dict[tuple[str, str, str], int] = defaultdict(int)
     for row in batches.itertuples(index=False):
         key3 = (str(row.market_id), str(row.location_id), str(row.sku_id))
         if key3 not in residual_by_key:
@@ -883,18 +885,61 @@ def _build_ageing(
         bucket = age_bucket(on_hand_age_days=age_days)
         key = (*key3, bucket)
         aggregated[key] += int(row.on_hand_units)
+        batch_units_by_cell[key3] += int(row.on_hand_units)
         oldest[key] = max(oldest.get(key, age_days), age_days)
+
+    # Store positions have no lot/batch ledger in Gulf, but their native snapshot
+    # does carry the oldest receipt still represented in on-hand. Age only the
+    # uncovered holding from that source field; a cell with full batch lineage is
+    # unchanged, and absent receipt evidence is never replaced with today's date.
+    for row in emitted.itertuples(index=False):
+        values = row._asdict()
+        key3 = (str(row.market_id), str(row.location_id), str(row.sku_id))
+        uncovered = int(row.on_hand_units) - batch_units_by_cell.get(key3, 0)
+        if uncovered <= 0:
+            continue
+        received = _as_date(values.get("oldest_receipt_date"))
+        if received is None:
+            continue
+        age_days = (as_of - received).days
+        bucket = age_bucket(on_hand_age_days=age_days)
+        key = (*key3, bucket)
+        aggregated[key] += uncovered
+        oldest[key] = max(oldest.get(key, age_days), age_days)
+
+    # Preserve the remainder explicitly. Dropping it makes an enterprise card
+    # silently warehouse-only/store-incomplete; assigning today's date makes it
+    # look fresh; assigning the oldest known batch overstates its age. An
+    # unavailable bucket is the only truthful member of the additive partition.
+    accounted_by_cell: dict[tuple[str, str, str], int] = defaultdict(int)
+    for key, units in aggregated.items():
+        accounted_by_cell[key[:3]] += units
+    for row in emitted.itertuples(index=False):
+        key3 = (str(row.market_id), str(row.location_id), str(row.sku_id))
+        accounted = accounted_by_cell.get(key3, 0)
+        missing = int(row.on_hand_units) - accounted
+        if missing < 0:
+            raise InventoryBuildError(
+                "age lineage exceeds on-hand for "
+                f"{key3}: aged={accounted}, on_hand={int(row.on_hand_units)}"
+            )
+        if missing > 0:
+            aggregated[(*key3, "unavailable")] += missing
     rows: list[dict[str, Any]] = []
     for key, units in sorted(aggregated.items()):
         market, location, sku, bucket = key
         market_policy = policy[market]
         cover = cover_by_key.get((market, location, sku))
-        action = ageing_action(
-            on_hand_age_days=oldest[key],
-            cover_days=_optional_decimal(cover),
-            hold_cover_days=int(market_policy["holdCoverDays"]),
-            markdown_cover_days=int(market_policy["markdownCoverDays"]),
-            markdown_pct=_decimal(market_policy["markdownPct"]),
+        action = (
+            {"action": "age_evidence_unavailable", "markdown_pct": None}
+            if bucket == "unavailable"
+            else ageing_action(
+                on_hand_age_days=oldest[key],
+                cover_days=_optional_decimal(cover),
+                hold_cover_days=int(market_policy["holdCoverDays"]),
+                markdown_cover_days=int(market_policy["markdownCoverDays"]),
+                markdown_pct=_decimal(market_policy["markdownPct"]),
+            )
         )
         markdown = action["markdown_pct"]
         rows.append(
@@ -1873,6 +1918,11 @@ def _build_warehouse_capacity(inputs: InventoryInputs) -> pd.DataFrame:
             "market_id": str(record.market_id),
             "location_id": str(record.location_id),
             "capacity_units": int(record.capacity_units),
+            "blocked_units": int(record.blocked_units),
+            "fill_demand_units": int(record.fill_demand_units),
+            "fill_served_units": int(record.fill_served_units),
+            "fill_window_start": record.fill_window_start,
+            "fill_window_end": record.fill_window_end,
             "snapshot_date": record.snapshot_date,
         }
         for record in inputs.warehouse_capacity.itertuples(index=False)

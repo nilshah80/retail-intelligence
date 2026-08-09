@@ -18,17 +18,17 @@ activation:
   # and serving since 2026-07-31. A screen contract that denies the run it renders
   # is the same class of stale evidence as the closure record's 0007 pin.
   currentState: accepted_forecast_active
-  forecastRunId: fr_357575f586905b11
-  versionId: fv_3d66e3bd9939430d
-  semanticFingerprint: fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3
+  forecastRunId: fr_d2441088e0771b76
+  versionId: fv_e35461a7e76416bd
+  semanticFingerprint: 7370e9f615c3609310d709a1a8afba37eff9d7b5c5d524992d0307305e205cfe
   acceptanceSchemaVersion: retail-forecast-acceptance/v6
   coverageGateMode: hard
-  servingMigration: 0023_marketplace_channel_type
+  servingMigration: 0024_warehouse_service_metrics
   intervalAvailability:
     policyId: retail-forecast-interval-availability/v1
     calibratedMaxHorizon: 4
-    withheldRows: 8756
-    withheldSeries: 398
+    withheldRows: 23364
+    withheldSeries: 1062
     reasonCode: COLD_START_INTERVAL_UNCALIBRATED
   rejectedHistoricalRunId: fr_92135aa7b5215b69
   rejectionReason: INCOMPLETE_SEASONAL_NAIVE_COMPARISON
@@ -357,6 +357,11 @@ panels:
         columns: [Horizon, Accuracy, Bias, Coverage, Status]
         coverageDefinition: empirical P90 coverage
         metricSemantics: exact_horizon_additive
+        cohortBreakdown:
+          label: Slow / intermittent
+          definition: origin-visible zero_share_52w > 0.60
+          display: bias and share of actual volume for the selected horizon window
+          requirement: same filters, horizon window and additive grain as the headline bias
         checkpoints: [1, 4, 8, 13]
         independentOfOperationalHorizonCap: true
         diagnosticOnlyCheckpoints: [26]
