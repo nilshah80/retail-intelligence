@@ -440,19 +440,14 @@ function forecastQuery(filters: ForecastFilters, extra?: Record<string, string |
 export const loadForecastSummary = () =>
   get("/api/v1/forecast/summary", forecastSummarySchema);
 /**
- * `comparisonHorizon` is the Forecast vs Actual card's own control, and
- * `horizonWeeks` is deliberately dropped from this one request. That filter
- * scopes FUTURE weeks — "Next 4 Weeks" sums h1..h4 of the forward forecast — so
- * letting it also pick the comparison window moved this chart six months back
- * whenever a reader narrowed the forward scope.
+ * Forecast-vs-Actual is fixed to the comparable short-horizon evaluation. The
+ * forward `horizonWeeks` selector does not scope this historical diagnostic.
  */
-export const loadForecastActuals = (
-  filters: ForecastFilters, comparisonHorizon: number
-) => {
+export const loadForecastActuals = (filters: ForecastFilters) => {
   const {horizonWeeks: _forwardScope, ...scope} = filters;
   return get(
     `/api/v1/forecast/actuals${forecastQuery(scope, {
-      view: "weekly", limit: 8, comparisonHorizon
+      view: "weekly", limit: 8, comparisonHorizon: 4
     })}`,
     forecastActualsSchema
   );

@@ -121,7 +121,8 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT series.market_id, series.store_id, series.sku_id,
+                SELECT series.market_id, series.store_id, series.channel_id,
+                       series.sku_id,
                        series.horizon_week, series.expected_units,
                        series.yhat_p50, series.yhat_p90,
                        series.interval_available
@@ -137,6 +138,7 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
         columns=[
             "market_id",
             "store_id",
+            "channel_id",
             "sku_id",
             "horizon_week",
             "expected_units",

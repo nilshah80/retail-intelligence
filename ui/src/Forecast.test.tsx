@@ -78,6 +78,10 @@ const responses: Record<string, unknown> = {
       p90Coverage: .89,
       baselineAccuracy: 78.1,
       fvaVsMa13Pct: 31.4,
+      demandAtRiskMinor: 175_857_036_449,
+      demandAtRiskUnits: 168_537.33,
+      demandAtRiskCells: 3174,
+      demandAtRiskLocations: 13,
       demandUnits: 1000,
       seriesCount: 1,
       exceptionCount: 2,
@@ -100,7 +104,9 @@ const responses: Record<string, unknown> = {
       targetWeekStart: `2026-0${index < 4 ? "6" : "7"}-${String(1 + (index % 4) * 7).padStart(2, "0")}`,
       forecast: 100 + index,
       actual: 95 + index
-    }))
+    })),
+    seriesCoverage: {covered: 73_513, series: 76_824, ratio: .956901},
+    horizonRange: {min: 1, max: 2, cap: 4}
   },
   horizons: {
     ...envelope,
@@ -134,7 +140,11 @@ const responses: Record<string, unknown> = {
       city: "Mumbai",
       accuracy: 92,
       bias: .01,
-      p90Coverage: .9
+      p90Coverage: .9,
+      demandAtRiskMinor: 12_500_000,
+      demandAtRiskUnits: 25,
+      demandAtRiskCells: 3,
+      stockoutRisk: "Medium"
     }]
   },
   series: {
@@ -272,6 +282,13 @@ describe("Demand Forecast parity contract", () => {
     renderForecast();
 
     expect(await screen.findByText("Forecast vs Actual")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Comparison basis")).not.toBeInTheDocument();
+    expect(screen.getByText(
+      "Last 8 comparable weeks · freshest forecast within h1–h4 · 95.7% P90 coverage across 76,824 series-weeks"
+    )).toBeInTheDocument();
+    expect(screen.getByText("₹175.86 Cr")).toBeInTheDocument();
+    expect(screen.getByText("Potential unserved sales exposure across 13 distributors"))
+      .toBeInTheDocument();
     const actionLabels = within(screen.getByLabelText("Forecast actions"))
       .getAllByRole("button")
       .map((button) => button.textContent);
@@ -306,7 +323,7 @@ describe("Demand Forecast parity contract", () => {
         "SKU / Product",
         "Store",
         "Baseline",
-        "AI Forecast",
+        "AI Forecast (P50)",
         "Planner Forecast",
         "Last Actual",
         "Accuracy",

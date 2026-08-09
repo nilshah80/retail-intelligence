@@ -426,6 +426,51 @@ def load_channel_demand(
     )
 
 
+def load_unit_prices(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Latest origin-visible realised selling price per SeriesKey.
+
+    ``sell_prices`` on the retained Gulf pin is landing-backfill evidence dated
+    after the inventory origin, so admitting it would make the 2026-07-30 run
+    see a price first known on 2026-08-09. Realised sales carry native-observed
+    ``net_price`` and are safe at the same origin. The builder may fall back to
+    the market/SKU median of these latest prices when one location/channel has
+    not yet sold that SKU; it never falls back to unit cost and calls the result
+    lost-sales exposure.
+    """
+
+    return _frame(
+        connection,
+        """
+        SELECT market_id, location_id, channel_id, sku_id, unit_price_minor
+        FROM (
+            SELECT
+                locations.market_id,
+                sales.store_id AS location_id,
+                sales.channel_id,
+                sales.sku_id,
+                sales.net_price AS unit_price_minor,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        locations.market_id, sales.store_id,
+                        sales.channel_id, sales.sku_id
+                    ORDER BY sales.date DESC, sales.known_as_of DESC,
+                             sales.sales_version DESC
+                ) AS recency
+            FROM sales
+            JOIN locations ON locations.location_id = sales.store_id
+            WHERE sales.date <= ?
+              AND sales.known_as_of < ? + INTERVAL 1 DAY
+              AND sales.units > 0
+              AND sales.net_price > 0
+        ) AS visible
+        WHERE recency = 1
+        """,
+        [as_of, as_of],
+    )
+
+
 def load_lanes(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> list[dict[str, Any]]:
@@ -920,6 +965,8 @@ def load_inventory_inputs(
                 connection, as_of=as_of
             ),
             channel_demand=load_channel_demand(connection, as_of=as_of),
+            channel_forecast=forecast_series.copy(),
+            unit_prices=load_unit_prices(connection, as_of=as_of),
             policy={market: policy[market] for market in markets},
             currency_by_market=currency_by_market,
         )

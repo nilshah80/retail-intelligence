@@ -2,6 +2,7 @@ package readmodel
 
 import (
 	"context"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -491,6 +492,68 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 		}
 	}
 
+	// The workbench must describe one estimator end to end. Decision #95's
+	// additive expected-volume head intentionally uses MA13 for established
+	// series; serving it as "AI Forecast" made the two columns equal while the
+	// confidence still came from P50/P90. Pin the displayed forecast, accuracy,
+	// bias and confidence to P50 here so they cannot drift independently again.
+	verification, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect for workbench estimator verification: %v", err)
+	}
+	defer verification.Close(ctx)
+	first := workbenchItems[0]
+	skuID := first["skuId"].(string)
+	storeID := first["storeId"].(string)
+	channelID := first["channelId"].(string)
+	var p50Sum, p50Confidence float64
+	if err := verification.QueryRow(
+		ctx,
+		`
+		SELECT SUM(yhat_p50),
+		       SUM(confidence * GREATEST(yhat_p50, 1.0))
+		       / NULLIF(SUM(GREATEST(yhat_p50, 1.0)), 0)
+		FROM retail_serving.forecast_series
+		WHERE version_id = $1 AND sku_id = $2 AND store_id = $3
+		  AND channel_id = $4 AND horizon_week BETWEEN 1 AND 4
+		`,
+		expectedVersionID, skuID, storeID, channelID,
+	).Scan(&p50Sum, &p50Confidence); err != nil {
+		t.Fatalf("read P50 workbench reference: %v", err)
+	}
+	var absError, signedError, actualSum float64
+	if err := verification.QueryRow(
+		ctx,
+		`
+		SELECT SUM(abs_error_sum), SUM(signed_error_sum), SUM(actual_sum)
+		FROM retail_serving.forecast_metrics
+		WHERE forecast_run_id = $1 AND slice_type = 'series'
+		  AND horizon BETWEEN 1 AND 4 AND model_id = 'p50'
+		  AND slice_id::jsonb ->> 0 = $2
+		  AND slice_id::jsonb ->> 1 = $3
+		  AND slice_id::jsonb ->> 2 = $4
+		`,
+		expectedRunID, skuID, storeID, channelID,
+	).Scan(&absError, &signedError, &actualSum); err != nil {
+		t.Fatalf("read P50 metric reference: %v", err)
+	}
+	aiForecast := first["aiForecast"].(*float64)
+	accuracy := first["accuracy"].(*float64)
+	bias := first["bias"].(*float64)
+	confidence := first["confidence"].(*float64)
+	wantAccuracy := 100.0 * (1.0 - absError/actualSum)
+	wantBias := signedError / actualSum
+	for label, pair := range map[string][2]float64{
+		"AI forecast P50": {*aiForecast, p50Sum},
+		"P50 accuracy":    {*accuracy, wantAccuracy},
+		"P50 bias":        {*bias, wantBias},
+		"P50 confidence":  {*confidence, p50Confidence},
+	} {
+		if math.Abs(pair[0]-pair[1]) > 1e-9 {
+			t.Fatalf("%s = %v, reference %v", label, pair[0], pair[1])
+		}
+	}
+
 	weekly, err := store.Read(
 		ctx,
 		"/api/v1/forecast/actuals",
@@ -518,7 +581,7 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 
 		var freshest int
 		var expectedCovered, expectedSeries int64
-		var expectedForecast float64
+		var expectedForecast, expectedActual float64
 		err := store.pool.QueryRow(
 			ctx,
 			`
@@ -536,6 +599,7 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			SELECT
 				freshest.horizon,
 				SUM(scoped.expected_units),
+				SUM(scoped.actual_units),
 				COUNT(*) FILTER (WHERE scoped.actual_units <= scoped.yhat_p90),
 				COUNT(*)
 			FROM scoped
@@ -544,7 +608,13 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			`,
 			expectedRunID,
 			targetWeek,
-		).Scan(&freshest, &expectedForecast, &expectedCovered, &expectedSeries)
+		).Scan(
+			&freshest,
+			&expectedForecast,
+			&expectedActual,
+			&expectedCovered,
+			&expectedSeries,
+		)
 		if err != nil {
 			t.Fatalf("derive freshest weekly comparison for %s: %v", targetWeek, err)
 		}
@@ -556,6 +626,13 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 			t.Fatalf(
 				"%s served forecast %v, expected_units sum is %v",
 				targetWeek, item["forecast"], expectedForecast,
+			)
+		}
+		servedActual, ok := item["actual"].(float64)
+		if !ok || servedActual != expectedActual {
+			t.Fatalf(
+				"%s served actual %v, leaf actual sum is %v",
+				targetWeek, item["actual"], expectedActual,
 			)
 		}
 		weekCovered, coveredOK := item["seriesCovered"].(int64)

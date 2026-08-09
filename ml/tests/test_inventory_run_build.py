@@ -212,6 +212,33 @@ def _inputs(**overrides: Any) -> InventoryInputs:
             for horizon in range(1, 9)
         ]
     )
+    channel_forecast = pd.DataFrame(
+        [
+            {
+                "market_id": market,
+                "store_id": location,
+                "channel_id": channel,
+                "sku_id": sku,
+                "horizon_week": horizon,
+                # Two channel rows together reproduce the node fixture's central
+                # and upper demand. This makes a repeated-ATP regression visible:
+                # ATP may be allocated once across the pair, never once per week
+                # or once per channel.
+                "expected_units": 5.0,
+                "yhat_p50": 5.0,
+                "yhat_p90": 8.0 if horizon <= 4 else None,
+                "interval_available": horizon <= 4,
+            }
+            for market, location, sku, channels in (
+                (MARKET, STORE, "sku-1", ("store", "online")),
+                (MARKET, STORE, "sku-2", ("store", "online")),
+                (MARKET, STORE, "sku-3", ("store", "online")),
+                (OTHER, OTHER_STORE, "sku-1", ("store",)),
+            )
+            for channel in channels
+            for horizon in range(1, 9)
+        ]
+    )
     batches = pd.DataFrame(
         [
             {
@@ -246,6 +273,27 @@ def _inputs(**overrides: Any) -> InventoryInputs:
                 (MARKET, ALT_DC, "sku-2", 700),
                 (OTHER, OTHER_STORE, "sku-1", 2000),
             )
+        ]
+    )
+    unit_prices = pd.DataFrame(
+        [
+            {
+                "market_id": m,
+                "location_id": loc,
+                "channel_id": channel,
+                "sku_id": sku,
+                "unit_price_minor": cost * 2,
+            }
+            for m, loc, sku, cost in (
+                (MARKET, STORE, "sku-1", 1500),
+                (MARKET, STORE, "sku-2", 800),
+                (MARKET, STORE, "sku-3", 900),
+                (MARKET, DC, "sku-1", 1400),
+                (MARKET, ALT_DC, "sku-1", 1400),
+                (MARKET, ALT_DC, "sku-2", 700),
+                (OTHER, OTHER_STORE, "sku-1", 2000),
+            )
+            for channel in (("store", "online") if loc == STORE else ("store",))
         ]
     )
     wms = pd.DataFrame(
@@ -304,6 +352,8 @@ def _inputs(**overrides: Any) -> InventoryInputs:
             ]
         ),
         "channel_demand": channel_demand,
+        "channel_forecast": channel_forecast,
+        "unit_prices": unit_prices,
         "policy": POLICIES,
         "currency_by_market": CURRENCIES,
     }
@@ -387,6 +437,28 @@ def test_atp_excludes_committed_stock_but_not_in_transit(artifacts) -> None:
     assert int(row["on_hand_units"]) == 2
     assert int(row["committed_units"]) == 1
     assert int(row["atp_units"]) == 1
+
+
+def test_demand_at_risk_consumes_node_atp_once_over_the_protection_window(
+    artifacts,
+) -> None:
+    """Two channels and two required weekly rows share one physical ATP pool.
+
+    The old builder copied ATP=1 onto every horizon after dropping channel, then
+    summed weekly excess. The correct exposure allocates that one unit across the
+    two SeriesKeys and subtracts it once from their exact eight-day P90 demand.
+    """
+
+    risk = artifacts["inventory_demand_at_risk"]
+    row = risk[
+        risk["location_id"].eq(STORE) & risk["sku_id"].eq("sku-1")
+    ].iloc[0]
+    # Each channel has weekly P90=8. The lane plus review period is eight days,
+    # so each contributes 8 + 1/7*8, and the shared node ATP contributes once.
+    expected = 2 * (8 + 8 / 7) - 1
+    assert float(row["risk_units"]) == pytest.approx(expected)
+    assert int(row["risk_value_minor"]) == 51_856
+    assert bool(row["interval_available"]) is True
 
 
 # -- decision #92 --------------------------------------------------------------

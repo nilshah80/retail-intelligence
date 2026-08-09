@@ -878,10 +878,13 @@ func (s *ForecastStore) workbench(
 				dimensions.channel_type,
 				stores.name AS store_name,
 				stores.city AS store_city,
-				-- Decision #95: operational volume is a separately named additive
-				-- expectation. P50 remains a median and is retained below only for
-				-- interval-derived confidence weighting.
-				SUM(series.expected_units) AS ai_forecast,
+				-- This row is one SeriesKey, so the workbench's AI forecast is the
+				-- model's P50 output. The additive expected-volume head belongs on
+				-- portfolio planning surfaces; for established series it deliberately
+				-- uses MA13, which made Baseline and "AI Forecast" identical on 88%%
+				-- of Gulf rows and then displayed expected-volume accuracy beside a
+				-- confidence derived from a different estimator.
+				SUM(series.yhat_p50) AS ai_forecast,
 				-- Decision #92 withholds the cold-start interval beyond h4 while
 				-- retaining P50 at every horizon, so a selected window of 8, 13 or
 				-- 26 weeks mixes horizons that carry an interval with horizons that
@@ -1041,7 +1044,7 @@ func (s *ForecastStore) workbench(
 			WHERE forecast_run_id = $3
 			  AND slice_type = 'series'
 			  AND horizon BETWEEN 1 AND $2
-			  AND model_id = 'champion'
+			  AND model_id = 'p50'
 			GROUP BY 1, 2, 3
 		),
 		primary_drivers AS (
@@ -1095,7 +1098,7 @@ func (s *ForecastStore) workbench(
 			actual_context.last_actual_week,
 			series_metrics.accuracy,
 			series_metrics.wape,
-			series_metrics.accuracy_state,
+			COALESCE(series_metrics.accuracy_state, 'insufficient_evidence'),
 			series_metrics.bias,
 			-- Share of the filtered set's forecast demand. A SeriesKey reading 0.4
 			-- percent accuracy on 1.2 forecast units is arithmetically true and

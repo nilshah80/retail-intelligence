@@ -721,7 +721,10 @@ semantics that report per-series coverage rather than claiming the summed band i
 The source demo showed “8 of 8” while Gulf showed “0 of 8”; both are opposite symptoms of the
 same invalid construction. On the clean served Gulf h1-h4 slice, coverage is
 **73,513 / 76,824 = 95.6901%** at leaf grain. The UI no longer draws or captions a sum of
-per-series quantiles as a portfolio interval.
+per-series quantiles as a portfolio interval. The redundant comparison-basis selector is removed;
+the card is fixed to the comparable h1-h4 evaluation and now reads **“Last 8 comparable weeks ·
+freshest forecast within h1–h4 · 95.7% P90 coverage across 76,824 series-weeks.”** The additive
+bar is labelled **Forecast**, not Expected Value/Expected volume.
 
 ---
 
@@ -874,3 +877,56 @@ r2 `--publication-root`.
 
 **Fix.** An explicit run ID now wins over the source snapshot name. A regression test freezes
 the required r2 result when both arguments are present.
+
+---
+
+## BUG-21 · Demand at Risk reuses ATP by week, drops two channels and values cost as sales `[fixed]`
+
+**Observed on the active Decision #95 inventory projection.** The Forecast overview served
+**1.6405 units / ₹23,039.68** of risk across 3,174 assessed SKU-store cells. Only Indore was
+non-zero; the other 12 distributors all read ₹0. The UI reconciled exactly to the retained
+artifact, so this was not a currency formatter or Store View join defect.
+
+**Three binding causes.** The builder copied the same full node ATP onto every weekly horizon
+and summed `max(P90[h] - ATP, 0)`, effectively replenishing the position at the start of every
+future week. The served forecast loader omitted `channel_id`, so its `(market, store, SKU,
+horizon)` index overwrote two of three authoritative channel rows with whichever PostgreSQL
+returned last. Finally, the engine's `unit_price_minor` input was populated from accepted unit
+cost while the screen labelled it potential lost-sales exposure.
+
+**Fix.** Risk now stays at native SeriesKey grain during calculation. The one node ATP pool is
+allocated through the governed channel allocator, each channel's upper demand is summed over
+the exact fractional lead-time-plus-review window, and its ATP allocation is subtracted once.
+Channel exposures are aggregated only after that leaf calculation; the result is not labelled
+the statistical P90 of total demand. Value uses the latest origin-visible realised net selling
+price at the SeriesKey, with a same-market/SKU median fallback and no cross-market or cost
+substitution. The raw served forecast now retains `channel_id` explicitly.
+
+**Closure.** Inventory run `ir_2c8feff1e1e9d917` / version `iv_2c8feff1e1e9d917` verified,
+materialized and activated in **15.8 seconds** without datagen, ingestion, feature or forecast
+replay. The live API serves **168,537.336 units / ₹176.83 Cr**, 3,174 assessed cells and
+**13 of 13 distributors with non-zero risk**. The 13 per-distributor values sum exactly to the
+overview value.
+
+---
+
+## BUG-22 · SKU View labels the MA13 expectation as AI and mixes estimator metrics `[fixed]`
+
+**Observed.** The workbench's Baseline and AI Forecast were exactly equal on **8,019 of 9,081
+evaluated SeriesKeys (88.3%)**. That was expected from Decision #95, not evidence that LightGBM
+learned the moving average: the column used additive `expected_units`, whose established-history
+head deliberately is MA13. The row accuracy/bias also used `model_id='champion'` (the same
+expected-volume head), while Confidence was weighted from P50/P90. One row therefore described
+two estimators under one set of headings.
+
+**Fix.** SKU View now labels and sums the actual **AI Forecast (P50)**, and its accuracy, WAPE
+and bias use the published `p50` metric rows. Confidence already derives from the same P50/P90
+distribution and is now estimator-aligned. Missing P50 evaluation evidence returns the governed
+`insufficient_evidence` state rather than failing the whole route.
+
+**Closure.** Only **514 of 9,081 (5.7%)** evaluated rows now happen to equal MA13. The live
+h1-h4 P50 slice has WAPE **33.9021%** (pooled leaf accuracy **66.0979%**) and bias **+6.7658%**.
+Those lower leaf-grain accuracies remain visible because they are real; the fix aligns the
+numbers rather than replacing them with the more flattering additive portfolio metric. A live
+PostgreSQL regression independently recomputes each displayed P50 forecast, accuracy, bias and
+confidence.

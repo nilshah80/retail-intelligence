@@ -108,7 +108,7 @@ function money(minor: number | null | undefined): string | null {
   if (minor === null || minor === undefined) return null;
   const major = minor / 100;
   if (major >= 1e7) return `\u20B9${(major / 1e7).toFixed(2)} Cr`;
-  if (major >= 1e5) return `\u20B9${(major / 1e5).toFixed(2)}L`;
+  if (major >= 1e5) return `\u20B9${(major / 1e5).toFixed(2)} L`;
   return `\u20B9${major.toLocaleString("en-IN", {maximumFractionDigits: 0})}`;
 }
 
@@ -344,14 +344,14 @@ function ForecastModal({
   );
 }
 
-function useForecastData(filters: ForecastFilters, comparisonHorizon: number) {
+function useForecastData(filters: ForecastFilters) {
   const summary = useQuery({
     queryKey: ["forecast-summary"],
     queryFn: loadForecastSummary
   });
   const actuals = useQuery({
-    queryKey: ["forecast-actuals", filters, comparisonHorizon],
-    queryFn: () => loadForecastActuals(filters, comparisonHorizon)
+    queryKey: ["forecast-actuals", filters],
+    queryFn: () => loadForecastActuals(filters)
   });
   const horizons = useQuery({
     queryKey: ["forecast-horizons", filters],
@@ -456,7 +456,7 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
       cell: (info) => count(info.getValue())
     }),
     columnHelper.accessor("aiForecast", {
-      header: "AI Forecast",
+      header: "AI Forecast (P50)",
       cell: (info) => count(info.getValue())
     }),
     columnHelper.accessor("plannerForecast", {
@@ -590,8 +590,6 @@ function Overview({
   healthGrain,
   granularity,
   horizonWeeks,
-  comparisonHorizon,
-  setComparisonHorizon,
   windowMetrics,
   setModal
 }: {
@@ -600,9 +598,6 @@ function Overview({
   granularity: string;
   /** The selected window, so the health table can mark the rows the tile pools. */
   horizonWeeks: number;
-  /** Forecast vs Actual only: the largest horizon its comparison may use. */
-  comparisonHorizon: number;
-  setComparisonHorizon: (next: number) => void;
   /** The pooled figure the Forecast Accuracy tile shows, passed rather than
    *  recomputed: two derivations of one number is how they come to disagree. */
   windowMetrics: {accuracy: number | null; bias: number | null};
@@ -641,15 +636,8 @@ function Overview({
   // doing exactly its job at both. The old count is kept nowhere: a number that
   // flatters by construction is worse than no number.
   const coverage = data.actuals!.seriesCoverage;
-  // "h1" when every week was forecast a week out, "h1–h4" when the biweekly
-  // origin grid puts them at different distances. Read from the payload, not the
-  // control: the control is a CAP and the qualifying weeks sit anywhere below it.
   const range = data.actuals!.horizonRange;
-  const horizonLabel = !range
-    ? ""
-    : range.min === range.max
-      ? ` · h${range.min} forecast`
-      : ` · h${range.min}–h${range.max} forecast`;
+  const comparisonCap = range?.cap ?? 4;
   // Decision #80: exactly four exact-horizon rows in reference order, always
   // rendered. The operational horizon selector changes future scope, not which
   // diagnostic rows exist, so it must not filter this table.
@@ -686,31 +674,14 @@ function Overview({
         <Card
           title="Forecast vs Actual"
           link={
-            `Last 8 ${granularity === "Monthly" ? "weeks by month" : "weeks"}` +
-            `${horizonLabel} · ` +
+            `Last 8 comparable ${granularity === "Monthly" ? "weeks grouped by month" : "weeks"}` +
+            ` · freshest forecast within h1–h${comparisonCap} · ` +
             (coverage
-              ? `actual within the per-series P90 for ` +
-                `${(coverage.ratio * 100).toFixed(1)}% of ` +
+              ? `${(coverage.ratio * 100).toFixed(1)}% P90 coverage across ` +
                 `${coverage.series.toLocaleString("en-US")} series-weeks`
-              : `per-series P90 coverage not available`)
+              : `P90 coverage not available`)
           }
         >
-          <div className="filters" style={{justifyContent: "flex-start", marginBottom: 8}}>
-            <select
-              className="filter"
-              aria-label="Comparison basis"
-              value={comparisonHorizon}
-              onChange={(event) => setComparisonHorizon(Number(event.target.value))}
-            >
-              <option value={4}>Like-for-like (h1–h4)</option>
-              <option value={26}>Most recent weeks</option>
-            </select>
-            <small className="muted">
-              {comparisonHorizon === 4
-                ? "The horizon a planner acts on. Older weeks, fair comparison."
-                : "The newest weeks that have actuals — only long horizons reach them."}
-            </small>
-          </div>
           <div className="chart-box" aria-label="Forecast versus actual chart">
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={chartData} margin={{top: 12, right: 8, bottom: 4, left: 0}}>
@@ -727,7 +698,7 @@ function Overview({
                     P90 coverage remains in the caption at SeriesKey grain. */}
                 <Bar
                   dataKey="forecast"
-                  name="Expected volume"
+                  name="Forecast"
                   fill="#2f80ed"
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={false}
@@ -993,10 +964,6 @@ export function DemandForecast({
   const [region, setRegion] = useState("");
   const [category, setCategory] = useState("");
   const [horizonWeeks, setHorizonWeeks] = useState(4);
-  // The Forecast vs Actual card's own scope, kept apart from `horizonWeeks`.
-  // That one is the FORWARD selector ("Next 4 Weeks" sums h1..h4 of the forward
-  // forecast); this picks which past weeks the comparison is drawn from.
-  const [comparisonHorizon, setComparisonHorizon] = useState(4);
   const [granularity, setGranularity] = useState("Weekly");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("Overview");
@@ -1011,7 +978,7 @@ export function DemandForecast({
     search: search.trim(),
     horizonWeeks
   }), [selectedStore?.marketId, region, storeId, channelType, category, search, horizonWeeks]);
-  const data = useForecastData(filters, comparisonHorizon);
+  const data = useForecastData(filters);
   // Decision #77 grain resolution. A channel filter never changes the grain, and
   // this screen never selects a single complete SeriesKey, so the resolved grain
   // is market/portfolio by default and store/category once one is chosen.
@@ -1054,7 +1021,7 @@ export function DemandForecast({
     // that outlives the screen and carries no tooltip to qualify it.
     const headings = [
       "sku_id", "product_name", "store", "channel", "category", "horizon_weeks",
-      "baseline", "ai_forecast", "last_actual", "accuracy", "bias", "confidence",
+      "baseline", "ai_forecast_p50", "last_actual", "accuracy", "bias", "confidence",
       "confidence_state", "interval_covered_through_horizon",
       "interval_withheld_weeks",
       "primary_driver", "data_quality", "status"
@@ -1171,7 +1138,10 @@ export function DemandForecast({
           <span className="delta down">
             {summary?.demandAtRiskCells?.toLocaleString("en-US") ?? "0"} SKU-store combinations
           </span>
-          <p>Potential lost-sales exposure</p>
+          <p>
+            Potential unserved sales exposure across {summary?.demandAtRiskLocations
+              ?.toLocaleString("en-US") ?? "0"} distributors
+          </p>
         </div>
         <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
         <div className="kpi">
@@ -1206,8 +1176,6 @@ export function DemandForecast({
             healthGrain={healthGrain}
             granularity={granularity}
             horizonWeeks={horizonWeeks}
-            comparisonHorizon={comparisonHorizon}
-            setComparisonHorizon={setComparisonHorizon}
             windowMetrics={scopedMetrics}
             setModal={setModal}
           />

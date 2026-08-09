@@ -30,9 +30,11 @@ def demand_at_risk(
 ) -> dict[str, Any]:
     """Risk units/value per row and the disclosed unassessed remainder.
 
-    Each row carries the SeriesKey, `horizon_week`, `interval_available`,
-    `expected_units`, `yhat_p50`, `yhat_p90`, `atp_units`, `unit_price_minor` and
-    `currency_code`. Money stays market-local; a caller wanting a global figure
+    Each row carries one SeriesKey's demand over its exact protection window:
+    `yhat_p90` is the fractional-horizon upper-quantile demand and `atp_units` is
+    that channel's allocation from the node's single ATP pool. `horizon_week`
+    identifies the last required horizon (or first withheld one) for the partial
+    consumer ledger. Money stays market-local; a caller wanting a global figure
     converts under approved reporting FX after this returns.
     """
 

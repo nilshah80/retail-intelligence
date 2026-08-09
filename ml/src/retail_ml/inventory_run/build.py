@@ -59,6 +59,7 @@ from retail_ml.engines.primitives import (
     InventoryPosition,
     OrderConstraintError,
     apply_order_constraints,
+    fractional_horizon_sum,
     inventory_position,
     order_up_to_level,
     protection_period_days,
@@ -196,6 +197,14 @@ class InventoryInputs:
     open_purchase_orders: pd.DataFrame
     #: market_id, location_id, channel_id, sku_id, requested_units
     channel_demand: pd.DataFrame
+    #: Raw served SeriesKey forecasts: market_id, store_id, channel_id, sku_id,
+    #: horizon_week, expected_units, yhat_p50, yhat_p90, interval_available.
+    #: Kept separately from ``forecast`` because inventory positions are node
+    #: grain while demand-at-risk must preserve the channel allocation.
+    channel_forecast: pd.DataFrame
+    #: Latest origin-visible selling price per market/location/channel/SKU.
+    #: Demand-at-risk is potential unserved SALES value, not inventory cost.
+    unit_prices: pd.DataFrame
     #: per-market resolved policy, keyed by market_id
     policy: Mapping[str, Mapping[str, Any]]
     #: market_id -> ISO 4217 code used for every money column in that market
@@ -325,6 +334,82 @@ def _index_forecast(
             "demand_basis": getattr(row, "demand_basis", "store_expected_volume"),
         }
     return dict(nested)
+
+
+def _index_channel_forecast(
+    inputs: InventoryInputs,
+) -> dict[tuple[str, str, str, str], dict[int, dict[str, Any]]]:
+    """Served forecast at its native SeriesKey grain.
+
+    The node-level ``forecast`` index deliberately has no channel key because it
+    feeds replenishment. Demand-at-risk is different: ATP is a shared node pool,
+    and silently overwriting three channel rows with the last one both discards
+    demand and makes the result depend on PostgreSQL row order.
+    """
+
+    nested: dict[
+        tuple[str, str, str, str], dict[int, dict[str, Any]]
+    ] = defaultdict(dict)
+    for row in inputs.channel_forecast.itertuples(index=False):
+        key = (
+            str(row.market_id),
+            str(row.store_id),
+            str(row.sku_id),
+            str(row.channel_id),
+        )
+        horizon = int(row.horizon_week)
+        _require(
+            horizon not in nested[key],
+            f"duplicate served forecast row for {key} at h{horizon}",
+        )
+        nested[key][horizon] = {
+            "expected_units": float(row.expected_units),
+            "yhat_p50": float(row.yhat_p50),
+            "yhat_p90": None if pd.isna(row.yhat_p90) else float(row.yhat_p90),
+            "interval_available": bool(row.interval_available),
+        }
+    return dict(nested)
+
+
+def _index_unit_prices(
+    inputs: InventoryInputs,
+) -> tuple[
+    dict[tuple[str, str, str, str], int],
+    dict[tuple[str, str], int],
+]:
+    """Exact SeriesKey prices and a deterministic market/SKU fallback.
+
+    A location/channel with no realised sale yet may still have an active
+    forecast. The fallback is the median latest realised selling price for the
+    SAME market and SKU. It never crosses markets and never substitutes unit
+    cost, which would turn a lost-sales label into an inventory-value measure.
+    """
+
+    exact: dict[tuple[str, str, str, str], int] = {}
+    by_sku: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for row in inputs.unit_prices.itertuples(index=False):
+        key = (
+            str(row.market_id),
+            str(row.location_id),
+            str(row.sku_id),
+            str(row.channel_id),
+        )
+        price = int(row.unit_price_minor)
+        _require(price > 0, f"non-positive realised selling price for {key}")
+        _require(key not in exact, f"duplicate realised selling price for {key}")
+        exact[key] = price
+        by_sku[(key[0], key[2])].append(price)
+
+    fallback: dict[tuple[str, str], int] = {}
+    for key, values in by_sku.items():
+        ordered = sorted(values)
+        middle = len(ordered) // 2
+        fallback[key] = (
+            ordered[middle]
+            if len(ordered) % 2
+            else (ordered[middle - 1] + ordered[middle]) // 2
+        )
+    return exact, fallback
 
 
 def _is_aggregated(horizons: Mapping[int, Mapping[str, Any]]) -> bool:
@@ -473,30 +558,51 @@ def _build_demand_at_risk(
     emitted: pd.DataFrame,
     *,
     forecasts: Mapping[tuple[str, str, str], Mapping[int, Mapping[str, Any]]],
-    unit_costs: Mapping[tuple[str, str, str], tuple[int | None, str | None]],
+    allocations: pd.DataFrame,
     supply: Mapping[tuple[str, str, str], "CellSupply"],
-    currency_by_market: Mapping[str, str],
+    inputs: InventoryInputs,
     ledgers: dict[str, PartialConsumerLedger],
 ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    """Risk over each cell's protection window, and the exceptions it produced.
+    """Risk over the exact protection window, with ATP consumed exactly once.
 
-    The window comes from the SAME resolved supply as the replenishment plan. It
-    used to come from the market default, which meant a node with a 40-day
-    supplier had its risk assessed over 14 days -- understating the exposure, and
-    worse, publishing an assessed risk row beside a withheld safety-stock row for
-    one cell. Two artifacts disagreeing about a cell's horizon is not a rounding
-    difference; one of them is wrong and a reader cannot tell which.
+    The previous implementation emitted one row per horizon and copied the
+    node's full ATP onto every row. Summing ``max(P90[h] - ATP, 0)`` therefore
+    replenished the same stock balance at the start of every future week. It also
+    indexed a three-channel forecast without ``channel_id``, so two channels were
+    overwritten and one arbitrary channel became the node demand.
 
-    `demand_at_risk` is a per-horizon partial consumer that owns its own ledger,
-    so the horizons in the window are handed to it whole and it decides which are
-    assessable. Summing only what it returned -- rather than iterating horizons
-    here and coercing the withheld ones -- keeps an unassessed horizon out of the
-    total instead of in it as a zero.
+    This implementation keeps the served SeriesKey grain, allocates the one node
+    ATP pool through the governed channel allocator, sums each channel's P90 over
+    the fractional lead+review window, and subtracts that channel allocation
+    once. Channel exposures are then added back to the node row the existing
+    inventory read models consume. The sum is an exposure measure over leaf
+    scenarios; it is never labelled the statistical P90 of aggregate demand.
     """
 
+    channel_forecasts = _index_channel_forecast(inputs)
+    prices, fallback_prices = _index_unit_prices(inputs)
+    channels_by_node: dict[
+        tuple[str, str, str],
+        dict[str, Mapping[int, Mapping[str, Any]]],
+    ] = defaultdict(dict)
+    for (market, location, sku, channel), horizons in channel_forecasts.items():
+        channels_by_node[(market, location, sku)][channel] = horizons
+
+    allocated = {
+        (
+            str(row.market_id),
+            str(row.location_id),
+            str(row.sku_id),
+            str(row.channel_id),
+        ): int(row.allocated_units)
+        for row in allocations.itertuples(index=False)
+    }
+
     per_market_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    cells: dict[str, list[tuple[str, str, str, int]]] = defaultdict(list)
-    unresolved: list[dict[str, Any]] = []
+    # One final row per emitted node. ``reason`` is None only when every channel
+    # contributing to that node is assessable over the whole protection window.
+    cells: dict[tuple[str, str, str], dict[str, Any]] = {}
+
     for record in emitted.itertuples(index=False):
         row = record._asdict()
         market = str(row["market_id"])
@@ -505,170 +611,239 @@ def _build_demand_at_risk(
         key = (market, location, sku)
         cell_supply = supply[key]
         if not cell_supply.resolved:
-            # No declared route means no protection period, so there is no window
-            # over which to assess risk at all. Withheld with the route's own
-            # reason rather than assessed over a window nobody derived.
-            unresolved.append(
-                {
-                    "market_id": market,
-                    "location_id": location,
-                    "sku_id": sku,
-                    "reason": str(cell_supply.resolution_reason),
-                }
-            )
+            cells[key] = {
+                "reason": UNRESOLVED_ROUTE_REASON,
+                "resolution_reason": str(cell_supply.resolution_reason),
+                "weeks": None,
+            }
             continue
-        weeks = cell_supply.horizon_weeks
-        assert weeks is not None
-        horizons = forecasts.get(key, {})
-        cost, _ = unit_costs.get(key, (None, None))
-        cells[market].append((market, location, sku, weeks))
-        for horizon in range(1, weeks + 1):
-            cell = horizons.get(horizon)
-            per_market_rows[market].append(
-                {
-                    "sku_id": sku,
-                    "store_id": location,
-                    "channel_id": NODE_CHANNEL,
-                    "horizon_week": horizon,
-                    # A node with no forecast at all is withheld for the same
-                    # governed reason: nothing measured its interval either.
-                    "interval_available": bool(
-                        cell and cell["interval_available"] and horizon <= weeks
-                    ),
-                    "expected_units": None if cell is None else cell["expected_units"],
-                    "yhat_p50": None if cell is None else cell["yhat_p50"],
-                    "yhat_p90": None if cell is None else cell["yhat_p90"],
-                    "atp_units": int(row["atp_units"]),
-                    "unit_price_minor": cost,
-                    "currency_code": (
-                        None if cost is None else currency_by_market[market]
-                    ),
-                }
-            )
 
-    rows: list[dict[str, Any]] = []
-    exceptions: list[dict[str, Any]] = []
+        weeks = cell_supply.horizon_weeks
+        protection_days = cell_supply.protection_days
+        assert weeks is not None and protection_days is not None
+        native_channels = channels_by_node.get(key)
+
+        # Store demand is published at SeriesKey grain. DC demand has no native
+        # series; retain the existing node branch so it is withheld under the
+        # explicit aggregate-interval reason rather than disappearing.
+        if native_channels:
+            reason: str | None = None
+            for channel, horizons in sorted(native_channels.items()):
+                expected = _weekly(
+                    horizons, weeks=weeks, field_name="expected_units"
+                )
+                p50 = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
+                _require(
+                    expected is not None and p50 is not None,
+                    f"served forecast is incomplete for {(market, location, sku, channel)} "
+                    f"over h1..h{weeks}",
+                )
+                p90 = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
+                first_missing = next(
+                    (
+                        horizon
+                        for horizon in range(1, weeks + 1)
+                        if horizon not in horizons
+                        or not bool(horizons[horizon]["interval_available"])
+                        or horizons[horizon]["yhat_p90"] is None
+                    ),
+                    None,
+                )
+                available = p90 is not None and first_missing is None
+                if not available:
+                    reason = COLD_START_REASON
+
+                price = prices.get((market, location, sku, channel))
+                if price is None:
+                    price = fallback_prices.get((market, sku))
+                _require(
+                    not available or price is not None,
+                    "no origin-visible realised selling price for "
+                    f"{(market, location, sku, channel)} or market/SKU fallback",
+                )
+                per_market_rows[market].append(
+                    {
+                        "sku_id": sku,
+                        "store_id": location,
+                        "channel_id": channel,
+                        "horizon_week": first_missing or weeks,
+                        "interval_available": available,
+                        "expected_units": fractional_horizon_sum(
+                            expected, protection_days
+                        ),
+                        "yhat_p50": fractional_horizon_sum(p50, protection_days),
+                        "yhat_p90": (
+                            None
+                            if p90 is None
+                            else fractional_horizon_sum(p90, protection_days)
+                        ),
+                        # The governed allocation conserves the ONE node ATP pool.
+                        # A channel absent from trailing contention receives zero,
+                        # never a fresh copy of the whole node balance.
+                        "atp_units": allocated.get(
+                            (market, location, sku, channel), 0
+                        ),
+                        "unit_price_minor": price,
+                        "currency_code": (
+                            None if price is None else inputs.currency_by_market[market]
+                        ),
+                    }
+                )
+            cells[key] = {"reason": reason, "weeks": weeks}
+            continue
+
+        horizons = forecasts.get(key, {})
+        expected = _weekly(horizons, weeks=weeks, field_name="expected_units")
+        p50 = _weekly(horizons, weeks=weeks, field_name="yhat_p50")
+        p90 = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
+        absent = not horizons
+        aggregated = _is_aggregated(horizons)
+        reason = (
+            NO_NODE_FORECAST_REASON
+            if absent
+            else NO_NODE_INTERVAL_REASON
+            if aggregated
+            else COLD_START_REASON
+            if p90 is None
+            else None
+        )
+        node_price = prices.get((market, location, sku, NODE_CHANNEL))
+        if node_price is None:
+            node_price = fallback_prices.get((market, sku))
+        _require(
+            reason is not None or node_price is not None,
+            "no origin-visible realised selling price for assessed node "
+            f"{(market, location, sku)} or market/SKU fallback",
+        )
+        cells[key] = {"reason": reason, "weeks": weeks}
+        # Even a withheld node reaches the partial-consumer ledger so coverage is
+        # disclosed. It cannot be valued because the interval branch stops first.
+        per_market_rows[market].append(
+            {
+                "sku_id": sku,
+                "store_id": location,
+                "channel_id": NODE_CHANNEL,
+                "horizon_week": weeks,
+                "interval_available": reason is None,
+                "expected_units": (
+                    0.0
+                    if expected is None
+                    else fractional_horizon_sum(expected, protection_days)
+                ),
+                "yhat_p50": (
+                    None if p50 is None else fractional_horizon_sum(p50, protection_days)
+                ),
+                "yhat_p90": (
+                    None if p90 is None else fractional_horizon_sum(p90, protection_days)
+                ),
+                "atp_units": int(row["atp_units"]),
+                "unit_price_minor": node_price,
+                "currency_code": (
+                    None
+                    if node_price is None
+                    else inputs.currency_by_market[market]
+                ),
+            }
+        )
+
+    assessed: dict[tuple[str, str, str], float] = defaultdict(float)
+    assessed_value: dict[tuple[str, str, str], int] = defaultdict(int)
     for market in sorted(per_market_rows):
         assessment = demand_at_risk(
             per_market_rows[market], consumer=f"demand_at_risk:{market}"
         )
-        assessed: dict[tuple[str, str], float] = defaultdict(float)
-        assessed_value: dict[tuple[str, str], int | None] = {}
         for assessed_row in assessment["rows"]:
-            pair = (str(assessed_row["store_id"]), str(assessed_row["sku_id"]))
-            assessed[pair] += float(assessed_row["risk_units"])
+            key = (
+                market,
+                str(assessed_row["store_id"]),
+                str(assessed_row["sku_id"]),
+            )
+            assessed[key] += float(assessed_row["risk_units"])
             value = assessed_row["risk_value_minor"]
-            if value is not None:
-                assessed_value[pair] = (assessed_value.get(pair) or 0) + int(value)
-        # Per-market ledger, retained so the run can publish what it withheld.
+            _require(value is not None, f"assessed demand-at-risk row {key} has no value")
+            assessed_value[key] += int(value)
         ledgers[f"demand_at_risk:{market}"] = PartialConsumerLedger(
             consumer=f"demand_at_risk:{market}",
             skipped_rows=assessment["unassessed"]["rows"],
             skipped_demand_units=assessment["unassessed"]["demandUnits"],
         )
-        for _, location, sku, weeks in cells[market]:
-            pair = (location, sku)
-            horizons = forecasts.get((market, location, sku), {})
-            complete = _weekly(horizons, weeks=weeks, field_name="yhat_p90")
-            if complete is None:
-                # Same three-way distinction the replenishment plan makes, for the
-                # same reason: an unforecast node and an uncalibrated horizon need
-                # different actions from whoever reads the exception.
-                absent = not horizons
-                aggregated = _is_aggregated(horizons)
-                reason = (
-                    NO_NODE_FORECAST_REASON
-                    if absent
-                    else NO_NODE_INTERVAL_REASON
-                    if aggregated
-                    else COLD_START_REASON
-                )
-                rows.append(
-                    {
-                        "market_id": market,
-                        "location_id": location,
-                        "sku_id": sku,
-                        "channel_id": NODE_CHANNEL,
-                        "risk_units": None,
-                        "risk_value_minor": None,
-                        "currency_code": None,
-                        "interval_available": False,
-                        "reason_code": reason,
-                    }
-                )
-                exceptions.append(
-                    {
-                        "market_id": market,
-                        "location_id": location,
-                        "sku_id": sku,
-                        "channel_id": NODE_CHANNEL,
-                        "exception_class": (
-                            "node_forecast_absent"
-                            if absent
-                            else "node_interval_basis_unavailable"
-                            if aggregated
-                            else "cold_start_interval_unavailable"
-                        ),
-                        "severity": "info",
-                        "reason_code": reason,
-                        "evidence": (
-                            "no forecast series exists for this node, so it has "
-                            "no interval to assess risk from"
-                            if absent
-                            else "node demand is the additive expectation of supplied "
-                            "stores; summing their P90s is forbidden"
-                            if aggregated
-                            else f"demand-at-risk needs horizons 1..{weeks}; the "
-                            "cold-start interval is calibrated through 4"
-                        ),
-                    }
-                )
-                continue
-            value = assessed_value.get(pair)
+
+    rows: list[dict[str, Any]] = []
+    exceptions: list[dict[str, Any]] = []
+    for (market, location, sku), cell in sorted(cells.items()):
+        reason = cell["reason"]
+        if reason is None:
             rows.append(
                 {
                     "market_id": market,
                     "location_id": location,
                     "sku_id": sku,
                     "channel_id": NODE_CHANNEL,
-                    "risk_units": float(assessed.get(pair, 0.0)),
-                    "risk_value_minor": value,
-                    "currency_code": (
-                        None if value is None else currency_by_market[market]
+                    "risk_units": float(assessed[(market, location, sku)]),
+                    "risk_value_minor": int(
+                        assessed_value[(market, location, sku)]
                     ),
+                    "currency_code": inputs.currency_by_market[market],
                     "interval_available": True,
                     "reason_code": None,
                 }
             )
-    for cell in unresolved:
+            continue
+
         rows.append(
             {
-                "market_id": cell["market_id"],
-                "location_id": cell["location_id"],
-                "sku_id": cell["sku_id"],
+                "market_id": market,
+                "location_id": location,
+                "sku_id": sku,
                 "channel_id": NODE_CHANNEL,
                 "risk_units": None,
                 "risk_value_minor": None,
                 "currency_code": None,
                 "interval_available": False,
-                "reason_code": UNRESOLVED_ROUTE_REASON,
+                "reason_code": reason,
             }
         )
+        if reason == UNRESOLVED_ROUTE_REASON:
+            exception_class = "supply_route_unresolved"
+            severity = "warning"
+            evidence = (
+                f"{cell['resolution_reason']}; with no declared route there is no "
+                "protection period to assess risk over"
+            )
+        elif reason == NO_NODE_FORECAST_REASON:
+            exception_class = "node_forecast_absent"
+            severity = "info"
+            evidence = (
+                "no forecast series exists for this node, so it has no interval "
+                "to assess risk from"
+            )
+        elif reason == NO_NODE_INTERVAL_REASON:
+            exception_class = "node_interval_basis_unavailable"
+            severity = "info"
+            evidence = (
+                "node demand is the additive expectation of supplied stores; "
+                "summing their P90s is forbidden"
+            )
+        else:
+            exception_class = "cold_start_interval_unavailable"
+            severity = "info"
+            evidence = (
+                f"demand-at-risk needs horizons 1..{cell['weeks']}; the "
+                "cold-start interval is calibrated through 4"
+            )
         exceptions.append(
             {
-                "market_id": cell["market_id"],
-                "location_id": cell["location_id"],
-                "sku_id": cell["sku_id"],
+                "market_id": market,
+                "location_id": location,
+                "sku_id": sku,
                 "channel_id": NODE_CHANNEL,
-                "exception_class": "supply_route_unresolved",
-                "severity": "warning",
-                "reason_code": UNRESOLVED_ROUTE_REASON,
-                "evidence": (
-                    f"{cell['reason']}; with no declared route there is no "
-                    "protection period to assess risk over"
-                ),
+                "exception_class": exception_class,
+                "severity": severity,
+                "reason_code": reason,
+                "evidence": evidence,
             }
         )
+
     frame = pd.DataFrame(
         rows, columns=list(ARTIFACT_COLUMNS["inventory_demand_at_risk"])
     )
@@ -1888,12 +2063,15 @@ def build_artifacts(
 
     positions = _build_positions(emitted)
     health = _build_stock_health(emitted, trailing=trailing, policy=inputs.policy)
+    # Demand-at-risk consumes the same governed channel allocation published in
+    # the bundle, so build it once and pass the exact frame into both outputs.
+    allocations = _build_allocations(emitted, inputs=inputs)
     risk, risk_exceptions = _build_demand_at_risk(
         emitted,
         forecasts=forecasts,
-        unit_costs=unit_costs,
+        allocations=allocations,
         supply=supply,
-        currency_by_market=inputs.currency_by_market,
+        inputs=inputs,
         ledgers=inputs.ledgers,
     )
     ageing = _build_ageing(
@@ -1932,7 +2110,6 @@ def build_artifacts(
         trailing=trailing,
         unit_costs=unit_costs,
     )
-    allocations = _build_allocations(emitted, inputs=inputs)
     suppliers = _build_suppliers(inputs)
 
     exception_frame = pd.DataFrame(
