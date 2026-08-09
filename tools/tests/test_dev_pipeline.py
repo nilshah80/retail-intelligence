@@ -54,6 +54,13 @@ def test_relative_publication_root_is_resolved_before_closing_hint(
     ) == tmp_path / "ingestion/data/curated/run-r2"
 
 
+def test_explicit_generation_run_id_wins_over_unsuffixed_source_root() -> None:
+    assert dev._pipeline_run_id(
+        Path("datagen/output/tenant/run-abc"),
+        "run-abc-r2",
+    ) == "run-abc-r2"
+
+
 def test_stage_order_puts_finalize_before_the_ml_stages() -> None:
     """Skipping finalize left ingestion/data/evidence/<run>/gate-a.json absent, which the
     pinned-run tests read directly, so two of them failed on an otherwise complete run."""

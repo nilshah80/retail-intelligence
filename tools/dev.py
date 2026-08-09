@@ -2436,6 +2436,20 @@ def _resolved_pipeline_path(value: Path | None, default: Path) -> Path:
     return (value if value is not None else default).expanduser().resolve()
 
 
+def _pipeline_run_id(source_root: Path | None, override: str | None) -> str:
+    """Resolve the publication generation named by a resumed pipeline.
+
+    A source snapshot keeps its deterministic unsuffixed id, while collision-safe
+    ingestion may publish that snapshot as ``-r2``. An explicit ``--run-id`` is the
+    only way to name that generation when ``--source-root`` is also retained for a
+    reproducible command, so the explicit authority must win.
+    """
+
+    if override:
+        return Path(override).name
+    return source_root.name if source_root is not None else "run-unknown"
+
+
 def command_pipeline(args: argparse.Namespace) -> int:
     """Report stage timings on EVERY exit, then return the inner result.
 
@@ -2505,7 +2519,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
         return 2
     pin_args = ["--expected-pin", str(expected_pin)] if expected_pin else []
 
-    run_id = (source_root or Path(args.run_id or "run-unknown")).name
+    run_id = _pipeline_run_id(source_root, args.run_id)
     if run_id == "run-unknown":
         # Resuming mid-chain with no --source-root: `curated` and `work` are built
         # from run_id, so every stage below `land` was silently pointed at

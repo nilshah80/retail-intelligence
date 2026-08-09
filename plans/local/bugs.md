@@ -825,3 +825,16 @@ which accepts only an absolute path under that absolute root.
 and closing hints use them. The regression test passes a relative `run-r2` override and the
 pipeline slice test now correctly treats forecast activation as an intermediate boundary
 rather than the end of the post-datagen stage list.
+
+---
+
+## BUG-20 · Explicit suffixed run ID is ignored beside source root `[fixed]`
+
+**Observed in the same closing hint.** The resume command supplied both the deterministic
+datagen `--source-root run-95…` and the authoritative ingestion generation
+`--run-id run-95…-r2`. Pipeline resolution always preferred `source_root.name`, so evidence
+and API hints pointed to the unsuffixed path even though inventory correctly read the explicit
+r2 `--publication-root`.
+
+**Fix.** An explicit run ID now wins over the source snapshot name. A regression test freezes
+the required r2 result when both arguments are present.
