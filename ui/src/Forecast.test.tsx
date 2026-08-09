@@ -148,7 +148,7 @@ const responses: Record<string, unknown> = {
       departmentId: "FOODS_1",
       category: "FOODS",
       productName: "Whole Wheat Bread",
-      channelType: "store",
+      channelType: "marketplace",
       storeName: "Bandra Flagship",
       storeCity: "Mumbai",
       horizonWeeks: 4,
@@ -317,6 +317,7 @@ describe("Demand Forecast parity contract", () => {
         "Status"
       ]);
     expect(within(workbench).getByText("Whole Wheat Bread")).toBeInTheDocument();
+    expect(within(workbench).getByText("Marketplace")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", {name: "Compare Versions"}));
     expect(screen.getByRole("dialog", {name: "Compare Versions"})).toBeInTheDocument();

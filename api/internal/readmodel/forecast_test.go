@@ -64,6 +64,17 @@ func TestForecastReadErrorsPreserveRuntimeLineageReason(t *testing.T) {
 	}
 }
 
+func TestForecastQueryPreservesAuthoritativeMarketplaceChannel(t *testing.T) {
+	query := normalizedForecastQuery(ForecastQuery{ChannelType: "marketplace"})
+	if query.ChannelType != "marketplace" {
+		t.Fatalf("marketplace channel was discarded: %#v", query)
+	}
+	invalid := normalizedForecastQuery(ForecastQuery{ChannelType: "unknown"})
+	if invalid.ChannelType != "" {
+		t.Fatalf("unknown channel type was not rejected: %#v", invalid)
+	}
+}
+
 // TestForecastServesGovernedUnavailableOnNoGo is the Go half of the governed
 // NO-GO evidence. When Phase 3 closes NO-GO the active view is deliberately
 // empty, so requiring an active version would make the branch unreachable.

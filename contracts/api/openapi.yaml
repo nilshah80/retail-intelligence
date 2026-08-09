@@ -580,7 +580,7 @@ components:
     ForecastChannelType:
       name: channelType
       in: query
-      schema: {type: string, enum: [online, store]}
+      schema: {type: string, enum: [online, store, marketplace]}
     ForecastCategory:
       name: category
       in: query

@@ -436,7 +436,9 @@ func normalizedForecastQuery(query ForecastQuery) ForecastQuery {
 	if query.ComparisonHorizon > 26 {
 		query.ComparisonHorizon = 26
 	}
-	if query.ChannelType != "online" && query.ChannelType != "store" {
+	if query.ChannelType != "online" &&
+		query.ChannelType != "store" &&
+		query.ChannelType != "marketplace" {
 		query.ChannelType = ""
 	}
 	return query

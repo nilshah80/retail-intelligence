@@ -804,8 +804,10 @@ forecast-run v5 publication all completed, but PostgreSQL materialization reject
 `store | online`. Reclassifying marketplace as online or store would destroy a deliberate
 business dimension, so this is a serving-schema defect rather than a source-data fix.
 
-**Fix.** Migration `0023_marketplace_channel_type` expands only the database constraint,
+**Fix.** Migration `0023_marketplace_channel_type` expands the database constraint,
 moves all serving pins together, and adds a live-schema assertion for all three values. The
+OpenAPI enum and Go query normalizer now preserve marketplace filters, and the Forecast
+workbench labels marketplace explicitly instead of collapsing it into Store. The
 already-completed ML artifacts will be republished under the new migration identity and the
 pipeline resumed from materialization; no datagen, feature build, backtest or current scoring
 is repeated.

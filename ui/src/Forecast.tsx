@@ -411,6 +411,12 @@ function useForecastData(filters: ForecastFilters, comparisonHorizon: number) {
 
 const columnHelper = createColumnHelper<ForecastRow>();
 
+function channelTypeLabel(channelType: string) {
+  if (channelType === "online") return "E-commerce";
+  if (channelType === "marketplace") return "Marketplace";
+  return "Store";
+}
+
 function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
   const columns = useMemo(() => [
     columnHelper.display({
@@ -441,7 +447,7 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
       cell: ({row}) => (
         <span className="product-cell">
           <strong>{storeLabel(row.original.storeName, row.original.storeCity)}</strong>
-          <small>{row.original.channelType === "online" ? "E-commerce" : "Store"}</small>
+          <small>{channelTypeLabel(row.original.channelType)}</small>
         </span>
       )
     }),
