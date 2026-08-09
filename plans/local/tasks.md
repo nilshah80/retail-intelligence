@@ -2192,7 +2192,9 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       2026-08-09 (9,981,587 orders, 41,815,212 units, 4,814 objects). The disposable staging
       spool was removed on promotion and the retained source is 29 GB. Before the combined
       forecast run, the empty serving database advanced to
-      `0022_expected_volume_forecast` / verifier v7.
+      `0023_marketplace_channel_type` / verifier v7. Migration 0022 introduces the
+      expected-volume columns; 0023 aligns the serving channel domain with the
+      already-authoritative marketplace value used by datagen and ingestion.
 - [x] **Fresh ingestion/features boundary promoted.** Land through features completed in
       **7m 33.2s** under the `performance` profile. Curated revision
       `run-95b856f20766c9e1-r2` reproduced source snapshot `a88758a1…`; generation r11 now

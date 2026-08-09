@@ -59,7 +59,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0022_expected_volume_forecast",)
+            assert cursor.fetchone() == ("0023_marketplace_channel_type",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -110,6 +110,19 @@ def test_forecast_serving_schema_integration() -> None:
             assert "retail-forecast-verifier/v5" not in view_definition
             assert "retail-forecast-verifier/v4" not in view_definition
             assert "retail-forecast-verifier/v3" not in view_definition
+            cursor.execute(
+                """
+                SELECT check_clause
+                FROM information_schema.check_constraints
+                WHERE constraint_schema = 'retail_serving'
+                  AND constraint_name = 'ck_forecast_series_dimension_channel_type'
+                """
+            )
+            channel_type_check = cursor.fetchone()
+            assert channel_type_check is not None
+            assert "'online'" in channel_type_check[0]
+            assert "'store'" in channel_type_check[0]
+            assert "'marketplace'" in channel_type_check[0]
             cursor.execute(
                 """
                 SELECT table_name, column_name, is_nullable

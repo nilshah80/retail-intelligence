@@ -95,9 +95,10 @@ and passing P50 gates does not excuse negative additive FVA.
   to a supply node, while summed P90s remain forbidden because quantiles do not aggregate.
 
 This changes a served field's meaning and adds a binding gate, so prior artifacts are not
-reinterpreted. The boundary is forecast-run v5, acceptance v6, verifier v7, and migration
-`0022_expected_volume_forecast`. Older runs remain immutable but are ineligible for new
-activation.
+reinterpreted. The boundary is forecast-run v5, acceptance v6, verifier v7, and current
+serving head `0023_marketplace_channel_type` (`0022_expected_volume_forecast` introduces
+the expected-volume columns; 0023 admits the already-authoritative marketplace channel).
+Older runs remain immutable but are ineligible for new activation.
 
 ## Closure rule
 

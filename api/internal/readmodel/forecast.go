@@ -15,11 +15,11 @@ import (
 
 const (
 	ForecastUnavailableSchema = "retail-forecast-unavailable/v1"
-	// Decision #95 makes 0022 verifier-v7-only: only a run with the separately
-	// published additive expectation may serve volume, FVA and inventory. Older
-	// runs stay immutable but are ineligible, so this pin moves with the database
-	// boundary or the API fails closed against a correctly migrated schema.
-	ForecastMigrationRevision = "0022_expected_volume_forecast"
+	// Decision #95 makes verifier-v7 mandatory, and 0023 aligns the served channel
+	// domain with datagen and ingestion by admitting marketplace. Older runs stay
+	// immutable but are ineligible, so this pin moves with the database boundary or
+	// the API fails closed against a correctly migrated schema.
+	ForecastMigrationRevision = "0023_marketplace_channel_type"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"

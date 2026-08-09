@@ -44,7 +44,7 @@ def test_the_activation_block_matches_the_forecast_that_actually_serves() -> Non
     assert activation["semanticFingerprint"] is not None
     assert activation["acceptanceSchemaVersion"] == "retail-forecast-acceptance/v6"
     assert activation["coverageGateMode"] == "hard"
-    assert activation["servingMigration"] == "0022_expected_volume_forecast"
+    assert activation["servingMigration"] == "0023_marketplace_channel_type"
     # The rejected historical candidate stays disclosed; acceptance of a later run
     # does not erase the rejection that preceded it.
     assert activation["rejectedHistoricalRunId"] == "fr_92135aa7b5215b69"

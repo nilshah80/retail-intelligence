@@ -23,7 +23,7 @@ activation:
   semanticFingerprint: fd0ac67c907290ab79ec6202cac04288d64eeb12b31f5023860591fd203653c3
   acceptanceSchemaVersion: retail-forecast-acceptance/v6
   coverageGateMode: hard
-  servingMigration: 0022_expected_volume_forecast
+  servingMigration: 0023_marketplace_channel_type
   intervalAvailability:
     policyId: retail-forecast-interval-availability/v1
     calibratedMaxHorizon: 4

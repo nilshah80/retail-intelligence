@@ -388,7 +388,7 @@ forecast codebase that is still moving underneath it.
       complete plus recent backtest, normalized current-cycle score, classification,
       publication, migration/materialization/activation, inventory build and corrected
       replay.
-- [ ] Require migration `0022_expected_volume_forecast`, run schema v5 and verifier v7 to be
+- [ ] Require migration `0023_marketplace_channel_type`, run schema v5 and verifier v7 to be
       active, and require both the forecast and inventory authorities to be unique.
 - [ ] Generate fresh Gulf expected pins, closure/entry records and publication-selection
       generations from that run. Retain earlier Gulf generations as superseded history;
@@ -789,3 +789,23 @@ so the dominant dense population cannot lose to MA13 by construction, and a dedi
 conditional-mean head owns cold start. A new hard A6 gate requires non-negative FVA and improved
 cold-start volume bias on all 13 and the final-five replay-confirmation origins. BUG-17 remains
 `fixing`, not `fixed`, until the clean run re-measures the three slices above from served artifacts.
+
+---
+
+## BUG-18 · Forecast materialization rejects authoritative marketplace channels `[fixing — migration 0023 implemented]`
+
+**Observed on the clean Decision #95 run.** Backtest, current scoring, classification and
+forecast-run v5 publication all completed, but PostgreSQL materialization rejected
+`channel_type = marketplace` under
+`ck_forecast_series_dimension_channel_type`. The transaction rolled back before activation.
+
+**Cause.** Datagen, Config Builder and ingestion agree on the domain
+`store | online | marketplace`; migration 0003 retained the older two-value domain
+`store | online`. Reclassifying marketplace as online or store would destroy a deliberate
+business dimension, so this is a serving-schema defect rather than a source-data fix.
+
+**Fix.** Migration `0023_marketplace_channel_type` expands only the database constraint,
+moves all serving pins together, and adds a live-schema assertion for all three values. The
+already-completed ML artifacts will be republished under the new migration identity and the
+pipeline resumed from materialization; no datagen, feature build, backtest or current scoring
+is repeated.
