@@ -101,22 +101,22 @@
   },
   "entryAuthorized": true,
   "forecastAuthority": {
-    "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
+    "activationScopeFingerprint": "bd4a39762e5be56877de6e9387d58e447628c9573f48dc495599e986ccc43c20",
     "activeAuthorityCount": 1,
-    "bundlePath": "ml/data/artifacts/forecast_run_current",
-    "featureSemanticFingerprint": "f743da0a134cf07f6d08fae82bb06bf433d955e452a76d760f6950d699f23eca",
-    "forecastRunId": "fr_b2ed1a914b059e93",
+    "bundlePath": "ml/data/artifacts/forecast_run_backtest_gulf_decision95",
+    "featureSemanticFingerprint": "be38ed93fa6b07fc79f67f470726981b0d55212579f335af3a296a08015c7337",
+    "forecastRunId": "fr_d2441088e0771b76",
     "lifecycleStatus": "accepted",
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
-    "runSemanticFingerprint": "0e2750efcbd98f4c96d32f5318ca7bd21626b0481d8a284ab328f13f681c62ae",
-    "versionId": "fv_0be7039af25e247d"
+    "publicationSemanticFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
+    "runSemanticFingerprint": "7370e9f615c3609310d709a1a8afba37eff9d7b5c5d524992d0307305e205cfe",
+    "versionId": "fv_e35461a7e76416bd"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
   "intervalConsumersEnabled": false,
   "measured": {
     "currentCycle": {
-      "confidenceNullRows": 8756,
+      "confidenceNullRows": 23364,
       "distinctHorizons": 26,
       "distinctUnavailableReasons": 1,
       "horizonRange": [
@@ -124,16 +124,16 @@
         26
       ],
       "p50NullRows": 0,
-      "p90NullRows": 8756,
-      "rows": 52884,
-      "servedSeriesKeys": 2034
+      "p90NullRows": 23364,
+      "rows": 249678,
+      "servedSeriesKeys": 9603
     },
     "evaluationPopulation": {
       "confidenceNullRows": 0,
       "distinctHorizons": 26,
       "note": "Withholding is per-field on the served cycle only. Evaluation retains a non-null interval on every row, which is what makes the A2 gate scoping falsifiable rather than self-fulfilling.",
       "p90NullRows": 0,
-      "rows": 708708
+      "rows": 2882334
     },
     "withheldFromPublication": {
       "horizonRange": [
@@ -141,8 +141,8 @@
         26
       ],
       "reasonCode": "COLD_START_INTERVAL_UNCALIBRATED",
-      "rows": 8756,
-      "series": 398
+      "rows": 23364,
+      "series": 1062
     }
   },
   "note": "Generated, never hand-edited. Regenerate with: tools/dev.py inventory-entry-record",
@@ -186,7 +186,7 @@
   "package": "P4-0",
   "parityAmendment": {
     "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
-    "amendedContractSha256": "8de45c92f2a831c0425d2d216cb99d0be45b8d1d32b42a2a23c72fab5567354f",
+    "amendedContractSha256": "db134b833ef92178fc0d5be13e0936132cd26489d04daed682673d14791a6af8",
     "amendmentId": "P4-0P-A1",
     "approval": {
       "actor": "nilay.shah",
@@ -225,9 +225,9 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0020_safety_stock_drivers",
+  "servingMigration": "0023_marketplace_channel_type",
   "sourceSelection": {
-    "activeRecordId": "rec_65c46eb067afe368",
+    "activeRecordId": "rec_fb8337ca4b848966",
     "capabilityReadiness": "ready",
     "capabilitySufficiency": "sufficient",
     "lifecycleRecords": [
@@ -239,6 +239,13 @@
       "retailer-demo-demand-forecast-ten-year-local-active.json",
       "retailer-demo-demand-forecast-ten-year-local-approved.json",
       "retailer-demo-demand-forecast-ten-year-local-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r10-active.json",
+      "retailer-demo-demand-forecast-ten-year-local-r10-approved.json",
+      "retailer-demo-demand-forecast-ten-year-local-r10-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r10-superseded.json",
+      "retailer-demo-demand-forecast-ten-year-local-r11-active.json",
+      "retailer-demo-demand-forecast-ten-year-local-r11-approved.json",
+      "retailer-demo-demand-forecast-ten-year-local-r11-candidate.json",
       "retailer-demo-demand-forecast-ten-year-local-r2-active.json",
       "retailer-demo-demand-forecast-ten-year-local-r2-approved.json",
       "retailer-demo-demand-forecast-ten-year-local-r2-candidate.json",
@@ -262,10 +269,26 @@
       "retailer-demo-demand-forecast-ten-year-local-r7-active.json",
       "retailer-demo-demand-forecast-ten-year-local-r7-approved.json",
       "retailer-demo-demand-forecast-ten-year-local-r7-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r7-superseded.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-active.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-approved.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r8-superseded.json",
+      "retailer-demo-demand-forecast-ten-year-local-r9-active.json",
+      "retailer-demo-demand-forecast-ten-year-local-r9-approved.json",
+      "retailer-demo-demand-forecast-ten-year-local-r9-candidate.json",
+      "retailer-demo-demand-forecast-ten-year-local-r9-superseded.json",
       "retailer-demo-demand-forecast-ten-year-local-superseded.json",
       "retailer-demo-inventory-current-ten-year-local-active.json",
       "retailer-demo-inventory-current-ten-year-local-approved.json",
       "retailer-demo-inventory-current-ten-year-local-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r10-active.json",
+      "retailer-demo-inventory-current-ten-year-local-r10-approved.json",
+      "retailer-demo-inventory-current-ten-year-local-r10-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r10-superseded.json",
+      "retailer-demo-inventory-current-ten-year-local-r11-active.json",
+      "retailer-demo-inventory-current-ten-year-local-r11-approved.json",
+      "retailer-demo-inventory-current-ten-year-local-r11-candidate.json",
       "retailer-demo-inventory-current-ten-year-local-r2-active.json",
       "retailer-demo-inventory-current-ten-year-local-r2-approved.json",
       "retailer-demo-inventory-current-ten-year-local-r2-candidate.json",
@@ -289,10 +312,26 @@
       "retailer-demo-inventory-current-ten-year-local-r7-active.json",
       "retailer-demo-inventory-current-ten-year-local-r7-approved.json",
       "retailer-demo-inventory-current-ten-year-local-r7-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r7-superseded.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-active.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-approved.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r8-superseded.json",
+      "retailer-demo-inventory-current-ten-year-local-r9-active.json",
+      "retailer-demo-inventory-current-ten-year-local-r9-approved.json",
+      "retailer-demo-inventory-current-ten-year-local-r9-candidate.json",
+      "retailer-demo-inventory-current-ten-year-local-r9-superseded.json",
       "retailer-demo-inventory-current-ten-year-local-superseded.json",
       "retailer-demo-inventory-replay-ten-year-local-active.json",
       "retailer-demo-inventory-replay-ten-year-local-approved.json",
       "retailer-demo-inventory-replay-ten-year-local-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r10-active.json",
+      "retailer-demo-inventory-replay-ten-year-local-r10-approved.json",
+      "retailer-demo-inventory-replay-ten-year-local-r10-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r10-superseded.json",
+      "retailer-demo-inventory-replay-ten-year-local-r11-active.json",
+      "retailer-demo-inventory-replay-ten-year-local-r11-approved.json",
+      "retailer-demo-inventory-replay-ten-year-local-r11-candidate.json",
       "retailer-demo-inventory-replay-ten-year-local-r2-active.json",
       "retailer-demo-inventory-replay-ten-year-local-r2-approved.json",
       "retailer-demo-inventory-replay-ten-year-local-r2-candidate.json",
@@ -316,17 +355,26 @@
       "retailer-demo-inventory-replay-ten-year-local-r7-active.json",
       "retailer-demo-inventory-replay-ten-year-local-r7-approved.json",
       "retailer-demo-inventory-replay-ten-year-local-r7-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r7-superseded.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-active.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-approved.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r8-superseded.json",
+      "retailer-demo-inventory-replay-ten-year-local-r9-active.json",
+      "retailer-demo-inventory-replay-ten-year-local-r9-approved.json",
+      "retailer-demo-inventory-replay-ten-year-local-r9-candidate.json",
+      "retailer-demo-inventory-replay-ten-year-local-r9-superseded.json",
       "retailer-demo-inventory-replay-ten-year-local-superseded.json"
     ],
-    "objectCount": 1302,
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
+    "objectCount": 2259,
+    "publicationSemanticFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
     "scope": {
       "capability": "demand_forecast_non_pit",
       "environment": "local",
       "retailerId": "retailer-demo",
       "tenantId": "tenant-demo"
     },
-    "selectionId": "sel_40ed20a2b978154a",
-    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
+    "selectionId": "sel_6e5dc72ef5354c7a",
+    "sourceSnapshotId": "a88758a19e787cd2c1cbf2dde9f11b3c10360a23114726c59d56e34666407e3f"
   }
 }

@@ -8,39 +8,40 @@
       "A2": true,
       "A2_per_cohort": true,
       "A3": true,
-      "A4": true
+      "A4": true,
+      "A6_expected_volume": true
     },
     "passed": true,
     "perCohortCoverage": {
-      "cold_start": 0.8991239207719655,
-      "established_history": 0.9047027251841876
+      "cold_start": 0.8982486433152442,
+      "established_history": 0.9297935893377489
     },
-    "schemaVersion": "retail-forecast-acceptance/v5"
+    "schemaVersion": "retail-forecast-acceptance/v6"
   },
   "acceptedRun": {
-    "decisionAsOf": "2026-07-31T00:00:00Z",
-    "forecastRunId": "fr_b2ed1a914b059e93",
-    "forecastVersionId": "fv_0be7039af25e247d",
+    "decisionAsOf": "2026-08-02T00:00:00Z",
+    "forecastRunId": "fr_d2441088e0771b76",
+    "forecastVersionId": "fv_e35461a7e76416bd",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "0e2750efcbd98f4c96d32f5318ca7bd21626b0481d8a284ab328f13f681c62ae"
+    "runSemanticFingerprint": "7370e9f615c3609310d709a1a8afba37eff9d7b5c5d524992d0307305e205cfe"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "8cba50bc254c4407bc67e038df991d312ab58d0f5d1e2190d1b8351f552c0c8d",
-    "forecast_acceptance.json": "20df3bde230953fc85d02538e54faafb912f5547565ee56561e6af6690395054"
+    "forecast-run-manifest.json": "cdc0563f7656f01355ad5d672bc8a301ebbbb23c01cb6b80c73838f360fc2d7e",
+    "forecast_acceptance.json": "cd7bc784706a48fefec141150b9fb2c012bfd3ad9bd7ea14744322df6c95d834"
   },
   "authorityLedger": {
     "currentEventId": 1,
     "currentPriorEventId": null,
     "events": [
       {
-        "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
-        "actor": "developer",
+        "activationScopeFingerprint": "bd4a39762e5be56877de6e9387d58e447628c9573f48dc495599e986ccc43c20",
+        "actor": "nilayshah",
         "eventId": 1,
         "eventType": "active",
-        "forecastRunId": "fr_b2ed1a914b059e93",
+        "forecastRunId": "fr_d2441088e0771b76",
         "priorEventId": null,
-        "recordedAt": "2026-08-06 02:37:17.905243+00",
-        "versionId": "fv_0be7039af25e247d"
+        "recordedAt": "2026-08-09 00:42:07.165959+00",
+        "versionId": "fv_e35461a7e76416bd"
       }
     ],
     "nullPredecessorEventIds": [
@@ -49,7 +50,7 @@
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": []
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_current",
+  "bundlePath": "ml/data/artifacts/forecast_run_backtest_gulf_decision95",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -166,14 +167,14 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "4999fa1a3152b9acfef8d0f44f66e5d9ffd422a4535ddb140f9341f0a7da1fc1",
-    "gateBSemanticFingerprint": "0817812c57d1ee1acd0fa3425d645d67c84c6dcd1057096bb21d0098c8c67749",
-    "publicationSemanticFingerprint": "8e7c1f160fcd44d9d221507ff4f5323b00756c180deba0d3572afdda91a069a1",
-    "sourceSnapshotId": "4c205cd1b232543bf1160c6feec5caa1032b754ab2f74ad6595910371d10073b"
+    "gateASemanticFingerprint": "f5a57acb5e8d608a54066377a3b349cea963c727e2466c8a6d31ad9a1ce2721d",
+    "gateBSemanticFingerprint": "e49187f38a0dc2b95344df994186c325f794bf1924722bbb16718633d9ac9b3e",
+    "publicationSemanticFingerprint": "1b88e7f598183448362a4af6f86fca88a41191b7c5fe55de53b2b599c5a394d3",
+    "sourceSnapshotId": "a88758a19e787cd2c1cbf2dde9f11b3c10360a23114726c59d56e34666407e3f"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
-    "coldStartSeries": 398,
+    "coldStartSeries": 1062,
     "decisionIds": [
       85,
       87,
@@ -184,25 +185,25 @@
     "p50Withheld": 0,
     "policyId": "retail-forecast-interval-availability/v1",
     "reasonCode": "COLD_START_INTERVAL_UNCALIBRATED",
-    "servedRows": 52884,
+    "servedRows": 249678,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0020_safety_stock_drivers",
+      "servingMigration": "0023_marketplace_channel_type",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
-    "withheldRows": 8756,
-    "withheldShareOfServed": "0.16557"
+    "withheldRows": 23364,
+    "withheldShareOfServed": "0.093577"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "9bdff783685c8f78a9f0cc211cc85dcced03be432a273685daaaf4581d6cf7ad",
-    "forecastRunId": "fr_b2ed1a914b059e93",
-    "forecastVersionId": "fv_0be7039af25e247d"
+    "activationScopeFingerprint": "bd4a39762e5be56877de6e9387d58e447628c9573f48dc495599e986ccc43c20",
+    "forecastRunId": "fr_d2441088e0771b76",
+    "forecastVersionId": "fv_e35461a7e76416bd"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0020_safety_stock_drivers",
+  "servingMigration": "0023_marketplace_channel_type",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": []
 }

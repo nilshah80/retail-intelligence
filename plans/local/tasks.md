@@ -2144,7 +2144,7 @@ pairs and fail closed on unknown ones, so they are not generic. Still out of sco
       stale `README.md:24` NO-GO status block. Runs **before** `GOI-12` so the demo is delivered
       from a live Gulf stack rather than from screenshots.
 
-**GOI-13 Engine defects exposed by the second tenant** `[IN PROGRESS — one fix kept, one reverted]`
+**GOI-13 Engine defects exposed by the second tenant** `[COMPLETE — clean Decision #95 run active]`
 
 _Not in the original plan. The plan assumed `ml/` was unchanged; running a second tenant through it
 proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view._
@@ -2178,13 +2178,14 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       −73.6% and the whole cohort at −53.6%. Horizon bias improves only modestly, from
       −31.6% -> −67.5% before to −29.9% -> −63.9% after. The remaining p50 volume semantics stay
       open rather than being relabelled as solved.
-- [x] **BUG-2 targeted oracle fixed; clean rebuild pending.** The 14-day review-cycle hypothesis
+- [x] **BUG-2 oracle and clean rebuild fixed.** The 14-day review-cycle hypothesis
       is refuted. Ingestion collapsed `gulf-marketplace` into `store`, doubling shelf demand; a
       read-only corrected view makes all 52 retained oracle periods reconcile at exactly zero in
       both arrival and non-arrival weeks. Channel type is now preserved, and replay derives each
       snapshot bridge from observed dates instead of assuming Thursday plus offsets 4/5/6. The
-      direct stage emits all 8 metrics; stale `gulf4` levels fail downstream policy gates, so the
-      clean run—not the oracle fix—must decide final replay acceptance.
+      clean stage emits all 8 metrics. Its fresh policy candidate loses six service/stockout
+      comparisons and wins both mean-inventory comparisons, so `replayPassed=false` is a valid
+      downstream policy verdict after a successful oracle, not a residual BUG-2 failure.
 - [x] **Clean Gulf source regenerated from empty runtime state.** PostgreSQL and MLflow volumes,
       prior datagen/ingestion/ML artifacts, shared features and DuckDB files were removed before
       generation; the fresh database was migrated through `0021_forecast_eval_recent`. The
@@ -2202,14 +2203,13 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       3,372,399 rows / 9,603 SeriesKeys and the clean curated database proves
       `gulf-marketplace → marketplace`, `bazaar-trade → store`, and
       `gulf-online → online`.
-- [~] **BUG-17 moved into the combined run under Decision #95; implementation is wired and
-      focused tests pass.** At portfolio grain MA13 is
+- [x] **BUG-17 closed in the combined Decision #95 run.** At portfolio grain MA13 was
       93.00% accurate versus the P50 champion's 89.84% (FVA −45.21%). The frozen fix does not
       tune P50: a separately named `expected_units` uses MA13 for established history and a
-      dedicated conditional-mean head for cold start. A6 must prove non-negative FVA and improved
-      cold-start volume bias before activation; the served dense slices still decide closure.
-- [~] **Decide the p50 volume basis — Decision #95 frozen and implemented; clean-run A6
-      evidence pending.**
+      dedicated conditional-mean head for cold start. The clean dense slice now reaches
+      **93.6580% accuracy** versus MA13's **93.6563%**, moving FVA from P50's **−120.5198%**
+      to **+0.0264%**; the full served portfolio reaches **+14.7361% FVA**.
+- [x] **P50 volume basis decided and verified under Decision #95.**
       `yhat_p50` is a median summed as though it were a mean, which
       under-counts by construction on intermittent demand and worsens with sparsity (+13.9% at
       zero-share 0.0–0.2, −83.8% at 0.8–1.0; p90 overshoots at +119.3%). C1 "P50 bias correction"
@@ -2218,15 +2218,28 @@ proved otherwise. Full detail in `plans/local/bugs.md`; this is the ledger view.
       which a bias correction can worsen while improving volume accuracy — the same trap as the
       routing predicate, one level up in the governance. C1 stays disconnected and P50 remains a
       median. Decision #95 instead adds `expected_units`, with A6 volume non-regression and
-      cohort-level improvement gates, before the one authoritative ML run.
+      cohort-level improvement gates. A6 passed all 13 and final-five confirmation origins with
+      zero fallback: cold-start bias improved **−53.63% → −9.56%** and
+      **−49.22% → −18.48%**, respectively.
+- [x] **One authoritative forecast/inventory chain activated.** The complete backtest took
+      **2h 27m 53.3s** and current scoring took **9m 34.0s**. Marketplace migration 0023 was
+      discovered at first materialization, fixed without repeating ML, and the republished bundle
+      materialized in **10m 42.2s** and activated in **3.2s**. Forecast authority is
+      `fr_d2441088e0771b76` / `fv_e35461a7e76416bd`; inventory authority is
+      `ir_7eb687be5aef566c` / `iv_7eb687be5aef566c`. Inventory build through activation took
+      **12.8s**. Fresh generated closure/entry records name those authorities and r11 selection
+      `sel_6e5dc72ef5354c7a`.
 - [x] **Tooling defects fixed in passing:** `tools/dev.py pipeline` now exposes `--rebuild`, so a
       corrected profile no longer replays a cached `critical` gate verdict (BUG-6);
       `datagen/tools/sync_presets.py` only writes a preset whose semantic content actually moved,
       so it stops deleting rationale comments (BUG-7). That sync also caught the Config Builder
       shipping the Gulf showcase with a **Friday** start while the YAML had been corrected to a
       Thursday — an export would have reintroduced the oracle failure of GOI-6. A drift test now
-      pins every embedded preset against its YAML.
-- [ ] **Method note, recorded because it recurred four times.** Every wrong diagnosis in this work
+      pins every embedded preset against its YAML. The final audit of
+      `datagen/config-builder.html` confirms the Gulf preset carries the Thursday start,
+      `marketplace` channel and ten-year profile; its focused drift tests pass, so no additional
+      HTML fix is required.
+- [x] **Method note, recorded because it recurred four times.** Every wrong diagnosis in this work
       came from measuring the wrong slice: bias filtered to `actual_units > 0`; eligibility counted
       by *series* (66.8% admit) when the question was *volume* (90% excluded); a `0.23 × actual`
       proxy standing in for real LightGBM predictions; history length over the whole file instead of

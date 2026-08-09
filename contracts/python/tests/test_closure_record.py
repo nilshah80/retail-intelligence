@@ -74,8 +74,9 @@ def test_the_record_describes_a_passing_run_under_the_hard_gate() -> None:
     record = _record()
     acceptance = record["acceptance"]
     assert acceptance["passed"] is True
-    assert acceptance["schemaVersion"] == "retail-forecast-acceptance/v5"
+    assert acceptance["schemaVersion"] == "retail-forecast-acceptance/v6"
     assert acceptance["coverageGateMode"] == "hard"
+    assert acceptance["gates"]["A6_expected_volume"] is True
     # No gate may be recorded as anything other than passing on an accepted run.
     assert all(value is True for value in acceptance["gates"].values())
 

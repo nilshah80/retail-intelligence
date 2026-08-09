@@ -13,7 +13,7 @@ the substantive ones.
 
 ---
 
-## BUG-1 · Cold-start cohort under-forecast by 74% — carries 86.7% of intermittent volume `[fixing — Decision #95 clean-run gate pending]`
+## BUG-1 · Cold-start cohort under-forecast by 74% — carries 86.7% of intermittent volume `[fixed — Decision #95 additive-volume gate passed]`
 
 **Where:** `ml/src/retail_ml/models/cold_start_blend.py` (C5) — the cold-start cohort holds
 86.7% of intermittent volume at −74.2%. Secondarily `models/train_lgbm.py` —
@@ -293,6 +293,14 @@ no-fallback gates over all 13 and the final-five replay-confirmation origins. Th
 may close BUG-1's **operational additive-volume defect** only if A6 passes; it does not relabel the
 P50 median itself as fixed or as an expectation.
 
+**Closure from the clean run.** A6 passed on both frozen populations with no cold-head
+fallback rows. Across all 13 origins, cold-start volume bias improved from **−53.63% at P50
+to −9.56% in `expected_units`** and FVA versus MA13 was **+14.736%**. Across the final five
+replay-confirmation origins, bias improved from **−49.22% to −18.48%** and FVA was
+**+28.937%**. The accepted and served contract keeps `yhat_p50` as a median and gives
+additive planning its own explicitly named expectation, so the operational defect is fixed
+without falsifying quantile semantics.
+
 **Two measurement errors made while diagnosing this, recorded so they are not repeated:**
 
 1. Bias was first computed filtering `actual_units > 0`. That is invalid for intermittent
@@ -306,7 +314,7 @@ P50 median itself as fixed or as an expectation.
 
 ---
 
-## PRE-BUG-2 · Integrate the forecast branches, then validate once `[planned — blocks BUG-2]`
+## PRE-BUG-2 · Integrate the forecast branches, then validate once `[completed]`
 
 **Required order.** Finish the current BUG-1 experiment, integrate the portable forecast
 fixes, diagnose and repair BUG-2 with targeted replay work, and only then spend the time
@@ -384,32 +392,41 @@ forecast codebase that is still moving underneath it.
       curated dimensions now retain `gulf-marketplace` as `marketplace` (with
       `bazaar-trade` still `store` and `gulf-online` still `online`), proving BUG-2's
       ingestion half against the clean rebuild rather than only the retained counterfactual.
-- [ ] Run the full Gulf flow once from the agreed clean boundary: ingestion, feature build,
+- [x] Run the full Gulf flow once from the agreed clean boundary: ingestion, feature build,
       complete plus recent backtest, normalized current-cycle score, classification,
       publication, migration/materialization/activation, inventory build and corrected
-      replay.
-- [ ] Require migration `0023_marketplace_channel_type`, run schema v5 and verifier v7 to be
-      active, and require both the forecast and inventory authorities to be unique.
-- [ ] Generate fresh Gulf expected pins, closure/entry records and publication-selection
+      replay. The complete backtest took **2h 27m 53.3s**; current-cycle scoring took
+      **9m 34.0s**. The accepted bundle was republished after BUG-18, materialized and
+      activated without repeating either stage. Inventory build through activation took
+      **12.8s**. Replay completed its oracle and emitted all eight required metric rows; its
+      policy candidate honestly lost the incumbent, which is a downstream policy verdict
+      rather than an oracle failure.
+- [x] Require migration `0023_marketplace_channel_type`, run schema v5 and verifier v7 to be
+      active, and require both the forecast and inventory authorities to be unique. Active
+      forecast is `fr_d2441088e0771b76` / `fv_e35461a7e76416bd`; active inventory is
+      `ir_7eb687be5aef566c` / `iv_7eb687be5aef566c`.
+- [x] Generate fresh Gulf expected pins, closure/entry records and publication-selection
       generations from that run. Retain earlier Gulf generations as superseded history;
-      never overwrite them with the demo branch's identities.
-- [ ] Commit and validate the final clean-run authorities on
+      never overwrite them with the demo branch's identities. The expected pin resolves to
+      source `a88758a1…`, publication `1b88e7f5…`; generation r11 is active and the generated
+      closure/entry records name the live Decision #95 authorities.
+- [x] Commit and validate the final clean-run authorities on
       `feature/gulf-oil-india-datagen`; no integration-branch merge is needed because the user
-      elected to work directly on this branch.
+      elected to work directly on this branch. The generated records pass 333 contract tests,
+      the developer contract command and the live authority drift check.
 
 **Run-economy rule.** Unit tests, contract tests, migration tests and targeted replay runs
 are expected during development; they are not substitutes for the final pipeline, but
 they avoid paying for repeated ingestion and multi-hour backtests. There should be one
 clean authoritative end-to-end run for the combined change set, not one per commit.
 
-**Completion gate before BUG-2.** Sections A and B must be complete before BUG-2 code work
-begins. Section C may use retained artifacts. Section D is the single final proof after
-BUG-2 is repaired. Decision #95 is now part of that single proof: BUG-1/12/17 remain open
-unless the published A6 record and served slices pass, even if the older P50 gates pass.
+**Completion result.** Sections A–D completed in order. The published A6 record, retained
+evaluation rows and served portfolio all pass, so BUG-1/12/17 close on the one clean run;
+the older P50 gates alone were not used as proof.
 
 ---
 
-## BUG-2 · Replay loses channel semantics and hard-codes snapshot cadence `[fixing — targeted oracle passes; clean run pending]`
+## BUG-2 · Replay loses channel semantics and hard-codes snapshot cadence `[fixed]`
 
 **Where:** `ml/src/retail_ml/inventory_run/replay_driver.py`
 
@@ -464,11 +481,12 @@ in both populations, not concentrated where fortnightly receipts land. Preservin
    classification and reconstruction delta through a targeted diagnostic helper. A fixture
    proves Saturday, Tuesday and Friday snapshots without a Thursday assumption.
 
-The retained source was validated through a read-only corrected canonical view; no retained
-artifact was mutated. Closure still requires the one clean ingestion/inventory rebuild in
-PRE-BUG-2 Section D. A direct full replay now passes the oracle and emits all 8 cohort/market
-metric rows; the stale `gulf4` policy levels still fail policy acceptance, which is an honest
-downstream verdict rather than BUG-2. Fresh levels from the clean run must adjudicate that gate.
+The retained source was first validated through a read-only corrected canonical view; no retained
+artifact was mutated. The clean rebuild then preserved `gulf-marketplace` end to end, the replay
+oracle completed, and all **8 cohort/market metric rows** were emitted. The fresh downstream
+policy candidate still loses the incumbent on six service/stockout measures while winning both
+mean-inventory measures, so `replayPassed` is false. That is an honest policy comparison after a
+successful oracle, not the missing-channel/cadence defect tracked by BUG-2.
 
 **Do not "fix" by changing the tenant.** `reviewCycleDays` remains 14. The replay must
 reconcile the source actually supplied; changing Gulf to manufacture a pass is forbidden.
@@ -659,7 +677,7 @@ rather than trigger one.
 
 ---
 
-## BUG-12 · Forecast Value Add is negative — the model loses to a 13-week moving average `[fixing — Decision #95 clean-run gate pending]`
+## BUG-12 · Forecast Value Add is negative — the model loses to a 13-week moving average `[fixed]`
 
 **Symptom.** The Forecast screen reports **FVA −45.2%** ("relative improvement vs MA13").
 It was −46.8% before any of the BUG-1 work, so two measured engine fixes moved it 1.6 points.
@@ -676,9 +694,14 @@ the rest of the portfolio. Removing cold start makes champion bias worse, +10.00
 and leaves the MA13 loss intact. The dominant model defect is tracked independently as
 BUG-17.
 
+**Closure from the clean run.** At the same `market_portfolio`, horizon-0 grain,
+`expected_units` is **94.0326% accurate** versus MA13's **93.0013%**, for
+**+14.7361% FVA** and **+0.465% bias**. This is the served additive-volume basis; P50 remains
+a quantile and is not relabelled as the portfolio expectation.
+
 ---
 
-## BUG-13 · P50–P90 interval covers the actual in 0 of the last 8 weeks `[fix integrated — Gulf re-measure pending]`
+## BUG-13 · P50–P90 interval covers the actual in 0 of the last 8 weeks `[fixed]`
 
 **Symptom.** The Forecast-vs-Actual card states: *"Last 8 weeks · actual inside the P50–P90
 forecast range in 0 of 8."* Zero of eight, not a marginal miss.
@@ -693,10 +716,12 @@ recent h1-h4 and 89.9% on complete h19-h26, consistent with calibration.
 turned it into a confident count. That can make a calibrated model look broken (“0 of 8”) or
 perfect (“8 of 8”) depending on the portfolio, while neither statement measures coverage.
 
-**Fix integrated.** `8d80b42` adds disjoint ragged h1-h4 evaluation, migration 0021 and serving
+**Fix verified.** `8d80b42` adds disjoint ragged h1-h4 evaluation, migration 0021 and serving
 semantics that report per-series coverage rather than claiming the summed band is an interval.
 The source demo showed “8 of 8” while Gulf showed “0 of 8”; both are opposite symptoms of the
-same invalid construction. The final Gulf run must re-measure this before the bug is marked fixed.
+same invalid construction. On the clean served Gulf h1-h4 slice, coverage is
+**73,513 / 76,824 = 95.6901%** at leaf grain. The UI no longer draws or captions a sum of
+per-series quantiles as a portfolio interval.
 
 ---
 
@@ -760,7 +785,7 @@ they should be decided together.
 
 ---
 
-## BUG-17 · Dense established-history forecast loses badly to MA13 `[fixing — Decision #95 frozen before combined run]`
+## BUG-17 · Dense established-history forecast loses badly to MA13 `[fixed]`
 
 **Symptom at the serving grain.** At `slice_type=market_portfolio, horizon=0`, the retained
 `gulf4` champion is **89.84% accurate with +10.00% bias**. MA13 is **93.00% accurate with
@@ -787,12 +812,18 @@ improving the affected cohort.
 additive-volume defect without changing P50. `expected_units` uses MA13 for established history,
 so the dominant dense population cannot lose to MA13 by construction, and a dedicated
 conditional-mean head owns cold start. A new hard A6 gate requires non-negative FVA and improved
-cold-start volume bias on all 13 and the final-five replay-confirmation origins. BUG-17 remains
-`fixing`, not `fixed`, until the clean run re-measures the three slices above from served artifacts.
+cold-start volume bias on all 13 and the final-five replay-confirmation origins.
+
+**Closure from the clean run.** On the exact dense slice (`zero_share_52w < 0.2`) and the
+same market/origin/target/horizon aggregation, expected-volume bias is **+1.4929%** and
+accuracy is **93.6580%**, versus MA13's **93.6563%**. FVA is therefore **+0.0264%**, while
+the unchanged P50 remains at **+13.8744% bias**, **86.0108% accuracy** and **−120.5198%
+FVA**. The full portfolio has the larger +14.7361% FVA margin because the dedicated cold
+conditional-mean head also repairs the other side of the offsetting error.
 
 ---
 
-## BUG-18 · Forecast materialization rejects authoritative marketplace channels `[fixing — migration 0023 implemented]`
+## BUG-18 · Forecast materialization rejects authoritative marketplace channels `[fixed]`
 
 **Observed on the clean Decision #95 run.** Backtest, current scoring, classification and
 forecast-run v5 publication all completed, but PostgreSQL materialization rejected
@@ -811,6 +842,11 @@ workbench labels marketplace explicitly instead of collapsing it into Store. The
 already-completed ML artifacts will be republished under the new migration identity and the
 pipeline resumed from materialization; no datagen, feature build, backtest or current scoring
 is repeated.
+
+**Closure.** The republished bundle materialized and activated under migration 0023. The live
+forecast client preserves `channelType=marketplace`, and the marketplace workbench filter returns
+**3,201 rows** rather than collapsing them into Store. The pre-0023 accepted bundle is retained
+separately as migration-0022 evidence; it is not an activation authority.
 
 ---
 
