@@ -1,0 +1,8 @@
+schemaVersion: retail-execution-profile/v1
+profile: safe
+datagen:
+  marketWorkers: 1
+  partitionWorkers: 2
+  duckdbThreads: 1
+  memoryLimitGb: 4
+  spoolChunkRows: 10000

@@ -499,6 +499,74 @@ published source contract. BUG-23 (partition selection) and BUG-28 (stage/datase
 entry-gate work; BUG-24 through BUG-27 must each be measured and explicitly assigned either to a
 Python correction, the Rust engine, or an evidence-backed no-change decision before full porting.
 
+**Working performance target and prior estimates (recorded 2026-08-10).** Exact logical parity is
+the correctness gate. For the full Gulf run on the measured Mac, **up to 90 minutes is acceptable**,
+**70–80 minutes remains the intended target**, and **40–45 minutes is the stretch result**. These are
+benchmark tiers, not results until a full comparison run proves them. Preserve the prior planning
+ranges below as hypotheses and report actual Mac and Windows measurements against matched
+hardware/configuration:
+
+| Change | Expected gain | Mac: 2h53m baseline | Windows: >6h baseline |
+|---|---:|---:|---:|
+| Partition fix only | 1.1–1.25× | ~2h19m–2h38m | ~4h48m–5h27m |
+| BUG-23–27 Python improvements | 1.4–1.9× | ~1h31m–2h04m | ~3h10m–4h17m |
+| Rust for `simulate()` only | 1.3–1.45× | ~2h00m–2h13m | ~4h08m–4h37m |
+| Full Rust hot path | 2.5–3.5× | ~50–70 min | ~1h43m–2h24m |
+| Strong stretch result | ~4× | ~43 min | ~1h30m |
+
+**Interim Rust evidence (2026-08-10; not the full-run acceptance result).** The 14-day fixture
+matches Python across all 75 logical datasets with no schema, content, control or partition
+mismatch. After exact-parity-preserving path/partition caching, Rust is 6.709s / 409.0 MB peak RSS
+versus Python 19.182s / 881.2 MB. The identical 359-day Gulf representative improved from
+376.869s to 302.507s (**19.7%**) while preserving 34,542,336 logical rows and 696 manifest objects;
+the optimized run used 3.40 GB peak RSS and spent 252.034s in causal simulation, 49.656s in the
+DuckDB mirror, 8.351s in projection finalize and 10.441s in partition publication. Scaling its
+throughput to the retained full run's 509,354,987 manifest rows estimates **74.3 minutes**, inside
+the intended 70–80 minute tier; only the full exact comparison run can turn that estimate into an
+accepted result.
+
+The first full Rust Gulf diagnostic run completed in **64m33.76s** versus the retained Python
+run's 2h40m49.70s (**2.491x** wall speedup), but it is explicitly **not accepted**: it produced
+509,354,818 rather than 509,354,987 logical rows and has outstanding schema/content/control/
+partition mismatches. It also peaked at 37.74 GB process-tree RSS versus Python's available
+24.45-GB process measure. That run predates enforcement of the selected Rayon worker limit, so it
+is useful bottleneck evidence rather than a clean named-profile benchmark. Both Rust full outputs
+were preserved through the corrected comparison; after acceptance, their run directories were
+deleted at the user's request while the Python run and comparison reports were retained.
+
+**Standalone Rust config/profile verification (2026-08-10).** `datagen_rust/configs/` now owns
+byte-for-byte copies of all eight checked-in Python scenario YAML/JSON files plus safe, balanced,
+performance and ultra-performance `retail-execution-profile/v1` YAML documents. All scenario
+copies validate locally; the Gulf ten-year YAML reproduces config hash `028fdbc5…`. Named and
+file-loaded profiles resolve identically, are visible in plan/generate output and the manifest,
+and now constrain simulation/publication workers, spool buffers and DuckDB threads/memory. A fresh
+14-day mini run under safe (2 partition workers, 1 DuckDB thread, 4-GB DuckDB limit, 10k spool rows)
+and ultra-performance (16, 8, 64 GB, 100k) kept the same run ID and 509,623 rows and passed an exact
+75-dataset logical comparison. Safe measured 6.643s / 331.4 MB peak process-tree RSS; ultra measured
+6.219s / 423.1 MB. These are profile-invariance and low-resource smoke results, not full-run timing
+claims.
+
+**Accepted macOS full-run evidence (2026-08-10).** Corrected Rust `rust-0.1.1` run
+`run-0a74fc0297964b1b`, generated from the standalone Gulf ten-year YAML under the recorded
+`performance` profile (2 market, 8 partition and 6 DuckDB workers; 32-GB DuckDB limit; 50k spool
+rows), completed in **64m49.52s**. The retained Python `0.17.0` comparison run
+`run-1430a7ddabc5d4ff` took **2h40m49.70s**, so the matched end-to-end wall speedup is
+**2.48095x**. The result beats the intended 70–80-minute tier and the 90-minute allowance; it does
+not meet the 40–45-minute stretch tier. Both runs resolve config hash `028fdbc5…`, contain
+509,354,987 logical rows and 5,842 manifest objects, and preserve the 73-product/292-variant
+catalog. The exhaustive DuckDB two-way `EXCEPT ALL` comparison passed all **78/78 logical
+datasets** with zero missing/additional datasets and zero schema, content, control or partition
+layout mismatches. INR orders/units/net/tax/gross and every simulation control match exactly. The
+accepted report is retained at
+`datagen_rust/output/gulf-oil-india-ten-year/python-vs-rust-comparison-v0.1.1.json`; no comparison
+result was repurposed. The two Rust run directories were deleted at the user's request after
+acceptance; the retained Python run remains unchanged. Rust measured 38,997,491,712 bytes
+process-tree peak RSS versus Python's available 24,453,054,464-byte single-process peak; the scopes
+are not equivalent, but the native run is not yet a memory-reduction result and memory work remains
+open. Rust stage telemetry records 3215.907s causal simulation, 146.422s projection finalize,
+86.716s partition publication and 667.707s DuckDB mirror work. Windows full-run timing and
+cross-platform parity are still pending.
+
 **R0. Baseline, Python ceiling and go/no-go gate**
 - [ ] Capture reproducible macOS and Windows baselines from the same pinned config, source-contract
       version, generator version, execution profile and clean output state. Record total and
@@ -569,40 +637,56 @@ Python correction, the Rust engine, or an evidence-backed no-change decision bef
       review before authorizing the full port.
 
 **R3. Port the complete hot path with bounded parallelism**
-- [ ] Port the causally ordered simulation loop without parallelizing state transitions that depend
+- [x] Add Rust-owned standalone scenario configuration and execution-profile files. Preserve the
+      Python filenames and YAML/JSON bytes, expose a profile-list command, accept named or YAML/JSON
+      profile selection, print the resolved profile in plan/generate results, and record it in the
+      manifest without changing run identity.
+- [x] Port the causally ordered simulation loop without parallelizing state transitions that depend
       on prior events. Parallelize only proven-independent work, use stable shard ownership and
       deterministic reductions, and make results invariant across supported execution profiles and
       worker counts.
-- [ ] Port the extension pass and replace pickle `RowSpool` traffic with typed, bounded,
+- [x] Port the extension pass and replace pickle `RowSpool` traffic with typed, bounded,
       partition-addressable storage or streaming batches. Preserve stable ordering while removing
       repeated full-spool deserialization where a single pass or indexed access is sufficient.
-- [ ] Port Shopify, Business Central, companion and hidden-truth projection as consumers of one
+- [x] Port Shopify, Business Central, companion and hidden-truth projection as consumers of one
       immutable causal event stream. Give each lane isolated mutable sinks and metadata, use a
       bounded scheduler across lanes/partitions, then merge manifests and controls in canonical
       order; never allow concurrent mutation of shared Python-era generator state.
-- [ ] Replace the all-row Python item-ledger sort with deterministic sorted runs and a bounded k-way
+- [x] Replace the all-row Python item-ledger sort with deterministic sorted runs and a bounded k-way
       merge, and prove its stable tie-breaking with duplicate-key and high-volume fixtures.
-- [ ] Enforce one aggregate memory/concurrency budget across simulation, lanes, partitions, record
+- [~] Enforce one aggregate memory/concurrency budget across simulation, lanes, partitions, record
       batches, compression and mirror work. Clamp workers to useful units of work and expose the
       same safe/balanced/performance intent through the resolved execution profile without making
-      profile choice part of logical run identity.
-- [ ] Preserve atomic staging, immutable promotion, cleanup-on-failure and retry behavior. Emit
+      profile choice part of logical run identity. Simulation/publication pools, writer/spool
+      batches and DuckDB limits are now profile-bound and mini profile invariance passes. Complete
+      this item by implementing effective multi-market scheduling and proving aggregate full-run
+      memory behavior under safe and performance; `marketWorkers` is currently recorded for
+      compatibility but the causal engine still executes market streams in one process.
+- [~] Preserve atomic staging, immutable promotion, cleanup-on-failure and retry behavior. Emit
       structured stage/dataset telemetry compatible with BUG-28 so performance regressions remain
-      diagnosable after the Python hot path is removed.
+      diagnosable after the Python hot path is removed. The accepted full run proves atomic
+      promotion, successful-spool cleanup and stage telemetry; interrupted/failure retry drills
+      remain pending.
 
 **R4. Cross-platform correctness, performance and downstream acceptance**
-- [ ] Differential-test every public and restricted dataset for schema, keys, row counts, sorted
+- [~] Differential-test every public and restricted dataset for schema, keys, row counts, sorted
       semantic digests, controls, partition coverage and relationship integrity. Add focused tests
       for nulls, empty partitions, month/year boundaries, DST, leap years, Unicode paths, Windows
-      path/handle semantics, case behavior and interrupted publication.
-- [ ] Prove repeatability across fresh processes and supported macOS/Windows machines, then prove
+      path/handle semantics, case behavior and interrupted publication. The accepted full Gulf run
+      passes exact schema/content/control/partition comparison for all 78 datasets; the remaining
+      edge cases and Windows-specific behavior are still open.
+- [~] Prove repeatability across fresh processes and supported macOS/Windows machines, then prove
       safe/balanced/performance profile invariance. When a new generator/RNG/writer version is
       intentional, compare against reviewed golden fixtures rather than silently relaxing parity.
-- [ ] Benchmark the corrected Python path and Rust candidate using the same representative fixture
+      Fresh-process mini safe/ultra invariance and one accepted full performance run pass on macOS;
+      full safe/balanced repetitions and Windows evidence remain pending.
+- [~] Benchmark the corrected Python path and Rust candidate using the same representative fixture
       and at least one full Gulf-shaped run on each operating system. Report cold/warm conditions,
       hardware, toolchain, wall time by stage, CPU core-seconds, utilization, peak aggregate RSS,
       temporary bytes, output bytes and rows/second; include downstream mirror time in end-to-end
-      claims even when it remains Python-owned.
+      claims even when it remains Python-owned. The matched macOS full-run comparison is accepted
+      at 64m49.52s Rust versus 2h40m49.70s Python (2.48095x); Windows and complete CPU/temporary-I/O
+      telemetry remain pending.
 - [ ] Land the Rust-produced immutable source snapshot through unchanged Phase-2 landing, Gate A,
       Gate B, reconciliation and curated-publication checks. Investigate any downstream exception;
       do not add engine-specific waivers to make the new output pass.

@@ -1,0 +1,63 @@
+[package]
+name = "retail-datagen-rust"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.97.1"
+description = "Standalone Rust implementation of the retail source data generator"
+license = "UNLICENSED"
+publish = false
+
+[[bin]]
+name = "retail-datagen-rust"
+path = "src/main.rs"
+
+[features]
+default = ["duckdb-mirror"]
+duckdb-mirror = ["dep:duckdb"]
+
+[dependencies]
+anyhow = "1"
+arrow-array = "59.2.0"
+arrow-schema = "59.2.0"
+base64 = "0.22"
+bigdecimal = "0.4.10"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+clap = { version = "4.6.1", features = ["derive"] }
+crossbeam-channel = "0.5"
+duckdb = { version = "1.10505.0", optional = true, features = ["parquet"] }
+hex = "0.4"
+hmac = "0.12"
+num-integer = "0.1"
+parquet = { version = "59.2.0", default-features = false, features = ["arrow", "snap", "zstd"] }
+rand = "0.9"
+rand_chacha = "0.9"
+rayon = "1.12.0"
+rust_decimal = { version = "1.42.1", features = ["serde-with-str"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sysinfo = "0.39.6"
+tokio = { version = "1.52.1", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v5"] }
+unicode-normalization = "0.1.24"
+walkdir = "2"
+yaml_serde = "0.10.4"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "debuginfo"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

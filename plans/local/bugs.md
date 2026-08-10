@@ -1516,6 +1516,23 @@ selects a new index or materialized projection. Closure requires a non-Mumbai re
 to render Overview and Store View promptly, the filtered SKU workbench to complete inside a frozen
 latency budget, and a live-PostgreSQL regression to prove both scope and timing.
 
+## BUG-35 · Rust accepted product lifecycle dates that Python rejects `[fixed]`
+
+**Found during Rust historical-parity testing.** A deliberately shortened Gulf scenario was
+rejected by Python because catalog products launched after the scenario end, while Rust reported
+the same document as valid. Rust had decoded the ISO dates but did not enforce Python's three
+product lifecycle bounds: launch on/before scenario end, discontinuation on/after launch, and
+discontinuation on/after scenario start.
+
+**Impact.** The retained ten-year Gulf config is valid and unaffected, but accepting an invalid
+document violates the complete-migration contract and could let Rust generate a different active
+catalog rather than fail at the same boundary as Python.
+
+**Implemented and verified.** Rust now enforces all three lifecycle bounds during config loading.
+A focused regression shortens the Gulf horizon to 2016-10-20 and proves Rust rejects its future
+catalog launches. The standalone checked-in YAML/JSON scenarios remain valid and byte-identical to
+their Python counterparts.
+
 ### Ruled out in this pass: a small Stock Transfer result set
 
 The original retained artifact genuinely contained three rows. The final clean optimizer produces

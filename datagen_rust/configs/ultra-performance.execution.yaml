@@ -1,0 +1,8 @@
+schemaVersion: retail-execution-profile/v1
+profile: ultra-performance
+datagen:
+  marketWorkers: 2
+  partitionWorkers: 16
+  duckdbThreads: 8
+  memoryLimitGb: 64
+  spoolChunkRows: 100000
