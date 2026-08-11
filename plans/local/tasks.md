@@ -567,6 +567,80 @@ open. Rust stage telemetry records 3215.907s causal simulation, 146.422s project
 86.716s partition publication and 667.707s DuckDB mirror work. Windows full-run timing and
 cross-platform parity are still pending.
 
+**Python/Rust execution-profile comparison (verified 2026-08-10).** A canonical comparison of
+Python's `execution/src/retail_execution/data/v1/profiles.json` datagen subset with Rust's
+`execution-profiles` output passes exactly for all four named profiles. Both engines default to
+`safe`, use schema `retail-execution-profile/v1`, expose the selected values in plan/generate
+output, record the same flattened datagen shape in `source-run-manifest.json`, and exclude runtime
+profile choice from config hash/run identity.
+
+| Profile | `marketWorkers` | `partitionWorkers` | `duckdbThreads` | `memoryLimitGb` | `spoolChunkRows` | Python/Rust values |
+|---|---:|---:|---:|---:|---:|---|
+| `safe` | 1 | 2 | 1 | 4 | 10,000 | Exact match |
+| `balanced` | 1 | 4 | 2 | 8 | 25,000 | Exact match |
+| `performance` | 2 | 8 | 6 | 32 | 50,000 | Exact match |
+| `ultra-performance` | 2 | 16 | 8 | 64 | 100,000 | Exact match |
+
+The values match, but their operational meaning is not fully identical:
+
+| Profile behavior | Python datagen | Rust datagen | Consequence/current status |
+|---|---|---|---|
+| Profile scope | Resolves the shared whole-platform document containing datagen, ingestion, ML and API sections. | Reads and emits the datagen section; unrelated top-level sections in a full shared document are not applied by Rust. | Rust remains isolated to datagen as required; it does not configure ingestion, ML or API. |
+| Selection and precedence | Named profile or YAML/JSON document, `custom`, per-field CLI flags and bounded `RETAIL_DATAGEN_*` environment overrides. Explicit flags win over environment, document, named profile and `safe`. | Four named CLI profiles or a YAML/JSON document; a supplied file wins over the named CLI value. A file may declare `custom`, but Rust has no per-field CLI/environment override layer. | Same checked-in profiles work; ad-hoc Python override workflows are not CLI-compatible yet. |
+| Validation bounds | `marketWorkers` <= 4, partition/DuckDB workers <= 32, spool rows <= 1,000,000, >= 0.25 GiB per partition worker; memory accepts finite values >= 0.5 GiB. | Same worker/spool/ratio bounds, but memory is an integer >= 1 GiB. | The four named profiles are identical; fractional-memory custom profiles are Python-only. |
+| `marketWorkers` | Effective process count is `min(configured, market count)`; independent markets run in a `ProcessPoolExecutor` and merge deterministically. | Recorded for contract/manifest parity, but current causal market streams execute in one Rust process. | No effect for single-market Gulf; multi-market throughput does not yet receive the named profile's market-level parallelism. |
+| `partitionWorkers` | Bounds concurrent partition CSV-to-Parquet workers; it does not create a shared simulation thread pool inside a market process. | Sizes the dedicated Rayon simulation pool and the bounded partition publisher. | Same number controls a broader Rust hot path, so profile timing cannot be compared as worker-for-worker scheduling equivalence. |
+| `duckdbThreads` | Controls the final mirror; each partition conversion uses one isolated DuckDB thread. | Controls the final mirror; Parquet parts are written directly with Arrow and need no partition-conversion DuckDB. | The mirror control is equivalent; the publication pipeline is intentionally different. |
+| `memoryLimitGb` | Caps the final mirror and derives each partition conversion cap as `max(0.25, limit/workers)`. It is not a complete Python process-RSS cap. | Caps DuckDB mirror working memory only. Native simulation, Arrow batches and publisher memory are bounded indirectly by workers/batch sizes, not this field. | Rust's 38.997-GB measured process-tree peak under the 32-GB profile is possible and remains a memory-optimization item. |
+| `spoolChunkRows` | Maximum row buffer for Python `RowSpool` streams. | Batch/Parquet row-group ceiling and spool control; the commerce projection applies an additional 10,000-row internal cap. | Values match, but buffer topology and exact memory effect differ. |
+
+**Rust features incorporated and proven.** The complete Gulf run enabled all eleven source feature
+flags and passed the exhaustive 78-dataset Python comparison. The implemented native scope is:
+
+- [x] Source-config v13 YAML/JSON loading, Python-compatible defaults and validation, canonical
+      config hashing, lifecycle-date rejection and standalone copies of every checked-in scenario.
+- [x] Python-compatible deterministic seed derivation, CPython RNG/distribution behavior, stable
+      Shopify/Business Central IDs, dates/time zones, decimal arithmetic and half-even rounding.
+- [x] Generated, hybrid and explicit catalogs; Gulf lubricant plus IN/US/GB/DE retail catalog
+      packs; exact product/variant targets, lifecycle/successor links, assortment and pricing.
+- [x] Causal demand, seasonality, lifecycle, price/promotion/event effects, holidays, local events,
+      weather, macro/FX and optional pandemic signals; inventory constraints, lost sales and
+      reproducible controls.
+- [x] Customers, segments/channels, orders and multi-line baskets, tax, fulfillment orders/lines,
+      split fulfillments/status history, returns, refunds and webhook-HMAC fixtures.
+- [x] The full configured operation feature set: `detailedFulfillment`, `returnsAndRefunds`,
+      `webhookFixtures`, `inventoryStateMatrix`, `supplyChain`, `warehouseOperations`, `transfers`,
+      `supplierPlanning`, `promotionPlanning`, `allocationEvidence` and `storeInventory`.
+- [x] Warehouse/store inventory and stockouts; purchase orders/receipts, cost layers, inbound
+      status, batches/expiry/waste, transfers/shipments, vendors/terms/performance/capacity,
+      warehouse capacity/budgets, service lanes, replenishment and allocation evidence.
+- [x] All source-contract v13 projections: 22 Shopify, 34 Business Central, 17 companion and 5
+      restricted hidden-truth logical datasets.
+- [x] Direct bounded Arrow/Parquet writing with day/month partitions, Snappy/Zstd/uncompressed
+      encoding, consolidated DuckDB mirror, source schema, resolved YAML/JSON, manifests, controls,
+      hashes, process telemetry, atomic staging/promotion and cleanup on an unsuccessful run.
+- [x] Standalone validate/plan/generate/catalog-snapshot/profile-list commands plus a two-way
+      DuckDB `EXCEPT ALL` Python/Rust comparison command.
+- [~] Retail ecommerce and multi-market configuration/catalog logic is implemented and focused
+      parity tests pass, but a full retained retail multi-market run has not yet passed the same
+      exhaustive acceptance used for Gulf.
+
+**Important Python/Rust differences and remaining gaps.** These are deliberate implementation
+differences or unfinished compatibility items, not logical mismatches in the accepted Gulf run:
+
+| Area | Python | Rust | Status/impact |
+|---|---|---|---|
+| Runtime | CPython objects, multiprocessing, thread-based publication and DuckDB conversion. | Native Rust, Rayon, bounded binary spools and direct Arrow/Parquet publication. | Main source of the accepted 2.48095x Gulf wall-time gain. |
+| Field/catalog ownership | Dataset fields are inferred from the first row (with empty-dataset declarations); catalog packs are Python constants. | Source-field v13 and materialized catalog packs are embedded from versioned JSON under `datagen_rust/contracts/`. | Makes Rust standalone and fail-closed against schema drift; contract assets are needed to build from source. |
+| Public formats | Python writer supports the configured authoritative CSV or Parquet path and builds the DuckDB mirror. | Requires Parquet in `output.publicFormats` and emits Parquet plus DuckDB only. | CSV-only Rust generation is not implemented. |
+| Physical files | CSV-to-DuckDB-to-Parquet writer with Python/DuckDB metadata and encodings. | Direct Arrow Parquet writer with Rust metadata/row groups. | Logical rows match; Parquet/DuckDB bytes and file sizes are not expected to match. |
+| Existing run behavior | Can validate/reuse an immutable complete target and supports its configured overwrite workflow. | Refuses an existing target; always stages a new run and atomically renames it. | Safer comparison isolation, but Python retry/reuse/overwrite CLI parity is incomplete. |
+| CLI extras | Includes locale/catalog metadata commands and fine-grained execution overrides. | Adds catalog snapshot and exact run comparison commands; lacks locale listing and per-field overrides. | Operational CLI parity is partial even though generation parity passes. |
+| Multi-market concurrency | Independent market processes are active and measured. | Market logic is supported, but effective market-process parallelism is one. | Correctness path exists; performance/profile behavior remains open for retail multi-market runs. |
+| Memory evidence | Retained comparison exposes a 24.453-GB peak single-process measure; aggregate concurrent RSS was unavailable. | Corrected Gulf measured 38.997 GB process-tree RSS. | Measurement scopes differ, but Rust has not demonstrated the requested memory reduction. |
+| Acceptance breadth | Authoritative Python implementation across checked-in scenarios and macOS/Windows workflows. | Exact full Gulf on macOS plus mini/profile/catalog tests. | Full retail, repeat full profiles and Windows exact/timing evidence remain pending. |
+| Downstream status | Existing source generator used by the current ingestion/ML workflow. | Output remains comparison-only; no ingestion, ML, API or pin was changed. | No cutover is authorized by the Gulf comparison alone. |
+
 **R0. Baseline, Python ceiling and go/no-go gate**
 - [ ] Capture reproducible macOS and Windows baselines from the same pinned config, source-contract
       version, generator version, execution profile and clean output state. Record total and
@@ -1867,8 +1941,8 @@ production.
    after seeing the result.
 2. **Store unit cost.** 6 of 2,552 store cells have no cost-carrying receipt and
    are excluded with `ABC_UNIT_COST_UNAVAILABLE` rather than inheriting DC cost.
-3. **DC interval basis.** A DC's demand is the additive P50 of its rank-1-supplied
-   stores, which policy v2 permits; its safety stock withholds under
+3. **DC interval basis.** A DC's demand is the additive Decision-#95 `expected_units` of its
+   rank-1-supplied stores; P50/P90 remain non-additive quantiles. Its safety stock withholds under
    `NODE_INTERVAL_BASIS_UNAVAILABLE` because `sumOfChannelP90: forbidden` and the
    aggregate residual variability is not carried in the forecast artifact.
    Producing it is a forecasting change, not a serving one.
@@ -1881,10 +1955,38 @@ production.
    their inherited reason codes (`LANDING_BACKFILL_DEPENDENCY`,
    `PRICE_AVAILABILITY_BACKFILLED`). Phase 4 changed neither.
 
+## Forecast Scenario Planning v1 — standalone pre–Phase-5 workstream
+- [x] Freeze Decision #96, S1–S27 and the `FSP-V1-A1` button-only
+      `approved_pending_implementation` parity amendment without changing the frozen screen status.
+- [x] Implement `plans/local/scenario-planning-implementation-plan.md` through the fail-closed
+      pre-activation state in dependency order:
+      approved assumption/context contracts; migrations and fail-closed activation; complete price
+      provenance; offline materializer; version-pinned bootstrap GET; stateless Go calculation POST;
+      React modal; golden/parity tests; live `0026` database checks; and browser smoke verification.
+- [x] Activate the explicitly labelled Gulf India local-demo assumption bundle, matching August 2
+      inventory publication, base context and inventory extension; browser-run the High Demand
+      preset through all four metric families. The local-only command refuses non-local environments.
+- [ ] Replace the local-demo values with a product/quant-approved production assumption bundle.
+      Synthetic test values remain non-activatable and local-demo approval is not production approval.
+- [ ] Activate the production context, complete production accessibility/human review, then append a
+      distinct production live-status amendment for `#forecastScenarioBtn`.
+
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 - [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.
-- [ ] On the primary response-rich preset, require ≥25 actually gated SKU×store series per
-      enabled department independently in India and US; configured SKU/store counts are not proof.
+- [ ] Declare the evaluated tenant's governed market set in `P5-1P` before generation, and freeze
+      it; every market-scoped gate resolves against that set under `P5-D26`, never against a market
+      count written into plan text. Narrowing a set after results is refused like any other
+      post-result gate change.
+- [ ] On the primary response-rich preset, require ≥25 actually gated distinct SKU×store pairs per
+      enabled department independently in **every market of that governed set**; configured
+      SKU/store counts are not proof, and channels may not be double-counted.
+- [ ] Record the measured per-publication starting point in
+      `contracts/evidence/phase5-entry-record.json` at `P5-0` — publication identity, market set,
+      row counts, temporal grades, feasibility audit, carried unavailable reasons. The plan states
+      what is measured and what each measurement decides; it never carries the values.
+- [ ] Author the absolute `market_id + currency_code` pricing rule for every market in the governed
+      set before pricing runs. Decision #39 fails closed without it; this is per-market onboarding,
+      not a runtime fallback.
 - [ ] On `pricing-evidence-sparse`, publish a reason-coded `insufficient_evidence` state rather
       than empty or fabricated recommendations.
 - [ ] Build price tiers, empirical-Bayes pools and acceptance coverage within market; never pool
@@ -1894,7 +1996,8 @@ production.
 - [ ] Publish revenue-objective price recommendations first under max-change/dominance rules.
 - [ ] Enable margin objective/floor only when an accepted temporal cost ledger produces
       provenance-matched cost-as-of in the same local currency.
-- [ ] Price simulation; scenario planning.
+- [ ] Fitted Price Simulation. Forecast Scenario Planning v1 is the separate Decision-#96
+      pre–Phase-5 workstream; a later fitted Forecast integration requires a v2 contract.
 - [ ] Competitor monitor: product-matching + confidence gate + competitor-aware response.
 - [ ] Promotion planner: uplift / cannibalisation / bundle / segment models.
 - [ ] Resolve overlapping promotion merchandise targets by `sku > dept > category`; reject
@@ -1912,10 +2015,12 @@ production.
 - [ ] Require screenshot/DOM/data parity and human review for each Pricing/Competitor/Promotion
       page before Demo 5; exact local-currency symbols/formatting and global display-currency
       behavior are part of the acceptance test.
-- [ ] **Demo checkpoint 5 / exit:** gates are enforced per market; every recommendation carries
-      market/currency and is guardrail-valid; Pricing/Competitor/Promotion screens render live
-      response-rich and sparse-evidence outcomes in the original UI; unavailable margin follows
-      the reviewed presentation and is not synthesized.
+- [ ] **Demo checkpoint 5 / exit:** gates are enforced independently for every market in the
+      evaluated tenant's governed set; every recommendation carries market/currency and is
+      guardrail-valid; Pricing/Competitor/Promotion screens render live response-rich and
+      sparse-evidence outcomes in the original UI; unavailable margin follows the reviewed
+      presentation and is not synthesized. A scope that cannot earn acceptance returns its
+      reason-coded refusal — an honest refusal is a passing outcome, not a blocked one.
 
 ## Phase 6 — Aarv-based Go API, workflow & governance (`api/`, `db/`)
 - [ ] Keep [Aarv](https://github.com/nilshah80/aarv) limited to the HTTP boundary: pin exact core
@@ -1982,7 +2087,8 @@ production.
 - [ ] Verify multi-currency (FX) display and explicit market/department
       `insufficient_evidence` pricing state across all relevant screens using the reviewed
       original element locations, not new global banners or phase cards.
-- [ ] Wire interactive what-ifs (scenario/simulation) to the API.
+- [ ] Wire remaining separately approved simulations to the API; Forecast Scenario Planning v1 is
+      delivered and reviewed under the earlier Decision-#96 workstream.
 - [ ] Build rich capture forms the mockup only stubs (§8.3).
 - [ ] Remove all remaining core-screen sample/stub data and demo-only code paths. Navigation may
       not advertise phase numbers or implementation status.

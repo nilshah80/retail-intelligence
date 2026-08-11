@@ -19,7 +19,7 @@ const (
 	// domain with datagen and ingestion by admitting marketplace. Older runs stay
 	// immutable but are ineligible, so this pin moves with the database boundary or
 	// the API fails closed against a correctly migrated schema.
-	ForecastMigrationRevision = "0024_warehouse_service_metrics"
+	ForecastMigrationRevision = "0027_scenario_hardening"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"

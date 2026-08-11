@@ -263,7 +263,7 @@ const responses: Record<string, unknown> = {
   }
 };
 
-function renderForecast() {
+function renderForecast(channelType = "") {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   return render(
     <QueryClientProvider client={client}>
@@ -271,7 +271,7 @@ function renderForecast() {
         dashboard={dashboard}
         storeId=""
         onStoreId={() => undefined}
-        channelType=""
+        channelType={channelType}
       />
     </QueryClientProvider>
   );
@@ -352,6 +352,149 @@ describe("Demand Forecast parity contract", () => {
 
     fireEvent.click(screen.getByRole("button", {name: "Compare Versions"}));
     expect(screen.getByRole("dialog", {name: "Compare Versions"})).toBeInTheDocument();
+  });
+
+  it("runs a tuple-pinned scenario with dirty-key-only overrides", async () => {
+    const context = {
+      schemaVersion: "retail-forecast-scenario-context-bootstrap/v1",
+      forecastVersion: envelope.versionId,
+      scenarioContextVersion: "a".repeat(64),
+      inventory: null,
+      scenarioDecisionAsOf: envelope.decisionAsOf
+    };
+    const coverage = {numerator: 1, denominator: 1, grain: "series_key", pct: 100};
+    const floatMetric = {
+      current: {availability: "available", value: 100, reasonCodes: []},
+      scenario: {availability: "available", value: 102, reasonCodes: []},
+      impact: {availability: "available", value: 2, reasonCodes: []},
+      impactPct: 2,
+      coverage
+    };
+    const unavailableMoney = {
+      currencyCode: null,
+      rateMapContentFingerprint: null,
+      current: {availability: "unavailable", valueMinor: null, reasonCodes: ["REPORTING_FX_UNAVAILABLE"]},
+      scenario: {availability: "unavailable", valueMinor: null, reasonCodes: ["REPORTING_FX_UNAVAILABLE"]},
+      impact: {availability: "unavailable", valueMinor: null, reasonCodes: ["REPORTING_FX_UNAVAILABLE"]},
+      coverage: {numerator: 0, denominator: 1, grain: "money_fact", pct: 0}
+    };
+    const localMoney = {
+      marketId: "india-west",
+      currencyCode: "INR",
+      current: {availability: "available", valueMinor: 16_400_000_000, reasonCodes: []},
+      scenario: {availability: "available", valueMinor: 18_600_000_000, reasonCodes: []},
+      impact: {availability: "available", valueMinor: 2_200_000_000, reasonCodes: []},
+      coverage: {numerator: 1, denominator: 1, grain: "money_fact", pct: 100}
+    };
+    const scenarioResponse = {
+      schemaVersion: "retail-forecast-scenario-assumption/v1",
+      dataMode: "assumption_projection",
+      authority: {
+        forecastVersion: context.forecastVersion,
+        scenarioContextVersion: context.scenarioContextVersion,
+        inventory: null
+      },
+      scenarioDecisionAsOf: context.scenarioDecisionAsOf,
+      assumptionSetId: "approved-v1",
+      assumptionVersion: "1",
+      assumptionSemanticFingerprint: "b".repeat(64),
+      assumptionApprovalEventId: 1,
+      assumptionApprovalSemanticFingerprint: "c".repeat(64),
+      presetId: "expected_demand",
+      resolvedVector: {
+        demandAdjustmentPct: 0,
+        priceChangePct: 2,
+        promotionUpliftPct: 0,
+        competitorAvailability: "normal",
+        weatherEvent: "normal",
+        atpAdjustment: 0
+      },
+      factorBasis: Object.fromEntries([
+        "demandAdjustment",
+        "promotionUplift",
+        "priceResponse",
+        "competitorSensitivity",
+        "weatherSensitivity",
+        "atpAdjustment"
+      ].map((factor) => [factor, {
+        valueSource: factor === "priceResponse" ? "user_override" : "preset",
+        coefficientSource: factor === "priceResponse"
+          ? "assumption_bundle"
+          : "not_applicable_direct_input"
+      }])),
+      projectionBasis: "assumption_set",
+      evidenceClass: "synthetic_scenario",
+      statisticalGateStatus: "not_applicable",
+      disclosure: "Assumption-based projection; not fitted or causal.",
+      priceSnapshotContentFingerprint: "d".repeat(64),
+      priceProvenance: [],
+      calculation: {
+        demandUnits: floatMetric,
+        revenuePotential: [localMoney],
+        reportingRevenuePotential: unavailableMoney,
+        requiredInventoryUnits: floatMetric,
+        requiredInventoryValue: [localMoney],
+        reportingRequiredInventoryValue: unavailableMoney,
+        demandWeightedSeriesStockoutRiskPct: {...floatMetric, impactPct: undefined, impactPoints: 2},
+        appliedPrices: [],
+        appliedPriceSummaries: [{
+          marketId: "india-west",
+          currencyCode: "INR",
+          availability: "available",
+          requestedPriceChangePct: 2,
+          baselineValueWeightedAppliedPriceChangePct: 2,
+          reasonCodes: [],
+          coverage
+        }]
+      }
+    };
+    let posted: unknown;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const url = String(input);
+      if (url.includes("/forecast/scenario/context")) {
+        return {ok: true, status: 200, json: async () => context};
+      }
+      if (url.endsWith("/forecast/scenario") && init?.method === "POST") {
+        posted = JSON.parse(String(init.body));
+        return {ok: true, status: 200, json: async () => scenarioResponse};
+      }
+      const key = Object.keys(responses).find((candidate) =>
+        url.includes(`/forecast/${candidate}`)
+      );
+      return {ok: true, status: 200, json: async () => responses[key ?? "summary"]};
+    }));
+    renderForecast("marketplace");
+    await screen.findByText("Forecast vs Actual");
+    fireEvent.click(screen.getByRole("button", {name: "Scenario Planning"}));
+    const dialog = await screen.findByRole("dialog", {name: "Demand Scenario Planning"});
+    fireEvent.change(await within(dialog).findByLabelText("Price Change (%)"), {
+      target: {value: "2"}
+    });
+    fireEvent.click(within(dialog).getByRole("button", {name: "Run Scenario"}));
+    expect(await within(dialog).findByRole("heading", {name: "Scenario Results"})).toBeInTheDocument();
+    const comparison = within(dialog).getByRole("table", {name: "Scenario comparison"});
+    expect(within(comparison).getByText("Current Forecast")).toBeInTheDocument();
+    expect(within(comparison).getByText("Revenue Potential · india-west")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("₹18.60 Cr").length).toBeGreaterThan(0);
+    expect(within(comparison).getAllByText("+₹2.20 Cr").length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText(/Assumption-based projection; not fitted or causal/))
+      .not.toBeInTheDocument();
+    expect(posted).toMatchObject({
+      presetId: "expected_demand",
+      userOverrides: {priceChangePct: 2},
+      businessScope: {channelId: "", channelType: "marketplace"},
+      expectedAuthority: {inventory: null}
+    });
+    expect((posted as {userOverrides: Record<string, unknown>}).userOverrides)
+      .toEqual({priceChangePct: 2});
+		fireEvent.keyDown(document, {key: "Escape"});
+		expect(screen.queryByRole("dialog", {name: "Scenario Results"}))
+		  .not.toBeInTheDocument();
+		expect(screen.getByRole("button", {name: "Scenario Planning"}))
+		  .toHaveFocus();
   });
 
   it("always renders four exact-horizon health rows in reference order", async () => {

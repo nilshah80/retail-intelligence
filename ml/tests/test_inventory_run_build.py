@@ -398,6 +398,26 @@ def test_zero_positions_is_refused_rather_than_published_as_facts() -> None:
         build_artifacts(empty, replay_metrics=_metrics())
 
 
+def test_inventory_price_index_remains_numeric_when_provenance_is_present() -> None:
+    prices = _inputs().unit_prices.copy()
+    prices["currency_code"] = prices["market_id"].map(CURRENCIES)
+    prices["observation_date"] = AS_OF
+    prices["known_as_of"] = pd.Timestamp(AS_OF, tz="UTC")
+    prices["sales_version"] = 1
+    same_market_sku = (
+        (prices["market_id"] == MARKET)
+        & (prices["sku_id"] == "sku-1")
+        & (prices["channel_id"] == "online")
+    )
+    prices.loc[same_market_sku, "currency_code"] = "USD"
+
+    artifacts = build_artifacts(
+        _inputs(unit_prices=prices), replay_metrics=_metrics()
+    )
+
+    assert not artifacts["inventory_demand_at_risk"].empty
+
+
 # -- grain ---------------------------------------------------------------------
 
 def test_a_deassorted_empty_cell_is_not_emitted(artifacts) -> None:

@@ -1,0 +1,118 @@
+schemaVersion: retail-forecast-scenario-assumptions/v1
+assumptionSetId: fsa_local_demo_gulf_india_v1
+version: local-demo-1
+artifactClass: serving_candidate
+servingEligible: true
+projectionBasis: assumption_set
+evidenceClass: synthetic_scenario
+statisticalGateStatus: not_applicable
+disclosure: >-
+  Local demonstration assumptions for the Gulf India PoC only. These coefficients
+  are illustrative, assumption-based, and not fitted evidence or a production
+  pricing recommendation. Approval and activation are permitted only in the local
+  Scenario Planning environment.
+
+requestBounds:
+  demandAdjustmentPct: {minimum: "-50", maximum: "50"}
+  priceChangePct: {minimum: "-5", maximum: "5"}
+  promotionUpliftPct: {minimum: "-50", maximum: "100"}
+  competitorAvailability: [normal, stockout, promotion]
+  weatherEvent: [normal, positive, negative]
+
+marketCurrencyRules:
+  - marketId: gulf-india
+    currencyCode: INR
+    minimumPriceMinor: 1
+    maximumPriceMinor: 20000000
+    candidateStepMinor: 1
+    gridOriginMinor: 0
+    roundingMode: round_half_even
+    priceFreshnessDays: 90
+    observedSupportWindowDays: 180
+
+# One deliberately broad baseline tier per department keeps the local demo easy
+# to explain. A production bundle must replace these illustrative coefficients
+# and may introduce product/quant-approved price bands.
+tierCoefficients:
+  - marketId: gulf-india
+    deptId: adjacent-new-energy
+    baselinePriceTier: local_demo_all_prices
+    lowerPriceMinor: 1
+    upperPriceMinor: null
+    assumedBeta: "-1.1"
+    competitorStockoutSensitivity: "0.08"
+    competitorPromotionSensitivity: "0.04"
+    weatherPositiveSensitivity: "0.05"
+    weatherNegativeSensitivity: "0.05"
+  - marketId: gulf-india
+    deptId: automotive-engine-oils
+    baselinePriceTier: local_demo_all_prices
+    lowerPriceMinor: 1
+    upperPriceMinor: null
+    assumedBeta: "-1.1"
+    competitorStockoutSensitivity: "0.08"
+    competitorPromotionSensitivity: "0.04"
+    weatherPositiveSensitivity: "0.05"
+    weatherNegativeSensitivity: "0.05"
+  - marketId: gulf-india
+    deptId: driveline-specialities
+    baselinePriceTier: local_demo_all_prices
+    lowerPriceMinor: 1
+    upperPriceMinor: null
+    assumedBeta: "-1.1"
+    competitorStockoutSensitivity: "0.08"
+    competitorPromotionSensitivity: "0.04"
+    weatherPositiveSensitivity: "0.05"
+    weatherNegativeSensitivity: "0.05"
+  - marketId: gulf-india
+    deptId: industrial-lubricants
+    baselinePriceTier: local_demo_all_prices
+    lowerPriceMinor: 1
+    upperPriceMinor: null
+    assumedBeta: "-1.1"
+    competitorStockoutSensitivity: "0.08"
+    competitorPromotionSensitivity: "0.04"
+    weatherPositiveSensitivity: "0.05"
+    weatherNegativeSensitivity: "0.05"
+
+presets:
+  - presetId: expected_demand
+    label: Expected Demand
+    demandAdjustmentPct: "0"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "0"
+  - presetId: high_demand
+    label: High Demand
+    demandAdjustmentPct: "10"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: positive
+    atpAdjustment: "0"
+  - presetId: low_demand
+    label: Low Demand
+    demandAdjustmentPct: "-10"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: negative
+    atpAdjustment: "0"
+  - presetId: promotion_upside
+    label: Promotion Upside
+    demandAdjustmentPct: "0"
+    priceChangePct: "-5"
+    promotionUpliftPct: "15"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "0"
+  - presetId: supply_constrained
+    label: Supply-Constrained
+    demandAdjustmentPct: "0"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "-0.25"

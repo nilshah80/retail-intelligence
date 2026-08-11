@@ -397,6 +397,179 @@ export const forecastVersionsSchema = z.object({
   }))
 });
 
+const scenarioInventoryAuthoritySchema = z.object({
+  inventoryVersion: z.string().regex(/^iv_[0-9a-f]{16}$/),
+  inventoryExtensionVersion: z.string().regex(/^[0-9a-f]{64}$/)
+}).strict();
+
+export const scenarioAuthoritySchema = z.object({
+  forecastVersion: z.string().regex(/^fv_[0-9a-f]{16}$/),
+  scenarioContextVersion: z.string().regex(/^[0-9a-f]{64}$/),
+  inventory: scenarioInventoryAuthoritySchema.nullable()
+}).strict();
+
+export const scenarioContextSchema = z.object({
+  schemaVersion: z.literal("retail-forecast-scenario-context-bootstrap/v1"),
+  forecastVersion: z.string().regex(/^fv_[0-9a-f]{16}$/),
+  scenarioContextVersion: z.string().regex(/^[0-9a-f]{64}$/),
+  inventory: scenarioInventoryAuthoritySchema.nullable(),
+  scenarioDecisionAsOf: z.string()
+}).strict();
+
+const scenarioCoverageSchema = z.object({
+  numerator: z.number().int().nonnegative(),
+  denominator: z.number().int().nonnegative(),
+  grain: z.string(),
+  pct: z.number().min(0).max(100).nullable()
+}).strict();
+
+const scenarioFloatComponentSchema = z.object({
+  availability: z.enum(["available", "partial", "unavailable"]),
+  value: z.number().nullable(),
+  reasonCodes: z.array(z.string())
+}).strict();
+
+const scenarioFloatMetricSchema = z.object({
+  current: scenarioFloatComponentSchema,
+  scenario: scenarioFloatComponentSchema,
+  impact: scenarioFloatComponentSchema,
+  impactPct: z.number().nullable().optional(),
+  impactPoints: z.number().nullable().optional(),
+  coverage: scenarioCoverageSchema
+}).strict();
+
+const scenarioMoneyComponentSchema = z.object({
+  availability: z.enum(["available", "partial", "unavailable"]),
+  valueMinor: z.number().int().nullable(),
+  reasonCodes: z.array(z.string())
+}).strict();
+
+const scenarioMoneyMetricSchema = z.object({
+  marketId: z.string(),
+  currencyCode: z.string(),
+  current: scenarioMoneyComponentSchema,
+  scenario: scenarioMoneyComponentSchema,
+  impact: scenarioMoneyComponentSchema,
+  coverage: scenarioCoverageSchema
+}).strict();
+
+const scenarioReportingMoneyMetricSchema = z.object({
+  currencyCode: z.string().nullable(),
+  rateMapContentFingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  current: scenarioMoneyComponentSchema,
+  scenario: scenarioMoneyComponentSchema,
+  impact: scenarioMoneyComponentSchema,
+  coverage: scenarioCoverageSchema
+}).strict();
+
+const scenarioSeriesKeySchema = z.object({
+  marketId: z.string(),
+  skuId: z.string(),
+  storeId: z.string(),
+  channelId: z.string()
+}).strict();
+
+const scenarioAppliedPriceSchema = z.object({
+  seriesKey: scenarioSeriesKeySchema,
+  requestedPriceChangePct: z.number(),
+  appliedPriceMinor: z.number().int().nullable(),
+  appliedPriceChangePct: z.number().nullable(),
+  availability: z.enum(["available", "unavailable"]),
+  reasonCodes: z.array(z.string())
+}).strict();
+
+const scenarioAppliedPriceSummarySchema = z.object({
+  marketId: z.string(),
+  currencyCode: z.string(),
+  availability: z.enum(["available", "partial", "unavailable"]),
+  requestedPriceChangePct: z.number(),
+  baselineValueWeightedAppliedPriceChangePct: z.number().nullable(),
+  reasonCodes: z.array(z.string()),
+  coverage: scenarioCoverageSchema
+}).strict();
+
+const scenarioFactorBasisSchema = z.object({
+  valueSource: z.enum(["preset", "user_override"]),
+  coefficientSource: z.enum([
+    "not_applicable_direct_input",
+    "assumption_bundle",
+    "not_used_neutral",
+    "unavailable"
+  ]),
+  coefficientFingerprint: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  reasonCode: z.string().optional()
+}).strict();
+
+const scenarioPriceProvenanceSchema = z.object({
+  seriesKey: scenarioSeriesKeySchema,
+  deptId: z.string(),
+  currencyCode: z.string(),
+  priceAvailable: z.boolean(),
+  unitPriceMinor: z.number().int().nullable(),
+  priceBasis: z.enum(["latest_realized_exact", "market_sku_latest_median"]).nullable(),
+  priceUnavailableReason: z.string().nullable(),
+  sourceRowIdentity: z.string().nullable(),
+  sourceRowVersion: z.string().nullable(),
+  sourceObservationDate: z.string().nullable(),
+  sourceKnownAsOf: z.string().nullable(),
+  sourceRowContentFingerprint: z.string().nullable(),
+  fallbackPopulationCount: z.number().int().nullable(),
+  fallbackObservationStart: z.string().nullable(),
+  fallbackObservationEnd: z.string().nullable(),
+  fallbackMaxKnownAsOf: z.string().nullable(),
+  fallbackMemberSetContentFingerprint: z.string().nullable(),
+  sourceCutoff: z.string(),
+  freshnessStatus: z.enum(["fresh", "stale", "unavailable"]),
+  freshnessReasonCode: z.string().nullable(),
+  observedSupportLowMinor: z.number().int().nullable(),
+  observedSupportHighMinor: z.number().int().nullable(),
+  observedSupportStart: z.string().nullable(),
+  observedSupportEnd: z.string().nullable(),
+  observedSupportContentFingerprint: z.string().nullable(),
+  baselinePriceTier: z.string().nullable(),
+  tierResolutionReason: z.string().nullable(),
+  coefficientContentFingerprint: z.string().nullable()
+}).strict();
+
+export const scenarioRunResponseSchema = z.object({
+  schemaVersion: z.literal("retail-forecast-scenario-assumption/v1"),
+  dataMode: z.literal("assumption_projection"),
+  authority: scenarioAuthoritySchema,
+  scenarioDecisionAsOf: z.string(),
+  assumptionSetId: z.string(),
+  assumptionVersion: z.string(),
+  assumptionSemanticFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  assumptionApprovalEventId: z.number().int().positive(),
+  assumptionApprovalSemanticFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  presetId: z.string(),
+  resolvedVector: z.object({
+    demandAdjustmentPct: z.number(),
+    priceChangePct: z.number(),
+    promotionUpliftPct: z.number(),
+    competitorAvailability: z.string(),
+    weatherEvent: z.string(),
+    atpAdjustment: z.number().min(-1).max(0)
+  }).strict(),
+  factorBasis: z.record(z.string(), scenarioFactorBasisSchema),
+  projectionBasis: z.literal("assumption_set"),
+  evidenceClass: z.literal("synthetic_scenario"),
+  statisticalGateStatus: z.literal("not_applicable"),
+  disclosure: z.string(),
+  priceSnapshotContentFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  priceProvenance: z.array(scenarioPriceProvenanceSchema),
+  calculation: z.object({
+    demandUnits: scenarioFloatMetricSchema,
+    revenuePotential: z.array(scenarioMoneyMetricSchema),
+    reportingRevenuePotential: scenarioReportingMoneyMetricSchema,
+    requiredInventoryUnits: scenarioFloatMetricSchema,
+    requiredInventoryValue: z.array(scenarioMoneyMetricSchema),
+    reportingRequiredInventoryValue: scenarioReportingMoneyMetricSchema,
+    demandWeightedSeriesStockoutRiskPct: scenarioFloatMetricSchema,
+    appliedPrices: z.array(scenarioAppliedPriceSchema),
+    appliedPriceSummaries: z.array(scenarioAppliedPriceSummarySchema)
+  }).strict()
+}).strict();
+
 export type DataSummary = z.infer<typeof summarySchema>;
 export type Gates = z.infer<typeof gatesSchema>;
 export type Reconciliation = z.infer<typeof reconciliationSchema>;
@@ -410,6 +583,41 @@ export type ForecastWorkbench = z.infer<typeof forecastWorkbenchSchema>;
 export type ForecastDrivers = z.infer<typeof forecastDriversSchema>;
 export type ForecastSignals = z.infer<typeof forecastSignalsSchema>;
 export type ForecastVersions = z.infer<typeof forecastVersionsSchema>;
+export type ScenarioAuthority = z.infer<typeof scenarioAuthoritySchema>;
+export type ScenarioContext = z.infer<typeof scenarioContextSchema>;
+export type ScenarioRunResponse = z.infer<typeof scenarioRunResponseSchema>;
+
+export type ScenarioRunRequest = {
+  presetId: string;
+  userOverrides: Partial<{
+    demandAdjustmentPct: number;
+    priceChangePct: number;
+    promotionUpliftPct: number;
+    competitorAvailability: "normal" | "stockout" | "promotion";
+    weatherEvent: "normal" | "positive" | "negative";
+  }>;
+  businessScope: {
+    marketId: string;
+    storeId: string;
+    channelId: string;
+    channelType?: "online" | "store" | "marketplace";
+    category: string;
+    horizonWeeks: number;
+  };
+  expectedAuthority: ScenarioAuthority;
+};
+
+export class ApiResponseError extends Error {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(path: string, status: number, payload: unknown) {
+    super(`${path} returned HTTP ${status}`);
+    this.name = "ApiResponseError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
 
 async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
   const response = await fetch(path, {headers: {Accept: "application/json"}});
@@ -417,6 +625,19 @@ async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
     throw new Error(`${path} returned HTTP ${response.status}`);
   }
   return schema.parse(await response.json());
+}
+
+async function post<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {Accept: "application/json", "Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiResponseError(path, response.status, payload);
+  }
+  return schema.parse(payload);
 }
 
 export const loadSummary = () =>
@@ -479,6 +700,13 @@ export const loadForecastSignals = () =>
   get("/api/v1/forecast/signals", forecastSignalsSchema);
 export const loadForecastVersions = () =>
   get("/api/v1/forecast/versions", forecastVersionsSchema);
+export const loadScenarioContext = (expectedForecastVersion: string) =>
+  get(
+    `/api/v1/forecast/scenario/context?expectedForecastVersion=${encodeURIComponent(expectedForecastVersion)}`,
+    scenarioContextSchema
+  );
+export const runForecastScenario = (request: ScenarioRunRequest) =>
+  post("/api/v1/forecast/scenario", request, scenarioRunResponseSchema);
 
 /**
  * The inventory/replenishment live envelope (P4-8/P4-9).

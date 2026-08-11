@@ -35,11 +35,11 @@ repository CI is prohibited.
 **Spec:** §11.8–11.10 (new tables + ingest lineage),
 `../retail_ai/docs/schema.md` (M5 workflow tables to copy).
 
-**Applied chain (head `0019_supplier_identity`).** Every client that names the required head must
-name the same one; `contracts/python/tests/test_serving_migration_pin.py` derives the head from the
-Alembic graph and fails until all six pins agree, so a migration is not complete until the ML
-materializer, the ML publisher's manifest evidence, both Go read models, the schema test and the two
-generated evidence records have moved together.
+**Migration graph head: `0027_scenario_hardening`.** Every runtime client names this required head.
+The local PostgreSQL service has been upgraded through that head, and the regenerated forecast and
+inventory closure records both name `0027_scenario_hardening`. The serving migration-pin test is green;
+the explicitly labelled local demo now has an active base context and matching inventory extension.
+Production and every authority without its own approved active tuple still fail closed.
 
 | Revision | What it publishes, and why the screen needed it |
 | --- | --- |
@@ -53,6 +53,9 @@ generated evidence records have moved together.
 | `0017_inbound_summary` | Inbound reliability per node. Delayed Receipts had been counting open orders as late. |
 | `0018_market_policy_scope` | The market budget ceilings, and the merchandise scope a supplier serves. |
 | `0019_supplier_identity` | The supplier's name and its open purchase-order value. |
+| `0025_scenario_assumptions` | Immutable multi-grain Forecast Scenario v1 bundles plus append-only product/quant approval authority. |
+| `0026_scenario_context` | Immutable forecast/commercial base context, optional inventory extension, and fail-closed activation heads. |
+| `0027_scenario_hardening` | Database-enforced scenario tier-band continuity and one final unbounded band at bundle seal. |
 
 **Why 0016 is not an optimisation.** 0010 gave each projection one index on
 `(inventory_version_id, market_id)` and no key. Every read-model join between projections matches on

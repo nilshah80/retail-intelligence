@@ -77,6 +77,10 @@ from retail_ml.inventory_publish.run_artifacts import (
     ERP_STATUS,
     GOVERNED_REASONS,
 )
+from retail_ml.inventory_run.price_resolution import (
+    PriceResolutionError,
+    build_price_index,
+)
 
 #: The two governed reasons Phase 4 may cite for an absent interval-derived
 #: value. They are different findings: one says "wait for calibration", the other
@@ -386,31 +390,25 @@ def _index_unit_prices(
     cost, which would turn a lost-sales label into an inventory-value measure.
     """
 
-    exact: dict[tuple[str, str, str, str], int] = {}
-    by_sku: dict[tuple[str, str], list[int]] = defaultdict(list)
-    for row in inputs.unit_prices.itertuples(index=False):
-        key = (
-            str(row.market_id),
-            str(row.location_id),
-            str(row.sku_id),
-            str(row.channel_id),
-        )
-        price = int(row.unit_price_minor)
-        _require(price > 0, f"non-positive realised selling price for {key}")
-        _require(key not in exact, f"duplicate realised selling price for {key}")
-        exact[key] = price
-        by_sku[(key[0], key[2])].append(price)
-
-    fallback: dict[tuple[str, str], int] = {}
-    for key, values in by_sku.items():
-        ordered = sorted(values)
-        middle = len(ordered) // 2
-        fallback[key] = (
-            ordered[middle]
-            if len(ordered) % 2
-            else (ordered[middle - 1] + ordered[middle]) // 2
-        )
-    return exact, fallback
+    # Inventory consumes only the historical integer maps. Provenance columns are
+    # deliberately excluded here: Scenario Planning validates currency-coherent
+    # provenance, while inventory's pre-scenario behavior took the same-market/SKU
+    # median numerically even when dirty source currencies disagreed. Letting the
+    # presence of new columns switch algorithms made an unrelated inventory run
+    # start failing during scenario implementation.
+    numeric_columns = [
+        "market_id",
+        "location_id",
+        "channel_id",
+        "sku_id",
+        "unit_price_minor",
+    ]
+    try:
+        return build_price_index(
+            inputs.unit_prices.loc[:, numeric_columns]
+        ).numeric_views()
+    except PriceResolutionError as exc:
+        raise InventoryBuildError(str(exc)) from exc
 
 
 def _is_aggregated(horizons: Mapping[int, Mapping[str, Any]]) -> bool:

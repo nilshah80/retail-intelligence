@@ -39,6 +39,21 @@ func main() {
 		os.Getenv("RETAIL_FORECAST_ACTIVATION_SCOPE"),
 		"active forecast scope fingerprint",
 	)
+	scenarioRetailer := flag.String(
+		"scenario-retailer",
+		os.Getenv("RETAIL_SCENARIO_RETAILER_ID"),
+		"server-configured scenario retailer authority",
+	)
+	scenarioTenant := flag.String(
+		"scenario-tenant",
+		os.Getenv("RETAIL_SCENARIO_TENANT_ID"),
+		"server-configured scenario tenant authority",
+	)
+	scenarioEnvironment := flag.String(
+		"scenario-environment",
+		os.Getenv("RETAIL_SCENARIO_ENVIRONMENT"),
+		"scenario authority environment",
+	)
 	flag.Parse()
 
 	if *gateA == "" || *gateB == "" || *publication == "" ||
@@ -89,6 +104,8 @@ func main() {
 	// no configured version id to select -- one active version total is the
 	// P4-D15 scope, so the projection is the authority.
 	reportingCurrency, reportingFX := store.ReportingFX()
+	scenarioReportingCurrency, scenarioReportingFX, scenarioReportingSource :=
+		store.ScenarioReportingFXSource()
 	inventory := readmodel.LoadInventory(inventoryLoadContext, readmodel.InventoryConfig{
 		PostgresDSN: *postgresDSN,
 		DBReadPool:  profile.API.DBReadPool,
@@ -100,7 +117,23 @@ func main() {
 	})
 	cancelInventoryLoad()
 	defer inventory.Close()
-	app, err := httpapi.New(store, forecast, inventory, profile, spec)
+	scenarioLoadContext, cancelScenarioLoad := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	scenario := readmodel.LoadScenario(scenarioLoadContext, readmodel.ScenarioConfig{
+		PostgresDSN:                *postgresDSN,
+		RetailerID:                 *scenarioRetailer,
+		TenantID:                   *scenarioTenant,
+		Environment:                *scenarioEnvironment,
+		DBReadPool:                 profile.API.DBReadPool,
+		ReportingCurrency:          scenarioReportingCurrency,
+		ReportingFXRates:           scenarioReportingFX,
+		ReportingSourceFingerprint: scenarioReportingSource,
+	})
+	cancelScenarioLoad()
+	defer scenario.Close()
+	app, err := httpapi.New(store, forecast, inventory, profile, spec, scenario)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

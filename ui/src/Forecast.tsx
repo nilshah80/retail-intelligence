@@ -1,4 +1,4 @@
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {
   FORECAST_HEALTH_ACCURACY_TARGETS,
   FORECAST_HEALTH_DISPLAY_HORIZONS,
@@ -8,7 +8,7 @@ import {
   type ForecastHealthGrain,
   type ForecastHealthStatus
 } from "./generated/forecastHealthPolicy";
-import {useQuery} from "@tanstack/react-query";
+import {useMutation, useQuery} from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -34,14 +34,19 @@ import {
   loadForecastSummary,
   loadForecastVersions,
   loadForecastWorkbench,
+  loadScenarioContext,
+  runForecastScenario,
+  ApiResponseError,
   type Dashboard,
   type ForecastFilters,
-  type ForecastWorkbench
+  type ForecastWorkbench,
+  type ScenarioRunRequest,
+  type ScenarioRunResponse
 } from "./api";
 
 type ForecastRow = ForecastWorkbench["items"][number];
 type Tab = "Overview" | "Store View" | "SKU View" | "Demand Drivers" | "Governance";
-type Modal = "actions" | "stores" | "versions" | null;
+type Modal = "actions" | "stores" | "versions" | "scenario" | null;
 
 const tabs: Tab[] = [
   "Overview",
@@ -252,7 +257,7 @@ function ForecastModal({
   stores?: ReturnType<typeof useForecastData>["stores"];
   version?: ReturnType<typeof useForecastData>["versions"];
 }) {
-  if (!modal) return null;
+  if (!modal || modal === "scenario") return null;
   const title = modal === "actions"
     ? "Forecast Action Center"
     : modal === "stores"
@@ -339,6 +344,433 @@ function ForecastModal({
         <div className="modal-foot">
           <button className="modal-action" type="button" onClick={onClose}>Close</button>
         </div>
+      </section>
+    </div>
+  );
+}
+
+const scenarioPresets = [
+  {id: "expected_demand", label: "Expected Demand"},
+  {id: "high_demand", label: "High Demand"},
+  {id: "low_demand", label: "Low Demand"},
+  {id: "promotion_upside", label: "Promotion Upside"},
+  {id: "supply_constrained", label: "Supply-Constrained"}
+];
+
+// FSP-V1-A1 permits implementation and local verification, not a production
+// rollout. Production keeps the action natively disabled until the activation
+// dossier sets the explicit build-time gate and the live parity amendment is
+// recorded. Development/test builds can exercise the completed modal safely;
+// the API still fails closed without an approved active context.
+const scenarioPlanningEnabled = import.meta.env.DEV
+	|| import.meta.env.VITE_FORECAST_SCENARIO_ENABLED === "true";
+
+type ScenarioOverrideDraft = {
+  demandAdjustmentPct: string;
+  priceChangePct: string;
+  promotionUpliftPct: string;
+  competitorAvailability: string;
+  weatherEvent: string;
+};
+
+const emptyScenarioOverrides: ScenarioOverrideDraft = {
+  demandAdjustmentPct: "",
+  priceChangePct: "",
+  promotionUpliftPct: "",
+  competitorAvailability: "",
+  weatherEvent: ""
+};
+
+function scenarioReason(error: unknown) {
+  if (error instanceof ApiResponseError && error.payload && typeof error.payload === "object") {
+    const payload = error.payload as {message?: unknown; reasonCode?: unknown};
+    if (typeof payload.message === "string") return payload.message;
+    if (typeof payload.reasonCode === "string") return payload.reasonCode.replaceAll("_", " ");
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function scenarioMoney(
+  minor: number | null,
+  currency: string | null,
+  signed = false
+) {
+  if (minor === null || currency === null) return "Not available";
+  const sign = minor < 0 ? "-" : signed && minor > 0 ? "+" : "";
+  const absoluteMinor = Math.abs(minor);
+  if (currency === "INR") return `${sign}${money(absoluteMinor) ?? "Not available"}`;
+  return `${sign}${new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2
+  }).format(absoluteMinor / 100)}`;
+}
+
+function scenarioQuantity(value: number | null, signed = false) {
+  if (value === null) return "Not available";
+  const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) return `${sign}${(absolute / 1_000_000).toFixed(2)}M`;
+  if (absolute >= 1_000) return `${sign}${(absolute / 1_000).toFixed(2)}K`;
+  return `${sign}${new Intl.NumberFormat("en-IN", {maximumFractionDigits: 2}).format(absolute)}`;
+}
+
+function scenarioMeasure(value: number | null, suffix: string, signed = false) {
+  if (value === null) return "Not available";
+  const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
+  return `${sign}${Math.abs(value).toFixed(2)}${suffix}`;
+}
+
+function scenarioCoverage(
+  metric: ScenarioRunResponse["calculation"]["demandUnits"]
+) {
+  return `${metric.current.availability.replaceAll("_", " ")} · coverage ${metric.coverage.numerator}/${metric.coverage.denominator} ${metric.coverage.grain.replaceAll("_", " ")}`;
+}
+
+function ScenarioFloatRow({
+  label,
+  metric,
+  valueSuffix = "",
+  impactSuffix = valueSuffix,
+  impactValue,
+  compactValues = false,
+  impactDirection = "neutral"
+}: {
+  label: string;
+  metric: ScenarioRunResponse["calculation"]["demandUnits"];
+  valueSuffix?: string;
+  impactSuffix?: string;
+  impactValue?: number | null;
+  compactValues?: boolean;
+  impactDirection?: "positive" | "inverse" | "neutral";
+}) {
+  const impact = impactValue === undefined ? metric.impact.value : impactValue;
+  const render = (value: number | null, suffix: string, signed = false) =>
+    compactValues && suffix === ""
+      ? scenarioQuantity(value, signed)
+      : scenarioMeasure(value, suffix, signed);
+  const impactClass = impact === null || impact === 0 || impactDirection === "neutral"
+    ? undefined
+    : (impactDirection === "positive" ? impact > 0 : impact < 0)
+      ? "scenario-impact-positive"
+      : "scenario-impact-negative";
+  return (
+    <tr>
+      <td><strong>{label}</strong><small>{scenarioCoverage(metric)}</small></td>
+      <td>{render(metric.current.value, valueSuffix)}</td>
+      <td>{render(metric.scenario.value, valueSuffix)}</td>
+      <td className={impactClass}>{render(impact, impactSuffix, true)}</td>
+    </tr>
+  );
+}
+
+function ScenarioMoneyRow({
+  label,
+  metric,
+  impactDirection = "neutral"
+}: {
+  label: string;
+  metric: ScenarioRunResponse["calculation"]["revenuePotential"][number];
+  impactDirection?: "positive" | "inverse" | "neutral";
+}) {
+  const impact = metric.impact.valueMinor;
+  const impactClass = impact === null || impact === 0 || impactDirection === "neutral"
+    ? undefined
+    : (impactDirection === "positive" ? impact > 0 : impact < 0)
+      ? "scenario-impact-positive"
+      : "scenario-impact-negative";
+  return (
+    <tr>
+      <td>
+        <strong>{label} · {metric.marketId}</strong>
+        <small>{metric.current.availability.replaceAll("_", " ")} · coverage {metric.coverage.numerator}/{metric.coverage.denominator} money facts</small>
+      </td>
+      <td>{scenarioMoney(metric.current.valueMinor, metric.currencyCode)}</td>
+      <td>{scenarioMoney(metric.scenario.valueMinor, metric.currencyCode)}</td>
+      <td className={impactClass}>{scenarioMoney(impact, metric.currencyCode, true)}</td>
+    </tr>
+  );
+}
+
+function ScenarioModal({
+  open,
+  onClose,
+  forecastVersion,
+  filters
+}: {
+  open: boolean;
+  onClose: () => void;
+  forecastVersion: string;
+  filters: ForecastFilters;
+}) {
+	const dialogRef = useRef<HTMLElement>(null);
+	const [presetId, setPresetId] = useState("expected_demand");
+  const [overrides, setOverrides] = useState<ScenarioOverrideDraft>(emptyScenarioOverrides);
+  const context = useQuery({
+    queryKey: ["forecast-scenario-context", forecastVersion],
+    queryFn: () => loadScenarioContext(forecastVersion),
+    enabled: open,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false
+  });
+	const mutation = useMutation({
+    mutationFn: runForecastScenario,
+    onError: (error) => {
+      if (error instanceof ApiResponseError && error.status === 409) {
+        void context.refetch();
+      }
+		}
+	});
+	useEffect(() => {
+		if (open) return;
+		mutation.reset();
+		setPresetId("expected_demand");
+		setOverrides(emptyScenarioOverrides);
+	}, [open]);
+	useEffect(() => {
+		if (!open) return;
+		const returnFocus = document.getElementById("forecastScenarioBtn")
+			?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+		const frame = window.requestAnimationFrame(() => {
+			dialogRef.current?.querySelector<HTMLElement>("select")?.focus();
+		});
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				onClose();
+				return;
+			}
+			if (event.key !== "Tab" || !dialogRef.current) return;
+			const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+				'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+			)).filter((element) => !element.hasAttribute("hidden"));
+			if (focusable.length === 0) {
+				event.preventDefault();
+				return;
+			}
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			if (event.shiftKey && document.activeElement === first) {
+				event.preventDefault();
+				last.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first.focus();
+			}
+		};
+		document.addEventListener("keydown", handleKeyDown);
+		return () => {
+			window.cancelAnimationFrame(frame);
+			document.removeEventListener("keydown", handleKeyDown);
+			if (returnFocus?.isConnected) returnFocus.focus();
+		};
+	}, [open]);
+	if (!open) return null;
+
+  function updateOverride(field: keyof ScenarioOverrideDraft, value: string) {
+    setOverrides((current) => ({...current, [field]: value}));
+    mutation.reset();
+  }
+
+  function selectPreset(value: string) {
+    setPresetId(value);
+    setOverrides(emptyScenarioOverrides);
+    mutation.reset();
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!context.data) return;
+    const userOverrides: ScenarioRunRequest["userOverrides"] = {};
+    for (const field of [
+      "demandAdjustmentPct",
+      "priceChangePct",
+      "promotionUpliftPct"
+    ] as const) {
+      if (overrides[field] !== "") userOverrides[field] = Number(overrides[field]);
+    }
+    if (overrides.competitorAvailability !== "") {
+      userOverrides.competitorAvailability = overrides.competitorAvailability as
+        "normal" | "stockout" | "promotion";
+    }
+    if (overrides.weatherEvent !== "") {
+      userOverrides.weatherEvent = overrides.weatherEvent as
+        "normal" | "positive" | "negative";
+    }
+    mutation.mutate({
+      presetId,
+      userOverrides,
+      businessScope: {
+        marketId: filters.marketId ?? "",
+        storeId: filters.storeId ?? "",
+        channelId: "",
+        ...(filters.channelType ? {channelType: filters.channelType as
+          "online" | "store" | "marketplace"} : {}),
+        category: filters.category ?? "",
+        horizonWeeks: filters.horizonWeeks ?? 4
+      },
+      expectedAuthority: {
+        forecastVersion: context.data.forecastVersion,
+        scenarioContextVersion: context.data.scenarioContextVersion,
+        inventory: context.data.inventory
+      }
+    });
+  }
+
+  const result = mutation.data;
+  const reportingRevenue = result?.calculation.reportingRevenuePotential;
+  const reportingInventory = result?.calculation.reportingRequiredInventoryValue;
+  const localRevenue = result?.calculation.revenuePotential[0];
+  const localInventory = result?.calculation.requiredInventoryValue[0];
+  const summaryRevenueMinor = reportingRevenue?.scenario.valueMinor
+    ?? localRevenue?.scenario.valueMinor
+    ?? null;
+  const summaryRevenueCurrency = reportingRevenue?.currencyCode
+    ?? localRevenue?.currencyCode
+    ?? null;
+  const summaryInventoryMinor = reportingInventory?.scenario.valueMinor
+    ?? localInventory?.scenario.valueMinor
+    ?? null;
+  const summaryInventoryCurrency = reportingInventory?.currencyCode
+    ?? localInventory?.currencyCode
+    ?? null;
+  return (
+    <div className="modal-backdrop open" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onClose();
+    }}>
+		<section
+			className="modal forecast-modal scenario-modal"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="scenario-modal-title"
+			aria-describedby={result ? undefined : "scenario-modal-description"}
+			aria-busy={context.isPending || mutation.isPending}
+			ref={dialogRef}
+		>
+        <div className="modal-head">
+          <div>
+            <h3 id="scenario-modal-title">{result ? "Scenario Results" : "Demand Scenario Planning"}</h3>
+			{!result && <p id="scenario-modal-description">Read-only what-if projection</p>}
+          </div>
+          <button className="modal-close" type="button" aria-label="Close Scenario Planning" onClick={onClose}>✕</button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="modal-body">
+            {context.isPending && <div className="modal-state">Pinning the active scenario context…</div>}
+            {context.error && (
+              <div className="modal-state modal-error" role="alert">
+                Scenario context unavailable: {scenarioReason(context.error)}
+              </div>
+            )}
+            {context.data && !result && (
+              <>
+                <div className="scenario-form-grid">
+                  <label>
+                    Preset
+                    <select autoFocus value={presetId} onChange={(event) => selectPreset(event.target.value)}>
+                      {scenarioPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                    </select>
+                  </label>
+                  {([
+                    ["demandAdjustmentPct", "Demand Adjustment (%)"],
+                    ["priceChangePct", "Price Change (%)"],
+                    ["promotionUpliftPct", "Promotion Uplift (%)"]
+                  ] as const).map(([field, label]) => (
+                    <label key={field}>
+                      {label}
+                      <input
+                        type="number"
+                        step="any"
+                        value={overrides[field]}
+                        placeholder="Use preset"
+                        onChange={(event) => updateOverride(field, event.target.value)}
+                      />
+                    </label>
+                  ))}
+                  <label>
+                    Competitor Availability
+                    <select value={overrides.competitorAvailability} onChange={(event) => updateOverride("competitorAvailability", event.target.value)}>
+                      <option value="">Use preset</option>
+                      <option value="normal">Normal</option>
+                      <option value="stockout">Stock-out</option>
+                      <option value="promotion">Promotion</option>
+                    </select>
+                  </label>
+                  <label>
+                    Weather / Event
+                    <select value={overrides.weatherEvent} onChange={(event) => updateOverride("weatherEvent", event.target.value)}>
+                      <option value="">Use preset</option>
+                      <option value="normal">Normal</option>
+                      <option value="positive">Positive</option>
+                      <option value="negative">Negative</option>
+                    </select>
+                  </label>
+                </div>
+              </>
+            )}
+            {mutation.error && (
+              <div className="modal-state modal-error" role="alert">
+                {mutation.error instanceof ApiResponseError && mutation.error.status === 409
+                  ? "The scenario authority changed. The current tuple has been refreshed; run again."
+                  : scenarioReason(mutation.error)}
+              </div>
+            )}
+            {result && (
+              <section className="scenario-results" aria-live="polite">
+                <div className="scenario-summary-grid">
+                  <div className="scenario-summary-item"><span>Demand Units</span><strong>{scenarioQuantity(result.calculation.demandUnits.scenario.value)}</strong></div>
+                  <div className="scenario-summary-item"><span>Revenue Potential</span><strong>{scenarioMoney(summaryRevenueMinor, summaryRevenueCurrency)}</strong></div>
+                  <div className="scenario-summary-item"><span>Required Inventory</span><strong>{scenarioMoney(summaryInventoryMinor, summaryInventoryCurrency)}</strong></div>
+                </div>
+                <div className="scenario-results-table-wrap">
+                  <table className="table scenario-results-table" aria-label="Scenario comparison">
+                    <thead><tr><th>Metric</th><th>Current Forecast</th><th>Scenario</th><th>Impact</th></tr></thead>
+                    <tbody>
+                      <ScenarioFloatRow label="Demand" metric={result.calculation.demandUnits} impactValue={result.calculation.demandUnits.impactPct ?? null} impactSuffix="%" compactValues impactDirection="positive" />
+                      <ScenarioFloatRow label="Stock-out Risk" metric={result.calculation.demandWeightedSeriesStockoutRiskPct} impactValue={result.calculation.demandWeightedSeriesStockoutRiskPct.impactPoints ?? null} valueSuffix="%" impactSuffix=" pts" impactDirection="inverse" />
+                      {result.calculation.revenuePotential.map((metric) => <ScenarioMoneyRow key={`revenue-${metric.marketId}-${metric.currencyCode}`} label="Revenue Potential" metric={metric} impactDirection="positive" />)}
+                      <ScenarioFloatRow label="Required Inventory Units" metric={result.calculation.requiredInventoryUnits} impactValue={result.calculation.requiredInventoryUnits.impactPct ?? null} impactSuffix="%" compactValues />
+                      {result.calculation.requiredInventoryValue.map((metric) => <ScenarioMoneyRow key={`inventory-${metric.marketId}-${metric.currencyCode}`} label="Required Inventory Value" metric={metric} />)}
+                    </tbody>
+                  </table>
+                </div>
+                <details className="scenario-projection-details">
+                  <summary>Projection details</summary>
+                  <p>Forecast {result.authority.forecastVersion} · context {result.authority.scenarioContextVersion.slice(0, 12)}… · inventory {result.authority.inventory?.inventoryVersion ?? "not available"}</p>
+                  <h4>Applied price summary</h4>
+                  {result.calculation.appliedPriceSummaries.map((summary) => (
+                    <p key={`${summary.marketId}-${summary.currencyCode}`}>
+                      {summary.marketId} · {summary.currencyCode}: {percentage(summary.baselineValueWeightedAppliedPriceChangePct, true)} · coverage {summary.coverage.numerator}/{summary.coverage.denominator}
+                    </p>
+                  ))}
+                  <p>Approved assumption {result.assumptionSetId} · {result.assumptionSemanticFingerprint.slice(0, 16)}…</p>
+                  <ul>
+                    {Object.entries(result.factorBasis).map(([factor, basis]) => (
+                      <li key={factor}>{factor.replaceAll(/([A-Z])/g, " $1")}: {basis.valueSource} · {basis.coefficientSource}</li>
+                    ))}
+                  </ul>
+                  <p>{result.priceProvenance.length} price-provenance rows · snapshot {result.priceSnapshotContentFingerprint.slice(0, 16)}…</p>
+                </details>
+              </section>
+            )}
+          </div>
+          <div className="modal-foot">
+            {result ? (
+              <>
+                <button className="btn" type="button" onClick={() => mutation.reset()}>Back</button>
+                <button className="modal-action" type="button" onClick={onClose}>Close</button>
+              </>
+            ) : (
+              <>
+                <button className="btn" type="button" onClick={onClose}>Close</button>
+                <button className="modal-action" type="submit" disabled={!context.data || mutation.isPending}>
+                  {mutation.isPending ? "Running…" : "Run Scenario"}
+                </button>
+              </>
+            )}
+          </div>
+        </form>
       </section>
     </div>
   );
@@ -1094,7 +1526,19 @@ export function DemandForecast({
         <button id="acceptForecastBtn" className="btn primary" type="button" disabled aria-disabled="true" title="Forecast acceptance workflow belongs to Phase 6">Accept Forecast</button>
         <button id="addForecastAdjustmentBtn" className="btn secondary" type="button" disabled aria-disabled="true" title="Planner adjustment workflow belongs to Phase 6">Add Planner Adjustment</button>
         <button id="compareForecastVersionsBtn" className="btn secondary" type="button" onClick={() => setModal("versions")}>Compare Versions</button>
-        <button id="forecastScenarioBtn" className="btn secondary" type="button" disabled aria-disabled="true" title="Scenario Planning belongs to Phase 5">Scenario Planning</button>
+		<button
+		  id="forecastScenarioBtn"
+		  className="btn secondary"
+		  type="button"
+		  disabled={!scenarioPlanningEnabled}
+		  aria-disabled={!scenarioPlanningEnabled}
+		  onClick={() => scenarioPlanningEnabled && setModal("scenario")}
+		  title={scenarioPlanningEnabled
+			? "Run a stateless assumption-based forecast scenario"
+			: "Scenario Planning awaits governed activation and its live-status amendment"}
+		>
+		  Scenario Planning
+		</button>
         <button id="forecastActionCenterBtn" className="btn secondary" type="button" onClick={() => setModal("actions")}>Forecast Action Center</button>
         <button id="exportForecastBtn" className="btn secondary" type="button" onClick={exportWorkbench}>Export</button>
       </div>
@@ -1213,6 +1657,14 @@ export function DemandForecast({
         stores={data.stores}
         version={data.versions}
       />
+	  {scenarioPlanningEnabled && modal === "scenario" && (
+		<ScenarioModal
+		  open
+		  onClose={() => setModal(null)}
+		  forecastVersion={data.summary.versionId}
+		  filters={filters}
+		/>
+	  )}
     </div>
   );
 }

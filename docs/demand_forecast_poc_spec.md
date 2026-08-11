@@ -123,14 +123,15 @@ for five cross-language risks:
    semantics through Windows ACLs/locking or POSIX permissions/locking. A layer is incomplete
    until its unit, build and small-fixture checks pass on all three OS families.
 
-**Interactive scoring** (the one real design fork): batch forecasts/recommendations are
-precomputed by Python and served by Go, but the interactive screens — Price Simulation "Run",
-Scenario Planning "Run", Promotion Simulation, Copilot — need on-demand computation. Recommended
-split: **Go computes the closed-form projections itself** from stored coefficients (e.g.
-`units = p50·(price/price0)^β`, revenue/margin, safety stock — all cheap arithmetic on stored
-β / P50 / P90), and **calls a small Python scoring service (gRPC/REST) only when it needs the
-actual fitted model** (re-scoring LightGBM/GLM) or the LLM copilot. Keep all *training* in Python
-batch. Decide this explicitly — it determines whether Go needs any Python at request time.
+**Interactive scoring:** batch forecasts/recommendations are precomputed by Python and served by Go.
+Decision #96 separately freezes Demand Forecast Scenario Planning v1 before Phase 5: Go performs a
+stateless closed-form assumption projection over an immutable materialized context, using Decision
+#95 `expected_units` for additive volume and P50/P90 only for dispersion. It uses an explicitly
+approved assumed-response bundle, never fitted elasticity, and makes no Python call or domain write
+at request time. Phase 5 Price Simulation remains a different endpoint driven by accepted fitted
+price response; Promotion Simulation may likewise consume its accepted Phase 5 foundation. Python
+request-time scoring is reserved for a genuinely fitted model re-score or Copilot, not Forecast
+Scenario Planning v1. Any later fitted Forecast integration is a new v2 contract.
 
 Legend: **[REUSE]** = carry over a proven M5 design or compatible implementation;
 **[REUSE + EXTEND]** = retain that foundation but make material `retail_v2` changes;
@@ -176,7 +177,7 @@ extracts into these once; everything downstream is source-neutral.
 | `channels` | market × channel | `market_id, channel_id, name, type, active, known_as_of` | Orthogonal demand/promotion/price channel; a physical store may serve both online and in-store demand |
 | `calendar` | market×day | `market_id, date, known_as_of` (+ day attributes) | Market-local business day and seasonality |
 | `calendar_events` | market×geographic scope×event×date | `market_id, geo_scope_type, geo_scope_id, date, event_name, event_type, known_as_of` | Event drivers, exception "New product / event" |
-| `sell_prices` | SKU × store × channel × **week × known-as-of observation** | `sku_id, store_id, channel_id, effective week, net_price, currency_code, known_as_of` | Channel-aware price-movement driver, scenario price axis, pricing |
+| `sell_prices` | SKU × store × channel × **week × known-as-of observation** | `sku_id, store_id, channel_id, effective week, net_price, currency_code, known_as_of` | Channel-aware price-movement driver, Decision-#96 scenario baseline/support provenance, Phase 5 pricing |
 | `stock_snapshots` | SKU × location snapshot | `sku_id, location_id, snapshot_date, on_hand_units, on_order_units, known_as_of` | Demand-at-risk, stock-out risk, required-inventory in scenarios |
 | `suppliers_leadtimes` | supplier × merchandise scope × destination/origin × effective date × known-as-of observation | `supplier_id, destination_location_id, merch_scope_type, merch_scope_id, effective_from, lead_time_days, moq, pack_qty, known_as_of` (+ `from_location_id`) | Market/location-specific safety-stock, required-inventory and replenishment linkage |
 | **pricing metadata** block | market | `market_id, currency_code, minor_unit_exponent`, price/cost unit & tax basis | Market-local money semantics; reporting conversion remains separate |
@@ -283,7 +284,7 @@ cost-conversion policy before it can enter operating-currency WAC/margin.
 | **SKU Workbench** | Per SKU-store: baseline, AI (P50), planner forecast, last actual, accuracy, bias, confidence, primary driver, data-quality, status |
 | **Demand Drivers** | Driver contribution %/direction/confidence (SHAP + new competitor/weather groups); external-signal connection status + freshness |
 | **Governance** | Approval-stage queues + SLA ages; version traceability, override-comment %, data-freshness %, model-drift %, back-test coverage |
-| **Modal: Scenario Planning** | Scenario inputs (demand adj, price change, promo uplift, competitor availability, weather/event) → demand units, revenue ₹, required inventory ₹, stock-out-risk delta |
+| **Modal: Scenario Planning** | Decision-#96 stateless v1: scenario inputs (demand adj, price change, promo uplift, competitor availability, weather/event) → expected demand units, unconstrained revenue potential, coarse analytical required inventory, and demand-weighted per-series stock-out-risk delta; assumption-labelled, version-pinned, no write/apply |
 | **Modal: Compare Versions** | Forecast-version records (2.3) |
 | **Modal: Accept / Adjust / Action Center** | Selected rows, confidence, demand value ₹; adjustment reason codes; exception queue with owners + exposure ₹ |
 
@@ -326,8 +327,11 @@ baseline / AI / Planner-adjusted" rows directly.
 
 `engines/reorder.py`: safety stock = RSS of weekly (P90−P50) spreads over `lead_time + review`
 days × `Φ⁻¹(service_level)/Φ⁻¹(0.90)`; reorder point, order-up-to, cover days follow. This is
-exactly what powers Demand-at-Risk, Stock-out Risk, Required Inventory, and the Business-Impact
-inventory deltas (via the daily replay simulator `engines/simulator.py`).
+the governed source for accepted node-grain reorder point/order-up-to. Decision #96 Scenario
+Planning v1 scales the accepted order-up-to rather than rerunning the reorder engine and computes a
+new, separately labelled normal-approximation per-series risk; it does not relabel the existing
+categorical Forecast stock-health value as a probability. Daily replay remains the authority for
+accepted Business-Impact inventory deltas, not the stateless scenario.
 
 ### 3.4 Driver attribution **[REUSE + EXTEND]**
 
@@ -337,30 +341,43 @@ inventory deltas (via the daily replay simulator `engines/simulator.py`).
 used for explainability. That covers 5 of the screen's 6 drivers. **Add two driver groups —
 `competitor_availability` and `weather_local_events` — fed by the new feeds (2.2).**
 
-### 3.5 Price elasticity / price-response **[REUSE — `price-response-poisson-eb-v1`]**
+### 3.5 Price elasticity / price-response **[PHASE 5 REUSE — `price-response-poisson-eb-v1`]**
 
 `models/price_response.py`: observational **Poisson GLM (log link)** estimating β (log-price
 elasticity) with seasonality/trend/event controls, then **empirical-Bayes shrinkage
 (DerSimonian–Laird τ²)** toward department×price-tier clusters, uncertainty via **200 seeded
 price-episode block resamples**, validated by rolling-origin holdout Poisson deviance. This powers
-the **Price Change axis** of Scenario Planning and the price-movement driver. **Label it
-observational, not causal** (see guardrails 5.9).
+Phase 5 **Price Simulation**, recommendations and the price-movement driver. It does **not** power
+Decision-#96 Forecast Scenario Planning v1; v1 uses approved assumed β by market×department×baseline
+price tier and labels it as an assumption rather than evidence. Fitted Forecast integration is v2.
+The fitted response remains **observational, not causal** (see guardrails 4.9).
 
 For multiple currencies, the within-series log-price coefficient remains valid only while a
 SKU×store series stays in one local currency. Price tiers, shrinkage pools, evidence coverage and
 calendar controls are therefore market-scoped; raw local-currency price levels are never pooled
 across markets, and FX changes are never introduced as price-response variation.
 
-### 3.6 Scenario & uplift engine **[REUSE core + EXTEND inputs]**
+### 3.6 Forecast Scenario Planning v1 **[NEW — standalone before Phase 5]**
 
-Scenario Planning takes demand-adjustment, price-change, promo-uplift, competitor-availability,
-and weather/event inputs and returns demand units, revenue ₹, required inventory ₹, and stock-out
-risk. Build it on the existing simulator + elasticity:
+Decision #96 takes demand-adjustment, price-change, incremental non-price promotion uplift,
+competitor-availability and weather/event inputs. The server resolves one complete preset plus only
+explicit user overrides from an approved, fingerprinted assumption bundle. For each SeriesKey it
+applies price grid/guardrail order before deciding whether assumed β is needed, scales
+`expected_units` for demand/revenue potential and P50/P90 only for dispersion, scales the accepted
+node order-up-to by baseline-expected-weighted demand change, and computes the separately named
+`demand_weighted_series_stockout_risk_pct` from channel ATP. Current/scenario/impact use paired
+populations with reason-coded metric-grain coverage.
 
-- Price change → demand via the price-response β **[REUSE]**.
-- Demand delta → required inventory & stock-out risk via reorder/simulator **[REUSE]**.
-- **Promotion-uplift model, competitor-availability sensitivity, weather/event sensitivity
-  [NEW]** — new response coefficients fed by the new feeds.
+The baseline price is the latest origin-visible realized transaction price or a provenance-visible,
+deterministic same-market/SKU median fallback. Revenue is unconstrained potential rather than
+fulfilled revenue. Required Inventory is analytical and may violate MOQ/pack/capacity/budget because
+v1 does not re-optimize. Reporting FX is optional; local money and demand remain available without
+it. The endpoint pins the active forecast/context plus explicit inventory presence/absence, returns
+409 on stale identity, 503 on missing/ambiguous required authority, 200 partial for row evidence,
+and performs no write or request-time pipeline/model invocation.
+
+Fitted promotion uplift, competitor response and weather response remain Phase 5/later model work.
+They cannot be silently substituted into the v1 assumption contract.
 
 ### 3.7 Cold-start / new products **[REUSE]**
 
@@ -392,8 +409,9 @@ authoritative, tamper-evident lineage. The *Train Model* modal (Demand Forecast 
 | Baseline / FVA | MA13 (incumbent), seasonal-naive, naive, MA8 |
 | Safety stock / demand-at-risk | Quantile-spread RSS reorder engine |
 | Driver attribution | SHAP groups + deterministic blend (+ competitor/weather groups) |
-| Price elasticity (scenario price axis) | Poisson GLM + empirical-Bayes (observational) |
-| Scenario / uplift | Elasticity + simulator + new promo/competitor/weather sensitivities |
+| Price elasticity (Phase 5 Price Simulation/recommendations) | Poisson GLM + empirical-Bayes (observational) |
+| Forecast Scenario Planning v1 | Approved assumed-response bundle + materialized forecast/inventory context + closed-form Go calculation; no fitted model |
+| Fitted scenario / uplift v2 | New contract consuming accepted Phase 5 response/uplift evidence; never reinterpret v1 |
 | Stock-out risk | Reorder + daily replay simulator |
 
 ---
@@ -529,9 +547,17 @@ calibration/publication and becomes part of the policy fingerprint. Cross-market
 or inventory valuation requires approved reporting-currency conversion; unit reorder math does
 not.
 
-### 4.6 Pricing guardrails **[REUSE — for the price axis; `config/pricing_rules.yaml` + `engines/pricing.py`]**
+### 4.6 Price guardrails **[SPLIT — Forecast Scenario v1 vs Phase 5 pricing]**
 
-For the scenario price axis and any pricing linkage: category `floor`/`ceiling`;
+Decision-#96 Forecast Scenario Planning v1 resolves its own approved market×currency request bounds,
+positive-price checks, grid/rounding, market min/max, freshness and observed-support rules inside the
+fingerprinted assumption bundle. A zero requested change preserves the exact realized baseline even
+when that price is off-grid. The response returns requested and per-series applied price changes;
+per-series failures are reason-coded partial results and are never silently clamped. These are
+scenario-support guardrails, not Phase 5 statistical acceptance or recommendation gates. In
+particular, v1 applies **no generated-cost margin floor** and produces no price recommendation.
+
+For Phase 5 fitted Price Simulation, recommendations and any pricing linkage: category `floor`/`ceiling`;
 **`max_change_pct_per_cycle` = 5%**; **`min_margin_pct` = 12%** (margin floor, repairable only by
 a legal price increase — never by relaxing the floor); confidence-scaled action cap (2% → 5% as
 dominance 0.70 → 1.0); price endings/step; candidates clamped to observed price range (no
@@ -583,6 +609,12 @@ directory swap** under a cross-process lock with rollback. Serving paths validat
 
 - Backtests are **historical replay**, scenarios are **model-implied projections** — never
   labeled as observed experimental lift.
+- Forecast Scenario Planning v1 is more specifically an **assumption-based projection**: disclose
+  its approved assumption-set/price provenance and `statisticalGateStatus: not_applicable`; do not
+  call assumed coefficients fitted, causal, experimental or accepted model evidence.
+- Its Revenue is unconstrained potential, Required Inventory is a coarse non-executable scaling of
+  accepted order-up-to, and stock-out output is a demand-weighted mean of channel-series
+  probabilities rather than a node-event probability.
 - Pricing is **observational**, not causal elasticity.
 - Any synthetic fallback (cost, supplier, stock) must be provenance-labelled and never presented
   as a client fact. It may power only a separately gated, visibly synthetic demo/scenario;
@@ -602,7 +634,8 @@ directory swap** under a cross-process lock with rollback. Serving paths validat
 | Baselines + Forecast Value Add | **[REUSE]** |
 | Safety-stock / reorder / simulator | **[REUSE]** |
 | SHAP driver attribution | **[REUSE]** (+2 new driver groups) |
-| Price-response (Poisson GLM + EB) | **[REUSE]** |
+| Forecast Scenario Planning v1 assumption bundle/context/Go calculation | **[NEW — pre–Phase 5]** |
+| Price-response (Poisson GLM + EB; Price Simulation/v2 only) | **[REUSE]** |
 | Data-quality battery, acceptance gates, service-level calibration | **[REUSE + EXTEND]** |
 | HITL approval/override/audit/idempotency, lineage fingerprints, 409/503 | **[REUSE]** |
 | Competitor price/availability feed | **[NEW]** |
@@ -1222,15 +1255,18 @@ cost (your purchase price / landed cost) and selling price.** Here is the full m
 |---|---|---|
 | **Historical net units / revenue (as-of)** | latest fulfilled units/value minus latest typed unit/refund reversals (§11.0) | versioned `sales.units/net_sales_amount` + versioned `sales_adjustments` |
 | **Margin** | `margin_bp = ((price − cost) × 10000) // price` | `sell_prices.net_price` (or current price) **+ as-of `inventory_cost`** |
-| **Revenue (projected)** | `units = p50 × (price/price0)^beta` ; `revenue = units × price` | forecast **P50** + price + **elasticity β** |
+| **Forecast Scenario v1 demand / revenue potential** | `scenario_expected = expected_units × F_assumed`; per-horizon revenue facts round `expected × realized_price` and `scenario_expected × applied_price` separately before aggregation | Decision-#95 **`expected_units`** + latest realized/fallback price with provenance + approved scenario assumption/context; P50 is not substituted |
+| **Phase 5 fitted price-simulation revenue** | fitted response applied under the separately versioned Price Simulation/v2 contract | Decision-#95 expected volume + accepted price-response evidence + price policy; never reuse the v1 assumed coefficient as fitted evidence |
 | **Gross margin ₹** | `(price − cost) × units` | price + **cost** + units/forecast |
 | **Markdown suggestion** | hold when `cover_days > 21`; `markdown_pct = 0.10` | forecast P50, `trailing_avg`, `cover_days = (atp+on_order+in_transit)/avg_daily` |
 | **Safety stock** | `RSS(P90−P50 over lead+review) × Φ⁻¹(SL)/Φ⁻¹(0.90)` | forecast **P50 & P90** + `lead_time_days` + `review_period` + `service_level` |
-| **Reorder point / order-up-to** | `demand_over_lead(P50) + safety_stock (+ cycle_stock)` | above + ATP + disjoint on_order/in_transit + MOQ + pack_qty |
+| **Reorder point / order-up-to** | `demand_over_lead(expected_units) + safety_stock (+ cycle_stock from expected_units)` | expected volume + P50/P90 spread + ATP + disjoint on_order/in_transit + MOQ + pack_qty |
+| **Forecast Scenario v1 Required Inventory** | `accepted_order_up_to × baseline-expected-weighted F` at node grain | accepted node order-up-to + complete policy-window expected volume + approved assumption context; analytical only, no MOQ/pack/capacity/budget re-run |
+| **Forecast Scenario v1 stock-out risk** | normal approximation per channel using scenario expected demand, scaled P90−P50 dispersion and channel ATP; aggregate is demand-weighted | complete protection-window expected/P50/P90 + channel allocation + node residual ATP; optional inventory extension |
 | **Demand at risk / stock-out proxy** | target = `P90`; risk when `actual > target`; exposure `= target × cost` | forecast **P90** + reconciled inventory position/actual demand + **cost** (to value it) |
 | **ABC class** | `annualized_value = trailing_avg_weekly × 52 × cost`; A≤0.80, B≤0.95 cumulative | forecast trailing avg **+ cost** |
 | **Price elasticity (β)** | Poisson GLM: `log E[units] = a + β·log(price) + controls` | **`sell_prices` panel with real variation** + `sales.units` |
-| **Forecast (P50/P90)** | LightGBM horizon-quantile over the weekly feature set | `sales.units` with **≥52 wk** history + calendar + prices + `known_as_of` |
+| **Forecast (expected/P50/P90)** | conditional-mean expected volume plus LightGBM horizon quantiles over the weekly feature set | `sales.units` with **≥52 wk** history + calendar + prices + `known_as_of` |
 | **Forecast accuracy / bias / FVA** | WAPE, bias, vs-MA13 improvement over rolling origins | forecast + realized `units` + `known_as_of` (point-in-time) |
 | **Stock cover / days-of-supply** | `inventory_position / avg_daily_demand` | ATP + disjoint on_order/in_transit + forecast |
 
@@ -1262,6 +1298,7 @@ prices legitimately yield **no** recommendations.
 |---|---|
 | Demand Forecast, accuracy, bias | ≥52 wk (ideally 18–24 mo) daily `units` + `known_as_of` |
 | Replenishment, safety stock, cover | `stock_snapshots` with reconciled `atp_units/atp_method`, disjoint on-order/in-transit + destination/lane-scoped `suppliers_leadtimes` (lead, MOQ, pack) + service-level policy |
+| Forecast Scenario Planning v1 | active Decision-#95 forecast (`expected_units` plus P50/P90 dispersion), approved scenario assumption bundle, origin-visible latest realized price or disclosed same-market/SKU fallback; inventory/risk additionally need one compatible accepted inventory extension, while reporting aggregates additionally need complete as-of FX |
 | Revenue price recommendations / simulation | qualifying `sell_prices` panel + market pricing metadata/rules + price-response evidence |
 | Margin fields/objective/floor | actual `purchase_receipts` (or approved temporal cost ledger) → same-currency as-of `inventory_cost`, in addition to revenue-pricing dependencies |
 | Price elasticity | the qualifying price panel above (levels/transitions/coverage), evaluated within market |
@@ -1587,9 +1624,13 @@ These are the PoC's own outputs, bound by semantic fingerprints (§4.8), not gen
 | Entity (grain) | Columns | Sample |
 |---|---|---|
 | `forecast_versions` (version) | `version_id, kind, origin_date, horizon_weeks, created_by, accuracy, bias, demand_units, semantic_fingerprint, status` | `v28, ai, 2026-07-13, 26, DemandSenseAI, 87.6, -2.8, 1316420, sha…, current` |
-| `forecast_series` (version×SKU×store×channel×horizon) | `version_id, sku_id, store_id, channel_id, horizon_week, yhat_p50, yhat_p90, confidence` | `v28, NK-AM270-BLK-09, MUM01, mumbai-online, 1, 510, 591, 0.93` |
+| `forecast_series` (version×SKU×store×channel×horizon) | `version_id, sku_id, store_id, channel_id, horizon_week, expected_units, yhat_p50, yhat_p90, confidence` | `v28, NK-AM270-BLK-09, MUM01, mumbai-online, 1, 523, 510, 591, 0.93` |
 | `forecast_drivers` (version×scope×driver) | `version_id, scope, driver, contribution_pct, direction, confidence` | `v28, portfolio, seasonality, 18, positive, 0.91` |
 | `planner_adjustments` (adjustment) | `adj_id, sku_id, store_id, channel_id, origin_date, ai_forecast, planner_forecast, reason_code, effective_period, comment, actor, status, value_added_flag` | `ADJ-44, LV-501-BLU-32, NOI08, ny-online, 2026-07-13, 246, 260, promotion_change, next_4_weeks, "local promo", Rahul, accepted, true` |
+| `forecast_scenario_assumption_sets` + approval events (bundle manifest with multi-grain children) | immutable bundle/version/fingerprint/disclosure + market/currency grid/freshness/support, market/dept/baseline-tier assumed coefficients, complete presets; append-only candidate/approved/superseded/rejected events | Decision-#96 assumption-labelled authority; test bundles cannot activate |
+| `forecast_scenario_contexts` (authority manifest) | authority scope, forecast version/decision-as-of, approved assumption/approval fingerprints, price snapshot fingerprint, schema/materializer/output fingerprints, activation lifecycle | immutable base-context authority for bootstrap/POST |
+| `forecast_scenario_forecast_rows` + `forecast_scenario_commercial_rows` | context×SeriesKey×horizon expected/P50/P90/availability; context×SeriesKey realized/fallback price lineage, tier and resolved assumed coefficients | base context; one commercial row remains even when price evidence is unavailable |
+| `forecast_scenario_inventory_series` + `forecast_scenario_inventory_nodes` | extension×SeriesKey allocated ATP/requested units; extension×SKU×location accepted reorder/order-up-to, node/residual ATP, cost/currency/protection evidence | optional inventory extension bound to one base context/inventory version |
 
 **Used in the PoC:** Compare Versions modal, SKU workbench, Demand Drivers tab, and the
 Planner-Overrides KPI.
@@ -2111,17 +2152,20 @@ stock-out chance." It is the single dial that trades **stock-out risk** (lost sa
 ```
 safety_stock  = RSS(weekly P90−P50 spreads over the protection period) × service_level_scale(SL)
 service_level_scale(SL) = Φ⁻¹(SL) / Φ⁻¹(0.90)          # Φ⁻¹ = inverse-normal z-score
-reorder_point = demand_during_lead_time (P50) + safety_stock
-order_up_to   = reorder_point + cycle_stock (P50 over the review period)
+reorder_point = expected demand during lead time + safety_stock
+order_up_to   = reorder_point + expected cycle demand over the review period
 ```
 - `P90 − P50` is the model's own uncertainty band (wider for volatile/intermittent SKUs).
+- Decision #95 `expected_units`, not P50, supplies the additive mean-demand terms. P50 remains the
+  conditional median used only with P90 to measure dispersion.
 - **Why anchor at 0.90?** Holding to P90 already gives ~90% service (a ~1.28σ buffer);
   `service_level_scale` rescales that band to the chosen target — higher target → bigger buffer.
 - `RSS` (root-sum-square) combines weekly spreads assuming weeks are independent, so buffer
   grows with √(weeks), not linearly.
 
 ### Worked example — same SKU, three service levels
-Lead 2 wk + review 1 wk = 3-week protection; weekly P50 = 100, P90 = 130 (spread 30/wk).
+Lead 2 wk + review 1 wk = 3-week protection; weekly expected demand = 100, P50 = 100 and P90 = 130
+(spread 30/wk).
 RSS of the three weekly spreads = √(30²+30²+30²) ≈ **51.96**.
 
 | Class | Service level | z = Φ⁻¹(SL) | scale = z / Φ⁻¹(0.90) | Safety stock = 51.96 × scale |
@@ -2131,7 +2175,7 @@ RSS of the three weekly spreads = √(30²+30²+30²) ≈ **51.96**.
 | C | 0.80 | 0.842 | 0.657 | **≈ 34 units** |
 
 Same demand & uncertainty, but the A item carries ~71 units of buffer and the C item only ~34.
-A-item reorder point = 200 (P50 over the 2-wk lead) + 71 = **271**; order-up-to = 271 + 100
+A-item reorder point = 200 (expected demand over the 2-wk lead) + 71 = **271**; order-up-to = 271 + 100
 (1-wk cycle) = **371**. When inventory position
 (`atp_units + on_order_units + in_transit_units`) drops to/below 271, the engine proposes
 topping up to 371 — then rounds to MOQ/pack multiples and caps at `max_cover_days` (30).

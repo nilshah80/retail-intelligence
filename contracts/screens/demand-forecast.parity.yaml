@@ -23,7 +23,7 @@ activation:
   semanticFingerprint: 7370e9f615c3609310d709a1a8afba37eff9d7b5c5d524992d0307305e205cfe
   acceptanceSchemaVersion: retail-forecast-acceptance/v6
   coverageGateMode: hard
-  servingMigration: 0024_warehouse_service_metrics
+  servingMigration: 0027_scenario_hardening
   intervalAvailability:
     policyId: retail-forecast-interval-availability/v1
     calibratedMaxHorizon: 4
@@ -164,6 +164,99 @@ amendments:
       reviewOutstanding: >-
         A per-screen human visual review of the amended Confidence cell is still
         owed and is tracked as a P4-0P deviation, not as a completed approval.
+  - amendmentId: FSP-V1-A1
+    amendedAt: "2026-08-11"
+    package: forecast-scenario-planning-v1
+    decisionIds: [44, 46, 73, 90, 95, 96]
+    decisionAmendment: "Decision #96"
+    title: Standalone pre-Phase-5 Forecast Scenario Planning implementation boundary
+    affectedElements:
+      - "#forecastScenarioBtn"
+    frozenBehavior:
+      elementStatus: approved_pending_implementation
+      projectionBasis: assumption_set
+      volumeBasis: expected_units
+      intervalBasis: p50_p90_dispersion_only
+      writeBehavior: stateless_no_domain_writes
+      productionEnableGate: VITE_FORECAST_SCENARIO_ENABLED
+      liveTransitionRequiresNewAmendment: true
+    rendersNewElement: false
+    approval:
+      status: approved
+      actor: nilay.shah
+      approvedAt: "2026-08-11"
+      authorization: >-
+        After reviewing revision 3.6 of the standalone implementation plan, the
+        user explicitly instructed implementation to start.
+      classification: explicit_user_authorization
+      reviewOutstanding: >-
+        Product/quant approval of bundle values plus API/UI parity, accessibility
+        and human visual review remain required before a live-status amendment.
+  - amendmentId: FSP-V1-A2
+    amendedAt: "2026-08-11"
+    package: forecast-scenario-planning-v1-local-demo
+    decisionIds: [44, 46, 73, 90, 95, 96]
+    decisionAmendment: "Decision #96 local demonstration boundary"
+    title: Governed local-only Forecast Scenario Planning demonstration
+    affectedElements:
+      - "#forecastScenarioBtn"
+    frozenBehavior:
+      localDemoStatus: active_assumption_projection
+      localAuthority: retailer-demo/tenant-demo/forecast_scenario_v1/local
+      productionElementStatus: approved_pending_implementation
+      productionStatusUnchanged: true
+      assumptionDisclosureRequired: true
+      writeBehavior: stateless_no_domain_writes
+    rendersNewElement: false
+    approval:
+      status: approved
+      actor: nilay.shah
+      approvedAt: "2026-08-11"
+      authorization: >-
+        After seeing the fail-closed modal, the user explicitly instructed the
+        implementation to continue and complete a usable demo.
+      classification: explicit_user_authorization_local_demo
+      verification: >-
+        Automated browser run completed the High Demand preset with Demand Units,
+        Revenue Potential, Required Inventory and Stock-out Risk results and no
+        browser console warnings.
+      reviewOutstanding: >-
+        Product/quant-approved production values, independent human visual review,
+        production accessibility review and a production live-status amendment.
+  - amendmentId: FSP-V1-A3
+    amendedAt: "2026-08-11"
+    package: forecast-scenario-planning-v1-local-demo-presentation
+    decisionIds: [44, 46, 73, 90, 95, 96]
+    decisionAmendment: "Decision #96 local demonstration presentation"
+    title: Reference-aligned Scenario Results presentation
+    affectedElements:
+      - "#forecastScenarioBtn"
+      - "#forecastScenarioResults"
+    frozenBehavior:
+      resultPresentation: summary_kpis_plus_comparison_table
+      comparisonColumns: [metric, current_forecast, scenario, impact]
+      inrMoneyPresentation: demand_forecast_cr_l
+      longAssumptionDisclosureRendered: false
+      structuredAssumptionProvenanceRetained: true
+      productionStatusUnchanged: true
+      writeBehavior: stateless_no_domain_writes
+    rendersNewElement: false
+    approval:
+      status: approved
+      actor: nilay.shah
+      approvedAt: "2026-08-11"
+      authorization: >-
+        After reviewing the local demo, the user explicitly requested the original
+        HTML result-table presentation, Demand Forecast Cr/L money formatting, and
+        removal of the long local-demonstration assumption paragraph from the UI.
+      classification: explicit_user_authorization_local_demo_presentation
+      verification: >-
+        Automated browser review completed the High Demand preset and confirmed
+        the summary KPIs, comparison table, Cr/L values, collapsed projection
+        details, and absence of the long disclosure paragraph.
+      reviewOutstanding: >-
+        Product/quant-approved production values, production accessibility review
+        and a production live-status amendment.
 
 shell:
   inheritFrom: contracts/screens/data-management.yaml
@@ -223,7 +316,15 @@ actions:
   - selector: "#forecastScenarioBtn"
     label: Scenario Planning
     order: 4
-    status: unavailable_phase_5
+    status: approved_pending_implementation
+    behavior: >-
+      FSP-V1-A2 permits the labelled assumption projection in the local demo
+      authority; FSP-V1-A3 freezes the reference-aligned results table, Forecast
+      Cr/L money formatting, and removal of the long visible disclaimer while
+      retaining structured provenance. Production remains
+      approved_pending_implementation until a later amendment records product/quant
+      values and the production review gates. No write/apply path exists in either
+      environment.
   - selector: "#forecastActionCenterBtn"
     label: Forecast Action Center
     order: 5

@@ -1064,3 +1064,130 @@ tr[data-partial="true"] {
 .table tfoot td {
   border-top: 2px solid var(--line, #e3e8f0);
 }
+
+.scenario-modal {
+  width: min(720px, 96vw);
+}
+
+.scenario-authority,
+.scenario-reporting-state {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5f8fc;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.scenario-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scenario-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scenario-form-grid input,
+.scenario-form-grid select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+}
+
+.scenario-results {
+  display: grid;
+  gap: 14px;
+}
+
+.scenario-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.scenario-summary-item {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.scenario-summary-item span,
+.scenario-summary-item strong {
+  display: block;
+}
+
+.scenario-summary-item span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.scenario-summary-item strong {
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+.scenario-results-table-wrap {
+  overflow-x: auto;
+}
+
+.scenario-results-table {
+  min-width: 640px;
+  margin: 0;
+}
+
+.scenario-results-table td:first-child strong,
+.scenario-results-table td:first-child small {
+  display: block;
+}
+
+.scenario-results-table td:first-child small,
+.scenario-projection-details,
+.scenario-projection-details p,
+.scenario-projection-details li {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.scenario-results-table td:first-child small {
+  margin-top: 4px;
+}
+
+.scenario-results-table .scenario-impact-positive {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.scenario-results-table .scenario-impact-negative {
+  color: var(--red);
+  font-weight: 800;
+}
+
+.scenario-projection-details summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+@media (max-width: 1200px) {
+  .scenario-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .scenario-form-grid,
+  .scenario-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

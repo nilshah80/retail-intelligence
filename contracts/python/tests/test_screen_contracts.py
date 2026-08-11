@@ -44,7 +44,7 @@ def test_the_activation_block_matches_the_forecast_that_actually_serves() -> Non
     assert activation["semanticFingerprint"] is not None
     assert activation["acceptanceSchemaVersion"] == "retail-forecast-acceptance/v6"
     assert activation["coverageGateMode"] == "hard"
-    assert activation["servingMigration"] == "0024_warehouse_service_metrics"
+    assert activation["servingMigration"] == "0027_scenario_hardening"
     # The rejected historical candidate stays disclosed; acceptance of a later run
     # does not erase the rejection that preceded it.
     assert activation["rejectedHistoricalRunId"] == "fr_92135aa7b5215b69"
@@ -97,6 +97,87 @@ def test_the_amendment_approval_does_not_overclaim_human_review() -> None:
     )
     assert approval["reviewOutstanding"], (
         "the outstanding per-screen visual review must stay recorded"
+    )
+
+
+def test_forecast_scenario_v1_is_approved_for_implementation_not_live() -> None:
+    contract = _forecast()
+    amendment = next(
+        entry
+        for entry in contract["amendments"]
+        if entry["amendmentId"] == "FSP-V1-A1"
+    )
+    action = next(
+        entry
+        for entry in contract["actions"]
+        if entry["selector"] == "#forecastScenarioBtn"
+    )
+
+    assert contract["status"] == "frozen_approved_for_implementation"
+    assert amendment["decisionAmendment"] == "Decision #96"
+    assert 95 in amendment["decisionIds"]
+    assert amendment["frozenBehavior"] == {
+        "elementStatus": "approved_pending_implementation",
+        "projectionBasis": "assumption_set",
+        "volumeBasis": "expected_units",
+        "intervalBasis": "p50_p90_dispersion_only",
+        "writeBehavior": "stateless_no_domain_writes",
+        "liveTransitionRequiresNewAmendment": True,
+        "productionEnableGate": "VITE_FORECAST_SCENARIO_ENABLED",
+    }
+    assert amendment["approval"]["classification"] == "explicit_user_authorization"
+    assert amendment["approval"]["reviewOutstanding"]
+    assert action["status"] == "approved_pending_implementation"
+
+
+def test_forecast_scenario_local_demo_does_not_overclaim_production() -> None:
+    contract = _forecast()
+    amendment = next(
+        entry
+        for entry in contract["amendments"]
+        if entry["amendmentId"] == "FSP-V1-A2"
+    )
+
+    assert amendment["frozenBehavior"] == {
+        "localDemoStatus": "active_assumption_projection",
+        "localAuthority": "retailer-demo/tenant-demo/forecast_scenario_v1/local",
+        "productionElementStatus": "approved_pending_implementation",
+        "productionStatusUnchanged": True,
+        "assumptionDisclosureRequired": True,
+        "writeBehavior": "stateless_no_domain_writes",
+    }
+    assert (
+        amendment["approval"]["classification"]
+        == "explicit_user_authorization_local_demo"
+    )
+    assert amendment["approval"]["reviewOutstanding"]
+
+
+def test_forecast_scenario_results_follow_the_reference_presentation() -> None:
+    contract = _forecast()
+    amendment = next(
+        entry
+        for entry in contract["amendments"]
+        if entry["amendmentId"] == "FSP-V1-A3"
+    )
+
+    assert amendment["frozenBehavior"] == {
+        "resultPresentation": "summary_kpis_plus_comparison_table",
+        "comparisonColumns": [
+            "metric",
+            "current_forecast",
+            "scenario",
+            "impact",
+        ],
+        "inrMoneyPresentation": "demand_forecast_cr_l",
+        "longAssumptionDisclosureRendered": False,
+        "structuredAssumptionProvenanceRetained": True,
+        "productionStatusUnchanged": True,
+        "writeBehavior": "stateless_no_domain_writes",
+    }
+    assert (
+        amendment["approval"]["classification"]
+        == "explicit_user_authorization_local_demo_presentation"
     )
 
 

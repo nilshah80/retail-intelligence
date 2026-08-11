@@ -288,6 +288,8 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/forecast/signals",
         "/api/v1/forecast/exceptions",
     }
+    scenario_get_paths = {"/api/v1/forecast/scenario/context"}
+    scenario_post_paths = {"/api/v1/forecast/scenario"}
     # P4-4: the inventory/replenishment surface -- the version endpoint plus one
     # route per screen destination. Enumerated exactly, like everything else in
     # this inventory: an endpoint appearing without a contract change is drift.
@@ -308,24 +310,41 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/replenishment/allocations",
         "/api/v1/replenishment/exceptions",
     }
-    expected_paths = live_paths | forecast_paths | inventory_paths
+    expected_paths = (
+        live_paths
+        | forecast_paths
+        | inventory_paths
+        | scenario_get_paths
+        | scenario_post_paths
+    )
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:
         raise ContractValidationError("OpenAPI path inventory drifted")
     operation_ids: list[str] = []
     for endpoint, methods in paths.items():
-        if not isinstance(methods, Mapping) or "get" not in methods:
-            raise ContractValidationError(f"{endpoint}: GET operation is absent")
-        operation = methods["get"]
+        expected_method = "post" if endpoint in scenario_post_paths else "get"
+        if (
+            not isinstance(methods, Mapping)
+            or set(methods) != {expected_method}
+        ):
+            raise ContractValidationError(
+                f"{endpoint}: expected only {expected_method.upper()}"
+            )
+        operation = methods[expected_method]
         if not isinstance(operation, Mapping) or not operation.get("operationId"):
             raise ContractValidationError(f"{endpoint}: operationId is absent")
         # Both governed surfaces carry the full live/stale/unavailable triple:
         # a route that can only say 200 has no honest way to refuse.
-        expected_responses = (
-            {"200", "409", "503"}
-            if endpoint in forecast_paths or endpoint in inventory_paths
-            else {"200"}
-        )
+        if endpoint in scenario_get_paths:
+            expected_responses = {"200", "400", "409", "503"}
+        elif endpoint in scenario_post_paths:
+            expected_responses = {
+                "200", "400", "409", "413", "415", "422", "503"
+            }
+        elif endpoint in forecast_paths or endpoint in inventory_paths:
+            expected_responses = {"200", "409", "503"}
+        else:
+            expected_responses = {"200"}
         responses = operation.get("responses", {})
         if set(responses) != expected_responses:
             raise ContractValidationError(

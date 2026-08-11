@@ -1,7 +1,8 @@
 # Phase 5 Implementation Plan — Pricing & Promotions
 
 _Companion to `plans/local/plan.md`, `plans/local/tasks.md`,
-`plans/local/phase4-implementation-plan.md`, and `plans/local/post-phase3-implementation-plan.md`._
+`plans/local/phase4-implementation-plan.md`, `plans/local/scenario-planning-implementation-plan.md`,
+and `plans/local/post-phase3-implementation-plan.md`._
 _Specification authority: `docs/demand_forecast_poc_spec.md` §§3.5–3.6, §§4.6–4.9,
 §8.1, §§10.2–10.5, §§11.2–11.4, and §§11.8–11.10._
 _Data authority: `contracts/retail_v2/schema.yaml`, `contracts/staging/staging-v2.yaml`,
@@ -15,31 +16,60 @@ _Presentation authority: `docs/ai_retail_intelligence_dashboard_multicurrency_v6
 approved Phase 5 parity/data matrices, and approved amendments to already-frozen screen matrices._
 _Validation authority: `contracts/validation-policy.yaml`; repository CI remains prohibited._
 
-**Revision 9 — 2026-08-05. DRAFT FOR REVIEW. PHASE 4 IS IMPLEMENTED, BUT PHASE 5 RESULT-BEARING
+**Revision 10 — 2026-08-11. DRAFT FOR REVIEW. PHASE 4 IS IMPLEMENTED, BUT PHASE 5 RESULT-BEARING
 WORK MUST NOT START UNTIL `P5-0`, THE TEMPORAL-EVIDENCE GATES, AND `P5-1P` PASS. EXISTING UI
 CHANGES MUST NOT START UNTIL THEIR `P5-0P` AMENDMENTS PASS.**
 
-Revision 9 is still a plan, not implementation authorization. It closes the final review findings:
-source selection precedes every pin; rich `local` and sparse diagnostic `dev` scopes cannot collide;
-all downstream jobs receive explicit pin/authority paths; Phase 5 result-selection events and the
+Revision 10 is still a plan, not implementation authorization. It makes the plan **pin-independent**.
+Phase 5 is a capability that must work for any tenant, any country, and any market count, so §§2–16
+no longer name a tenant, market, department, publication, or row count, and every market-count gate
+resolves per tenant under the new `P5-D26` rather than against a constant in plan text. The measured
+starting point moves out of prose into `contracts/evidence/phase5-entry-record.json`, which `P5-0`
+already owed; §1 now specifies *how* that record is established and what each measurement decides.
+The test of this revision is simple: changing the selected publication should change zero lines of
+this plan. Revision 9's governance content is unchanged: source selection precedes every pin; rich
+and sparse audiences cannot collide; all
+downstream jobs receive explicit pin/authority paths; Phase 5 result-selection events and the
 activation-set share one PostgreSQL transaction while post-commit JSON is evidence only; repository
 paths follow the established `ml/src/retail_ml`, `db/migrations/versions`, `datagen/configs`, and
 package-local test structure; selection identity exclusions are versioned and cross-language; local
 serving configuration is secret-free; preview-only controls are distinct from business-live and hard-
 disabled controls; the duplicate competitor-modal selector families have one explicit presentation
-authority; and the Promotion Performance Forecast chart interpretation is decided. It also
-records that the stale default run affects direct `build_expected_pin.py --check`, while the normal
-`tools/dev.py` repin path already supplies `--run`. Phase 5 ends at independently verified bundles,
-transactional materialization, a separate activation, and local read-only serving/smoke. Container
-release, process drain/cutover, deployment authority, and cross-host database restore belong to
-Phase 6–8 planning and are not Phase 5 deliverables. No historical artifact is retrofitted by plan
-text.
+authority; and the Promotion Performance Forecast chart interpretation is decided. Phase 5 ends at
+independently verified bundles, transactional materialization, a separate activation, and local
+read-only serving/smoke. Container release, process drain/cutover, deployment authority, and
+cross-host database restore belong to Phase 6–8 planning and are not Phase 5 deliverables. No
+historical artifact is retrofitted by plan text.
+
+Revisions 1–9 carried the measured state of one publication in §1 prose, and that section had to be
+rewritten in full each time the selected publication changed. It no longer holds values, so it no
+longer goes stale. Any figure a reviewer needs comes from the entry record for the publication
+actually under evaluation.
 
 This plan defines the implementation boundary for Phase 5. It is intentionally more explicit
 than a feature checklist because the phase combines statistical acceptance, local-currency
 pricing rules, cost capability, competitor evidence, promotion privacy, four new read-only pages,
 and corrective work on the existing client demo. Creating or reviewing this plan does not approve
 model results, source reinterpretation, screen deviations, workflow mutations, or deployment.
+
+**Decision #96 boundary:** Forecast Scenario Planning v1 is a standalone pre–Phase-5 workstream,
+using approved assumptions rather than fitted response. Phase 5 does not implement, gate or adapt
+that v1 endpoint. Fitted Price Simulation remains Phase 5; any later fitted Forecast integration is
+a separately approved v2 contract.
+
+**Tenant boundary.** Phase 5 serves an open set of governed tenants, evaluated one at a time. A
+tenant declares its market set, currencies, departments, and channels; Phase 5 assesses that tenant
+against the same fixed statistical and governance thresholds and either accepts a scope or returns a
+reason-coded refusal for it. Tenants legitimately differ — a deliberately single-market tenant is
+not a degraded multi-market one — so no gate here is expressed as a market count, and every
+market-scoped obligation resolves under `P5-D26`. A tenant is never evidence for another tenant:
+selections, pins, bundles, verifications, activations, demo scripts, and human reviews are per
+tenant, and no aggregate spans them.
+
+Working for any country therefore does not mean every country yields live recommendations. It means
+every country is **assessed** on identical terms and the honest outcome is served — accepted where
+the evidence earns it, `insufficient_evidence` or a temporal-unavailable reason where it does not.
+A refusal is a correct Phase 5 output, not a failure of the phase.
 
 The original HTML is the exact presentation reference: navigation, page titles, subtitles,
 controls, filter order, cards, tabs, table columns, action placement, modal surfaces, spacing,
@@ -115,25 +145,28 @@ effective dates do not establish historical point-in-time availability.
 
 ### 0.2 Why source remediation precedes elasticity and promotion modelling
 
-The current curated publication contains a large amount of useful price, promotion, competitor,
-cost, sales, and inventory data. It is structurally promising but does not yet prove all required
-decision-time facts:
+A curated publication can contain a large amount of useful price, promotion, competitor, cost,
+sales, and inventory data and still not prove the decision-time facts Phase 5 needs. Volume is not
+admissibility. The recurring shortfalls, in the order they block work:
 
-- all 289,884 canonical sell-price rows are marked `landing_backfill` and share the current
-  publication's known-as-of boundary;
-- pricing readiness therefore reports `pricing_elasticity.available = false` with
-  `PRICE_AVAILABILITY_BACKFILLED`;
-- all 811 promotion rows are also landing-time backfills, so historical uplift cannot be admitted
-  merely from their business-effective periods;
-- competitor price observations are origin-visible, but product attributes are empty and the
-  current matches use synthetic attribute-match evidence;
-- cost has stronger posted evidence, but the current valuation artifact contains 68 unavailable
-  rows across four stores and four DCs—including the Pune overflow and Brooklyn MFC nodes—and 73
-  rows carry an unverified `FIFO` label over a WAC-derived value; any generated cost is suitable
-  only for a clearly labelled synthetic-margin demonstration;
-- the source price table is an event history, not automatically a complete weekly panel. Point-in-
-  time last-observation carry-forward, observation coverage, price-level support, transition count,
+- **sell prices carrying a landing-time grade.** Where rows are `landing_backfill` and share one
+  publication-era known-as-of boundary, pricing readiness reports
+  `pricing_elasticity.available = false` with `PRICE_AVAILABILITY_BACKFILLED`, no matter how many
+  rows there are;
+- **promotions carrying the same grade,** so historical uplift cannot be admitted from
+  business-effective periods alone — and where the source lifecycle and mechanic vocabularies are
+  also thin, the Planner's descriptive surface is unsupported independently of the temporal problem;
+- **competitor observations that are origin-visible but attribute-empty,** leaving matches resting
+  on synthetic attribute evidence and a numeric score;
+- **cost with good temporal evidence but carried method labels,** where the transform computes WAC
+  and the artifact republishes the source's own label over it. Generated cost supports only a
+  clearly labelled synthetic-margin demonstration regardless of its temporal grade;
+- **a price table that is an event history, not a weekly panel.** Point-in-time
+  last-observation carry-forward, observation coverage, price-level support, transition count,
   staleness, and leakage treatment must be frozen before eligibility is calculated.
+
+Which of these apply, and how severely, is measured per publication under §1.3 and recorded in the
+entry record. The ordering above is stable because it follows the dependency chain, not the data.
 
 Without this remediation the product could display plausible elasticities that were unknowable at
 the claimed origin. The honest current state is temporal `unavailable` with
@@ -146,25 +179,26 @@ recommendations through new evidence; the sparse preset must demonstrate that la
 
 | Gate | State at plan creation | Required before |
 |---|---|---|
-| Phase 4 code and serving slice | Implemented on current `main` baseline through migration `0020_safety_stock_drivers.py` | Record and retain in `P5-0` |
-| Active forecast authority | **Unresolved:** old smoke evidence names `fr_5f6fa2015d80eee5` / `fv_ba2791b4273e3b4f`, released history names current event 23 as `fr_a08dfd164b77ac34` / `fv_b0a75559c2a1fb40`, while the closure record and current manifests name `fr_953a83f76576103d` / `fv_ff2c77dce6410035`; the old smoke bytes are not retained | Reconcile artifact, selection, live PostgreSQL activation, API, and UI lineage in `P5-0`; no listed identity is adopted by plan text alone |
-| Active inventory authority | **Unresolved:** old smoke evidence names `ir_b10bb797108e80a7` / `iv_b10bb797108e80a7`, while the current inventory manifest names `ir_1a51973dd1a17d32`; the released history's `inventoryAuthorityLedger` contains no inventory events and carries forecast-shaped identities | Reconcile committed ledgers, materialized source-selection links, and the live activation/current views in `P5-0`; retain current-vs-replay distinction and do not infer inventory authority from the malformed ledger |
-| Source-selection authority | **Unresolved:** the measured §1.3 evidence is the on-disk `run-adac9e85dccb56e8` publication and the current inventory manifest names `sel_3c2c4db8b76109d9`, while old smoke evidence names `sel_2d3c5e156bedabd4` against a publication whose curated bytes are absent | Establish one coherent selected pin in `P5-0` before source/model work |
+| Phase 4 code and serving slice | Implemented. The Alembic head advances with unrelated workstreams between Phase 5 revisions, so it is read at `P5-0` rather than asserted here | Record the exact head in `P5-0`; §6 reserves the next free revision by position, never a hard-coded number |
+| Tenant and market scope | **Per publication.** The governed tenant, retailer, environment, market set, operating currencies, and store/DC/channel/department/SKU counts are measured by `P5-0` into the entry record. Tenants legitimately differ in market count; a deliberately single-market tenant is not a degraded one | `P5-D26` per-tenant scoping approved before `P5-1P` freezes any coverage contract; no market count is asserted by plan text |
+| Active forecast authority | **Per publication, unresolved until `P5-0`.** Retained artifact directories are developer labels, not lineage, and a directory named `final` or `current` proves nothing | Reconcile artifact, selection, live PostgreSQL activation, API, and UI lineage in `P5-0`; no identity is adopted because it is the only one retained |
+| Active inventory authority | **Per publication, unresolved until `P5-0`.** The released history's `inventoryAuthorityLedger` carries no inventory events and holds forecast-shaped identities, so it is structurally invalid inventory evidence regardless of pin | Reconcile committed ledgers, materialized source-selection links, and the live activation/current views in `P5-0`; retain the current-vs-replay distinction and never infer inventory authority from that ledger |
+| Source-selection authority | **Per publication.** `P5-0` confirms exactly one curated publication is selected, that the committed pin reproduces against it, and that the live ledger head agrees | Establish one coherent selected pin in `P5-0` before any source or model work |
 | V2 readiness authority | **Unwired:** `build_readiness_report()` is called only by tests; production selection generation binds Gate B's fingerprint and writes hard-coded `ready/sufficient` after its separate capability mask passes | `P5-D24`/`P5-1` must wire and persist the evaluator, freeze evidence-flag/sufficiency producers, reconcile Gate B, and bind selections to the actual v2 report before `P5-2` |
-| ML expected-pin authority | **Direct check is stale and selection is under-scoped:** `contracts/ml/expected-pin.json` matches retained `run-adac9e85dccb56e8`, but `tools/build_expected_pin.py` defaults to absent `run-b847177c11ac724d`, so direct `python3 tools/build_expected_pin.py --check` exits 2. The normal `tools/dev.py` repin path passes `--run run_id` and bypasses that stale default; it is not currently broken for this reason. Current pin/selection helpers also collapse full scope to capability | `P5-0` records both the defect and bypass; `P5-D25`/`P5-1` require active source selections before pinning plus explicit run, pin/authority paths, job purpose, evidence root, retailer, tenant, environment, and separate rich-local/sparse-dev v1 pin artifacts |
+| ML expected-pin authority | **Scope collapse stands.** `_active_selections()` keys active selections by capability alone and the module names no `retailerId`, `tenantId`, or `environment`, so a capability match can bind the wrong tenant's selection once more than one tenant is governed. The stale-default half of this defect is closed | `P5-0` records the current `--check` status verbatim; `P5-D25`/`P5-1` require active source selections before pinning plus explicit run, pin/authority paths, job purpose, evidence root, retailer, tenant, environment, and separate rich/sparse v1 pin artifacts |
 | Runtime selection authority | **Unwired/incomplete:** `resolve_selection()` has no production consumer, does not derive the unique live ledger head, and does not itself verify schema, `recordId`, retained bytes, DuckDB, or the v2 report | `P5-D25`/`P5-1` freeze selection-v2/legacy-v1 parity, add one full-ledger preflight, and thread explicit selection/pin/authority paths through every model, verifier, publisher, materializer, activation, and serving job |
 | Forecast temporal capability | Current accepted forecast evidence is `demand_forecast_non_pit`, declares `pitEligible: false`, and carries `LANDING_BACKFILL_DEPENDENCY` under Decision #49 | Preserve the disclosure at a current pricing origin; never use it to support a historical PIT claim; republish as non-PIT unless new evidence independently earns `point_in_time_forecasting` |
 | Inventory replay acceptance | Not accepted: manifest-level `REPLAY_NO_CANDIDATE_IMPROVEMENT` plus cohort-level `REPLAY_GATE_FAILED`; current-snapshot outputs remain active | Replay-derived benefit claims remain unavailable and both evidence layers are retained |
-| Price temporal availability | Unavailable: all 289,884 rows are `landing_backfill`; reason `PRICE_AVAILABILITY_BACKFILLED` | `P5-1` and `P5-2` |
-| Structural price variation | Promising in both markets, but not yet an admissible weekly PIT panel | `P5-2`, `P5-4` |
+| Price temporal availability | **Per publication.** Where the sell-price grade is landing-time, elasticity is temporally unavailable with `PRICE_AVAILABILITY_BACKFILLED` irrespective of row volume | `P5-1` and `P5-2` |
+| Structural price variation | **Per publication.** `P5-0`'s §1.4 audit reports potential eligibility at both grains; headroom there is never evidence of an admissible weekly PIT panel | `P5-2`, `P5-4` |
 | Response-rich acceptance preset | Config intent exists, but no accepted Phase 5 publication exists | `P5-2` through `P5-4` |
 | `pricing-evidence-sparse` preset | Named locally but not yet a checked-in, selected acceptance profile | `P5-2` |
 | Strict price-response policy | Existing `price_response.yaml`: negative beta, bounded magnitude, sign consistency, resample stability, holdout improvement, coverage, and minimum gated count | Freeze unchanged or approve a pre-result amendment in `P5-1P`; `P5-3` may only version that frozen protocol |
-| Local pricing rules | Existing India West/INR and US New York/USD grid and ending rules; 5% maximum per-cycle change | Resolve and golden-test in `P5-3`/`P5-5` |
-| Temporal cost | Generated PoC receipts/cost have posted temporal evidence but are not client-actual; current calculation is WAC, while 73 served valuation rows are incorrectly labelled FIFO and 68 rows are unavailable | Reconcile carried method labels/coverage in `P5-0`/`P5-0P`; freeze synthetic-margin labelling, real-cost provenance, and genuine FIFO refusal/implementation in `P5-1P`/`P5-3`/`P5-5` |
-| Competitor observations | 300,611 origin-visible price rows | Source/freshness contract in `P5-1` |
-| Competitor products/matches | 1,440 products and 1,440 active matches; brand/model/GTIN attributes are null and current matched attributes are synthetic | Match-quality remediation and gates in `P5-2`/`P5-6A/B` |
-| Historical promotion evidence | 811 promotions and 19,527 merchandise targets, but promotion availability is landing-backfilled | `P5-1`, `P5-2`, `P5-7A/B` |
+| Local pricing rules | Dimensionless defaults plus absolute per-market rules: 5% maximum per-cycle change, `minActionCapPct`, margin floor, dominance, and nearest-step rounding, with grid/endings/floor/ceiling authored per `market_id + currency_code`. Decision #39 fails closed on any governed market lacking an absolute rule | Author and golden-test the rule for every market in the tenant's governed set in `P5-3`/`P5-5`; an unauthored market is a blocking onboarding gap, not a runtime fallback |
+| Temporal cost | **Durable defect, per-publication magnitude.** The transform computes WAC while the loader and valuation artifact republish the source's carried `method` label, so wherever the source says FIFO the served artifact asserts FIFO over WAC arithmetic. `P5-0` measures the exact repair set and the unavailable-row set for the selected publication | Reconcile carried method labels in `P5-0`/`P5-0P`; freeze synthetic-margin labelling, real-cost provenance, and genuine FIFO refusal/implementation in `P5-1P`/`P5-3`/`P5-5` |
+| Competitor observations | **Per publication.** Volume and temporal grade are measured into the entry record; grade decides admissibility, volume decides evaluation power | Source/freshness contract in `P5-1` |
+| Competitor products/matches | **Per publication.** Where descriptive attributes are absent, a high numeric confidence rests on nothing auditable and cannot auto-accept; the matching-evaluation split must be sized against the measured universe | Match-quality remediation and gates in `P5-2`/`P5-6A/B` |
+| Historical promotion evidence | **Per publication, and the most variable input.** Status vocabulary, mechanic vocabulary, and scope-row cardinality decide whether Planner surfaces are demonstrable or must be predeclared unavailable, independently of the temporal grade | `P5-1`, `P5-1P`, `P5-2`, `P5-7A/B`; an empty generator promotion section makes the `P5-D23` precondition unreachable without new authored evidence |
 | Promotion privacy | Decision #19 permits aggregate segment counts/mix and defers customer PII, cannibalisation, and bundles | Retain unless separately reopened before `P5-7A/B` |
 | Phase 5 run/acceptance/verifier contracts | Missing | `P5-3` |
 | Phase 5 database migration and OpenAPI | Missing | `P5-3`, `P5-8` |
@@ -308,124 +342,99 @@ content routing, URL validation, and mobile navigation omit those destinations.
 The absence is useful: the phase can still freeze temporal, model, policy, API, and UI contracts
 before result-bearing code creates accidental authority.
 
-### 1.2 Conflicting upstream authority evidence and carryovers
+### 1.2 How the starting point is established
 
-The repository does not currently expose one self-consistent Phase 4 authority identity:
+Phase 5 is a capability, not a dataset. Nothing in §§2–16 names a tenant, market, country,
+department, or row count, and no gate is satisfied or failed by plan text. What a given publication
+happens to contain is an **input** to Phase 5, recorded as dated evidence, never a premise baked
+into policy.
 
-- old API smoke evidence records forecast `fr_5f6fa2015d80eee5` /
-  `fv_ba2791b4273e3b4f`, inventory `ir_b10bb797108e80a7` /
-  `iv_b10bb797108e80a7`, source selection `sel_2d3c5e156bedabd4`, and fifteen successful
-  inventory/replenishment routes;
-- released activation history records that forecast identity as superseded and names event 23 as
-  current forecast `fr_a08dfd164b77ac34` / `fv_b0a75559c2a1fb40`;
-- the forecast closure record, current forecast manifest, and current inventory manifest instead
-  consume forecast `fr_953a83f76576103d` / `fv_ff2c77dce6410035`;
-- the current inventory manifest names inventory run `ir_1a51973dd1a17d32` and source selection
-  `sel_3c2c4db8b76109d9`;
-- the committed `contracts/ml/expected-pin.json` matches the only retained
-  `run-adac9e85dccb56e8` publication and currently hashes to
-  `9b5928c270ccd8559af8f931b5761b4c07fe8e7e17eb83ebe9e4ebd614a9dab3`, but
-  `tools/build_expected_pin.py` still declares
-  `RUN = run-b847177c11ac724d`; its own `--check` exits 2 because that retained evidence is absent,
-  so the pin is not presently reproducible through its declared check path;
-- the old smoke forecast identity is explicitly listed without retained bytes, and its source pin
-  does not match the only curated publication currently retained on disk;
-- released history's `inventoryAuthorityLedger` has no inventory events and contains forecast-
-  shaped identities, so it is not valid inventory authority evidence.
+The starting point therefore lives in one machine-readable artifact, not in this document:
+`contracts/evidence/phase5-entry-record.json`, produced by `P5-0` and already listed in §5.1 and
+§6. When the selected publication changes, that record is regenerated and this plan does not
+change. If a pin change ever requires editing §§2–16, the gate being edited was wrong: it had a
+data assumption compiled into it.
 
-`P5-0` must therefore reconcile committed JSON selection ledgers to materialized
-`source_selection_id` values and then to live PostgreSQL activation/current views, retained
-artifacts, manifests, API evidence, OpenAPI, and UI lineage. It must not choose one of the
-conflicting files merely because it is named `current` or `live`. The §1.3 measurements below are
-explicitly measurements of curated publication `run-adac9e85dccb56e8`, not proof that it is the
-active serving authority.
+`P5-0` must reconcile, and record into the entry record:
 
-The inventory candidate preserves current-snapshot analytics but does not pass replay acceptance.
-The run manifest records `REPLAY_NO_CANDIDATE_IMPROVEMENT`, while per-cohort acceptance evidence
-records `REPLAY_GATE_FAILED` for calibration/holdout gates. Both reason layers are retained.
-Replay-derived fill-rate, service, working-capital, revenue-benefit, and policy-superiority claims
-remain unavailable in Phase 5.
+- the selected source publication, its curated path, source snapshot, Gate A/Gate B and publication
+  semantic fingerprints, object count, and committed pin hash;
+- the exact forecast and inventory run/version identities, their lifecycle status, and the source
+  selection each consumed;
+- the governed tenant, retailer, environment, market set, and operating currencies;
+- the live PostgreSQL activation/current views, reconciled to the committed JSON selection ledgers
+  and to retained artifacts, manifests, API evidence, OpenAPI, and UI lineage;
+- every carried unavailable field with its reason code and the dependency that would clear it;
+- the measurement register in §1.3 and the feasibility audit in §1.4.
 
-The accepted forecast is explicitly non-PIT under Decision #49: capability
-`demand_forecast_non_pit`, `pitEligible: false`, reason `LANDING_BACKFILL_DEPENDENCY`. A current
-pricing decision may consume its accepted P50 with that disclosure, but it cannot support a claim
-that a historical pricing origin had a point-in-time forecast. Republishing on a Phase 5 source pin
-retains `demand_forecast_non_pit` unless new independent evidence earns
-`point_in_time_forecasting`.
+Two rules govern that reconciliation. An identity is never adopted because it is the only one left,
+or because a file or directory is named `current`, `live`, or `final` — developer labels are not
+lineage. And retained artifacts plus a matching pin are not an activation; a pin proves which bytes
+a job consumed, never which authority serves.
 
-The Phase 5 publication must record the exact selected source, forecast, and inventory identities
-it consumed. If native price/promotion evidence changes the selected source fingerprint or forecast
-features, the feature build, accepted forecast, and inventory bundles must be regenerated,
-republished, prepared as explicit successors, and selected only after verification in the separate
-activation step rather than combined across incompatible pins. Current feature, forecast, and inventory identities bind the
-complete source publication identity; Phase 5 has no implemented domain-subset equivalence that can
-preserve them.
+A publication is disqualified as a Phase 5 input when its bytes are absent, its committed pin does
+not reproduce, its selection ledger has zero or multiple heads for a full
+`{retailer, tenant, capability, environment}` scope, its readiness verdicts are not reproducible
+from the registered producers, or its consumed upstream identities cannot be shown to exist.
 
-### 1.3 Current canonical evidence inventory
+Carryovers that survive every republication, because they are properties of decisions and code
+rather than of data:
 
-Curated DuckDB publication `run-adac9e85dccb56e8` contains the following measured Phase 5-relevant
-rows. These are retained-file measurements, not an active-selection assertion:
+- **Replay is not accepted.** Phase 4 records a manifest-level `REPLAY_NO_CANDIDATE_IMPROVEMENT`
+  and cohort-level `REPLAY_GATE_FAILED`. Both layers are retained, and replay-derived fill-rate,
+  service, working-capital, revenue-benefit, and policy-superiority claims stay unavailable.
+- **The accepted forecast is non-PIT** under Decision #49: `demand_forecast_non_pit`,
+  `pitEligible: false`, `LANDING_BACKFILL_DEPENDENCY`. A current pricing origin may consume its
+  accepted P50 with that disclosure; no historical origin may claim a point-in-time forecast.
+  Republishing retains the non-PIT capability unless new evidence independently earns
+  `point_in_time_forecasting`.
+- **Upstream identities bind the whole source publication.** If source evidence changes the
+  selected fingerprint or the feature inputs, the feature build, forecast, and inventory bundles are
+  regenerated, republished, prepared as explicit successors, and selected only after verification.
+  Phase 5 has no domain-subset equivalence that can preserve them across a source change.
 
-| Canonical role | Rows | Current evidence disposition |
-|---|---:|---|
-| `sell_prices` | 289,884 | Structurally useful; all `landing_backfill`, therefore not PIT-admissible for elasticity |
-| `competitor_products` | 1,440 | Product identities exist; descriptive attributes are empty |
-| `competitor_prices` | 300,611 | `native_observed`; usable after freshness/scope verification |
-| `competitor_matches` | 1,440 | All active with synthetic attribute-match explanation; not yet decision-grade matching evidence |
-| `promotions` | 811 | Current/historical rows exist; all availability is landing-backfilled |
-| `promotion_scopes` | 811 | Useful after origin and AND/OR semantics are verified |
-| `promotion_merchandise_targets` | 19,527 | Useful after origin and precedence/conflict semantics are verified |
-| `customer_segments` | 6 | Aggregate segment mix only under Decision #19 |
-| `purchase_receipts` | 196,984 | Native posted evidence across India and US |
-| `inventory_cost` | 196,918 | Generated PoC temporal cost rows; current transform computes WAC, while carried method labels do not prove FIFO |
+### 1.3 Measurement register
 
-The current sell-price distribution includes 150,976 India/INR rows and 138,908 US/USD rows,
-covering 2,880 series in each market. Effective weeks span 2016-07-25 through 2026-07-20, but all
-rows share a publication-era known-as-of timestamp. Those counts demonstrate potential variation,
-not historical admissibility.
+`P5-0` measures each item below against the selected publication and writes the result to the entry
+record. This section fixes *what is measured and what each measurement decides*; it deliberately
+contains no values, because values belong to a pin and this plan does not.
 
-### 1.4 Structural price variation versus accepted panel eligibility
+| Measured | Disposition it drives |
+|---|---|
+| `sell_prices` volume, temporal grade distribution, distinct known-as-of boundaries | Any grade below the origin-visible threshold makes elasticity temporally unavailable with `PRICE_AVAILABILITY_BACKFILLED`, whatever the volume |
+| Market set, operating currencies, store/DC/channel/department/SKU counts | Declares the governed market set for `P5-D26`; drives per-market gate arithmetic and the §9 coverage contract |
+| Price series count and effective-week span | Bounds the 13 scoring origins and the panel assessment window |
+| `competitor_products` attribute completeness, `competitor_prices` grade, `competitor_matches` status and confidence range | Matching evaluation population in `P5-1P`; a universe too small to split into disjoint truth sets blocks `P5-6A` before it starts |
+| `promotions` count, status vocabulary, mechanic vocabulary, scope-row and merchandise-target shape | Whether `P5-D23`'s evidence precondition is reachable and which `P5-7B` branch applies; whether §9's promotion states are demonstrable or must be predeclared unavailable |
+| `purchase_receipts` and `inventory_cost` volume, temporal grade, and `method` label distribution | Cost capability class and the size of the mislabelling repair set |
+| Valuation-artifact `cost_method` and `cost_reason_code` distribution | The exact repair set `P5-0P` must approve and `P5-2` must publish as a successor |
+| `customer_segments` count | Whether aggregate audience mix is publishable under Decision #19 small-cell policy |
 
-A source-only exploratory audit, deliberately ignoring temporal admissibility, found the following
-potential populations with at least 52 raw observations, at least three raw price levels, and at
-least five raw transitions. The first count preserves the fitted SKU × store × channel grain; the
-second is the distinct SKU × store unit used by the ≥25 department gate and therefore cannot be
-channel-doubled:
+Two standing interpretation rules apply to every row. Volume never establishes admissibility: a
+larger table with a worse temporal grade is worse evidence, not better. And a measurement that
+falls short is a finding to be recorded and dispositioned before results, never a reason to adjust
+a threshold afterwards.
 
-| Market | Department | Potential SKU × store × channel series | Potential distinct SKU × store pairs |
-|---|---|---:|---:|
-| India | Apparel | 104 | 52 |
-| India | Automotive | 108 | 54 |
-| India | Beauty | 108 | 54 |
-| India | Books | 100 | 50 |
-| India | Electronics | 96 | 48 |
-| India | Groceries | 204 | 102 |
-| India | Health | 112 | 56 |
-| India | Home | 124 | 62 |
-| India | Sports | 104 | 52 |
-| India | Toys | 120 | 60 |
-| United States | Apparel | 108 | 54 |
-| United States | Automotive | 112 | 56 |
-| United States | Beauty | 112 | 56 |
-| United States | Books | 120 | 60 |
-| United States | Electronics | 156 | 78 |
-| United States | Groceries | 100 | 50 |
-| United States | Health | 80 | 40 |
-| United States | Home | 92 | 46 |
-| United States | Sports | 132 | 66 |
-| United States | Toys | 108 | 54 |
+### 1.4 Panel-eligibility feasibility method
 
-These numbers are discovery evidence only. They are neither temporally admissible nor accepted
-model counts. Before any generated result is inspected, `P5-1P` freezes a rich-profile design
-target of at least 50 potential distinct SKU × store pairs per intended enabled market/department,
-twice the 25-pair acceptance minimum. That is a planning buffer, not a relaxed acceptance gate. A
-scope below 50 must either receive origin-visible source enrichment before result inspection or be
-predeclared disabled; no target may be changed after results. The retained audit currently places
-three scopes below that design target: United States Health at 40 pairs, United States Home at 46,
-and India Electronics at 48. `P5-1P` must record an explicit enrich-or-predeclare-disabled
-disposition for each of those three scopes. The canonical table stores sparse price events rather
-than one explicit row per week. `P5-3` must freeze event-to-week expansion and point-in-time last-
-observation-carry-forward rules; `P5-4` must then independently calculate:
+Before any result is inspected, `P5-0` runs a source-only exploratory audit that deliberately
+ignores temporal admissibility, counting series with at least 52 raw observations, at least three
+raw price levels, and at least five raw transitions. It reports two counts per market and
+department: the fitted SKU × store × channel grain, and the distinct SKU × store unit used by the
+≥25 department gate, which therefore cannot be channel-doubled. Both go to the entry record.
+
+These counts are discovery evidence only — neither temporally admissible nor accepted model counts.
+`P5-1P` freezes a rich-profile design target of at least 50 potential distinct SKU × store pairs per
+intended enabled market and department, twice the 25-pair acceptance minimum. That is a planning
+buffer, not a relaxed gate. Every scope below the buffer receives an explicit
+enrich-or-predeclare-disabled disposition; where no scope is below it, that finding is frozen too,
+so a later shortfall reads as a regression rather than a discovery. No target moves after results.
+
+Headroom in this audit is never evidence that the panel gate is easy. All counts are raw
+event-history populations, and the entire margin can be consumed by point-in-time expansion,
+coverage, level support, transition validity, and freshness rejection. The canonical table stores
+sparse price events rather than one row per week, so `P5-3` freezes event-to-week expansion and
+point-in-time last-observation-carry-forward, and `P5-4` then independently calculates:
 
 - at least 52 observed eligible weeks;
 - at least 90% coverage over the assessment window;
@@ -436,77 +445,93 @@ observation-carry-forward rules; `P5-4` must then independently calculate:
 - no future-known price, promotion, event, cost, forecast, or competitor input;
 - a complete assessed-series denominator, including every reason-coded rejection.
 
-### 1.5 Current cost and margin capability
+### 1.5 Cost and margin capability
 
-Purchase receipts include 96,992 India rows and 99,992 US rows over the ten-year window. The
-inventory-cost ledger contains 196,918 generated PoC rows with temporal evidence and currently
-carries 129,778 `FIFO` versus 67,140 `WAC` method labels. The transform calculates quantity-
-weighted WAC; a carried label does not prove receipt-layer FIFO depletion.
+Two defects here are properties of the code and contracts rather than of any publication, so they
+survive every republication and must be repaired rather than re-measured.
 
-The current provenance path is also insufficient for the proposed client-actual gate. Generated
-Business Central cost rows carry legacy `ERP_ACTUAL`; staging-v2 maps that dialect value to
-`evidence_class = client`, and canonical `inventory_cost` drops the provenance fields while stamping
-native-posted temporal evidence. `COST_NOT_CLIENT_ACTUAL` therefore cannot be inferred safely from
-the current canonical row alone. Phase 5 must derive ownership/use-purpose from the governed source
-run/profile, preserve closed evidence/derivation classes and exact source identity through canonical
-cost/readiness, and explicitly refuse `ERP_ACTUAL` as proof that generated data is client-owned.
+**The carried `method` label is not a computed method.** The canonical transform calculates
+quantity-weighted WAC while passing through whatever `method` value the source supplied, and the
+Phase 4 inventory loader selects that column verbatim into `cost_method`, which the valuation
+artifact publishes and the API serves. Wherever the source labels rows `FIFO`, the served artifact
+asserts FIFO over WAC arithmetic. The proportion varies by publication and is measured per §1.3;
+the defect does not. Source method is audit input only. Computed method is `WAC` or unavailable
+until genuine receipt-layer/batch depletion is implemented and independently verified, and `P5-0`
+records the exact repair set, `P5-0P` approves the display amendment, and `P5-2` publishes a
+successor rather than updating rows in place. The inventory parity promise for `derived_lane_wac`
+must likewise reconcile to an actual emitted value or remain absent; it is never implied by a
+nearby cost label.
 
-The current inventory-valuation artifact makes this a carried Phase 4 correctness issue, not only
-a future Phase 5 rule: 73 valuation rows expose `cost_method = FIFO`, 32 expose `WAC`, 153 expose
-`store_receipt_wac`, and 68 have `UNIT_COST_UNAVAILABLE`. The 68 unavailable rows span four
-canonical `store` locations and four canonical `dc` locations; the Pune overflow and Brooklyn MFC
-names are DC nodes, not separate canonical location types. The numeric values labelled FIFO are
-WAC-derived, so read-only `P5-0` must record the exact repair set, `P5-0P` must approve the display
-amendment, and `P5-2` must publish/materialize a successor rather than updating current rows in
-place. Source method is audit input only, while computed method is `WAC` or unavailable until
-genuine FIFO is implemented. The
-inventory parity promise for `derived_lane_wac` must also reconcile to an actual artifact value or
-remain absent; it cannot be implied by a nearby cost label.
+**Provenance does not survive into canonical cost.** Generated Business Central rows carry legacy
+`ERP_ACTUAL`; staging-v2 maps that dialect value to `evidence_class = client`, and canonical
+`inventory_cost` then drops the provenance fields while stamping native-posted temporal evidence.
+`COST_NOT_CLIENT_ACTUAL` therefore cannot be inferred safely from a canonical row alone. Phase 5
+must derive ownership and use-purpose from the governed source run/profile, preserve closed
+evidence/derivation classes and exact source identity through canonical cost and readiness, and
+explicitly refuse `ERP_ACTUAL` as proof that generated data is client-owned.
 
-Required Phase 5 distinction:
+The required Phase 5 distinction is unchanged by either defect:
 
 - client-actual, positive, same-currency, provenance-matched cost as of the decision origin may
   enable real/client margin fields;
-- the current generated cost, even with native-posted temporal grade, may enable only a clearly
-  labelled `synthetic margin scenario` that cannot alter primary pricing or promotion output;
-- FIFO remains unavailable unless Phase 5 implements and verifies genuine receipt-layer/batch
-  depletion rather than trusting a carried method label;
-- reference product cost, future cost, cross-currency cost, stale cost, or missing cost leaves the
-  margin objective, floor, and outputs unavailable while revenue remains eligible.
+- generated cost, even at a native-posted temporal grade, may enable only a clearly labelled
+  `synthetic margin scenario` that cannot alter primary pricing or promotion output;
+- FIFO remains unavailable until genuine depletion is implemented and verified;
+- reference, future, cross-currency, stale, or missing cost leaves the margin objective, floor, and
+  outputs unavailable while revenue remains eligible.
 
-### 1.6 Current competitor capability
+### 1.6 Competitor capability
 
-Competitor price history is stronger than sell-price history because its rows are
-`native_observed`. However, all current competitor product brand/model/GTIN fields are null,
-attributes are `{}`, and all matches carry a synthetic attribute-match explanation despite high
-numeric confidence values from 0.82 through 0.9894.
+Competitor observations are typically the strongest temporal evidence available, because extract or
+observation times are usually native. Product attributes are the weak point: where brand, model, and
+GTIN are null and `attributes` is empty, a high numeric match confidence rests on nothing auditable.
+Confidence without attributes cannot auto-accept a match, however high the number.
 
-Because this is locally generated PoC data, its source provenance must be classified
-`evidence_class = synthetic` at the product/observation/match boundary, with
-`derivation_class = native | derived` and exact source system/instance retained separately.
-`Synthetic demo` is a use-purpose/presentation disclosure, not a new provenance enum or source
-class. The data can demonstrate governed product behavior but must never be described as a live
-client or independently observed market feed. Engagement capability remains unavailable until an
-approved client/licensed source is supplied.
+Locally generated data is classified `evidence_class = synthetic` at the product, observation, and
+match boundary, with `derivation_class = native | derived` and exact source system/instance retained
+separately. `Synthetic demo` is a use-purpose and presentation disclosure, not a provenance enum or
+source class. Such data can demonstrate governed product behavior but is never described as a live
+client or independently observed market feed, and engagement capability stays unavailable until an
+approved client or licensed source is supplied.
 
-Phase 5 therefore needs an effective-dated match identity at tenant × retailer SKU × competitor ×
-competitor SKU with method, compared attributes, confidence, review status, `observed_at`, and
-`known_as_of`. Numeric confidence without auditable attributes cannot auto-accept a match. Matched,
-needs-review, rejected, and no-match must all be first-class states.
+Phase 5 needs an effective-dated match identity at tenant × retailer SKU × competitor × competitor
+SKU carrying method, compared attributes, confidence, review status, `observed_at`, and
+`known_as_of`. Matched, needs-review, rejected, and no-match are all first-class states.
 
-### 1.7 Current promotion capability and privacy boundary
+`P5-1P` sizes its matching-evaluation contract against the measured product universe, not against a
+remembered one: minimum evaluated positives and negatives per market and category must leave
+disjoint development and evaluation truth sets after the split. A universe too small to support the
+frozen minimums blocks `P5-6A` and is reported as such rather than evaluated on an under-powered
+split.
 
-The canonical source contains 791 `historical` and 20 `active` promotion statuses. Its type field
-contains 280 `clearance`, 262 `fire-sale`, 231 `runout-markdown`, and 38 `campaign` rows, plus scopes
-and merchandise targets. These are current source vocabularies—not the original UI's Draft, Under
-Review, Approved, Live, Completed lifecycle vocabulary, and not a complete Percentage Discount,
-Fixed Price, Clearance offer-mechanic vocabulary. `historical` must not be silently mapped to
-Completed, `active` to Live, or campaign class to offer mechanic. Because availability is landing-
-backfilled, the current rows may support only the descriptive scope expressly approved by the
-temporal contract and cannot support historical uplift training.
+### 1.7 Promotion capability and privacy boundary
+
+Promotion evidence is the most variable input across publications, and the most likely to be
+thinner than the Promotion Planner's surface implies. A generator configuration with empty
+promotion, event, or scheme sections yields a canonical table whose status and mechanic vocabularies
+collapse to one or two values, and whose scope rows cannot exercise applicability logic at all.
+
+`P5-1P` must therefore evaluate, from the §1.3 register and before any generation:
+
+- whether the source lifecycle vocabulary can populate the reference status set, or whether that
+  §9 coverage row is unsatisfiable and must be predeclared unavailable;
+- whether the source mechanic vocabulary can populate the permitted offer mechanics, on the same
+  terms;
+- whether scope-row cardinality can demonstrate AND-within-row plus OR-across-rows and
+  equal-precedence conflict refusal live, or whether the `P5-D10` golden vectors must be proven by
+  contract fixtures while the page shows the governed unavailable state;
+- whether `P5-D23`'s evidence precondition is reachable at all, and therefore which `P5-7B` branch
+  applies.
+
+Answering these at `P5-1P` is mandatory. Discovering them at `P5-7B` is a gate failure, not a data
+finding. The remedy for thin evidence is always an honest unavailable state: a source status is
+never silently mapped onto a richer UI lifecycle, and a campaign class is never mapped onto an offer
+mechanic. Because availability is landing-backfilled wherever the temporal grade says so, such rows
+support only the descriptive scope the temporal contract expressly approves and can never support
+historical uplift training.
 
 The task ledger's broad request for uplift, cannibalisation, bundle, and segment models conflicts
-with finalized Decision #19. Decision #19 directly permits aggregate segment counts/mix and defers
+with finalized Decision #19. Decision #19 permits aggregate segment counts and mix and defers
 customer/basket PII, cannibalisation, and bundles; `P5-D11` conservatively extends that boundary to
 segment-specific response, offers, and targeting for this phase:
 
@@ -532,10 +557,20 @@ unavailable presentation. Plan approval alone does not reopen the privacy decisi
 - enabled-department accepted coverage must be at least 5%;
 - each enabled department must contain at least 25 actually gated series.
 
-`contracts/guardrails/pricing_rules.yaml` currently resolves shadow/revenue behavior, an absolute
-5% maximum per-cycle change, `minActionCapPct = 2`, 12% margin floor where accepted client-actual
-cost enables the primary margin capability, 0.70 dominance, nearest-step rounding, and market-local
-grids/endings for India West/INR and US New York/USD. The specification defines
+`contracts/guardrails/pricing_rules.yaml` resolves the dimensionless defaults that every market
+shares — shadow/revenue behavior, an absolute 5% maximum per-cycle change, `minActionCapPct`, the
+margin floor that applies where accepted client-actual cost enables the primary margin capability,
+dominance, and nearest-step rounding — plus one **absolute** rule per `market_id + currency_code`
+carrying minor-unit exponent, price floor and ceiling, candidate step, grid origin, and permitted
+endings. Absolute rules are market-specific by necessity: a price grid that suits one catalogue's
+pack economics will not suit another's, and Decision #39 makes `resolve_guardrails` fail closed on
+any market × currency pair with no entry.
+
+Authoring that entry is therefore a **per-market onboarding step, not a runtime fallback**, and it
+is the one thing a new country genuinely requires before Phase 5 can produce a candidate price for
+it. Retired market entries are retained rather than deleted, because immutable prior vectors were
+fingerprinted against them and removing one would make that evidence unreproducible. The
+specification defines
 `minActionCapPct` as the lower endpoint of a **confidence-scaled maximum action cap** that rises
 from 2% at dominance 0.70 to 5% at dominance 1.0; it is not a 2% minimum actionable change.
 Candidates must also remain inside observed price support. `P5-1P`/`P5-3` freeze the exact
@@ -642,16 +677,18 @@ actual provenance would be a temporal-policy amendment requiring explicit pre-re
 ### 1.8.3 Current expected-pin, selection, and resume-authority gaps
 
 `contracts/ml/expected-pin.json` remains the exact v1 byte authority consumed by forecast and
-inventory work. Two real defects must be fixed before Phase 5 source publication:
+inventory work. Of the two defects Revision 9 recorded here, one is now closed and one stands:
 
-- `tools/build_expected_pin.py` defaults to stale `run-b847177c11ac724d`, while the committed pin
-  and only retained publication are `run-adac9e85dccb56e8`. This breaks the direct/default
-  `--check` path. It does **not** currently break the normal pipeline repin step:
-  `tools/dev.py` passes `--run <run_id>`, which overrides the constant. `P5-0` records both the
-  defect and that existing bypass so reviewers do not infer that generation or the phase-exit gate
-  is failing for this reason.
-- the helper resolves current selections by capability alone, dropping retailer, tenant, and
-  environment. A capability match is therefore insufficient authority in a multi-audience ledger.
+- **Closed.** The hard-coded stale-run constant is gone from `tools/build_expected_pin.py` and its
+  `--check` reproduces the committed pin against the retained publication. `P5-0` records the
+  observed status rather than re-litigating it; no `P5-D25` work is owed for this half.
+- **Open, and load-bearing.** The helper still resolves current selections by capability alone
+  (`_active_selections()` is keyed by capability; the module names no `retailerId`, `tenantId`, or
+  `environment`). A capability match is merely under-scoped while exactly one tenant is governed.
+  The moment a second tenant exists in the ledger — which is the normal steady state for a
+  multi-tenant capability — a capability-only lookup can silently bind the wrong tenant's selection.
+  This is the defect `P5-D25` must actually fix, and it is a precondition for onboarding any
+  additional country rather than a tidy-up.
 
 `P5-D25` repairs those mechanics without introducing Phase-6 release authority. The pin CLI takes
 an explicit operation, run, pin path, input-authority path, job purpose, evidence root, retailer,
@@ -788,8 +825,10 @@ The audit identified the following concrete candidates:
    corrected before relying on either element.
 5. Forecast Business Impact remains unavailable because no accepted comparable counterfactual
    exists; Phase 4 replay did not pass and Phase 5 must not invent one.
-6. Forecast Scenario Planning may become a live stateless pricing scenario after accepted beta;
-   save/apply remains disabled. Decision #53 keeps the existing Forecast promotion row unavailable
+6. Forecast Scenario Planning v1 is owned by the standalone Decision-#96 pre–Phase-5 workstream and
+   does not wait for accepted beta; Phase 5 must preserve its versioned contract and no-write
+   boundary. A fitted Forecast scenario is v2, not an in-place v1 change. Decision #53 keeps the
+   existing Forecast promotion row unavailable
    with `NO_ORIGIN_VISIBLE_PROMOTION_PLAN`; new origin-visible evidence alone is insufficient to
    reverse it. Promotion elements become live only after the formal `P5-D23` amendment gate.
 7. Forecast Compare Versions currently names a model and exposes only the active version. It must
@@ -897,7 +936,7 @@ from silently reversing repository policy:
 | #39 | Absolute pricing rules resolve per market × operating currency |
 | #43 | Operating currency is separate from presentment/reporting currency |
 | #44 | FX direction, precision, rounding, and aggregation follow the frozen contract |
-| #45 | Each enabled market/department needs ≥25 actually gated distinct SKU × store pairs; sparse refusal is a separate demo |
+| #45 | Each enabled market/department needs ≥25 actually gated distinct SKU × store pairs; sparse refusal is a separate demo. Its IN+US sizing binds the multi-market audience unchanged; `P5-D26` scopes the market-count obligation to the governed market set of the tenant under evaluation so a deliberately single-market tenant satisfies it within its own set |
 | #46 | `channel_id` remains in canonical/fitted/served grain |
 | #49 | Forecast capability remains `demand_forecast_non_pit` with `pitEligible: false` and `LANDING_BACKFILL_DEPENDENCY` unless new evidence earns PIT |
 | #53 | Existing promotion feature remains unavailable with `NO_ORIGIN_VISIBLE_PROMOTION_PLAN` until the explicit `P5-D23` amendment is approved |
@@ -907,6 +946,7 @@ from silently reversing repository policy:
 | #74 | Candidate search uses a frozen development/untouched-confirmation protocol; `P5-D3` defines the pre-approved 13-origin Phase 5 extension |
 | #79 | Provenance remains closed `client \| third_party \| synthetic` plus `native \| derived`; exact source identity and `Synthetic demo` use-purpose/disclosure stay separate |
 | #92 | Forecast intervals/confidence beyond the calibrated cold-start horizon remain withheld and cannot be reconstructed in pricing |
+| #96 | Forecast Scenario Planning v1 is a standalone pre–Phase-5 assumption-based workstream; Phase 5 neither implements, gates, adapts nor reinterprets it, and a fitted integration is a separate v2 contract |
 
 ### 2.2 In scope
 
@@ -1364,7 +1404,8 @@ evidence exists; the final verifier recomputes the complete precedence row.
 
 Adopt the eligibility and acceptance values in §§3.4–3.6. The 0.80 resample-IQR maximum remains
 strict. Department enablement requires both 5% accepted coverage and at least 25 actually gated
-distinct SKU × store pairs independently in India and the US, with response fitting and
+distinct SKU × store pairs independently in **every market of the evaluated tenant's governed
+market set** under `P5-D26`, with response fitting and
 recommendations remaining SKU × store × channel and no double-counting channels. Apply
 the approved Phase 5 extension of Decision #74: exactly 13 predeclared chronological scoring
 origins with frozen spacing/window/market-alignment and selection rules, origins 1–8 for
@@ -1585,8 +1626,9 @@ serve-time pricing-rule or workflow work.
 ### P5-D17 · Existing-page integration — proposed binding
 
 Phase 5 may enable an existing unavailable element only when the new output exactly satisfies that
-element's frozen definition. Accepted candidates include Forecast Scenario Planning, origin-safe
-promotion panels, projected inventory demand-at-risk, source-specific freshness, read-only
+element's frozen definition. Forecast Scenario Planning v1 is explicitly excluded because Decision
+#96 owns it before this phase. Accepted candidates include origin-safe promotion panels, projected
+inventory demand-at-risk, source-specific freshness, read-only
 validation detail, and cost/policy-backed inventory markdown/NRV. Nearby metrics, partial lineage,
 or attractive substitutes do not qualify.
 
@@ -1819,6 +1861,46 @@ selection lifecycle events and one activation-set atomically. Any later JSON is 
 not a second ledger. Sparse result evidence remains non-active. Phase 5 has no live-authority,
 release-manifest, cutover, drain, or deployment serving-authorization artifact; local serving
 resolves the explicit reviewed database activation-set described in `P5-D12`.
+
+### P5-D26 · Per-tenant market-set scoping — proposed binding
+
+Phase 5 serves an open set of governed tenants, and tenants legitimately differ in market count,
+currency set, department count, and channel count. A tenant may be deliberately single-market;
+another may span several. Every market-count, coverage, enablement, and demo-breadth obligation in
+this plan therefore resolves against the **governed market set of the tenant under evaluation**,
+declared in that tenant's frozen `P5-1P` coverage contract, rather than against any constant
+embedded in plan text. No gate in this document may name a market, a country, a department, or a
+tenant.
+
+This scopes Decision #45; it does not reverse it. #45 is written against the showcase tenant that
+existed when it was decided, and its wording — "≥25 actually gated series per enabled department in
+both markets" — continues to bind that tenant exactly as written; a run there that clears only one
+of its two markets still fails. `P5-D26` restates the same obligation in tenant-relative form: **a
+tenant passes when every market in its declared governed set passes independently.** For the
+originally described tenant that is identical to #45's text. For a single-market tenant it is one
+market; for a five-market tenant it is five. The per-department threshold, the distinct SKU × store
+unit, the no-channel-double-counting rule, and the ≥5% accepted-coverage floor are unchanged in
+value and in strictness, and no tenant obtains a weaker gate by having fewer markets.
+
+Binding consequences:
+
+- a tenant declares its governed market set once, in `P5-1P`, before profile generation; the set is
+  frozen evidence and cannot be narrowed after results to convert a market failure into a pass;
+- narrowing a governed market set after results is the market-level form of the gate-relaxation
+  refusal already in §10.10, and is refused on the same basis;
+- one tenant is never evidence for another. Selections, pins, input authorities, bundles,
+  verifications, materializations, activation-sets, demo scripts, screenshots, and human reviews are
+  per tenant, and no aggregate spans them;
+- cross-market invariants remain in force wherever a set contains more than one market: no shared
+  price tiers, shrinkage pools, grids, floors, ceilings, or candidate comparisons across currencies;
+- for a single-market set those invariants are satisfied vacuously, which is not evidence that they
+  are implemented. `P5-4` must still prove market-local tier and pool construction by contract
+  vectors so the multi-market audience is not the first execution of that code path;
+- §9 demo-state rows naming a second market or a mixed-market aggregate are satisfied for a
+  single-market tenant by an explicit governed unavailable state naming the tenant's market set —
+  never by silently dropping the row, and never by presenting one market as if it were two.
+
+Approval of `P5-D26` is required before `P5-1P` freezes any tenant's coverage contract.
 
 ---
 
@@ -2106,13 +2188,13 @@ publication history.
    declared exclusion default omits `lifecycle` while Python excludes it; and prove the current full-
    scope ambiguity. Do not rewrite legacy bytes in this read-only package. All Phase 5 resolution must
    include retailer, tenant, capability, and environment, and `P5-1` owns the versioned correction.
-7. Verify the current expected pin references retained `run-adac9e85dccb56e8` and record its
-   immutable predecessor hash
-   `9b5928c270ccd8559af8f931b5761b4c07fe8e7e17eb83ebe9e4ebd614a9dab3`.
-8. Record the expected-pin CLI nuance precisely: direct
-   `python3 tools/build_expected_pin.py --check` defaults to absent
-   `run-b847177c11ac724d` and fails, but `tools/dev.py` supplies `--run run_id` at its normal
-   repin call, so this stale default does not currently break that pipeline or phase-exit path.
+7. Verify that the committed expected pin references a retained publication that exists on disk, and
+   record its source snapshot, publication semantic fingerprint, object count, committed hash, and
+   the predecessor it supersedes into the entry record.
+8. Execute `python3 tools/build_expected_pin.py --check` and record its exit status and message
+   verbatim. Separately confirm by inspection whether selection resolution is full-scope or
+   capability-only, and record which of the two `P5-D25` defects remain open. A defect that a
+   pipeline path happens to bypass is still recorded as open, with the bypass named.
 9. Freeze the first-consumer/resume matrix for source bytes, readiness sidecar, configs, feature
    artifacts, upstream models, pricing foundations, bundles, materialization, and activation.
 10. Produce one immutable Phase 5 entry record and a reviewer disposition for every contradiction;
@@ -2174,7 +2256,8 @@ and all three existing screen contracts are available.
    Weekly/Daily/Monthly option disposition, prohibition on summing weekly P50/P90 into monthly
    quantiles, controlled row/select-all state, scoped-export behavior, filtered-empty export refusal,
    the stale Demand at Risk and Stock-out Risk matrix rows/prose, a deterministic Store Priority Action rule or explicit
-   retained unavailability, Scenario Planning integration, promotion integration, version
+   retained unavailability, preservation of the Decision-#96 Scenario Planning integration,
+   promotion integration, version
    comparison, selection controls, Action Center/Store Drilldown empty states,
    business-prerequisite copy with no internal phase/policy/fingerprint jargon, and unavailable
    Business Impact. Promotion integration remains unavailable unless `P5-D23` passes.
@@ -2308,9 +2391,12 @@ used to choose a protocol or desired state count.
 1. Complete the exact M5 reuse inventory in §1.8.1 for response, pricing, scenario, and simulator
    modules, including source commit/hashes, adaptation grade, rejected paths, and golden vectors.
 2. Freeze the SKU × store × channel panel/fitted/recommendation grain and the distinct SKU × store
-   department-count rule with no channel double counting. Record enrich-or-predeclare-disabled
-   dispositions for United States Health (40 potential pairs), United States Home (46), and India
-   Electronics (48), the three retained scopes below the 50-pair design buffer.
+   department-count rule with no channel double counting. Declare the evaluated tenant's governed
+   market set under `P5-D26`. Record the measured potential-pair headroom per market and department
+   from the entry record as a frozen baseline, so any later shortfall is visible as a regression
+   rather than discovered at acceptance, and record an enrich-or-predeclare-disabled disposition for
+   every scope below the 50-pair design buffer. Where no scope is below it, record that fact
+   explicitly; "no disposition required" is itself a frozen finding, not an omission.
 3. Freeze price eligibility, baseline, candidate families, tier/EB choices, twenty-configuration
    cap, exactly 13 predeclared chronological scoring origins, their spacing/window/market alignment
    and surplus-origin selection rule, origins 1–8 for development, origins 9–13 for untouched
@@ -2388,9 +2474,13 @@ missing foundation protocol, or mutable demo target blocks `P5-2`.
 **Tasks**
 
 1. Generate the response-rich preset deterministically with source-native evidence that can
-   truthfully exercise both markets, price increases/reductions/holds, varying evidence strength,
-   competitor states, promotion states, exact zeros, and naturally sparse cohorts. Do not target
-   post-hoc KPI values.
+   truthfully exercise every market in the evaluated tenant's governed market set, price
+   increases/reductions/holds, varying evidence strength, competitor states, promotion states,
+   exact zeros, and naturally sparse cohorts. Do not target post-hoc KPI values.
+   Where the tenant's generator configuration cannot produce a state the frozen coverage contract
+   requires — an empty promotion/event section being the common case — either author the missing
+   origin-visible evidence into the profile here, or predeclare the dependent states unavailable in
+   the coverage contract. Discovering the gap at `P5-7B` is a `P5-1P` failure, not a data finding.
 2. Generate the pricing-evidence-sparse preset independently. It must fail or withhold price
    response/recommendation eligibility through genuine missing/insufficient evidence, not altered
    acceptance thresholds.
@@ -2549,10 +2639,12 @@ and screen behavior is immutable before result-bearing implementation reads mode
 - every assessed series has exactly one eligibility/acceptance disposition;
 - beta is negative and within the strict magnitude bound for every accepted series;
 - sign consistency, IQR ratio, valid draws, and holdout improvement match independent recomputation;
-- each enabled department has ≥5% accepted coverage and ≥25 actually gated series in its market;
+- each enabled department has ≥5% accepted coverage and ≥25 actually gated series in every market of
+  the tenant's frozen governed market set;
 - the ≥25 count uses distinct SKU × store pairs and channel-level coverage remains disclosed;
 - the 13 scoring origins and any excluded surplus origins match the frozen registry/rule exactly;
-- raw INR/USD prices and priors never mix;
+- raw prices and priors never mix across markets or currencies; on a single-market set this is
+  satisfied vacuously and the tier/pool construction is proven by contract vectors instead;
 - sparse pin returns the frozen `insufficient_evidence` reasons and zero recommendation rows;
 - rejected outputs remain immutable and discoverable.
 
@@ -2603,7 +2695,9 @@ semantic fingerprints plus their accepted verifier-record hashes are fixed.
 12. Calculate a separately identified, visibly labelled synthetic-margin scenario for generated
     PoC cost only after the primary recommendation is fixed; prove it cannot alter primary
     candidates, guardrails, ranks, prices, KPIs, or aggregates.
-13. Add a compatibility adapter for Demand Forecast Scenario Planning without persisting state.
+13. Do not add a Phase 5 compatibility adapter for Demand Forecast Scenario Planning v1. Preserve
+    its Decision-#96 endpoint and state; a fitted integration requires a separately approved v2
+    endpoint/schema and must not reinterpret v1 responses.
 14. Generate accessible explanation facts tied to model/policy/source lineage; never generate a
     causal or guaranteed-outcome statement.
 15. Prove all formulas, grids, endings, max change, dominance, ties, cost truth tables, and null/
@@ -4260,7 +4354,7 @@ does not open a native file chooser. It has no distinct reference application mo
 | Accept Forecast | summary order Selected Forecasts, Average Confidence, Demand Value; Acceptance Comment | preview-only; selected count and any summary value are governed or unavailable; comment read-only; `Confirm Acceptance` disabled, Cancel live |
 | Add Planner Adjustment | Product / SKU; Store; AI Forecast read-only; Planner Forecast; Adjustment Reason in order Local event, Promotion change, Competitor event, Operational constraint, Commercial judgement; Effective Period in order Next Week, Next 4 Weeks, Specific Date Range; Comment | preview-only; product/store options are governed, numeric/text inputs read-only, enums local-only; `Save Adjustment` disabled, Cancel live |
 | Compare Forecast Versions | columns Version, Created By, Accuracy, Bias, Demand Units, Status | read-only/live for compatible retained versions; otherwise the same six-column body shows typed unavailable/empty evidence; Close only |
-| Demand Scenario Planning | Scenario in order Expected Demand, High Demand, Low Demand, Promotion Upside, Supply-Constrained; Demand Adjustment; Price Change; Promotion Uplift; Competitor Availability in order Normal, Competitor Stock-out, Competitor Promotion; Weather / Event Impact in order Normal, Positive, Negative | preview-only until a separately approved API-native forecast-scenario contract exists; values are read-only/local enums; exact footer order is disabled `Run Scenario`, secondary `Preview Results` with visible/accessibility preview treatment, Cancel. Preview Results only replaces the dialog with the unavailable Scenario Results layout—no calculation/request/write/history |
+| Demand Scenario Planning | Scenario in order Expected Demand, High Demand, Low Demand, Promotion Upside, Supply-Constrained; Demand Adjustment; Price Change; Promotion Uplift; Competitor Availability in order Normal, Competitor Stock-out, Competitor Promotion; Weather / Event Impact in order Normal, Positive, Negative | owned by Decision #96 and `FSP-V1-A1`, not Phase 5. Preserve its current approved-pending/live state, API-native no-write contract, exact field order and footer behavior. Phase 5 adds no preview adapter and cannot change its status; fitted integration requires v2 |
 | Scenario Results | summary order Demand Units, Revenue Potential, Required Inventory; table columns Metric, Current Forecast, Scenario, Impact; rows Demand, Stock-out Risk, Revenue | preview-only with every numeric value typed unavailable and its business reason unless an approved stateless scenario result exists; Close only; never aggregate weekly quantiles into scenario intervals |
 | Forecast Action Center | summary order Open Exceptions, High Priority, Demand at Risk; columns Action Queue, Items, Owner, Business Exposure; row labels Under-forecast review, Over-forecast review, Data-quality correction, Model retraining | preview-only; workflow counts/owners/exposure are typed unavailable unless a governed read model is approved; Close only and no queue action |
 | Store Forecast Drilldown | Store; Period in order Next 4 Weeks, Next 8 Weeks; Store Forecast Health rows Accuracy, Bias, Demand at risk, Planner override rate; Recommended Actions rows/action and priority; footer `Open Store Forecasts` | read-only/live from governed store/version data, with per-field unavailable states; footer performs read-only navigation only, Cancel/Close live |
@@ -4340,8 +4434,8 @@ disabled, and no request/write/history occurs.
   trigger; if that trigger disappeared after a legitimate scope change, focus moves to the page H2
   and announces the reason.
 - The three result paths are distinct and exact. Price Simulation's page-level `Run Simulation`
-  opens `Simulation Result` directly—there is no parent dialog to retain. Forecast `Preview Results`
-  replaces `Demand Scenario Planning` with `Scenario Results`. Promotion live `Run Simulation` or
+  opens `Simulation Result` directly—there is no parent dialog to retain. Forecast Decision-#96
+  `Run Scenario` replaces `Demand Scenario Planning` with `Scenario Results`. Promotion live `Run Simulation` or
   unavailable `Preview Results` replaces `Simulate Promotion` with `Promotion Simulation Results`.
   Each replacement uses one dialog, retains the root page trigger identity, and refocuses the new
   title. Link Different Product is instead a same-dialog body/footer state replacement under the
@@ -4372,13 +4466,17 @@ panel-failure demonstrations come from the isolated non-mutating negative-state 
 
 ### 9.1 Cross-market and currency
 
+Every row resolves against the evaluated tenant's governed market set under `P5-D26`. A row naming a
+market outside that set is satisfied by an explicit governed unavailable state that names the set —
+never by deleting the row, and never by presenting one market as if it were two.
+
 | State | Required live evidence |
 |---|---|
-| India / INR | Accepted rich market with local grid/endings and at least one live recommendation/simulation |
-| United States / USD | Same, independently gated and modelled; tiers/pools constructed only within the US market |
-| Reporting currencies | INR, USD, EUR, GBP, and AED each appear in the exact reference order; every option is either selectable with governed FX source/as-of/direction/rate/scope or visibly disabled/unavailable, and local prices never change |
-| Mixed-market aggregate | Either approved reporting conversion with assessed coverage or explicit unavailable; never nominal sum |
-| Channel | Store and E-commerce rows preserve distinct channel identity; All Channels never silently collapses conflicting recommendations |
+| Each market in the governed set | Accepted rich market with its own local grid/endings and at least one live recommendation/simulation, independently gated and modelled in its own operating currency |
+| Market outside the governed set | Explicit governed unavailable naming the tenant's market set; no fabricated additional-market row and no borrowed evidence from another tenant |
+| Reporting currencies | Every reference currency option appears in the exact reference order and is either selectable with governed FX source/as-of/direction/rate/scope or visibly disabled/unavailable, while local operating prices never change. This is display FX and is independent of how many markets the tenant governs |
+| Mixed-market aggregate | Where the governed set holds more than one market: approved reporting conversion with assessed coverage, or explicit unavailable; never a nominal sum. Where it holds one: explicit unavailable with the market-set reason, never a single market relabelled as an aggregate |
+| Channel | Distinct channel identity is preserved across every channel the tenant actually operates, and All Channels never silently collapses conflicting recommendations |
 
 ### 9.2 Price response and recommendations
 
@@ -4625,9 +4723,11 @@ accept browser-provided audience identity.
   per level, and freshness requirements.
 - Accepted series meet beta sign/magnitude, ≥0.90 sign consistency, ≤0.80 IQR ratio, ≥50 valid
   draws, and positive holdout deviance improvement.
-- Each enabled department independently reaches ≥5% accepted coverage and ≥25 gated series in India
-  and the US; fitting remains SKU × store × channel, the count is distinct SKU × store with a
-  qualified channel, and channels cannot be double-counted.
+- Each enabled department independently reaches ≥5% accepted coverage and ≥25 gated series in every
+  market of the evaluated tenant's frozen governed market set under `P5-D26`; fitting remains
+  SKU × store × channel, the count is distinct SKU × store with a qualified channel, and channels
+  cannot be double-counted. The market set was frozen in `P5-1P` before results and was not narrowed
+  afterwards.
 - Candidate selection used exactly 13 predeclared origins under the frozen spacing/window/market-
   alignment and surplus-origin rule: origins 1–8 development, at most twenty preregistered
   configurations, one frozen candidate, and origins 9–13 untouched confirmation.
@@ -4874,6 +4974,8 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
     release hardening is claimed as Phase 5 scope.
 38. Any plan approval is treated as authorization to implement, stage, commit, push, deploy, or
     mutate external state before the explicit go-ahead and package gate.
+39. A tenant's governed market set is narrowed after results, one tenant's evidence or aggregate is
+    presented for another, or a single-market set is rendered as a multi-market aggregate.
 
 ---
 
@@ -5442,11 +5544,15 @@ A structural shell may be reviewed earlier but is never labelled live.
 
 Explicit approval is required for:
 
-- `P5-D0` through `P5-D25`, including source availability, readiness producers, selection-v2/
+- `P5-D0` through `P5-D26`, including source availability, readiness producers, selection-v2/
   legacy-v1 identity, source-selection-before-pin ordering, explicit full-scope pin/authority paths,
   statistical/chart protocol, pricing/cost, competitor, promotion/privacy, bundles, database result-
   selection/activation, secret-free serving config, read-only behavior, screens, states, errors,
   currency, and terminology;
+- `P5-D26` per-tenant market-set scoping specifically, before `P5-1P` freezes any tenant's coverage
+  contract. It scopes Decision #45 rather than reversing it, so the reviewer who owns #45 must be
+  the one who approves it;
+- each tenant's governed market set, declared once in `P5-1P` and frozen before profile generation;
 - Config Builder rich/sparse fields, presets, and provenance;
 - the four §8 machine-readable matrices and every existing-UI amendment;
 - exact navigation, Store/Channel/currency applicability, modal, export, preview, responsive,
@@ -5583,6 +5689,9 @@ duplicated here.
     checkbox is closed from plan text or verbal assertion.
 38. Demo 5 truthfully shows the four new pages and approved existing-page possibilities, and every
     remaining limitation is visible, reason-coded, and client-safe.
+39. The evaluated tenant's governed market set was frozen in `P5-1P` before results and unchanged
+    after them; every market in it independently passes its department gates; and no evidence,
+    aggregate, selection, activation, or demo state crosses tenants.
 
 Until every applicable item passes, Phase 5 remains in implementation/review and Demo 5 is not an
 accepted client checkpoint.

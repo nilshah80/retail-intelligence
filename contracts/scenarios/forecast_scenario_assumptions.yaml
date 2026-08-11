@@ -1,0 +1,95 @@
+schemaVersion: retail-forecast-scenario-assumptions/v1
+assumptionSetId: fsa_synthetic_test_v1
+version: synthetic-test-1
+artifactClass: synthetic_test
+servingEligible: false
+projectionBasis: assumption_set
+evidenceClass: synthetic_scenario
+statisticalGateStatus: not_applicable
+disclosure: >-
+  Synthetic test fixture only. These values are not product-approved assumptions,
+  cannot receive an approved serving event, and cannot activate a scenario context.
+
+# Product/quant owns every value below. This complete fixture exists solely for
+# contract, fingerprint, materializer, and Go/Python golden-vector tests.
+requestBounds:
+  demandAdjustmentPct: {minimum: "-50", maximum: "50"}
+  priceChangePct: {minimum: "-5", maximum: "5"}
+  promotionUpliftPct: {minimum: "-50", maximum: "100"}
+  competitorAvailability: [normal, stockout, promotion]
+  weatherEvent: [normal, positive, negative]
+
+marketCurrencyRules:
+  - marketId: synthetic-market
+    currencyCode: USD
+    minimumPriceMinor: 1
+    maximumPriceMinor: 100000
+    candidateStepMinor: 1
+    gridOriginMinor: 0
+    roundingMode: round_half_even
+    priceFreshnessDays: 30
+    observedSupportWindowDays: 90
+
+tierCoefficients:
+  - marketId: synthetic-market
+    deptId: synthetic-dept
+    baselinePriceTier: entry
+    lowerPriceMinor: 1
+    upperPriceMinor: 5000
+    assumedBeta: "-1"
+    competitorStockoutSensitivity: "0.08"
+    competitorPromotionSensitivity: "0.05"
+    weatherPositiveSensitivity: "0.06"
+    weatherNegativeSensitivity: "0.06"
+  - marketId: synthetic-market
+    deptId: synthetic-dept
+    baselinePriceTier: core
+    lowerPriceMinor: 5000
+    upperPriceMinor: null
+    assumedBeta: "-1.5"
+    competitorStockoutSensitivity: "0.05"
+    competitorPromotionSensitivity: "0.04"
+    weatherPositiveSensitivity: "0.04"
+    weatherNegativeSensitivity: "0.04"
+
+presets:
+  - presetId: expected_demand
+    label: Expected Demand
+    demandAdjustmentPct: "0"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "0"
+  - presetId: high_demand
+    label: High Demand
+    demandAdjustmentPct: "10"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: positive
+    atpAdjustment: "0"
+  - presetId: low_demand
+    label: Low Demand
+    demandAdjustmentPct: "-10"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: negative
+    atpAdjustment: "0"
+  - presetId: promotion_upside
+    label: Promotion Upside
+    demandAdjustmentPct: "0"
+    priceChangePct: "-5"
+    promotionUpliftPct: "15"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "0"
+  - presetId: supply_constrained
+    label: Supply-Constrained
+    demandAdjustmentPct: "0"
+    priceChangePct: "0"
+    promotionUpliftPct: "0"
+    competitorAvailability: normal
+    weatherEvent: normal
+    atpAdjustment: "-0.25"

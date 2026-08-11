@@ -14,7 +14,7 @@ snapshot at or before the origin, not the latest one that exists.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final, Mapping, Sequence
@@ -440,8 +440,21 @@ def load_channel_demand(
     )
 
 
+def _price_origin_cutoff(as_of: date | datetime) -> tuple[date, date | datetime, str]:
+    """Preserve date-origin inventory behavior and allow exact scenario cutoffs."""
+
+    if isinstance(as_of, datetime):
+        normalized = (
+            as_of.replace(tzinfo=timezone.utc)
+            if as_of.tzinfo is None
+            else as_of.astimezone(timezone.utc)
+        )
+        return normalized.date(), normalized, "<="
+    return as_of, as_of + timedelta(days=1), "<"
+
+
 def load_unit_prices(
-    connection: duckdb.DuckDBPyConnection, *, as_of: date
+    connection: duckdb.DuckDBPyConnection, *, as_of: date | datetime
 ) -> pd.DataFrame:
     """Latest origin-visible realised selling price per SeriesKey.
 
@@ -454,16 +467,23 @@ def load_unit_prices(
     lost-sales exposure.
     """
 
+    observation_cutoff, known_cutoff, known_operator = _price_origin_cutoff(as_of)
     return _frame(
         connection,
-        """
-        SELECT market_id, location_id, channel_id, sku_id, unit_price_minor
+        f"""
+        SELECT market_id, location_id, channel_id, sku_id,
+               currency_code, observation_date, known_as_of, sales_version,
+               unit_price_minor
         FROM (
             SELECT
                 locations.market_id,
                 sales.store_id AS location_id,
                 sales.channel_id,
                 sales.sku_id,
+                sales.currency_code,
+                sales.date AS observation_date,
+                sales.known_as_of,
+                sales.sales_version,
                 sales.net_price AS unit_price_minor,
                 ROW_NUMBER() OVER (
                     PARTITION BY
@@ -475,13 +495,66 @@ def load_unit_prices(
             FROM sales
             JOIN locations ON locations.location_id = sales.store_id
             WHERE sales.date <= ?
-              AND sales.known_as_of < ? + INTERVAL 1 DAY
+              AND sales.known_as_of {known_operator} ?
               AND sales.units > 0
               AND sales.net_price > 0
         ) AS visible
         WHERE recency = 1
         """,
-        [as_of, as_of],
+        [observation_cutoff, known_cutoff],
+    )
+
+
+def load_unit_price_history(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    as_of: date | datetime,
+    window_days: int,
+) -> pd.DataFrame:
+    """Origin-visible positive realised prices within an approved support window.
+
+    One latest source version survives per SeriesKey/date. The scenario context
+    uses the full returned member set to publish observed-support bounds and a
+    content fingerprint; the inventory builder does not consume this history.
+    """
+
+    if window_days < 1:
+        raise InventoryLoadError("price support window_days must be positive")
+    observation_cutoff, known_cutoff, known_operator = _price_origin_cutoff(as_of)
+    start = observation_cutoff - timedelta(days=window_days - 1)
+    return _frame(
+        connection,
+        f"""
+        SELECT market_id, location_id, channel_id, sku_id,
+               currency_code, observation_date, known_as_of, sales_version,
+               unit_price_minor
+        FROM (
+            SELECT
+                locations.market_id,
+                sales.store_id AS location_id,
+                sales.channel_id,
+                sales.sku_id,
+                sales.currency_code,
+                sales.date AS observation_date,
+                sales.known_as_of,
+                sales.sales_version,
+                sales.net_price AS unit_price_minor,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        locations.market_id, sales.store_id,
+                        sales.channel_id, sales.sku_id, sales.date
+                    ORDER BY sales.sales_version DESC, sales.known_as_of DESC
+                ) AS version_recency
+            FROM sales
+            JOIN locations ON locations.location_id = sales.store_id
+            WHERE sales.date BETWEEN ? AND ?
+              AND sales.known_as_of {known_operator} ?
+              AND sales.units > 0
+              AND sales.net_price > 0
+        ) AS visible
+        WHERE version_recency = 1
+        """,
+        [start, observation_cutoff, known_cutoff],
     )
 
 

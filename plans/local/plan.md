@@ -289,6 +289,24 @@ policy holdout passes. The matching read-only API/UI slice is delivered in the p
 **Demo checkpoint 4:** Inventory + Replenishment/Planner screens render live market/location
 outputs.
 
+### Forecast Scenario Planning v1 — standalone pre–Phase-5 workstream
+
+**Goal:** make the existing Demand Forecast Scenario Planning modal a stateless, read-only,
+assumption-based projection without waiting for fitted Phase 5 price response.
+
+**Scope:** Decision #96 and `plans/local/scenario-planning-implementation-plan.md` S1–S27. Build an
+approved assumption bundle and immutable forecast/inventory scenario context; use Decision #95
+`expected_units` for additive demand/revenue potential, P50/P90 for dispersion, accepted node
+order-up-to for analytical Required Inventory, and channel ATP for a separately labelled
+demand-weighted stock-out probability. Serve a version-pinned bootstrap GET and calculation POST in
+Go, preserve market-local money with optional Decision #27/#44 reporting FX, and keep every request
+free of database/domain writes. Test-only values cannot activate serving.
+
+**Exit criteria:** authority amendments, contracts, migrations, materializer, Go API and React modal
+pass golden/parity/accessibility tests; product/quant approves the resolved assumption values; one
+context is activated; human review approves the screen; and a second parity amendment moves only
+`#forecastScenarioBtn` from `approved_pending_implementation` to `live_assumption_projection`.
+
 ### Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
 
 **Goal:** market-scoped elasticity-driven pricing + promotion planning, with cost-aware margin
@@ -298,18 +316,30 @@ enabled only when its canonical cost capability is proven.
 gates; resolve pricing/response policy by `market_id + currency_code`; build price tiers and
 shrinkage pools within market; revenue-objective price recommendations first under max-change,
 dominance and local grid/ending guardrails; enable margin floor/objective only after cost-as-of
-passes; price simulation; scenario planning; **competitor monitor** (product-matching +
+passes; fitted Price Simulation; **competitor monitor** (product-matching +
 competitor-aware response);
 **promotion planner** (uplift, cannibalisation, bundle, segment models); **cost-over-time
 margin** (WAC default / FIFO for batch-tracked; cost-as-of). Promotion applicability preserves
 AND/OR scope-row semantics and merchandise overlap resolves `sku > dept > category`.
 
-**Exit criteria:** elasticity gates enforced by market; every recommendation carries market/
-currency and is guardrail-valid; revenue recommendations never imply margin, and any enabled
-margin uses cost-as-of. The primary IN+US showcase produces at least 25 actually gated series per
-enabled department in both markets; the sparse preset returns a reason-coded
-`insufficient_evidence` state. The matching read-only API/UI slice is delivered in the phase.
-**Demo checkpoint 5:** Pricing, Competitor Monitor and Promotion Planner render live
+**Tenant scope:** Phase 5 is a capability, not a dataset. It is evaluated one governed tenant at a
+time, and tenants legitimately differ in market count, currency set, departments and channels — a
+deliberately single-market tenant is not a degraded multi-market one. Every market-scoped gate
+resolves against the evaluated tenant's declared governed market set under `P5-D26`, which scopes
+decision #45 without weakening it: a tenant passes when **every** market in its set passes
+independently, so #45's original two-market showcase still requires both. Onboarding a new country
+requires its absolute `market_id + currency_code` rule under decision #39 — an authoring step, never
+a runtime fallback. Measured per-publication state lives in `contracts/evidence/phase5-entry-record.json`,
+not in plan prose.
+
+**Exit criteria:** elasticity gates enforced independently per market in the evaluated tenant's
+governed set; every recommendation carries market/currency and is guardrail-valid; revenue
+recommendations never imply margin, and any enabled margin uses cost-as-of. Each enabled department
+produces at least 25 actually gated distinct SKU × store pairs in every market of that set, and the
+sparse preset returns a reason-coded `insufficient_evidence` state. Working for any country means
+every country is assessed on identical terms and the honest outcome is served — a governed refusal
+is a correct result, not a phase failure. The matching read-only API/UI slice is delivered in the
+phase. **Demo checkpoint 5:** Pricing, Competitor Monitor and Promotion Planner render live
 response-rich and sparse-evidence outcomes.
 
 ### Phase 6 — Aarv-based Go API, workflow & governance (`api/`, `db/`)
@@ -339,8 +369,9 @@ reviews live evidence, approves/overrides a draft and sees its audit record in t
 advanced with every vertical slice since Phase 2.
 
 **Scope:** complete remaining core screens and shared responsive/accessibility behavior; verify
-multi-currency display (FX); wire interactive what-ifs (scenario/simulation) to the API; build
-rich capture forms where the mockup only stubs them (§8.3 note).
+multi-currency display (FX); wire remaining separately approved simulations to their APIs (Forecast
+Scenario Planning v1 is owned by the earlier Decision-#96 workstream); build rich capture forms
+where the mockup only stubs them (§8.3 note).
 
 **Exit criteria:** each Phase-2–6 core screen renders live API data and passes its original-HTML
 parity/data gates; no core sample/mock path remains.

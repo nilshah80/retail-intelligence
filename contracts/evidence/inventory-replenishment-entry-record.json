@@ -186,7 +186,7 @@
   "package": "P4-0",
   "parityAmendment": {
     "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
-    "amendedContractSha256": "2a637c83a221b66ab16ecf1d77022109ba1502de1387fa6c5a964d52f5358b04",
+    "amendedContractSha256": "8c3a6c81e8c3221bc21604926aeee243f1a170f82f4ea69c50e5d83f258df731",
     "amendmentId": "P4-0P-A1",
     "approval": {
       "actor": "nilay.shah",
@@ -225,7 +225,7 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0024_warehouse_service_metrics",
+  "servingMigration": "0027_scenario_hardening",
   "sourceSelection": {
     "activeRecordId": "rec_7428d0aa1c0792dc",
     "capabilityReadiness": "ready",

@@ -21,7 +21,7 @@ FORECAST_PATHS = (
 def test_forecast_routes_have_live_stale_and_fail_closed_contracts() -> None:
     contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
 
-    assert contract["info"]["version"] == "0.3.1"
+    assert contract["info"]["version"] == "0.5.0"
     for path in FORECAST_PATHS:
         responses = contract["paths"][path]["get"]["responses"]
         assert set(responses) == {"200", "409", "503"}
@@ -48,3 +48,62 @@ def test_unavailable_forecast_never_requires_a_fake_identity() -> None:
         "FORECAST_LINEAGE_MISMATCH",
         "FORECAST_READ_MODEL_UNAVAILABLE",
     } == set(schema["properties"]["reasonCode"]["enum"])
+
+
+def test_scenario_bootstrap_pins_forecast_and_fails_closed() -> None:
+    contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
+    operation = contract["paths"]["/api/v1/forecast/scenario/context"]["get"]
+    assert set(operation["responses"]) == {"200", "400", "409", "503"}
+    expected = operation["parameters"][0]
+    assert expected["name"] == "expectedForecastVersion"
+    assert expected["required"] is True
+    bootstrap = contract["components"]["schemas"]["ScenarioContextBootstrap"]
+    assert bootstrap["additionalProperties"] is False
+    assert set(bootstrap["required"]) == {
+        "schemaVersion",
+        "forecastVersion",
+        "scenarioContextVersion",
+        "inventory",
+        "scenarioDecisionAsOf",
+    }
+    unavailable = contract["components"]["schemas"]["ScenarioUnavailable"]
+    assert "SCENARIO_BASE_CONTEXT_AMBIGUOUS" in unavailable["properties"][
+        "reasonCode"
+    ]["enum"]
+
+
+def test_scenario_post_is_tuple_pinned_stateless_and_explicit() -> None:
+    contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
+    operation = contract["paths"]["/api/v1/forecast/scenario"]["post"]
+    assert set(operation["responses"]) == {
+        "200",
+        "400",
+        "409",
+        "413",
+        "415",
+        "422",
+        "503",
+    }
+    body = operation["requestBody"]
+    assert body["required"] is True
+    assert set(body["content"]) == {"application/json"}
+    request = contract["components"]["schemas"]["ScenarioRunRequest"]
+    assert request["additionalProperties"] is False
+    assert set(request["required"]) == {
+        "presetId",
+        "userOverrides",
+        "businessScope",
+        "expectedAuthority",
+    }
+    overrides = contract["components"]["schemas"]["ScenarioUserOverrides"]
+    assert overrides["additionalProperties"] is False
+    assert "atpAdjustment" not in overrides["properties"]
+    response = contract["components"]["schemas"]["ScenarioRunResponse"]
+    assert response["properties"]["dataMode"]["const"] == "assumption_projection"
+    calculation = contract["components"]["schemas"]["ScenarioCalculation"]
+    assert {
+        "reportingRevenuePotential",
+        "reportingRequiredInventoryValue",
+        "appliedPriceSummaries",
+        "demandWeightedSeriesStockoutRiskPct",
+    } <= set(calculation["required"])

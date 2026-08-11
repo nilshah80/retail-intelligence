@@ -23,11 +23,11 @@ type Store struct {
 func Load(paths Paths) (*Store, error) {
 	gateA, err := readObject(paths.GateAReport)
 	if err != nil {
-		return nil, fmt.Errorf("Gate A report: %w", err)
+		return nil, fmt.Errorf("gate A report: %w", err)
 	}
 	gateB, err := readObject(paths.GateBReport)
 	if err != nil {
-		return nil, fmt.Errorf("Gate B report: %w", err)
+		return nil, fmt.Errorf("gate B report: %w", err)
 	}
 	publication, err := readObject(paths.PublicationManifest)
 	if err != nil {
@@ -343,6 +343,31 @@ func (s *Store) ReportingFX() (string, map[string]string) {
 		rates[base] = value
 	}
 	return reporting, rates
+}
+
+// ScenarioReportingFXSource returns the complete immutable accepted-publication
+// rate set. Scenario execution resolves the greatest admissible rate date at
+// its own governed decision cutoff; passing only ReportingFX's newest map would
+// allow a later publication rate to leak into an earlier forecast scenario.
+func (s *Store) ScenarioReportingFXSource() (
+	string,
+	[]ScenarioFXRateObservation,
+	string,
+) {
+	fx := mapValue(mapValue(s.publication, "businessControls"), "fx")
+	reporting, _ := fx["reportingCurrency"].(string)
+	observations, _ := fx["rates"].([]any)
+	rates := make([]ScenarioFXRateObservation, 0, len(observations))
+	for _, entry := range observations {
+		rate, _ := entry.(map[string]any)
+		rates = append(rates, ScenarioFXRateObservation{
+			BaseCurrency:  stringValue(rate, "baseCurrency"),
+			QuoteCurrency: stringValue(rate, "quoteCurrency"),
+			Rate:          stringValue(rate, "rate"),
+			RateDate:      stringValue(rate, "rateDate"),
+		})
+	}
+	return reporting, rates, s.PublicationFingerprint()
 }
 
 func (s *Store) Gates() map[string]any {

@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func closeForecastTestConnection(
+	t *testing.T,
+	ctx context.Context,
+	connection *pgx.Conn,
+) {
+	t.Helper()
+	if err := connection.Close(ctx); err != nil {
+		t.Errorf("close forecast test connection: %v", err)
+	}
+}
+
 func TestForecastLoadFailsClosedWithoutSQLProjection(t *testing.T) {
 	store := LoadForecast(context.Background(), ForecastConfig{})
 	defer store.Close()
@@ -95,7 +106,7 @@ func TestForecastServesGovernedUnavailableOnNoGo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect to forecast integration database: %v", err)
 	}
-	defer connection.Close(ctx)
+	defer closeForecastTestConnection(t, ctx, connection)
 	active := 0
 	if err := connection.QueryRow(
 		ctx,
@@ -149,7 +160,7 @@ func TestForecastAuthorityAmbiguityFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect to forecast integration database: %v", err)
 	}
-	defer connection.Close(ctx)
+	defer closeForecastTestConnection(t, ctx, connection)
 
 	active := 0
 	if err := connection.QueryRow(
@@ -230,7 +241,7 @@ func TestWorkbenchIntervalAggregatesAtEverySelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect to forecast integration database: %v", err)
 	}
-	defer connection.Close(ctx)
+	defer closeForecastTestConnection(t, ctx, connection)
 	var scope, publication string
 	if err := connection.QueryRow(
 		ctx,
@@ -338,8 +349,7 @@ func TestWorkbenchIntervalAggregatesAtEverySelection(t *testing.T) {
 			// means the denominator is still counting weeks the numerator skipped.
 			if covered == nil {
 				t.Fatalf("%d weeks: covered-window confidence reference was not computed", horizonWeeks)
-			}
-			if *covered <= 0.10 {
+			} else if *covered <= 0.10 {
 				t.Fatalf(
 					"%d weeks: covered-window confidence %v is still diluted; the "+
 						"ratio must be restricted on both sides",
@@ -386,7 +396,7 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("connect to forecast integration database: %v", err)
 		}
-		defer connection.Close(ctx)
+		defer closeForecastTestConnection(t, ctx, connection)
 		err = connection.QueryRow(
 			ctx,
 			`
@@ -501,7 +511,7 @@ func TestForecastPostgresProjectionIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect for workbench estimator verification: %v", err)
 	}
-	defer verification.Close(ctx)
+	defer closeForecastTestConnection(t, ctx, verification)
 	first := workbenchItems[0]
 	skuID := first["skuId"].(string)
 	storeID := first["storeId"].(string)

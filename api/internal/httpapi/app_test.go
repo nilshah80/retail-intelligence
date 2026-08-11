@@ -117,6 +117,15 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 			t.Fatalf("%s exposed a forecast identity without an accepted run", path)
 		}
 	}
+	missingExpected := client.Get(scenarioContextPath)
+	missingExpected.AssertStatus(t, http.StatusBadRequest)
+	unavailableScenario := client.Get(
+		scenarioContextPath + "?expectedForecastVersion=fv_0123456789abcdef",
+	)
+	unavailableScenario.AssertStatus(t, http.StatusServiceUnavailable)
+	if unavailableScenario.Headers.Get("Cache-Control") != "no-store" {
+		t.Fatal("scenario bootstrap response is cacheable")
+	}
 }
 
 // TestInventoryRoutesFailClosedWithoutActivation is the P4-8 governed NO-GO

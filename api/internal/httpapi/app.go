@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/nilshah80/aarv"
@@ -16,12 +17,13 @@ func New(
 	inventory *readmodel.InventoryStore,
 	profile execution.Resolved,
 	openAPISpec []byte,
+	scenarioStores ...*readmodel.ScenarioStore,
 ) (*aarv.App, error) {
 	app := aarv.New(aarv.WithBanner(false))
 	permits := make(chan struct{}, profile.API.HTTPConcurrency)
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: []string{"http://127.0.0.1:5173", "http://localhost:5173"},
-		AllowMethods: []string{"GET", "OPTIONS"},
+		AllowMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders: []string{"Origin", "Accept", "Content-Type"},
 		MaxAge:       600,
 	}))
@@ -62,6 +64,11 @@ func New(
 	})
 	mountForecastRoutes(app, forecast)
 	mountInventoryRoutes(app, inventory)
+	scenario := readmodel.LoadScenario(context.Background(), readmodel.ScenarioConfig{})
+	if len(scenarioStores) > 0 && scenarioStores[0] != nil {
+		scenario = scenarioStores[0]
+	}
+	mountScenarioRoutes(app, scenario)
 	app.Get("/openapi.yaml", func(c *aarv.Context) error {
 		return c.Blob(
 			http.StatusOK,

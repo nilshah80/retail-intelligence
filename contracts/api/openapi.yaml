@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: Retail Intelligence API
-  version: 0.3.1
+  version: 0.5.0
   description: >-
-    Read-only data-management and Phase 3 forecast API. Forecast routes serve
-    only an explicitly activated PostgreSQL projection produced from an
-    accepted, fully verified ten-artifact forecast bundle.
+    Governed data-management, forecast, inventory and stateless assumption-
+    projection API. Read routes serve explicitly activated PostgreSQL
+    projections; the scenario POST performs no database or domain writes.
 servers:
   - url: http://localhost:8080
 paths:
@@ -244,6 +244,58 @@ paths:
           $ref: "#/components/responses/ForecastStale"
         "503":
           $ref: "#/components/responses/ForecastUnavailable"
+  /api/v1/forecast/scenario:
+    post:
+      operationId: runForecastScenario
+      description: >-
+        Calculates one stateless, assumption-based forecast projection against
+        an exact authority tuple obtained from the bootstrap endpoint. This is
+        not fitted elasticity, causal lift, or an executable inventory order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScenarioRunRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ScenarioRunLive"
+        "400":
+          $ref: "#/components/responses/RequestInvalid"
+        "409":
+          $ref: "#/components/responses/ScenarioStale"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "422":
+          $ref: "#/components/responses/ScenarioValidationInvalid"
+        "503":
+          $ref: "#/components/responses/ScenarioUnavailable"
+  /api/v1/forecast/scenario/context:
+    get:
+      operationId: forecastScenarioContext
+      description: >-
+        Resolves the one active assumption-projection authority tuple for the
+        server-configured retailer, tenant, capability and environment. The query
+        pins the forecast version already rendered by the Forecast screen; a
+        mismatch is stale rather than a silently retargeted scenario.
+      parameters:
+        - name: expectedForecastVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^fv_[0-9a-f]{16}$
+      responses:
+        "200":
+          $ref: "#/components/responses/ScenarioContextLive"
+        "400":
+          $ref: "#/components/responses/RequestInvalid"
+        "409":
+          $ref: "#/components/responses/ScenarioStale"
+        "503":
+          $ref: "#/components/responses/ScenarioUnavailable"
   /api/v1/inventory/versions:
     get:
       operationId: inventoryVersions
@@ -612,6 +664,78 @@ components:
       in: query
       schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
   responses:
+    ScenarioRunLive:
+      description: A tuple-pinned, stateless assumption projection.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ScenarioRunResponse"
+    ScenarioValidationInvalid:
+      description: The request is structurally complete but semantically invalid.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ScenarioValidationError"
+    UnsupportedMediaType:
+      description: The scenario request is not application/json.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RequestError"
+    RequestTooLarge:
+      description: The scenario request body exceeds the bounded 4 MB route limit.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RequestError"
+    ScenarioContextLive:
+      description: One compatible, version-pinned scenario authority tuple.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ScenarioContextBootstrap"
+    ScenarioStale:
+      description: The client-pinned authority is no longer current.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ScenarioStale"
+    ScenarioUnavailable:
+      description: The current base or inventory-extension authority is absent or ambiguous.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ScenarioUnavailable"
+    RequestInvalid:
+      description: A required query parameter is absent or malformed.
+      headers:
+        Cache-Control:
+          schema: {type: string, const: no-store}
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RequestError"
     ForecastLive:
       description: >-
         Live data from the explicitly activated, lineage-matching PostgreSQL
@@ -661,6 +785,476 @@ components:
           schema:
             $ref: "#/components/schemas/ForecastUnavailable"
   schemas:
+    ScenarioUserOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        demandAdjustmentPct: {type: number}
+        priceChangePct: {type: number}
+        promotionUpliftPct: {type: number}
+        competitorAvailability:
+          type: string
+          enum: [normal, stockout, promotion]
+        weatherEvent:
+          type: string
+          enum: [normal, positive, negative]
+    ScenarioBusinessScope:
+      type: object
+      additionalProperties: false
+      required: [marketId, storeId, channelId, category, horizonWeeks]
+      properties:
+        marketId: {type: string}
+        storeId: {type: string}
+        channelId: {type: string}
+        channelType:
+          type: string
+          enum: [online, store, marketplace]
+        category: {type: string}
+        horizonWeeks: {type: integer, minimum: 1, maximum: 26}
+    ScenarioRunRequest:
+      type: object
+      additionalProperties: false
+      required: [presetId, userOverrides, businessScope, expectedAuthority]
+      properties:
+        presetId: {type: string, minLength: 1}
+        userOverrides: {$ref: "#/components/schemas/ScenarioUserOverrides"}
+        businessScope: {$ref: "#/components/schemas/ScenarioBusinessScope"}
+        expectedAuthority: {$ref: "#/components/schemas/ScenarioAuthorityTuple"}
+    ScenarioSeriesKey:
+      type: object
+      additionalProperties: false
+      required: [marketId, skuId, storeId, channelId]
+      properties:
+        marketId: {type: string, minLength: 1}
+        skuId: {type: string, minLength: 1}
+        storeId: {type: string, minLength: 1}
+        channelId: {type: string, minLength: 1}
+    ScenarioCoverage:
+      type: object
+      additionalProperties: false
+      required: [numerator, denominator, grain, pct]
+      properties:
+        numerator: {type: integer, minimum: 0}
+        denominator: {type: integer, minimum: 0}
+        grain: {type: string, minLength: 1}
+        pct: {type: [number, "null"], minimum: 0, maximum: 100}
+    ScenarioFloatComponent:
+      type: object
+      additionalProperties: false
+      required: [availability, value, reasonCodes]
+      properties:
+        availability:
+          type: string
+          enum: [available, partial, unavailable]
+        value: {type: [number, "null"]}
+        reasonCodes:
+          type: array
+          items: {type: string}
+    ScenarioFloatMetric:
+      type: object
+      additionalProperties: false
+      required: [current, scenario, impact, coverage]
+      properties:
+        current: {$ref: "#/components/schemas/ScenarioFloatComponent"}
+        scenario: {$ref: "#/components/schemas/ScenarioFloatComponent"}
+        impact: {$ref: "#/components/schemas/ScenarioFloatComponent"}
+        impactPct: {type: [number, "null"]}
+        impactPoints: {type: [number, "null"]}
+        coverage: {$ref: "#/components/schemas/ScenarioCoverage"}
+    ScenarioMoneyComponent:
+      type: object
+      additionalProperties: false
+      required: [availability, valueMinor, reasonCodes]
+      properties:
+        availability:
+          type: string
+          enum: [available, partial, unavailable]
+        valueMinor: {type: [integer, "null"], format: int64}
+        reasonCodes:
+          type: array
+          items: {type: string}
+    ScenarioMoneyMetric:
+      type: object
+      additionalProperties: false
+      required: [marketId, currencyCode, current, scenario, impact, coverage]
+      properties:
+        marketId: {type: string}
+        currencyCode: {type: string}
+        current: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        scenario: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        impact: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        coverage: {$ref: "#/components/schemas/ScenarioCoverage"}
+    ScenarioReportingMoneyMetric:
+      type: object
+      additionalProperties: false
+      required:
+        - currencyCode
+        - rateMapContentFingerprint
+        - current
+        - scenario
+        - impact
+        - coverage
+      properties:
+        currencyCode: {type: [string, "null"]}
+        rateMapContentFingerprint:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        current: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        scenario: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        impact: {$ref: "#/components/schemas/ScenarioMoneyComponent"}
+        coverage: {$ref: "#/components/schemas/ScenarioCoverage"}
+    ScenarioAppliedPrice:
+      type: object
+      additionalProperties: false
+      required:
+        - seriesKey
+        - requestedPriceChangePct
+        - appliedPriceMinor
+        - appliedPriceChangePct
+        - availability
+        - reasonCodes
+      properties:
+        seriesKey: {$ref: "#/components/schemas/ScenarioSeriesKey"}
+        requestedPriceChangePct: {type: number}
+        appliedPriceMinor: {type: [integer, "null"], format: int64}
+        appliedPriceChangePct: {type: [number, "null"]}
+        availability:
+          type: string
+          enum: [available, unavailable]
+        reasonCodes:
+          type: array
+          items: {type: string}
+    ScenarioAppliedPriceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - marketId
+        - currencyCode
+        - availability
+        - requestedPriceChangePct
+        - baselineValueWeightedAppliedPriceChangePct
+        - reasonCodes
+        - coverage
+      properties:
+        marketId: {type: string}
+        currencyCode: {type: string}
+        availability:
+          type: string
+          enum: [available, partial, unavailable]
+        requestedPriceChangePct: {type: number}
+        baselineValueWeightedAppliedPriceChangePct: {type: [number, "null"]}
+        reasonCodes:
+          type: array
+          items: {type: string}
+        coverage: {$ref: "#/components/schemas/ScenarioCoverage"}
+    ScenarioCalculation:
+      type: object
+      additionalProperties: false
+      required:
+        - demandUnits
+        - revenuePotential
+        - reportingRevenuePotential
+        - requiredInventoryUnits
+        - requiredInventoryValue
+        - reportingRequiredInventoryValue
+        - demandWeightedSeriesStockoutRiskPct
+        - appliedPrices
+        - appliedPriceSummaries
+      properties:
+        demandUnits: {$ref: "#/components/schemas/ScenarioFloatMetric"}
+        revenuePotential:
+          type: array
+          items: {$ref: "#/components/schemas/ScenarioMoneyMetric"}
+        reportingRevenuePotential:
+          $ref: "#/components/schemas/ScenarioReportingMoneyMetric"
+        requiredInventoryUnits: {$ref: "#/components/schemas/ScenarioFloatMetric"}
+        requiredInventoryValue:
+          type: array
+          items: {$ref: "#/components/schemas/ScenarioMoneyMetric"}
+        reportingRequiredInventoryValue:
+          $ref: "#/components/schemas/ScenarioReportingMoneyMetric"
+        demandWeightedSeriesStockoutRiskPct:
+          $ref: "#/components/schemas/ScenarioFloatMetric"
+        appliedPrices:
+          type: array
+          items: {$ref: "#/components/schemas/ScenarioAppliedPrice"}
+        appliedPriceSummaries:
+          type: array
+          items: {$ref: "#/components/schemas/ScenarioAppliedPriceSummary"}
+    ScenarioResolvedVector:
+      type: object
+      additionalProperties: false
+      required:
+        - demandAdjustmentPct
+        - priceChangePct
+        - promotionUpliftPct
+        - competitorAvailability
+        - weatherEvent
+        - atpAdjustment
+      properties:
+        demandAdjustmentPct: {type: number}
+        priceChangePct: {type: number}
+        promotionUpliftPct: {type: number}
+        competitorAvailability: {type: string}
+        weatherEvent: {type: string}
+        atpAdjustment: {type: number, minimum: -1, maximum: 0}
+    ScenarioFactorBasisEntry:
+      type: object
+      additionalProperties: false
+      required: [valueSource, coefficientSource]
+      properties:
+        valueSource:
+          type: string
+          enum: [preset, user_override]
+        coefficientSource:
+          type: string
+          enum:
+            - not_applicable_direct_input
+            - assumption_bundle
+            - not_used_neutral
+            - unavailable
+        coefficientFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        reasonCode: {type: string}
+    ScenarioPriceProvenance:
+      type: object
+      additionalProperties: false
+      required:
+        - seriesKey
+        - deptId
+        - currencyCode
+        - priceAvailable
+        - unitPriceMinor
+        - priceBasis
+        - priceUnavailableReason
+        - sourceRowIdentity
+        - sourceRowVersion
+        - sourceObservationDate
+        - sourceKnownAsOf
+        - sourceRowContentFingerprint
+        - fallbackPopulationCount
+        - fallbackObservationStart
+        - fallbackObservationEnd
+        - fallbackMaxKnownAsOf
+        - fallbackMemberSetContentFingerprint
+        - sourceCutoff
+        - freshnessStatus
+        - freshnessReasonCode
+        - observedSupportLowMinor
+        - observedSupportHighMinor
+        - observedSupportStart
+        - observedSupportEnd
+        - observedSupportContentFingerprint
+        - baselinePriceTier
+        - tierResolutionReason
+        - coefficientContentFingerprint
+      properties:
+        seriesKey: {$ref: "#/components/schemas/ScenarioSeriesKey"}
+        deptId: {type: string}
+        currencyCode: {type: string}
+        priceAvailable: {type: boolean}
+        unitPriceMinor: {type: [integer, "null"], format: int64}
+        priceBasis:
+          type: [string, "null"]
+          enum: [latest_realized_exact, market_sku_latest_median, null]
+        priceUnavailableReason: {type: [string, "null"]}
+        sourceRowIdentity: {type: [string, "null"]}
+        sourceRowVersion: {type: [string, "null"]}
+        sourceObservationDate: {type: [string, "null"], format: date}
+        sourceKnownAsOf: {type: [string, "null"]}
+        sourceRowContentFingerprint:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        fallbackPopulationCount: {type: [integer, "null"], minimum: 1}
+        fallbackObservationStart: {type: [string, "null"], format: date}
+        fallbackObservationEnd: {type: [string, "null"], format: date}
+        fallbackMaxKnownAsOf: {type: [string, "null"]}
+        fallbackMemberSetContentFingerprint:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        sourceCutoff: {type: string}
+        freshnessStatus:
+          type: string
+          enum: [fresh, stale, unavailable]
+        freshnessReasonCode: {type: [string, "null"]}
+        observedSupportLowMinor: {type: [integer, "null"], format: int64}
+        observedSupportHighMinor: {type: [integer, "null"], format: int64}
+        observedSupportStart: {type: [string, "null"], format: date}
+        observedSupportEnd: {type: [string, "null"], format: date}
+        observedSupportContentFingerprint:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        baselinePriceTier: {type: [string, "null"]}
+        tierResolutionReason: {type: [string, "null"]}
+        coefficientContentFingerprint:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+    ScenarioRunResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - dataMode
+        - authority
+        - scenarioDecisionAsOf
+        - assumptionSetId
+        - assumptionVersion
+        - assumptionSemanticFingerprint
+        - assumptionApprovalEventId
+        - assumptionApprovalSemanticFingerprint
+        - presetId
+        - resolvedVector
+        - factorBasis
+        - projectionBasis
+        - evidenceClass
+        - statisticalGateStatus
+        - disclosure
+        - priceSnapshotContentFingerprint
+        - priceProvenance
+        - calculation
+      properties:
+        schemaVersion: {const: retail-forecast-scenario-assumption/v1}
+        dataMode: {const: assumption_projection}
+        authority: {$ref: "#/components/schemas/ScenarioAuthorityTuple"}
+        scenarioDecisionAsOf: {type: string, format: date-time}
+        assumptionSetId: {type: string, minLength: 1}
+        assumptionVersion: {type: string, minLength: 1}
+        assumptionSemanticFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        assumptionApprovalEventId: {type: integer, minimum: 1}
+        assumptionApprovalSemanticFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        presetId: {type: string, minLength: 1}
+        resolvedVector: {$ref: "#/components/schemas/ScenarioResolvedVector"}
+        factorBasis:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ScenarioFactorBasisEntry"
+        projectionBasis: {const: assumption_set}
+        evidenceClass: {const: synthetic_scenario}
+        statisticalGateStatus: {const: not_applicable}
+        disclosure: {type: string, minLength: 1}
+        priceSnapshotContentFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        priceProvenance:
+          type: array
+          items: {$ref: "#/components/schemas/ScenarioPriceProvenance"}
+        calculation: {$ref: "#/components/schemas/ScenarioCalculation"}
+    ScenarioValidationError:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, reasonCode, message]
+      properties:
+        schemaVersion: {const: retail-scenario-validation-error/v1}
+        reasonCode: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
+    ScenarioInventoryAuthority:
+      type: object
+      additionalProperties: false
+      required: [inventoryVersion, inventoryExtensionVersion]
+      properties:
+        inventoryVersion:
+          type: string
+          pattern: ^iv_[0-9a-f]{16}$
+        inventoryExtensionVersion:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+    ScenarioAuthorityTuple:
+      type: object
+      additionalProperties: false
+      required: [forecastVersion, scenarioContextVersion, inventory]
+      properties:
+        forecastVersion:
+          type: string
+          pattern: ^fv_[0-9a-f]{16}$
+        scenarioContextVersion:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        inventory:
+          oneOf:
+            - {$ref: "#/components/schemas/ScenarioInventoryAuthority"}
+            - {type: "null"}
+    ScenarioAuthorityReference:
+      type: object
+      additionalProperties: false
+      required: [forecastVersion, scenarioContextVersion, inventory]
+      properties:
+        forecastVersion:
+          type: [string, "null"]
+          pattern: ^fv_[0-9a-f]{16}$
+        scenarioContextVersion:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        inventory:
+          oneOf:
+            - {$ref: "#/components/schemas/ScenarioInventoryAuthority"}
+            - {type: "null"}
+    ScenarioContextBootstrap:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - forecastVersion
+        - scenarioContextVersion
+        - inventory
+        - scenarioDecisionAsOf
+      properties:
+        schemaVersion: {const: retail-forecast-scenario-context-bootstrap/v1}
+        forecastVersion:
+          type: string
+          pattern: ^fv_[0-9a-f]{16}$
+        scenarioContextVersion:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        inventory:
+          oneOf:
+            - {$ref: "#/components/schemas/ScenarioInventoryAuthority"}
+            - {type: "null"}
+        scenarioDecisionAsOf: {type: string, format: date-time}
+    ScenarioStale:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, dataMode, reasonCode, message, expected, current]
+      properties:
+        schemaVersion: {const: retail-forecast-scenario-stale/v1}
+        dataMode: {const: stale}
+        reasonCode:
+          type: string
+          enum: [SCENARIO_FORECAST_VERSION_STALE, SCENARIO_CONTEXT_STALE]
+        message: {type: string, minLength: 1}
+        expected: {$ref: "#/components/schemas/ScenarioAuthorityReference"}
+        current: {$ref: "#/components/schemas/ScenarioAuthorityReference"}
+    ScenarioUnavailable:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, dataMode, scenarioContextVersion, reasonCode, message]
+      properties:
+        schemaVersion: {const: retail-forecast-scenario-unavailable/v1}
+        dataMode: {const: unavailable}
+        scenarioContextVersion:
+          type: [string, "null"]
+          pattern: ^[0-9a-f]{64}$
+        reasonCode:
+          type: string
+          enum:
+            - SCENARIO_BASE_CONTEXT_MISSING
+            - SCENARIO_BASE_CONTEXT_AMBIGUOUS
+            - SCENARIO_INVENTORY_EXTENSION_AMBIGUOUS
+            - SCENARIO_SERVING_SCHEMA_INVALID
+            - SCENARIO_READ_MODEL_UNAVAILABLE
+        message: {type: string, minLength: 1}
+    RequestError:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, reasonCode, message]
+      properties:
+        schemaVersion: {const: retail-request-error/v1}
+        reasonCode: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
     ForecastLive:
       type: object
       required:

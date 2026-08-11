@@ -102,6 +102,29 @@ backtest pass. See the root README §8a.
 **Spec:** §3 (models), §4 (guardrails), §11 (schema). Data generation lives in `datagen/`;
 landing and transformation live in `ingestion/`.
 
+**Forecast Scenario Planning v1.** The checked-in assumption YAML is a synthetic, non-activatable
+test fixture. A separately approved `serving_candidate` bundle can be materialized into an
+*inactive* base context (and, when compatible, its optional inventory extension) with:
+
+```powershell
+python -m retail_ml.scenario.materialize --postgres-dsn <dsn> --curated-root <curated-root> --forecast-activation-scope-fingerprint <64-hex> --assumption-bundle <approved-yaml> --retailer-id <retailer> --tenant-id <tenant> --environment <environment>
+```
+
+The command refuses a bundle without one effective approval head and never activates a context.
+Approval and activation remain explicit calls in `retail_ml.scenario.postgres`, so running an
+offline publisher cannot make the production button live as a side effect.
+
+For the checked-in Gulf India PoC only, the complete local demo can be reproduced with:
+
+```powershell
+python tools/dev.py scenario-demo-activate
+```
+
+This registers the visibly labelled local-demo bundle, records the local lifecycle event,
+materializes the base and compatible inventory extension, and activates them under
+`retailer-demo × tenant-demo × forecast_scenario_v1 × local`. The command refuses any environment
+other than `local`; it is not product/quant or production approval.
+
 The isolated package and import-boundary test are scaffolded. Model, feature and engine
 implementation begins in Phase 3 after the required curated capability mask is accepted. The
 current publication enables non-PIT demand work but does not claim point-in-time training

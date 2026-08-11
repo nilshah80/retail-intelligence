@@ -45,11 +45,7 @@ func Load(path, selected string) (Resolved, error) {
 	if !ok {
 		return Resolved{}, fmt.Errorf("unknown execution profile %q", selected)
 	}
-	resolved := Resolved{
-		SchemaVersion: profile.SchemaVersion,
-		Profile:       profile.Profile,
-		API:           profile.API,
-	}
+	resolved := Resolved(profile)
 	if err := applyEnvironment(&resolved.API); err != nil {
 		return Resolved{}, err
 	}

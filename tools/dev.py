@@ -1698,6 +1698,9 @@ def command_serve(args: argparse.Namespace) -> int:
         "-execution-profile", profile,
         "-openapi-spec", str(REPO_ROOT / "contracts" / "api" / "openapi.yaml"),
         "-forecast-activation-scope", fingerprint,
+        "-scenario-retailer", args.scenario_retailer,
+        "-scenario-tenant", args.scenario_tenant,
+        "-scenario-environment", args.scenario_environment,
     ]
     if not args.with_ui:
         return _run(api, cwd=REPO_ROOT / "api", env=environment)
@@ -1724,6 +1727,59 @@ def command_serve(args: argparse.Namespace) -> int:
             ui.wait(timeout=10)
         except subprocess.TimeoutExpired:
             ui.kill()
+
+
+def command_scenario_demo_activate(args: argparse.Namespace) -> int:
+    """Activate the labelled demo bundle only in the local scenario authority."""
+
+    if args.scenario_environment != "local":
+        print(
+            "refusing: scenario-demo-activate is restricted to environment=local",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        authorities = _active_forecast_authorities()
+        run_id = _active_authority_run(authorities)
+    except SystemExit as refusal:
+        print(f"refusing: {refusal}", file=sys.stderr)
+        return 1
+    if len(authorities) != 1:
+        print(
+            "refusing: the local demo requires exactly one active forecast authority",
+            file=sys.stderr,
+        )
+        return 1
+    curated = REPO_ROOT / "ingestion" / "data" / "curated" / run_id
+    if not (curated / "publication-manifest.json").is_file():
+        print(f"refusing: curated publication is absent at {curated}", file=sys.stderr)
+        return 2
+    ml = _require_python(ML_ENV, "ml")
+    return _run(
+        [
+            str(ml),
+            "-m",
+            "retail_ml.scenario.demo",
+            "--postgres-dsn",
+            _local_postgres_dsn(sqlalchemy=False),
+            "--curated-root",
+            str(curated),
+            "--forecast-activation-scope-fingerprint",
+            authorities[0]["activationScopeFingerprint"],
+            "--assumption-bundle",
+            str(args.assumption_bundle),
+            "--retailer-id",
+            args.scenario_retailer,
+            "--tenant-id",
+            args.scenario_tenant,
+            "--environment",
+            args.scenario_environment,
+            "--actor",
+            args.actor,
+            "--decision-reference",
+            args.decision_reference,
+        ]
+    )
 
 
 def _active_forecast_authorities() -> list[dict[str, str]]:
@@ -3426,8 +3482,57 @@ def build_parser() -> argparse.ArgumentParser:
                        help="published run whose evidence the API reads")
     serve.add_argument("--address", default="127.0.0.1:8080")
     serve.add_argument("--execution-profile", default=None)
+    serve.add_argument(
+        "--scenario-retailer",
+        default=os.environ.get("RETAIL_SCENARIO_RETAILER_ID", "retailer-demo"),
+        help="server-owned retailer scope for Forecast Scenario Planning",
+    )
+    serve.add_argument(
+        "--scenario-tenant",
+        default=os.environ.get("RETAIL_SCENARIO_TENANT_ID", "tenant-demo"),
+        help="server-owned tenant scope for Forecast Scenario Planning",
+    )
+    serve.add_argument(
+        "--scenario-environment",
+        default=os.environ.get("RETAIL_SCENARIO_ENVIRONMENT", "local"),
+        help="server-owned environment scope for Forecast Scenario Planning",
+    )
     serve.add_argument("--with-ui", action="store_true",
                        help="also start the Vite dev server")
+    scenario_demo = subparsers.add_parser(
+        "scenario-demo-activate",
+        help=(
+            "approve, materialize, and activate the labelled local-only "
+            "Forecast Scenario Planning demo"
+        ),
+    )
+    scenario_demo.add_argument(
+        "--assumption-bundle",
+        type=Path,
+        default=(
+            REPO_ROOT
+            / "contracts"
+            / "scenarios"
+            / "forecast_scenario_local_demo_gulf_india.yaml"
+        ),
+    )
+    scenario_demo.add_argument(
+        "--scenario-retailer",
+        default=os.environ.get("RETAIL_SCENARIO_RETAILER_ID", "retailer-demo"),
+    )
+    scenario_demo.add_argument(
+        "--scenario-tenant",
+        default=os.environ.get("RETAIL_SCENARIO_TENANT_ID", "tenant-demo"),
+    )
+    scenario_demo.add_argument(
+        "--scenario-environment",
+        default=os.environ.get("RETAIL_SCENARIO_ENVIRONMENT", "local"),
+    )
+    scenario_demo.add_argument("--actor", default="local-demo-bootstrap")
+    scenario_demo.add_argument(
+        "--decision-reference",
+        default="LOCAL_DEMO_ONLY_EXPLICIT_USER_REQUEST",
+    )
     datagen = subparsers.add_parser(
         "datagen",
         help="generate a source run (separate from pipeline: ~90 min, ~15 GB)",
@@ -3833,6 +3938,7 @@ def main(argv: list[str] | None = None) -> int:
         "forecast-activate": command_ml,
         "repin": command_repin,
         "serve": command_serve,
+        "scenario-demo-activate": command_scenario_demo_activate,
         "closure-record": command_closure_record,
         "inventory-entry-record": command_inventory_entry_record,
         "land": command_ingest_stage,
