@@ -21,14 +21,27 @@ WORK MUST NOT START UNTIL `P5-0`, THE TEMPORAL-EVIDENCE GATES, AND `P5-1P` PASS.
 CHANGES MUST NOT START UNTIL THEIR `P5-0P` AMENDMENTS PASS.**
 
 Revision 10 is still a plan, not implementation authorization. It makes the plan **pin-independent**.
-Phase 5 is a capability that must work for any tenant, any country, and any market count, so §§2–16
-no longer name a tenant, market, department, publication, or row count, and every market-count gate
-resolves per tenant under the new `P5-D26` rather than against a constant in plan text. The measured
-starting point moves out of prose into `contracts/evidence/phase5-entry-record.json`, which `P5-0`
-already owed; §1 now specifies *how* that record is established and what each measurement decides.
-The test of this revision is simple: changing the selected publication should change zero lines of
-this plan. Revision 9's governance content is unchanged: source selection precedes every pin; rich
-and sparse audiences cannot collide; all
+Phase 5 is a capability that must work for any tenant, any country, and any market count, so no
+**normative** statement — gate, threshold, decision binding, work-package task, acceptance
+condition, no-go, or definition-of-done item — names a tenant, market, country, department,
+publication, or row count, and every market-scoped gate resolves per tenant under the new `P5-D26`
+rather than against a constant in plan text. Two categories are deliberately exempt, because they
+are not assumptions about data: **presentation-authority references**, where the reference HTML's
+own fixed labels and option lists (its five reporting-currency options, its sample region names) are
+quoted as UI parity facts; and **named external contracts**, where another decision's identifier is
+cited as ownership. Both describe artifacts that exist independently of any publication.
+
+The measured starting point moves out of prose into immutable `P5-0` entry-record evidence, which
+`P5-0` already owed; §1 now specifies *how* that record is established and what each
+measurement decides. The test of this revision: changing the selected publication changes zero
+normative lines of this plan.
+
+Revision 10 **adds** two governance elements rather than only relocating content: `P5-D26`, which
+makes every market-scoped obligation resolve against the evaluated tenant's declared governed market
+set, and the approval-gated `external_owned` control state, which lets a matrix row cite another
+workstream's ownership instead of asserting composition Phase 5 does not own. Both are new and both
+require approval under §15.1. Every Revision 9 safeguard is **retained** unchanged: source selection
+precedes every pin; rich and sparse audiences cannot collide; all
 downstream jobs receive explicit pin/authority paths; Phase 5 result-selection events and the
 activation-set share one PostgreSQL transaction while post-commit JSON is evidence only; repository
 paths follow the established `ml/src/retail_ml`, `db/migrations/versions`, `datagen/configs`, and
@@ -40,6 +53,10 @@ independently verified bundles, transactional materialization, a separate activa
 read-only serving/smoke. Container release, process drain/cutover, deployment authority, and
 cross-host database restore belong to Phase 6–8 planning and are not Phase 5 deliverables. No
 historical artifact is retrofitted by plan text.
+
+Revision 10 also carries the explicitly approved `IRP-V1-A1` presentation amendment: Inventory
+Overview omits only its four unused page-local filters. That narrow exception does not authorize any
+other reference-element removal.
 
 Revisions 1–9 carried the measured state of one publication in §1 prose, and that section had to be
 rewritten in full each time the selected publication changed. It no longer holds values, so it no
@@ -108,8 +125,9 @@ The required implementation order is:
    evaluation must be approved before response-rich results are inspected.
 5. Produce and independently verify deterministic response-rich and pricing-evidence-sparse source
    publications. Append schema-valid Decision-#73 source candidate → approved → active records before
-   generating either reviewed v1 pin: rich uses `retailer-demo × tenant-demo × <capability> × local`,
-   while the non-public sparse diagnostic uses the same retailer/tenant/capabilities in `dev`. For the
+   generating either reviewed v1 pin: rich uses the evaluated tenant's exact
+   `<retailer> × <tenant> × <capability> × local` scope, while the non-public sparse diagnostic uses
+   the same retailer/tenant/capabilities in `dev`. For the
    rich lineage, update the shared expected pin through the normal reviewed repin path before the
    mandatory feature → forecast → inventory rebuild. Pass the sparse pin and input-authority paths
    explicitly through every downstream job; never overwrite the shared rich/default pin. A source
@@ -180,7 +198,7 @@ recommendations through new evidence; the sparse preset must demonstrate that la
 | Gate | State at plan creation | Required before |
 |---|---|---|
 | Phase 4 code and serving slice | Implemented. The Alembic head advances with unrelated workstreams between Phase 5 revisions, so it is read at `P5-0` rather than asserted here | Record the exact head in `P5-0`; §6 reserves the next free revision by position, never a hard-coded number |
-| Tenant and market scope | **Per publication.** The governed tenant, retailer, environment, market set, operating currencies, and store/DC/channel/department/SKU counts are measured by `P5-0` into the entry record. Tenants legitimately differ in market count; a deliberately single-market tenant is not a degraded one | `P5-D26` per-tenant scoping approved before `P5-1P` freezes any coverage contract; no market count is asserted by plan text |
+| Tenant and market scope | **Per tenant contract.** The governed tenant, retailer, environment, declared market set, and operating currencies come from that contract. `P5-0` records the declaration and separately measures publication coverage plus store/DC/channel/department/SKU counts into the entry-record set; publication contents never redefine the declared set. Tenants legitimately differ in market count; a deliberately single-market tenant is not a degraded one | `P5-D26` per-tenant scoping approved before `P5-1P` freezes any coverage contract; no market count is asserted by plan text |
 | Active forecast authority | **Per publication, unresolved until `P5-0`.** Retained artifact directories are developer labels, not lineage, and a directory named `final` or `current` proves nothing | Reconcile artifact, selection, live PostgreSQL activation, API, and UI lineage in `P5-0`; no identity is adopted because it is the only one retained |
 | Active inventory authority | **Per publication, unresolved until `P5-0`.** The released history's `inventoryAuthorityLedger` carries no inventory events and holds forecast-shaped identities, so it is structurally invalid inventory evidence regardless of pin | Reconcile committed ledgers, materialized source-selection links, and the live activation/current views in `P5-0`; retain the current-vs-replay distinction and never infer inventory authority from that ledger |
 | Source-selection authority | **Per publication.** `P5-0` confirms exactly one curated publication is selected, that the committed pin reproduces against it, and that the live ledger head agrees | Establish one coherent selected pin in `P5-0` before any source or model work |
@@ -349,11 +367,136 @@ department, or row count, and no gate is satisfied or failed by plan text. What 
 happens to contain is an **input** to Phase 5, recorded as dated evidence, never a premise baked
 into policy.
 
-The starting point therefore lives in one machine-readable artifact, not in this document:
-`contracts/evidence/phase5-entry-record.json`, produced by `P5-0` and already listed in §5.1 and
-§6. When the selected publication changes, that record is regenerated and this plan does not
-change. If a pin change ever requires editing §§2–16, the gate being edited was wrong: it had a
-data assumption compiled into it.
+The starting point therefore lives in machine-readable evidence, not in this document. If a pin
+change ever requires editing a normative statement in §§2–16, the gate being edited was wrong: it
+had a data assumption compiled into it.
+
+That evidence is **immutable and content-addressed, never a rewritten file**.
+
+**Grain.** One `P5-0` execution emits **one record per full
+`{retailerId, tenantId, capability, environment}` scope** it evaluates, not one multi-capability
+record. A single execution covering several capabilities therefore emits several records, each
+independently addressed and independently supersedable, because capabilities are selected,
+superseded, and refused independently everywhere else in this plan and a shared record would couple
+them.
+
+**Identity.** `recordId` is the semantic fingerprint of the record's **identity projection** under
+the shared `semantic-fingerprint/v1` contract. The exclusion vector is exactly one RFC 6901
+pointer — `/recordId` — and nothing else. That single exclusion is what makes the identity
+computable at all: a fingerprint over content containing the fingerprint has no fixed point.
+
+The vector is one element because **the record carries no execution metadata**. Generation
+timestamps, host, duration, telemetry, and tool versions live in a separate execution receipt that
+references records by ID and is never an input to them. This is deliberate: if volatile fields
+stayed inside the record but outside `recordId`, the identity would cover only part of the record
+and two materially different files could legitimately share a name.
+
+The receipt is **one per `P5-0` execution, not one per record**, written to
+`contracts/evidence/phase5-entry-receipts/phase5-entry-receipt-<receiptId>.json`. `receiptId` is an
+independent, lowercase canonical RFC 9562 UUIDv7 generated exactly once when the execution begins;
+it is neither a record ID nor a content hash. The embedded `receiptId` and filename ID must be equal,
+the final path is create-only, and an existing path is accepted idempotently only when its bytes are
+identical. Different bytes at the same ID are a collision/tamper failure and block adoption.
+
+A per-record receipt name would be wrong twice over: a multi-scope execution has several record IDs
+and no single one names the run, and a rejected transaction that is retried re-derives the same
+record IDs, so a per-record receipt would collide with the receipt of the failed attempt. Each
+receipt is immutable and carries `schemaVersion`, `receiptId`, the record IDs in canonical
+four-field-scope tuple order — `(retailerId, tenantId, capability, environment)` ascending by the
+unsigned UTF-8 bytes of each exact string, with no locale or Unicode normalization — the pointer
+identities before and after, the transaction outcome,
+per-record on-disk byte hashes, and — where adoption was refused — the failing entry and its reason.
+A receipt with `outcome = adopted` requires a non-empty record set equal to the complete evaluated
+scope set. A refused receipt may carry an empty set only when its reason proves interruption or
+failure before the first record was emitted; it still carries the starting pointer identity.
+A transaction outcome is exactly `adopted` or `refused`; interruption and recovery conflict are
+reason-coded refused outcomes, never third success-like states.
+A pointer identity is a tagged value: `{state: "absent"}` when no pointer exists, otherwise
+`{state: "present", sha256: <lowercase SHA-256 of the exact pointer-file bytes>}`. A refusal's
+after-identity equals its before-identity except `RECOVERY_CONFLICT`, which records the unexpected
+observed after-identity and proves why progress stopped. Receipts are emitted for failed executions
+too; a refused transaction is evidence under §2.4, not an absence.
+
+The receipt and current-pointer documents also use exact full-document RFC 8785 JCS bytes with no
+BOM or trailing LF. Their IDs have the meanings defined here — UUIDv7 for the receipt and no
+content ID for the mutable pointer — so canonical serialization does not turn either into a semantic
+record ID. The recovery journal preserves the originally staged receipt fields and bytes; recovery
+never regenerates timestamps, tool metadata, or other receipt content from the new process.
+
+Three equalities are required and independently checked for each record: the `recordId` embedded in
+the record, the `<recordId>` in its filename, and the ID recomputed over the whole record minus
+`/recordId` must all match. Any disagreement fails closed and the record is not adoptable.
+
+**Identity is semantic, not byte-level.** `semantic-fingerprint/v1` canonicalizes JSON before
+hashing, so `recordId` identifies the record's complete semantic content and two byte-different
+serializations of the same content share it. Phase 5 removes `/recordId`, serializes that identity
+projection with RFC 8785 JCS, and hashes those canonical UTF-8 bytes to compute `recordId`. The file
+itself must then equal RFC 8785 JCS serialization of the **complete record including `recordId`**:
+no BOM, indentation, leading/trailing whitespace, or trailing LF is permitted. The shared
+specification's LF rule for source/vector files does not add an LF to JCS output and never rewrites
+newline characters inside JSON strings. The verifier parses and schema-validates the full record,
+recomputes the projection ID, reserializes the full record with JCS, and requires
+`onDiskBytes == canonicalFullRecordBytes` before accepting. The receipt additionally carries a plain
+SHA-256 of those exact on-disk bytes. `recordId` is never described as a byte hash.
+
+The exclusion vector is declared in the entry-record schema rather than added to the shared
+`contracts/fingerprints/volatile-pointers.v1.json` registry, whose current pointer set is consumed
+by other artifacts and does not contain `/recordId`. Extending that shared registry would change
+identities elsewhere; a schema-scoped vector does not.
+
+**Layout.** Each record is written to
+`contracts/evidence/phase5-entry-records/phase5-entry-record-<recordId>.json` and carries
+`schemaVersion`, `recordId`, its full four-field scope, the exact publication and upstream
+identities it measured, its `predecessorRecordId` or an explicit genesis declaration, and the hash
+of every artifact it cites.
+
+**Pointer.** `contracts/evidence/phase5-entry-record-current.json` is a separate schema-validated
+document mapping each four-field scope to exactly one adopted `recordId`. It carries its own
+`schemaVersion`, a top-level `lastAdoptionReceiptId`, at most one entry per scope, and for each entry
+the adopted `recordId`, the `predecessorRecordId` it replaces, and the `adoptionReceiptId` of the
+transaction that last changed that scope. A candidate sets `adoptionReceiptId = receiptId` on every
+entry in its evaluated set and preserves it byte-for-byte on untouched entries; the top-level
+`lastAdoptionReceiptId` identifies the transaction that last changed the pointer document. Adoption
+is **set-atomic**: one
+`P5-0` execution covering several scopes produces one pointer transaction adopting all of its
+records together, never a scope-by-scope sequence that can leave a partially updated baseline.
+Every entry in that transaction is validated before any of it takes effect — each target record must
+exist, its three ID equalities and canonical byte equality must hold, its scope must equal its pointer
+entry's scope, and its `predecessorRecordId` must equal the currently adopted ID for that scope or
+declare genesis where none exists. If any entry fails, the whole transaction is refused and the
+previous adoption stands unchanged for every scope. The pointer moves; the records never do.
+
+**Crash-safe adoption protocol.** Pointer adoption and receipt publication are two files, so calling
+each individual rename atomic is not enough. `P5-0` takes a process-scoped OS exclusive lock on one
+fixed local adoption-lock file, so process death releases the lock rather than leaving a stale
+ownership claim. It creates and durability-flushes a recoverable staging journal keyed by
+`receiptId` before it may write any record or pointer, and updates that journal through atomic
+replacement using temporary files in the same directory as records and the candidate pointer are
+prepared. Every durable create/replace flushes
+both the file and containing directory, or the platform's documented write-through equivalent, and
+fails closed where those guarantees are unavailable. The journal contains the exact before-pointer identity,
+candidate after-pointer bytes and identity, ordered record-ID/byte-hash set, and enough receipt fields
+to finalize either outcome. It is ignored operational scratch, not retained evidence or authority.
+
+After all entries pass, `P5-0` writes and durability-flushes the candidate pointer with
+`lastAdoptionReceiptId = receiptId` to a same-directory temporary file, durability-flushes and
+atomically replaces the current pointer, then flushes the containing directory. It next create-only
+publishes and durability-flushes the final `adopted` receipt. A pre-adoption validation or write failure publishes a `refused` receipt with
+identical before/after pointer identities. Before any later execution, the
+same lock requires recovery of every unfinished journal: candidate pointer identity plus matching
+`lastAdoptionReceiptId` finalizes `adopted`; unchanged before identity finalizes `refused` with
+`INTERRUPTED_BEFORE_ADOPTION`; any third state finalizes `refused` with `RECOVERY_CONFLICT`, records
+the unexpected observed pointer identity, and blocks `P5-0` until separately authorized manual
+reconciliation without moving the pointer. The journal is removed only after the final
+immutable receipt is durable. Thus a crash after pointer replacement cannot leave an adopted set
+with no recoverable receipt, and a retry cannot silently reuse the failed attempt's identity.
+
+This shape is required, not stylistic. Phase 5 evaluates more than one tenant and more than one
+publication over time, a single overwritten file cannot describe two scopes at once, and
+`P5-0`'s own reconciliation depends on comparing a new measurement against its predecessor.
+Rewriting one file in place would destroy exactly the evidence §2.4 forbids destroying. A
+superseded record is retained and remains readable; a contradicted one is superseded by an explicit
+successor rather than corrected in place.
 
 `P5-0` must reconcile, and record into the entry record:
 
@@ -361,7 +504,9 @@ data assumption compiled into it.
   semantic fingerprints, object count, and committed pin hash;
 - the exact forecast and inventory run/version identities, their lifecycle status, and the source
   selection each consumed;
-- the governed tenant, retailer, environment, market set, and operating currencies;
+- the governed tenant, retailer, and environment, and the tenant's **declared** governed market set
+  and operating currencies read from the tenant/onboarding contract — never inferred from what the
+  publication happens to contain;
 - the live PostgreSQL activation/current views, reconciled to the committed JSON selection ledgers
   and to retained artifacts, manifests, API evidence, OpenAPI, and UI lineage;
 - every carried unavailable field with its reason code and the dependency that would clear it;
@@ -402,7 +547,7 @@ contains no values, because values belong to a pin and this plan does not.
 | Measured | Disposition it drives |
 |---|---|
 | `sell_prices` volume, temporal grade distribution, distinct known-as-of boundaries | Any grade below the origin-visible threshold makes elasticity temporally unavailable with `PRICE_AVAILABILITY_BACKFILLED`, whatever the volume |
-| Market set, operating currencies, store/DC/channel/department/SKU counts | Declares the governed market set for `P5-D26`; drives per-market gate arithmetic and the §9 coverage contract |
+| Market, currency, store/DC/channel/department/SKU coverage present in the publication | Reconciled **against** the tenant's declared governed market set, which the publication never defines. A declared market with no publication coverage, or publication coverage outside the declared set, is a refusal — not a redefinition of business scope |
 | Price series count and effective-week span | Bounds the 13 scoring origins and the panel assessment window |
 | `competitor_products` attribute completeness, `competitor_prices` grade, `competitor_matches` status and confidence range | Matching evaluation population in `P5-1P`; a universe too small to split into disjoint truth sets blocks `P5-6A` before it starts |
 | `promotions` count, status vocabulary, mechanic vocabulary, scope-row and merchandise-target shape | Whether `P5-D23`'s evidence precondition is reachable and which `P5-7B` branch applies; whether §9's promotion states are demonstrable or must be predeclared unavailable |
@@ -693,8 +838,9 @@ inventory work. Of the two defects Revision 9 recorded here, one is now closed a
 `P5-D25` repairs those mechanics without introducing Phase-6 release authority. The pin CLI takes
 an explicit operation, run, pin path, input-authority path, job purpose, evidence root, retailer,
 tenant, and environment; the authority record enumerates the complete capability scopes. A read-only
-retained-entry check binds the exact `P5-0` entry record; build generation binds the reviewed rich or
-sparse publication explicitly. Missing arguments, newest-file discovery, capability-only lookup,
+retained-entry check binds the adopted `P5-0` entry-record set entries for every authority scope;
+build generation binds the reviewed rich or sparse publication explicitly. Missing arguments,
+newest-file discovery, capability-only lookup,
 zero/multiple current heads, schema mismatch, missing retained bytes, or report/publication mismatch
 fail closed.
 
@@ -880,6 +1026,9 @@ The audit identified the following concrete candidates:
 27. Inventory Valuation currently carries unverified FIFO labels over WAC-derived values and lacks
     the separately promised `derived_lane_wac` value. Its method labels and unavailable coverage
     must be reconciled before any NRV/markdown/provision unlock is approved.
+28. Inventory Overview intentionally omits the reference's unused page-local Region, Category,
+    Health Status, and Location filter strip under `IRP-V1-A1`. `P5-0P` preserves that exact approved
+    omission and verifies that it has not become authority to remove any other reference control.
 
 ### 1.11 Original HTML behavior defects that are explicitly non-authoritative
 
@@ -1564,7 +1713,27 @@ and require their own plan, security review, and governing-authority amendment.
 ### P5-D13 · Read-only action behavior — proposed binding
 
 In Phase 5, every control has exactly one matrix state: `business_live`, `read_only`, `preview_only`,
-`hard_disabled`, or an explicitly rejected duplicate `structural_only`. Safe navigation, filtering,
+`hard_disabled`, an explicitly rejected duplicate `structural_only`, or `external_owned` for a surface
+another approved workstream governs.
+
+`external_owned` is **approval-gated and narrowly valid**. A row may claim it only when it names both
+an approved owner decision and that owner's exact versioned contract identity — the contract file
+path plus the applicable amendment IDs, not a workstream nickname — and the cited contract's
+`affectedElements`/ownership boundary actually covers the named surface. The mere existence of an
+amendment ID does not prove ownership of an element it never names. A row naming neither, naming a
+workstream with no approved contract, citing an amendment that does not exist in that file, or citing
+one that does not cover the surface is **invalid and blocks matrix approval**. It is never silently
+downgraded to an inferred Phase 5 disposition, because an inferred disposition would let an
+unreviewed ownership claim resolve itself into a Phase 5 obligation nobody approved. It is never a
+way to avoid specifying something Phase 5 owns.
+
+For an `external_owned` row Phase 5 verifies exactly three things and no more: that the surface
+remains **reachable** by its documented trigger; that the owner **decision and contract identity are
+unchanged** from the approved row; and that **no Phase 5 override exists** — no Phase 5 handler,
+adapter, request rewrite, style override, or access-mode change touching it. Phase 5 asserts nothing
+about its composition, labels, option order, footer, focus behavior, or values, runs no parity or
+data assertion against it, and treats any divergence from the reference HTML as the owner's
+amendment question, recorded and referred rather than repaired. Safe navigation, filtering,
 sorting, local row selection, read-only detail, stateless simulation, and lineage-bearing export may
 be `business_live` or `read_only`. Mutation controls retain their original placement as `hard_disabled`
 with a business prerequisite, no click handler, and no mutation endpoint, except an explicitly
@@ -1578,7 +1747,7 @@ submitting dialog, makes text/date inputs read-only, permits enumerated controls
 local preview states, keeps prohibited options individually disabled, disables every submit/
 mutation action, and performs no network, write, history, or audit operation. The trigger is a
 presentation preview, never an enabled mutation. Every mandatory §8.8 modal must be reachable as
-`business_live`, `read_only`, or `preview_only`; `hard_disabled` is permitted only where the surface
+`business_live`, `read_only`, `preview_only`, or `external_owned`; `hard_disabled` is permitted only where the surface
 does not have a mandatory inspectable modal, and `structural_only` is permitted only for an
 explicitly rejected duplicate/non-authoritative implementation artifact that is not a distinct
 reference surface. If a
@@ -1616,10 +1785,12 @@ currency” disclosure. Freeze a per-destination Store/Channel applicability mat
 Inventory pages disable and label Channel unless an approved channel allocation exists, while the
 few channel-grain projections may opt in with exact query evidence.
 
-The reference retains all five reporting-currency options in order: INR, USD, EUR, GBP, AED. For
-each option, freeze either complete governed cross-rate/source/as-of/direction/rounding coverage for
-every exposed aggregate or an exact disabled/unavailable selector and modal row with reason. The
-two-market INR/USD source is not evidence for EUR/GBP/AED. Pulling read-only reporting conversion
+The reference retains all five reporting-currency options in order: INR, USD, EUR, GBP, AED — a
+presentation-authority list, not a claim about any tenant's operating currencies. For each option,
+freeze either complete governed cross-rate/source/as-of/direction/rounding coverage for every exposed
+aggregate or an exact disabled/unavailable selector and modal row with reason. A tenant's own
+operating currencies are never evidence for a reporting currency outside them: coverage is proven
+per option from governed FX, or that option is disabled with its reason. Pulling read-only reporting conversion
 into Phase 5 is an explicit reviewed amendment to the Phase-6 task boundary; it never pulls forward
 serve-time pricing-rule or workflow work.
 
@@ -1806,9 +1977,10 @@ Keep `contracts/ml/expected-pin.json` as the v1 byte authority consumed by exist
 forecast, and inventory jobs. Do not add Phase 5 result capabilities to that schema. Repair
 `build_expected_pin.py` so every generate/check operation receives explicit run ID, pin path, input-
 authority path, job purpose, evidence root, retailer, tenant, and environment; remove correctness
-dependence on mutable module-level defaults. The current stale default breaks a direct `--check`, but
-`tools/dev.py` already passes `--run run_id`, so the normal repin pipeline and phase-exit gate are not
-presently broken by that default.
+dependence on mutable module-level defaults. The stale module-level run default that made a direct
+`--check` fail has since been removed and that check now reproduces the committed pin, so this
+binding covers the remaining explicit-parameter work only. `P5-0` records the observed status rather
+than asserting a failure; a repair already made is never re-required as a gate.
 
 Preserve historical `retail-publication-selection/v1` bytes and freeze
 `retail-publication-selection/v2` before creating a Phase 5 selection. V2 makes the canonical ordered
@@ -1884,8 +2056,15 @@ value and in strictness, and no tenant obtains a weaker gate by having fewer mar
 
 Binding consequences:
 
-- a tenant declares its governed market set once, in `P5-1P`, before profile generation; the set is
-  frozen evidence and cannot be narrowed after results to convert a market failure into a pass;
+- the governed market set is a **business/onboarding fact declared in the tenant contract**, frozen
+  into that tenant's `P5-1P` coverage contract before profile generation. It is never derived from
+  what a generated publication happens to contain: data describes coverage, the tenant contract
+  describes obligation. `P5-0` reconciles the two and refuses either direction of mismatch — a
+  declared market absent from the publication blocks generation for that scope, and publication
+  coverage outside the declared set is out-of-scope evidence that is reported rather than silently
+  admitted;
+- the set is frozen evidence and cannot be narrowed after results to convert a market failure into
+  a pass;
 - narrowing a governed market set after results is the market-level form of the gate-relaxation
   refusal already in §10.10, and is refused on the same basis;
 - one tenant is never evidence for another. Selections, pins, input authorities, bundles,
@@ -1908,8 +2087,11 @@ Approval of `P5-D26` is required before `P5-1P` freezes any tenant's coverage co
 
 ### 5.1 Entry and source deliverables
 
-- one immutable `phase5-entry-record.json` reconciling retained Phase 4 source, forecast,
-  inventory, activation, API, database, expected-pin, and UI authority;
+- a reviewed entry-record **set** containing exactly one immutable content-addressed record per
+  evaluated `{retailerId, tenantId, capability, environment}` scope, each reconciling retained
+  Phase 4 source, forecast, inventory, activation, API, database, expected-pin, and UI authority for
+  that scope, plus the single pointer transaction that adopts the complete set and its immutable,
+  pointer-bound execution receipt;
 - an approved existing-UI audit/amendment register covering the shell, Data Management, Demand
   Forecast, and every inventory/replenishment destination;
 - versioned source/availability contracts for sell price, promotion, competitor observations and
@@ -1995,8 +2177,11 @@ and review assert matrix rows rather than re-copying every element into later ch
 For every destination the matrix must map route/navigation, visible text, control order, component,
 data field/source, format, state variants, the closed `accessMode` value from `P5-D13`, request or
 local effect, responsive position, accessibility name/focus order, modal/export contract, test ID,
-screenshot ID, and approved reference deviation. Sample HTML numbers are never an allowed data
-source.
+optional screenshot/capture ID, closed `captureClass`, and approved reference deviation.
+`captureClass` is exactly `full_review`, `reachability_only`, or `not_applicable`: `external_owned`
+requires `reachability_only`; an explicitly rejected `structural_only` duplicate requires `not_applicable`, a
+null capture ID, and a static absence-test ID; every other row requires `full_review`. The schema
+rejects every other pairing. Sample HTML numbers are never an allowed data source.
 
 Demo evidence must cover response-rich, naturally sparse, exact-zero, filter-empty, loading,
 partial capability, workflow unavailable, privacy unavailable, stale, corrupt/missing, and isolated
@@ -2028,9 +2213,19 @@ contracts/
     publication-selection.schema.json              # retained legacy v1 bytes
     publication-selection-v2.schema.json           # Phase 5 normative identity contract
     input-authority.schema.json                     # retail-input-authority/v1
+    phase5-entry-record.schema.json                 # retail-phase5-entry-record/v1; declares ["/recordId"]
+    phase5-entry-record-current.schema.json         # scope -> record/adoption receipt + last transaction
+    phase5-entry-receipt.schema.json                # UUIDv7 execution identity + ordered set/outcome
+    tenant-market-set.schema.json                   # governed market set per tenant scope
   evidence/
-    phase5-entry-record.json
+    phase5-entry-record-current.json               # scope -> adopted record + receipt-bound pointer
+    phase5-entry-records/
+      phase5-entry-record-<recordId>.json          # immutable, content-addressed, one per scope
+    phase5-entry-receipts/
+      phase5-entry-receipt-<receiptId>.json        # one per P5-0 execution, success or refusal
+    .phase5-entry-adoption-staging/                 # ignored crash-recovery journals; never authority
     phase5-ui-audit.json
+    phase5-surface-state-capture-manifest.json      # stable IDs + closed captureClass per surface/state
     input-authorities/
       phase5-rich-local.json
       phase5-sparse-dev.json
@@ -2067,6 +2262,7 @@ contracts/
   serving/
     local-serving-config.schema.json
   screens/
+    phase5-surface-state-capture-manifest.schema.json
     price-recommendations.parity.yaml
     price-simulation.parity.yaml
     competitor-monitor.parity.yaml
@@ -2172,6 +2368,22 @@ publication history.
 
 **Tasks**
 
+0. **Freeze the entry-record contracts before emitting any record.** `P5-0` owns this because it is
+   the first package to produce a record and `P5-1`'s entry already requires the approved `P5-0`
+   record set; the dependency cannot run the other way. Author and approve, as a reviewed pre-emission
+   step: `contracts/onboarding/phase5-entry-record.schema.json`, its sibling
+   `phase5-entry-record-current.schema.json`, the execution-receipt schema, and the schema-scoped
+   identity-exclusion vector `["/recordId"]`. Publish cross-language golden vectors proving that a
+   fixed record body yields a fixed `recordId`, that the embedded/filename/recomputed IDs agree, that
+   a record containing execution metadata is rejected, and that the complete on-disk record is exact
+   JCS bytes with no BOM or trailing LF. Require the same exact full-document JCS byte rule for the
+   receipt and current pointer. Freeze and test lowercase UUIDv7 receipt IDs, embedded/
+   filename equality, create-only collision behavior, canonical scope ordering, tagged pointer byte
+   identities, top-level `lastAdoptionReceiptId`, per-entry `adoptionReceiptId` preservation/update,
+   exclusive-lock behavior, and recovery at every boundary before, during, and after pointer replacement. A pointer transaction with one invalid entry adopts
+   nothing and still emits its refusal receipt; a crash after pointer replacement is recovered to one
+   adopted receipt before any new execution. No record may be emitted, and no pointer entry written,
+   before these contracts and vectors are approved.
 1. Record branch, commit, dirty-state inventory, migration head, contract hashes, retained source
    publication bytes, and the current expected-pin SHA-256 before any Phase 5 work.
 2. Reconcile source selection, forecast run/version/selection, inventory run/version/selection,
@@ -2181,7 +2393,9 @@ publication history.
    `demand_forecast_non_pit`, the forecast PIT disclosure, inventory replay rejection, and all
    carried cohort-level unavailable reasons.
 4. Reconcile pricing/promotion landing-backfill facts, competitor synthetic-match evidence, cost
-   provenance, the 73 WAC-derived/FIFO-labelled rows, and the 68 unavailable valuation rows.
+   provenance, the measured WAC-derived rows carrying a FIFO label, and the measured
+   reason-coded unavailable valuation rows. Counts and their location breakdown come from the entry
+   record for the selected publication, never from plan text.
 5. Record every open Phase 4 parity, screenshot, mobile, and human-review gate. Do not infer visual
    approval from passing component tests.
 6. Inspect publication-selection schema/builder/resolver semantics; record that the legacy schema's
@@ -2197,30 +2411,46 @@ publication history.
    pipeline path happens to bypass is still recorded as open, with the bypass named.
 9. Freeze the first-consumer/resume matrix for source bytes, readiness sidecar, configs, feature
    artifacts, upstream models, pricing foundations, bundles, materialization, and activation.
-10. Produce one immutable Phase 5 entry record and a reviewer disposition for every contradiction;
+10. Produce one immutable content-addressed Phase 5 entry record per evaluated four-field scope,
+    prove the embedded/filename/recomputed ID equalities and exact JCS on-disk serialization for each,
+    then run the crash-safe adoption protocol under its exclusive lock. Adopt the complete set in one
+    atomic current-pointer replacement against each declared predecessor and emit exactly one
+    create-only immutable execution receipt whose UUIDv7 matches its filename, whose ordered
+    record-ID/byte-hash set matches the evaluated scopes, and whose before/after pointer byte
+    identities and outcome reconcile to top-level `lastAdoptionReceiptId` plus every changed entry's
+    `adoptionReceiptId`. The receipt is emitted whether
+    adoption succeeds or is refused; interruption is recovered before any later execution, and a
+    refusal records the failing entry and reason. Record a reviewer disposition for every contradiction;
     make no source, ledger, database, API, or UI mutation.
 
 **Required evidence**
 
 - exact paths, hashes, record IDs, run/version/selection IDs, database observations, and reasons for
   every reconciled authority;
-- expected-pin direct-check failure plus the inspected `tools/dev.py --run` bypass;
+- observed expected-pin direct-check status recorded verbatim, plus whether any pipeline path
+  supplies parameters that mask a module-level default;
 - full-scope selection defect reproduction;
 - current/replay, Gate B/v2 readiness, cost-method/provenance, and temporal-availability findings;
 - open UI review inventory;
-- approved entry record and resume/invalidation matrix.
+- the approved entry-record **set** — one record per evaluated scope — together with evidence that a
+  single set-atomic pointer transaction adopted all of them and that its pointer-bound immutable
+  receipt passed ID, byte-hash, before/after, outcome, and recovery checks, plus the resume/
+  invalidation matrix. A partially adopted set or an adopted pointer with a missing/unreconciled
+  receipt is not `P5-0` evidence.
 
 **Exit**
 
-There is one reviewed, read-only Phase 5 entry record; unresolved identities remain explicitly
-unresolved; the expected-pin bytes are unchanged; and reviewers agree which inputs may proceed to
+There is one reviewed, read-only Phase 5 entry record per evaluated scope, adopted as a complete set
+with its pointer-bound immutable receipt reconciled and no unfinished recovery journal. Unresolved
+identities remain explicitly unresolved; the expected-pin bytes are unchanged; and reviewers agree
+which inputs may proceed to
 `P5-0P`, `P5-1`, and `P5-1P`. No implementation is authorized by this exit.
 
 ### P5-0P · Existing UI audit and parity-amendment gate
 
 `P5-0P` is a gate, not a code-cleanup package. It governs changes to already-frozen screens.
 
-**Entry:** `P5-0` entry identity is reviewed; original HTML, current React, OpenAPI, API responses,
+**Entry:** the `P5-0` entry-record set is reviewed and adopted; original HTML, current React, OpenAPI, API responses,
 and all three existing screen contracts are available.
 
 **Tasks:**
@@ -2261,6 +2491,22 @@ and all three existing screen contracts are available.
    comparison, selection controls, Action Center/Store Drilldown empty states,
    business-prerequisite copy with no internal phase/policy/fingerprint jargon, and unavailable
    Business Impact. Promotion integration remains unavailable unless `P5-D23` passes.
+5a. Record, as `external_owned` observations referred to the Decision-#96 owner and **not** repaired
+   here, every divergence between the reference HTML Scenario Planning surface and the shipped
+   modal. Each observation is routed to the amendment that actually governs its surface, because
+   the input form and the result presentation have different owners:
+   - **Input-modal observations → Decision #96 with `FSP-V1-A1`/`FSP-V1-A2`** and
+     `plans/local/scenario-planning-implementation-plan.md`: the reference `Scenario` control
+     appearing as `Preset`, the percentage-suffixed adjustment labels, and the shortened
+     competitor/weather option labels. `FSP-V1-A3` governs result presentation and does not
+     authorize any of these.
+   - **Result-surface observations → `FSP-V1-A3` or an explicit successor amendment**: the Required
+     Inventory summary and unit/value rows beyond the reference three, and the results-state `Back`
+     control preceding `Close`.
+
+   Each row names the governing amendment and states whether it already authorizes the divergence or
+   whether an explicit amendment is still owed. `P5-0P` closes when each is dispositioned by that
+   owner; Phase 5 neither edits the modal nor asserts its composition in tests.
 6. Freeze inventory wrapper IDs, ordered control groups, controlled Replenishment row/select-all
    state plus its read-only detail/export consumer and filtered-empty refusal, filters/query
    keys, strict schemas, badge/date mappings, exact-zero handling, independent summary/card/table
@@ -2269,8 +2515,10 @@ and all three existing screen contracts are available.
    drilldown, and policy/cost-dependent unlocks.
 7. Explicitly retain unavailable replay benefits, workflow facts, dock-to-stock, transfer acceptance,
    and any source fact Phase 5 still does not produce.
-8. Freeze the Inventory Valuation method-label correction, all 68 unavailable rows across four
-   stores/four DCs, and `derived_lane_wac` present-or-absent truth before any cost-derived unlock.
+8. Freeze the Inventory Valuation method-label correction, the complete reason-coded unavailable
+   population and its location breakdown as measured into the entry record, and `derived_lane_wac`
+   present-or-absent truth before any cost-derived unlock. An empty unavailable population is a
+   valid measured outcome and is recorded as such, not assumed.
 9. Amend matrices and decisions together; record reviewer and approval timestamp.
 10. Freeze shared searchable-table debounce, retained-previous-data, cancellation, stale-response,
    and focus behavior, then add request-count and out-of-order response assertions. Classify every
@@ -2295,13 +2543,20 @@ and all three existing screen contracts are available.
     with its visible `Preview only` treatment and accessible business prerequisite; text/date fields
     are read-only, enumerated controls change local preview state only, prohibited options remain
     disabled, every submit/mutation control is disabled, and the preview performs no request/write/
-    history action. Every distinct original modal is reachable as `business_live`, `read_only`, or
-    `preview_only` and has a capture ID; rejection or omission blocks Demo 5 rather than downgrading
-    it to hidden structural evidence.
-16. Freeze a surface-state capture manifest assigning stable capture/test IDs to every page, tab,
-    non-default panel, `business_live`/`read_only`/`preview_only` modal, branch-specific refusal, and
-    §9 state. Every tab/panel/modal gets desktop visual plus keyboard/human review; mobile/shared-
-    modal sampling is allowed only through an explicit approved equivalence row.
+    history action. Every distinct original modal is reachable as `business_live`, `read_only`,
+    `preview_only`, or `external_owned` and has a capture ID; rejection or omission blocks Demo 5
+    rather than downgrading it to hidden structural evidence.
+16. Freeze the schema-valid surface-state capture manifest assigning stable test IDs, optional
+    capture IDs, and one closed `captureClass` to every page, tab, non-default panel,
+    `business_live`/`read_only`/
+    `preview_only`/`external_owned` modal, branch-specific refusal, and §9 state. Phase 5-owned rendered
+    rows use `full_review` and receive desktop visual, DOM/value, keyboard/accessibility, and human
+    review as applicable. An `external_owned` row must use `reachability_only` and records only its
+    documented trigger opening plus unchanged owner identity and absence of a Phase 5 override, and
+    carries no composition, layout, token, value, focus, keyboard, or screenshot-comparison assertion.
+    An explicitly rejected `structural_only` duplicate uses `not_applicable`, has no capture ID, and
+    carries only its static no-runtime-render/no-handler absence test. Mobile/shared-modal sampling is
+    allowed only through an explicit approved equivalence row.
 
 **Required evidence:**
 
@@ -2312,9 +2567,10 @@ and all three existing screen contracts are available.
 - before/target screenshots at 1440×1100 and 390×844;
 - written disposition for every candidate unlock and every retained unavailable value;
 - approved modal access inventory proving every mandatory surface is `business_live`, `read_only`,
-  or `preview_only`, with any non-authoritative structural-only duplicate explicitly excluded, plus
+  `preview_only`, or approval-gated `external_owned`, with any non-authoritative structural-only
+  duplicate explicitly excluded, plus
   the complete
-  surface-state capture manifest.
+  schema-valid surface-state capture manifest with no invalid `accessMode`/`captureClass` pairing.
 
 **Exit:** Every planned existing-UI change is either approved with a frozen definition or explicitly
 deferred. `P5-9` may implement only approved rows.
@@ -2324,7 +2580,9 @@ original sample values are treated as truth, or if review has not approved the a
 
 ### P5-1 · Freeze temporal source, selection-v2/input-authority, and operational readiness contracts
 
-**Entry:** approved `P5-0` entry record and the relevant source/readiness decisions.
+**Entry:** the approved `P5-0` entry-record set for every scope `P5-1` will touch, its successful
+set-atomic pointer adoption, and the relevant source/readiness decisions. One reviewed scope is not
+sufficient to begin work that spans others.
 
 **Tasks**
 
@@ -2374,7 +2632,7 @@ original sample values are treated as truth, or if review has not approved the a
 
 Source/availability/readiness/pin/selection/input-authority/config contracts are approved; the
 operational readiness sidecar is identity-safe and reproducible; selection v2 and legacy-v1 semantics
-agree cross-language; direct pin checking no longer depends on a stale default; every downstream job
+agree cross-language; pin checking depends on explicit parameters rather than module-level defaults; every downstream job
 accepts explicit pin/authority paths; full-scope ambiguity fails closed; and no source publication,
 model result, activation, or UI has been changed outside this package's explicitly approved fixtures
 and contracts.
@@ -2492,8 +2750,9 @@ missing foundation protocol, or mutable demo target blocks `P5-2`.
    referential integrity, and no rich/sparse cross-contamination.
 6. For every capability required by expected-pin/v1, append schema-valid source-selection v2
    candidate → approved → active records only after source/readiness verification. Rich uses the
-   exact `retailer-demo × tenant-demo × <capability> × local` scope and explicit predecessor; sparse
-   uses `retailer-demo × tenant-demo × <capability> × dev` and proves genesis or one dev predecessor.
+   the evaluated tenant's exact `<retailer> × <tenant> × <capability> × local` scope and explicit
+   predecessor; sparse uses `<retailer> × <tenant> × <capability> × dev` and proves genesis or one dev
+   predecessor.
 7. Only after task 6 is active, generate one schema-valid reviewed input-authority record and
    immutable v1 pin for each run using the explicit builder interface. The rich pin is the candidate
    for the shared expected pin; the sparse pin remains an explicit diagnostic input.
@@ -2580,9 +2839,10 @@ selected, materialized, activated, or served.
 12. Transcribe §8 into four machine-readable screen matrices and the approved existing-UI amendment
     matrix. Every row includes the fields defined in §8.7 and is reviewed against the original HTML.
 13. Freeze exact navigation/router, global/page filters, effective Store semantics, currency
-    semantics, shared component behavior, modal trigger/title/body/footer/focus contracts, direct
-    exports, responsive layout, accessibility behavior, and the approved `P5-D18` chart/index/table
-    interpretation.
+    semantics, shared component behavior, Phase 5-owned modal trigger/title/body/footer/focus
+    contracts, direct exports, responsive layout, accessibility behavior, and the approved `P5-D18`
+    chart/index/table interpretation. For an external-owned modal freeze only the owner decision/
+    contract identity, no-Phase-5-override assertion, and `reachability_only` evidence contract.
 14. Generate golden vectors and contract tests before model result inspection or React/API
     implementation begins.
 
@@ -2600,8 +2860,9 @@ selected, materialized, activated, or served.
 
 **Exit**
 
-All Phase 5 artifact, policy, database, API, export, modal, navigation, responsive, accessibility,
-and screen behavior is immutable before result-bearing implementation reads model outputs.
+All Phase 5-owned artifact, policy, database, API, export, modal, navigation, responsive,
+accessibility, and screen behavior is immutable before result-bearing implementation reads model
+outputs; every external-owned row has only its immutable ownership/reachability boundary.
 
 ### P5-4 · Build price panels, response models, shrinkage, and acceptance
 
@@ -3075,8 +3336,10 @@ and generated schemas pass.
    granularity refusal, Forecast/Replenishment controlled selection and empty-export behavior, and
    static-versus-action card-header metadata semantics. Implement every exact §8.8.5 Data/
    Forecast/Stock Health/Inventory/Replenishment `business_live`/`read_only`/`preview_only` modal and
-   capture state; do
-   not retain a simplified current Forecast body or conflate visible trigger labels with modal titles.
+   leave every `external_owned` modal untouched, verifying only its `P5-D13` checks, and
+   capture state. For **Phase 5-owned** Forecast dialogs only, do not retain a simplified current
+   body; the `external_owned` Scenario surfaces are exempt because their body is their owner's to
+   define. Never conflate visible trigger labels with modal titles on any owned surface.
 5. Build Price Recommendations exactly as §8.2, including all tabs/table columns and read-only
    detail/Compare Selected/Export surfaces. Pricing Action Center and workflow form bodies use only
    their approved preview-only access; their submit/mutation actions remain disabled.
@@ -3094,15 +3357,20 @@ and generated schemas pass.
 10. Ensure every unavailable element remains in its original position with a concise business
     prerequisite, never internal phase/package language.
 11. Remove production sample constants and scan bundles for original sample values.
-12. Run structural DOM/order/text/ID assertions, data-value/formula assertions, currency/scope and
-    byte-level export assertions, interaction tests, all new/existing preview zero-effect tests,
-   deterministic modal focus/close/result/in-place-transition tests, static-metadata cursor/AT tests,
-    loading/error tests, accessibility tests, and visual comparisons.
-13. Execute the surface-state capture manifest: capture all twenty implemented destinations at
-    1440×1100 and 390×844, including existing pages with no local Phase 5 code change, plus every
-    tab/non-default panel and every `business_live`/`read_only`/`preview_only` modal at least once on
-    desktop; run 1024
-    breakpoint smoke and only the explicitly approved representative mobile-modal/browser/OS samples.
+12. For Phase 5-owned surfaces, run structural DOM/order/text/ID assertions, data-value/formula
+    assertions, currency/scope and byte-level export assertions, interaction tests, all new/existing
+    preview zero-effect tests, deterministic modal focus/close/result/in-place-transition tests,
+    static-metadata cursor/AT tests, loading/error tests, accessibility tests, and visual comparisons.
+    For `external_owned` surfaces run only the three `P5-D13` checks; never import an owner's parity,
+    keyboard, value, or screenshot-comparison obligation into this package.
+13. Execute the schema-valid surface-state capture manifest: capture all twenty implemented
+    destinations at 1440×1100 and 390×844, including existing pages with no local Phase 5 code change,
+    plus every tab/non-default panel and every Phase 5-owned `business_live`/`read_only`/
+    `preview_only` modal under `full_review` at least once on desktop. Each `external_owned` modal gets
+    exactly its `reachability_only` trigger-open evidence and no content comparison; each rejected
+    `structural_only` duplicate reconciles to its `not_applicable` static absence test and no capture.
+    Run 1024 breakpoint smoke and only the explicitly approved representative mobile-modal/browser/OS
+    samples.
 14. Walk the response-rich demo script, including its naturally sparse cohorts, and record the
     source/run/bundle/activation evidence on every page. Use the isolated sparse integration harness
     and non-mutating negative adapters to prove full refusal, stale 409, missing/corrupt 503, and
@@ -3133,9 +3401,11 @@ and generated schemas pass.
   any mixed all-store view obeys governed reporting-currency semantics;
 - Price Recommendations has one effective Store across global/page controls; Forecast and
   Replenishment selections are controlled and filtered-empty export makes no request/download;
-- all §8.8.5 Forecast, Stock Health, and shared existing-page modal compositions, exact visible-
-  trigger/modal-title mappings, access modes, preview/result/in-place transitions, capture IDs, and
-  deterministic title→X→body→footer focus/close/return behavior pass;
+- all §8.8.5 Forecast, Stock Health, and shared existing-page modal compositions **that Phase 5
+  owns**, with exact visible-trigger/modal-title mappings, access modes, preview/result/in-place
+  transitions, capture IDs, and deterministic title→X→body→footer focus/close/return behavior, pass;
+  `external_owned` modals are excluded from every composition, transition, and focus assertion and
+  pass on their `P5-D13` checks alone;
 - Daily/Monthly Forecast options never synthesize quantiles by summing weekly P50/P90;
 - the synthetic margin appears only in the approved §8.3.2 panel, and competitor excluded results
   never leave the visible field saying Include;
@@ -3147,8 +3417,9 @@ and generated schemas pass.
   distinct, with the latter three demonstrated only through isolated non-mutating adapters;
 - no business UI contains phase/roadmap/package explanations;
 - all live values come from selected APIs and accepted artifacts;
-- every surface-state capture/test ID reconciles; screenshots, DOM, data, accessibility, local
-  browser, and human-review gates pass.
+- every required surface-state test ID, non-null capture ID, and `accessMode`/`captureClass` pairing
+  reconciles; screenshots, DOM, data, accessibility, local browser, and human-review gates pass for
+  Phase 5-owned surfaces, while external-owned surfaces pass only the three `P5-D13` checks.
 
 **Exit:** Demo 5 truthfully demonstrates response-rich and sparse Phase 5 outcomes in the exact
 original UI while the existing application remains coherent and corrected.
@@ -4150,13 +4421,14 @@ The following table defines what `P5-0P` must decide; it does not itself authori
 | Forecast modal empty states | Action Center and Store Drilldown show governed explanatory content when rows/counts are empty | No blank modal body or empty table chrome |
 | Existing copy | Replace internal phase/roadmap/package/policy-freeze/fingerprint explanations with business prerequisites; keep technical lineage in detail/export | Original approved business labels remain; no internal jargon in primary copy |
 | Required selectors | Add `#dataManagement`, missing Forecast panel IDs, and inventory page wrapper IDs per contracts | Do not rename approved selectors casually |
-| Inventory controls | Restore exact order, missing Replenishment checkbox, live supported filters, safe export/detail; Replenishment selection is controlled/select-all-visible/indeterminate, drives only selected-row detail/export, clears on scope/filter/page change, and disables export on filtered empty | Mutation/ERP/workflow controls remain disabled; no uncontrolled/no-op checkbox or silent empty export |
+| Inventory Overview filters | Preserve the exact `IRP-V1-A1` omission of its unused page-local Region, Category, Health Status, and Location strip | Do not restore those four controls or treat the amendment as permission to remove any other reference filter/control |
+| Other inventory controls | Restore exact order, missing Replenishment checkbox, live supported filters, safe export/detail; Replenishment selection is controlled/select-all-visible/indeterminate, drives only selected-row detail/export, clears on scope/filter/page change, and disables export on filtered empty | Mutation/ERP/workflow controls remain disabled; no uncontrolled/no-op checkbox or silent empty export |
 | Inventory schemas/states | Strict per-screen schemas; exact zero vs no evidence; typed API reasons; stable skeletons | No `record(unknown)` or status-string parsing |
 | Inventory demand risk | Add accepted risk companion and assessed/withheld coverage | No realized lost-sales or replay-benefit claim |
 | Inventory action bindings | Use understock/urgent recommendations and ageing candidates | Do not bind actions to residual/dead cells |
 | Safety Stock | Materialize/display policy-segment grain and SKU count | Promo driver stays unavailable unless policy formula changes |
 | Allocation demand | State trailing-91-day basis or publish aligned demand | Do not label requested-units proxy ambiguously |
-| Inventory valuation/expiry | First correct 73 WAC-derived rows carrying FIFO, reconcile `derived_lane_wac`, and expose exact unavailable coverage; then may enable NRV/markdown/provision/recovery with accepted price policy + cost and amended formulas | 68 unavailable valuation rows across four stores/four DCs—including the Pune overflow and Brooklyn MFC nodes—and unsupported elements stay unavailable; source FIFO label never proves computed FIFO |
+| Inventory valuation/expiry | First correct every measured WAC-derived row carrying a FIFO label, reconcile `derived_lane_wac`, and expose exact unavailable coverage; then may enable NRV/markdown/provision/recovery with accepted price policy + cost and amended formulas | The measured reason-coded unavailable valuation population, at its measured store/DC locations, and unsupported elements stay unavailable; source FIFO label never proves computed FIFO |
 | Inventory Waste Reduction | Compare frozen canonical current/prior windows; state scope, lineage, percent sign/denominator and lower/higher/exact-zero/no-prior cases | Do not require or substitute Phase 5 price/cost policy for this historical comparison |
 | Independent inventory blocks | Render summaries/cards/groups from their own payload even when the primary row table is empty | Do not suppress populated cards because `items` is empty |
 | Inventory replay fields | Preserve current/replay capability split | Fill-rate/service/revenue/working-capital benefits remain withheld |
@@ -4212,8 +4484,12 @@ counts, and selections are marked reference-only; labels, option order, control 
 composition remain presentation authority unless an amendment is approved.
 
 Every row below receives a stable `surfaceId`; `accessMode` is exactly one of `business_live`,
-`read_only`, `preview_only`, `hard_disabled`, or `structural_only`. Each row also receives a trigger
-selector, capture/test ID, and desktop/mobile review disposition. For a
+`read_only`, `preview_only`, `hard_disabled`, `structural_only`, or `external_owned`. Each row also
+receives a trigger selector, test ID, optional capture ID, desktop/mobile review disposition, and
+`captureClass` of exactly `full_review`, `reachability_only`, or `not_applicable`.
+`external_owned` requires `reachability_only`; an explicitly rejected `structural_only` duplicate
+requires `not_applicable`, a null capture ID, and a static absence-test ID; every other access mode
+requires `full_review`. An invalid pairing blocks matrix approval. For a
 `preview_only` mutation form, the trigger preserves its original label first and adds a small
 `Preview only` treatment inside the trigger after that label; the dialog begins with one business-
 prerequisite callout, uses read-only text/date fields, allows enumerated controls to change only
@@ -4268,7 +4544,7 @@ Exact modal inventories:
 | Export Price Recommendations | Scope, Format, Include AI explanation, Include audit history; File Name | Scope: Selected recommendations (N), Current filtered view (N), All recommendations (N). Format: CSV, Excel-compatible CSV, PDF / Print. Explanation: Yes/No. Audit: No/Yes | `Export`, Cancel; §8.2.1.1 governs counts/defaults/zero/limit, CSV encodings, filename, lineage, and errors; PDF/Print and audit Yes are visible-disabled/no-call |
 | Schedule Price Changes | Recommendations, Stores, Status; Effective Date, Effective Time, Channels, Rollback Rule | Channels: All Channels, Stores Only, E-commerce Only. Rollback: Rollback on integration failure, Manual rollback only | preview-only access; `Schedule` disabled, Cancel live; no request/write/history |
 | Compare Selected Recommendations | table columns Product, Action, Price Change, Revenue Impact, Margin Impact, Confidence | requires at least two selected rows; one selected receives accessible “select at least two” state | Close; read-only/live |
-| Pricing Action Center | Pending Decisions, High Priority, Value Awaiting Approval; Decision Queue, Items, Owner, Value | original workflow queue labels remain, but every count/value/owner row is typed workflow-unavailable rather than sample data | preview-only access; all queue actions disabled, Close live; no request/write/history unless a later approved non-workflow read model makes it live |
+| Pricing Action Center | Pending Decisions, High Priority, Value Awaiting Approval; Decision Queue, Items, Owner, Value | the three original queue rows remain in exact reference order — `Senior approval required`, `Category review`, `Approved but unscheduled` — while every count, owner, and value cell is typed workflow-unavailable rather than sample data | preview-only access; all queue actions disabled, Close live; no request/write/history unless a later approved non-workflow read model makes it live |
 | Store Pricing Drilldown | Store, Period; Open Recommendations, Revenue Opportunity, Margin Opportunity; Top Pricing Issues; Recommended Actions | Period: This Week, This Month, Quarter to Date. Issue/action order follows §8.2.4 | `Open Store Recommendations` read-only navigation; Cancel/close |
 
 #### 8.8.2 Price Simulation modal
@@ -4354,8 +4630,8 @@ does not open a native file chooser. It has no distinct reference application mo
 | Accept Forecast | summary order Selected Forecasts, Average Confidence, Demand Value; Acceptance Comment | preview-only; selected count and any summary value are governed or unavailable; comment read-only; `Confirm Acceptance` disabled, Cancel live |
 | Add Planner Adjustment | Product / SKU; Store; AI Forecast read-only; Planner Forecast; Adjustment Reason in order Local event, Promotion change, Competitor event, Operational constraint, Commercial judgement; Effective Period in order Next Week, Next 4 Weeks, Specific Date Range; Comment | preview-only; product/store options are governed, numeric/text inputs read-only, enums local-only; `Save Adjustment` disabled, Cancel live |
 | Compare Forecast Versions | columns Version, Created By, Accuracy, Bias, Demand Units, Status | read-only/live for compatible retained versions; otherwise the same six-column body shows typed unavailable/empty evidence; Close only |
-| Demand Scenario Planning | Scenario in order Expected Demand, High Demand, Low Demand, Promotion Upside, Supply-Constrained; Demand Adjustment; Price Change; Promotion Uplift; Competitor Availability in order Normal, Competitor Stock-out, Competitor Promotion; Weather / Event Impact in order Normal, Positive, Negative | owned by Decision #96 and `FSP-V1-A1`, not Phase 5. Preserve its current approved-pending/live state, API-native no-write contract, exact field order and footer behavior. Phase 5 adds no preview adapter and cannot change its status; fitted integration requires v2 |
-| Scenario Results | summary order Demand Units, Revenue Potential, Required Inventory; table columns Metric, Current Forecast, Scenario, Impact; rows Demand, Stock-out Risk, Revenue | preview-only with every numeric value typed unavailable and its business reason unless an approved stateless scenario result exists; Close only; never aggregate weekly quantiles into scenario intervals |
+| Demand Scenario Planning | **Not specified by Phase 5.** Decision #96 and `contracts/screens/demand-forecast.parity.yaml` amendments `FSP-V1-A1` (implementation boundary) and `FSP-V1-A2` (local-demo trigger and live projection) establish the external ownership boundary; they do not silently freeze any input composition, field order, option vocabulary, footer, or focus detail they do not state | `external_owned`. Phase 5 asserts no composition, runs no parity assertion, adds no preview adapter, and must not change its access mode, request contract, or no-write boundary. Any divergence between the reference HTML and the shipped v1 modal is an `FSP-V1` amendment question, recorded in `P5-0P`'s register as an observation and referred, never repaired here |
+| Scenario Results | **Not specified by Phase 5.** Decision #96 and `contracts/screens/demand-forecast.parity.yaml` amendment `FSP-V1-A3` own the result-presentation behavior explicitly stated there; undocumented rows, footer, replacement, and focus details are not implied and require an owner amendment | `external_owned`. It is reached from the live `Run Scenario` submit, not from a preview branch; Phase 5 neither asserts its rows nor reinterprets its values. Phase 5's own weekly-quantile prohibition still binds any Phase 5 surface that consumes forecast intervals |
 | Forecast Action Center | summary order Open Exceptions, High Priority, Demand at Risk; columns Action Queue, Items, Owner, Business Exposure; row labels Under-forecast review, Over-forecast review, Data-quality correction, Model retraining | preview-only; workflow counts/owners/exposure are typed unavailable unless a governed read model is approved; Close only and no queue action |
 | Store Forecast Drilldown | Store; Period in order Next 4 Weeks, Next 8 Weeks; Store Forecast Health rows Accuracy, Bias, Demand at risk, Planner override rate; Recommended Actions rows/action and priority; footer `Open Store Forecasts` | read-only/live from governed store/version data, with per-field unavailable states; footer performs read-only navigation only, Cancel/Close live |
 
@@ -4419,8 +4695,10 @@ disabled, and no request/write/history occurs.
 
 **Deterministic modal interaction contract:**
 
-- Every dialog uses one labelled `role=dialog`, `aria-modal=true`, one visible title, one global X,
-  the frozen body order, and its explicitly frozen footer order; the Review Match and preview-result
+- Every **Phase 5-owned** dialog uses one labelled `role=dialog`, `aria-modal=true`, one visible
+  title, one global X, the frozen body order, and its explicitly frozen footer order; an
+  `external_owned` dialog is governed by its owner and is exempt from this clause and the focus/tab
+  rules that follow it; the Review Match and preview-result
   exceptions above override the generic primary-then-Cancel/Close pattern. Initial focus is the
   dialog title (`tabindex=-1`, initial-only). The first Tab moves to the global X, then through enabled
   body controls in DOM order, then enabled footer controls in their displayed order. The last enabled
@@ -4433,23 +4711,30 @@ disabled, and no request/write/history occurs.
   proves no late result/download is committed. Every close path restores focus to the exact visible
   trigger; if that trigger disappeared after a legitimate scope change, focus moves to the page H2
   and announces the reason.
-- The three result paths are distinct and exact. Price Simulation's page-level `Run Simulation`
-  opens `Simulation Result` directly—there is no parent dialog to retain. Forecast Decision-#96
-  `Run Scenario` replaces `Demand Scenario Planning` with `Scenario Results`. Promotion live `Run Simulation` or
-  unavailable `Preview Results` replaces `Simulate Promotion` with `Promotion Simulation Results`.
-  Each replacement uses one dialog, retains the root page trigger identity, and refocuses the new
-  title. Link Different Product is instead a same-dialog body/footer state replacement under the
-  unchanged Review title, not a child modal. Closing any result/state returns focus to the exact root
-  page trigger. Read-only navigation actions close the dialog, route once, scroll to top, and focus
-  the destination H2. No hidden parent remains focusable.
-- Modal open/close never changes URL/history except an explicitly approved read-only navigation
-  action. Each X/Cancel/Close/Escape/backdrop/replacement path has its own capture/keyboard assertion;
+- The Phase 5-owned result paths are distinct and exact, and this clause binds **only** them.
+  Price Simulation's page-level `Run Simulation` opens `Simulation Result` directly—there is no
+  parent dialog to retain. Promotion live `Run Simulation` or unavailable `Preview Results` replaces
+  `Simulate Promotion` with `Promotion Simulation Results`. Each of those two replacements uses one
+  dialog, retains the root page trigger identity, and refocuses the new title; closing either
+  returns focus to its exact root page trigger. Link Different Product is instead a same-dialog
+  body/footer state replacement under the unchanged Review title, not a child modal. Read-only
+  navigation actions close the dialog, route once, scroll to top, and focus the destination H2. No
+  hidden parent remains focusable.
+- The Forecast scenario path is **not** a Phase 5 result path. It is `external_owned` under Decision
+  #96 through `contracts/screens/demand-forecast.parity.yaml` amendments `FSP-V1-A1`, `FSP-V1-A2`,
+  and `FSP-V1-A3`. Those amendments establish the implementation/local-demo ownership boundary and
+  the result-presentation behavior they explicitly state; they do **not** imply that undocumented
+  input composition, footer, replacement, or focus behavior is frozen. Any such detail remains the
+  owner's successor-amendment question. Phase 5 imposes no dialog, focus, or return rule on this path
+  and asserts only the three `external_owned` checks in `P5-D13`.
+- Phase 5-owned modal open/close never changes URL/history except an explicitly approved read-only
+  navigation action. Each Phase 5-owned X/Cancel/Close/Escape/backdrop/replacement path has its own
+  capture/keyboard assertion;
   backdrop dismissal is never left to an undefined `where safe` branch.
 
 The capture manifest reserves these exact branch IDs in addition to each table row's base
 `surfaceId`: `modal.stock-health.assign-owner.preview`,
 `modal.stock-health.create-action.preview`,
-`modal.forecast.scenario-results.unavailable-preview`,
 `modal.promotion.simulation-results.unavailable-preview`,
 `modal.competitor.review-match.default`, and
 `modal.competitor.review-match.link-different-product-state`. A missing ID or one screenshot reused
@@ -4562,7 +4847,7 @@ or an honest explicit unavailability before generation.
 | Warehouse Inventory | Healthy/low/out-of-stock location rows; DC/store-node distinction; transfer/replenishment context and an unavailable input; filters and totals reconcile at location grain |
 | Inventory Ageing | Multiple approved age bands, fresh stock, ageing/markdown candidate, exact-zero exposure, filtered empty, and price/cost-dependent recovery live only when its amended formula is satisfied |
 | Stock Transfers | Recommended/in-transit/completed or the exact source-backed statuses; transfer-required and no-transfer states; unavailable acceptance/workflow remains visible; safe detail/export only |
-| Inventory Valuation | Correct computed-WAC method, genuine FIFO or explicit FIFO-unavailable, the immutable successor for 73 formerly mislabelled rows, all 68 reason-coded unavailable rows across four stores/four DCs, exact-zero value, and actual-or-absent `derived_lane_wac` |
+| Inventory Valuation | Correct computed-WAC method, genuine FIFO or explicit FIFO-unavailable, the immutable successor for every formerly mislabelled row, the complete reason-coded unavailable population at its measured locations, exact-zero value, and actual-or-absent `derived_lane_wac` |
 | Expiry & Waste | No-expiry/exact-zero, approaching-expiry, expired/waste-risk, filtered empty, and governed markdown/recovery live-or-unavailable without a nearby-metric proxy |
 | Replenishment Planner | Select-column parity with controlled zero/one/many/select-all-visible/indeterminate and scope/filter/page reset; selection drives only read-only detail/export, filtered-empty disables export/no-call; recommended, urgent, normal/hold, insufficient-input, exact-zero, and filtered-empty populations; no enabled order/workflow mutation |
 | Suggested Orders | Suggested and withheld/insufficient rows, missing supplier/policy input, exact-zero quantity, filtered empty, read-only detail/export, and disabled create/submit action |
@@ -4615,15 +4900,24 @@ accept browser-provided audience identity.
    expected scope, values, and refusal states so both demonstrations are reproducible.
 6. The negative-evidence script records its exact adapter/configuration and 409/503/panel-failure
    source; none of those states is counted as a property of a valid rich bundle.
-7. The approved surface-state capture manifest maps every §8.8 modal and §9 state to a stable
-   capture/test ID. Every tab, non-default panel, and `business_live`/`read_only`/`preview_only` modal
-   receives at least
-   one desktop visual plus keyboard/human review; any shared-mobile sampling names the exact
+7. The approved, schema-valid surface-state capture manifest maps every §8.8 modal and §9 state to a
+   stable test ID, optional capture ID, and a closed `captureClass`. `full_review` requires the
+   applicable desktop visual, layout/token/DOM/value, keyboard/accessibility, and human evidence. It
+   is mandatory for
+   every Phase 5-owned tab, non-default panel, and `business_live`/`read_only`/`preview_only` modal.
+   `reachability_only` is valid only for `external_owned`: it evidences that the surface still opens
+   from its documented trigger, that owner identity is unchanged, and that no Phase 5 override exists,
+   and nothing more. Any trigger-open image is evidence of reachability only; layout, token, DOM,
+   value, focus, keyboard, accessibility, and screenshot comparison for that surface is its owner's
+   evidence, not Phase 5's. `not_applicable` is valid only for an explicitly rejected
+   `structural_only` duplicate, requires a null capture ID, and carries only a static absence test
+   proving no runtime render, handler, or demo credit. The schema enforces both directions of all
+   pairings and rejects missing or unknown classes. Any shared-mobile sampling names the exact
    equivalent surfaces and reviewer-approved rationale.
 8. A preview-only modal counts as live UI coverage only when opened through its approved visible
    trigger in the running app with no fixtures, and evidence proves zero request/write/history
-   effect. Every mandatory §8.8 modal must satisfy this rule or be genuinely `business_live`/
-   `read_only`; a
+   effect. Every mandatory §8.8 modal must satisfy this rule, be genuinely `business_live`/
+   `read_only`, or carry an approved `external_owned` disposition verified per `P5-D13`; a
    structural-only hidden modal never satisfies the demo inventory and is allowed only for an
    explicitly rejected non-authoritative duplicate that is not a distinct reference surface.
 
@@ -4642,9 +4936,10 @@ accept browser-provided audience identity.
 - `P5-0P` approves every intended change before that existing frozen page is edited; its open final
   screenshot/human gate does not block independent source/model/API packages.
 - No result-bearing implementation starts on an unknown or mixed upstream pin.
-- The failing v1 expected-pin check, capability-only selection lookup, incomplete selection scope,
-  legacy fallback, cost-provenance loss, and source-only resume match are recorded without mutation;
-  the 73-row valuation correction is a successor task, not a `P5-0` edit.
+- The observed v1 expected-pin check status, capability-only selection lookup, incomplete selection
+  scope, legacy fallback, cost-provenance loss, and source-only resume match are recorded without
+  mutation;
+  the valuation method-label correction is a successor task, not a `P5-0` edit.
 
 ### 10.2 Source and readiness gates
 
@@ -4885,10 +5180,12 @@ accept browser-provided audience identity.
 - No original reference sample facts or production mocks remain.
 - No enabled-looking control is inert; no disabled control has a mutating handler.
 - No internal phase, roadmap, package, or implementation wording appears in business UI.
-- Keyboard, focus, screen-reader, contrast, responsive, table, modal, and live-region checks pass.
+- Keyboard, focus, screen-reader, contrast, responsive, table, modal, and live-region checks pass for
+  Phase 5-owned surfaces; external-owned surfaces receive only their `reachability_only` checks.
 - All twenty destinations have 1440×1100 and 390×844 screenshots plus 1024 smoke matching approved
-  references; every tab/non-default panel/live-read-only-preview modal has its required surface-
-  state capture and approved mobile sampling.
+  references; every tab/non-default panel and Phase 5-owned live/read-only/preview modal has its
+  `full_review` evidence, every external-owned modal has only its `reachability_only` evidence, and
+  all approved mobile sampling reconciles.
 - Supported browser/OS and independent human review pass for each page and whole-demo flow.
 - Rich and naturally sparse UI states come from the active verified bundle; the non-active sparse
   harness and isolated stale/missing/panel-failure adapters leave artifact/database state unchanged.
@@ -4899,16 +5196,18 @@ Phase 5 or Demo 5 cannot be accepted if any condition below is true. Element-lev
 owned by the approved §8 matrices and §9 state matrix; this list does not duplicate every row.
 
 1. Phase 4 source/forecast/inventory/activation authority remains contradictory or is chosen by
-   assertion rather than retained evidence.
+   assertion rather than retained evidence; an adopted entry-record set lacks its matching immutable
+   receipt, has an unresolved recovery journal, disagrees with the receipt's pointer identities, or
+   lacks the required top-level/per-entry receipt binding.
 2. A result-bearing task starts before its required contract, pre-result protocol, or independent
    foundation gate is frozen.
 3. Business-effective or landing time is treated as historical known-as-of evidence.
 4. Gate B is rewritten by the v2 readiness sidecar, or the sidecar changes the base publication/pin.
 5. A readiness role, flag, or sufficiency value comes from a caller boolean, hard-coded default, or
    missing producer.
-6. Direct expected-pin checking still depends on the stale default run; any Phase 5 pin operation
-   omits explicit run, pin/authority paths, job purpose, evidence root, retailer, tenant, or
-   environment.
+6. Any Phase 5 pin operation omits explicit run, pin/authority paths, job purpose, evidence root,
+   retailer, tenant, or environment, or reintroduces correctness dependence on a mutable
+   module-level default.
 7. Selection resolution uses capability-only/newest/implicit lookup, accepts zero/multiple matches,
    or invents a predecessor for genesis.
 8. Rich and sparse pins, evidence, rebuild lineage, manifests, verifiers, or materializations are
@@ -4956,16 +5255,19 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
     selection, and export do not resolve one coherent scope.
 29. A control appears enabled but is inert, or an unavailable/mutation control has a request,
     write, history, or active-state effect.
-30. Required modal trigger/title/body/footer/order/focus/close/return, preview disclosure, result
-    transition, or zero-effect behavior differs from §8.8.
+30. A required Phase 5-owned modal's trigger/title/body/footer/order/focus/close/return, preview
+    disclosure, result transition, or zero-effect behavior differs from §8.8; or an external-owned
+    modal fails any `P5-D13` check or is subjected to a Phase 5 composition/behavior assertion.
 31. Required export population, limits, headers, filename, encoding, formula neutralization,
     lineage, stale/count handling, or no-partial-download behavior differs from §8.
-32. Responsive order, keyboard, focus, screen reader, contrast, live region, table semantics, or
-    reduced-motion behavior fails its matrix/test.
+32. A Phase 5-owned surface's responsive order, keyboard, focus, screen reader, contrast, live region,
+    table semantics, or reduced-motion behavior fails its matrix/test; or an external-owned surface
+    fails its `reachability_only` contract.
 33. Required rich, naturally sparse, exact-zero, filter-empty, loading, partial, privacy/workflow
     unavailable, stale, missing/corrupt, and panel-failure states lack immutable evidence.
-34. Required desktop/mobile/breakpoint captures or independent per-page/whole-demo human review is
-    missing; passing unit tests alone is insufficient.
+34. Required desktop/mobile/breakpoint `full_review` evidence, external-owned `reachability_only`
+    evidence, structural-only static absence evidence, or independent per-page/whole-demo human review
+    is missing; passing unit tests alone is insufficient.
 35. `plans/local/tasks.md` marks work complete before its cited contract, artifact, API/UI,
     screenshot, accessibility, and reviewer evidence exists.
 36. Phase 5 creates or requires an API/UI container, OCI archive, deployment startup authority,
@@ -4986,13 +5288,19 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
 - validate every new/changed JSON Schema, YAML policy, OpenAPI document, screen matrix, and retained
   evidence record, including closed enums and `additionalProperties` rules;
 - verify cross-language canonical fingerprints and IDs against shared golden vectors;
+- verify each entry record's embedded/filename/recomputed semantic ID and exact full-record JCS bytes;
+  verify each execution receipt's UUIDv7/filename equality, canonical scope order, per-record byte
+  hashes, tagged before/after pointer identities, create-only collision behavior, and binding to the
+  pointer's top-level `lastAdoptionReceiptId` and changed entries' `adoptionReceiptId`; inject
+  interruption before and after pointer replacement, prove untouched entry receipt IDs persist, and
+  prove recovery produces one final receipt before any later adoption;
 - prove the readiness sidecar points one-way to the base publication/Gate artifacts and cannot
   change their identities;
 - prove every readiness value maps to a registered primitive producer and that missing producers
   fail closed;
 - test expected-pin explicit run/pin-path/authority-path/job-purpose/evidence-root/retailer/tenant/
   environment inputs, deterministic bytes, relative `$schema`, rich/sparse isolation, stale-run
-  refusal, and the existing `tools/dev.py --run` bypass regression;
+  refusal, and a regression proving no operation depends on a mutable module-level default;
 - test selection-v2's schema-enforced identity exclusions, legacy-v1 omission compatibility,
   conflicting-vector refusal, and Python/Go/database/builder golden parity;
 - test full retailer × tenant × capability × environment lookup, record-ID validation, rich-local/
@@ -5014,8 +5322,12 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
   encoding, and exact no-truncate behavior;
 - validate every §8 screen-matrix row and approved existing-page amendment against the original HTML
   selector/order/text/behavior inventory;
-- prove modal trigger/title/body/footer/focus and direct-export registries have no missing,
-  duplicate, or unreachable mandatory entry;
+- validate the capture manifest's closed `full_review`/`reachability_only`/`not_applicable` enum and
+  exact pairings: `external_owned` if and only if `reachability_only`, `structural_only` if and only if
+  `not_applicable` with a null capture ID/static absence test, and `full_review` for every other row;
+- prove Phase 5-owned modal trigger/title/body/footer/focus and direct-export registries have no
+  missing, duplicate, or unreachable mandatory entry; external-owned rows are tested only for their
+  three `P5-D13` checks and capture-class pairing;
 - assert the repository contains no Phase 5 release/container/cutover/dump contract or task.
 
 ### 11.2 Source, ingestion, and temporal tests
@@ -5027,7 +5339,8 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
 - generated-cost provenance/derivation/source identity preservation; legacy `ERP_ACTUAL` cannot
   become client-actual;
 - computed-WAC receipt chronology, method-label refusal for unimplemented FIFO, same-currency/unit,
-  the 73 mislabelled rows, all 68 unavailable rows, and actual-or-absent `derived_lane_wac`;
+  every mislabelled row, the complete measured unavailable population, and actual-or-absent
+  `derived_lane_wac`;
 - competitor source legality, source-native attributes, match/freshness evidence, and synthetic-demo
   disclosure;
 - promotion scope-row AND/OR, geography, target precedence/conflict, and distinct source-native
@@ -5245,28 +5558,35 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
 - Promotion Calendar initially renders Month View active/live; List View remains natively disabled
   with `Governed list-view composition not approved`, no handler/request/history/active style or list
   body; a month change retains Month View and selector focus; the modal footer is Close only;
-- every control has exactly one of `business_live`, `read_only`, `preview_only`, `hard_disabled`, or
-  `structural_only` as its matrix state; hard-disabled workflow/privacy/source actions have no handler;
+- every control has exactly one of `business_live`, `read_only`, `preview_only`, `hard_disabled`,
+  `structural_only`, or `external_owned` as its matrix state; hard-disabled workflow/privacy/source actions have no handler;
   every mandatory new/existing preview-only trigger shows its treatment, permits only local option
   exploration, keeps prohibited options/submits disabled, and makes zero request/write/history change;
 - competitor modal parity targets only the authoritative `#newCompetitor*` and `#competitorRule*`
   selector families; every later `#fixCompetitor*` and `#fixRule*` duplicate is recorded as
   `structural_only` and has no runtime handler, rendered duplicate modal, capture, or demo credit;
-- exact §8.8.5 Forecast titles, summaries, fields/options, six-column version table, scenario result
-  summary/table, Action Center summary/four-column queue, Store Drilldown controls/cards/footer, and
-  Data/Stock Health/Inventory/Replenishment modal mappings—including exact selectors, visible trigger
-  labels, distinct modal titles, fields/options, footers, and access/capture states—match the contract;
-- Forecast and Promotion unavailable branches expose distinct `Preview Results` controls while their
-  original submits remain disabled; result layouts preserve exact composition with typed unavailable
-  values and make no request. Price Simulation Result opens directly from its page trigger, Forecast
-  and Promotion results replace their named parent dialogs, and no hidden parent remains. Review
-  Match preserves Reject → Link → Accept → Cancel, adds no
-  Previous/Next, and Link replaces body/footer without changing or stacking the modal title;
+- exact §8.8.5 Forecast titles, summaries, fields/options, six-column version table, Action Center
+  summary/four-column queue, Store Drilldown controls/cards/footer, and Data/Stock
+  Health/Inventory/Replenishment modal mappings—including exact selectors, visible trigger labels,
+  distinct modal titles, fields/options, footers, and access/capture states—match the contract. The
+  `external_owned` Demand Scenario Planning and Scenario Results surfaces are excluded from this
+  assertion and are covered only by the `external_owned` checks below;
+- the Promotion unavailable branch exposes its `Preview Results` control while its primary submit
+  stays disabled; original submits remain disabled; result layouts preserve exact composition with
+  typed unavailable values and make no request. Price Simulation Result opens directly from its page
+  trigger, the Promotion result replaces its named parent dialog, and no hidden parent remains.
+  Review Match preserves Reject → Link → Accept → Cancel, adds no Previous/Next, and Link replaces
+  body/footer without changing or stacking the modal title;
+- each `external_owned` surface is asserted only for reachability by its documented trigger,
+  unchanged owner decision/contract identity, and absence of any Phase 5 handler, adapter, request
+  rewrite, style override, or access-mode change. No composition, footer, focus, replacement, or
+  value assertion is made against it;
 - card-header static metadata has non-pointer cursor, semantic text exposure, no handler/tab stop;
   real actions have semantic role, accessible name, focus, and handler;
-- modal title-first focus, exact title → X → body → footer forward cycle and reverse wrap,
-  X/Cancel/Close/Escape/backdrop equivalence, pending-request abort, result/in-place replacement,
-  exact trigger/H2 focus return, live regions, tables/captions, labels/descriptions;
+- for Phase 5-owned modals only: title-first focus, exact title → X → body → footer forward cycle
+  and reverse wrap, X/Cancel/Close/Escape/backdrop equivalence, pending-request abort,
+  result/in-place replacement, exact trigger/H2 focus return, live regions, tables/captions,
+  labels/descriptions. `external_owned` modals are excluded and asserted only per `P5-D13`;
 - strict schema rejection of wrong type/unit/currency/date/reason;
 - no production sample constants or internal phase/policy/fingerprint wording.
 
@@ -5279,15 +5599,22 @@ For all twenty implemented destinations, including existing pages with no local 
 - run 1024px breakpoint smoke;
 - capture representative sparse, exact-zero/filtered-empty, partial, loading, 409, 503, and panel-
   failure composition states, proving unaffected panels retain their layout/data;
-- execute the surface-state capture manifest so every tab/non-default panel and every live/read-
-  only/preview modal has a desktop capture plus keyboard/human result; link every §8.8/§9 surface ID
-  and document any approved representative mobile/shared-modal sampling;
-- compare original layout, tokens, order, spacing, overflow, sticky behavior, and modal bounds;
+- validate and execute the surface-state capture manifest so every tab/non-default panel and every
+  Phase 5-owned live/read-only/preview modal has `full_review` desktop plus keyboard/human evidence,
+  every external-owned modal has only `reachability_only` evidence, and every pairing satisfies the
+  closed schema; link every §8.8/§9 surface ID and document any approved representative mobile/
+  shared-modal sampling;
+- compare original layout, tokens, order, spacing, overflow, sticky behavior, and modal bounds for
+  Phase 5-owned surfaces; an external-owned surface is excluded from every such comparison;
 - verify tables remain usable with horizontal scroll and headers/context;
-- run automated accessibility checks plus manual keyboard/screen-reader/focus review;
+- run automated accessibility checks plus manual keyboard/screen-reader/focus review for Phase
+  5-owned surfaces; an `external_owned` surface is its owner's accessibility responsibility and is
+  checked here only for reachability, unchanged owner identity, and absence of a Phase 5 override;
 - verify the supported local browsers available during Phase 5; the three-OS blocking matrix is a
   Phase 7/8 release-hardening gate, not a Phase 5 exit requirement;
-- have an independent reviewer compare DOM text/order, live values, currency, and screenshots;
+- have an independent reviewer compare DOM text/order, live values, currency, and screenshots for
+  Phase 5-owned surfaces; for an external-owned surface the reviewer confirms only reachability and
+  unchanged owner-contract identity plus absence of a Phase 5 override;
 - record reviewer, date, run/version, viewport, environment, result, and approved deviation.
 
 ### 11.10 Demo evidence
@@ -5498,7 +5825,8 @@ A structural shell may be reviewed earlier but is never labelled live.
 | Risk | Consequence | Enforceable mitigation |
 |---|---|---|
 | contradictory Phase 4 identities | mixed upstream truth | `P5-0` retained-evidence reconciliation; unresolved stays unresolved |
-| stale expected-pin default is overstated or ignored | misleading status or broken direct check | record `tools/dev.py --run` bypass; require explicit run/pin/authority/job/evidence/scope inputs |
+| entry pointer moves but its receipt is missing or unrelated | adopted authority cannot be audited or safely retried | UUIDv7-bound pointer, exact before/after byte identities, exclusive lock, durable recovery journal, create-only final receipt, and recovery before any later adoption |
+| pin status is asserted from plan text rather than observed | misleading status or a gate that re-requires a completed repair | `P5-0` records observed `--check` status verbatim; require explicit run/pin/authority/job/evidence/scope inputs |
 | capability-only selection lookup | cross-tenant/environment authority error | full four-field key; rich-local/sparse-dev scopes; zero/multiple refusal |
 | pin generated before governed source selection | unapproved publication becomes downstream authority | source candidate → approved → active before each input-authority/pin build |
 | selection schema and code exclude different identity fields | cross-language IDs diverge | immutable v1 compatibility plus schema-enforced v2 vector and shared golden IDs |
@@ -5528,10 +5856,10 @@ A structural shell may be reviewed earlier but is never labelled live.
 | request reads/refits/writes | non-determinism or phase breach | PostgreSQL-only handlers and no-file/no-write tests |
 | filter/count/export drift | client contradictions | one scope revision/count contract and server recount |
 | original sample values survive | fabricated demo facts | bundle/source scans and API-to-DOM reconciliation |
-| UI parity work conflates preview with enabled/disabled | client demo failure | closed business-live/read-only/preview-only/hard-disabled state enum and zero-effect tests |
+| UI parity work conflates preview with enabled/disabled | client demo failure | closed business-live/read-only/preview-only/hard-disabled/structural-only/external-owned state enum and zero-effect tests |
 | promotion chart keeps contradictory scenario/metric axes | misleading client output | decided normalized scenario index, single caption, native-unit accessible table |
 | existing UI regresses | damages Phase 4 work | `P5-0P` amendments plus all-page regression evidence |
-| modal/export details are simplified | visible contract mismatch | exact §8 registries, byte/focus golden tests |
+| Phase 5-owned modal/export details are simplified | visible contract mismatch | exact §8 registries, byte/focus golden tests; external-owned surfaces remain reachability-only |
 | screenshots replace truthful data review | false completion | DOM/data/API/artifact plus human review |
 | plan grows beyond review capacity | rubber-stamp risk | §8 matrices own element rows; no-go/DoD stay outcome-level |
 | release scope leaks into Phase 5 | contradicts governing plan/tasks | explicit deferral to Phase 6–8 and repository/task scan |
@@ -5552,6 +5880,11 @@ Explicit approval is required for:
 - `P5-D26` per-tenant market-set scoping specifically, before `P5-1P` freezes any tenant's coverage
   contract. It scopes Decision #45 rather than reversing it, so the reviewer who owns #45 must be
   the one who approves it;
+- the `external_owned` control state itself, and separately **each row that claims it**. A claiming
+  row is approved only when it names an approved owner decision and that owner's versioned contract
+  identity, the cited ownership boundary/`affectedElements` covers that surface, the owner confirms
+  it is theirs, and its capture class is `reachability_only`. Approving the state does not approve
+  any row that uses it;
 - each tenant's governed market set, declared once in `P5-1P` and frozen before profile generation;
 - Config Builder rich/sparse fields, presets, and provenance;
 - the four §8 machine-readable matrices and every existing-UI amendment;
@@ -5581,7 +5914,8 @@ Approval of this plan alone does not authorize implementation. It also does not 
 
 ### 15.3 Evidence required to approve the next package
 
-To authorize `P5-1`, reviewers need the complete `P5-0` authority/defect record. To authorize
+To authorize `P5-1`, reviewers need the complete adopted `P5-0` authority/defect record set and its
+reconciled pointer-bound receipt. To authorize
 generation, they need native-availability, readiness, explicit-pin/full-scope, Config Builder, and
 `P5-1P` pre-result approvals. To authorize models, they need verified rich/sparse publications,
 pins, rebuilt upstream identities, and frozen `P5-3` contracts. To authorize existing-UI changes,
@@ -5599,9 +5933,12 @@ Phase 5 is complete only when all applicable outcome-level conditions pass. The 
 matrices own element-by-element UI acceptance, and §9 owns state coverage; those rows are not
 duplicated here.
 
-1. One reviewed `P5-0` entry record reconciles retained Phase 4 source, forecast, inventory,
-   activation, database, API, expected-pin, and UI authority without rewriting history.
-2. The stale direct-check default and existing `tools/dev.py --run` bypass are both documented and
+1. A reviewed `P5-0` entry-record set — exactly one immutable record per evaluated
+   `{retailerId, tenantId, capability, environment}` scope, adopted in one atomic pointer
+   transaction with one pointer-bound, crash-recoverable immutable execution receipt — reconciles
+   retained Phase 4 source, forecast, inventory, activation, database, API, expected-pin, and UI
+   authority without rewriting history.
+2. The observed direct-check status and any remaining bypass are documented and
    regression-tested; every Phase 5 pin operation is explicit.
 3. V2 readiness runs in the normal pipeline as an identity-safe one-way sidecar with reproducible
    primitive producers; Gate B and base publication identity remain unchanged.
@@ -5615,7 +5952,8 @@ duplicated here.
    sparse remains an explicit non-default pin; every downstream command receives the correct explicit
    pin/authority, and both have lineage-correct feature → forecast → inventory rebuild evidence.
 7. Price/promotion/competitor/cost availability and provenance remain truthful through every layer;
-   the 73 WAC/FIFO rows and 68 unavailable rows have their approved successor disposition.
+   every measured WAC/FIFO-labelled row and the complete unavailable population have their approved
+   successor disposition.
 8. Statistical protocol, candidate registry, 13 origins, confirmation split, resampling, shrinkage,
    strict gates, mappings, the decided Promotion Performance Forecast index/table, and demo targets
    were frozen before results.
@@ -5662,9 +6000,11 @@ duplicated here.
     loading/error primitives, modal framework, and business wording match their approved §8.1 rows.
 27. Data Management, Demand Forecast, and all fourteen inventory/replenishment destinations remain
     reachable and implement only approved §8.6/`P5-0P` amendments.
-28. Every required §8.8 modal and contextual surface has an actual `business_live`/`read_only` or
-    visibly disclosed zero-effect `preview_only` path, exact composition, deterministic focus/close/return, and
-    no unauthorized network/write/history effect.
+28. Every required §8.8 modal and contextual surface has an actual `business_live`/`read_only`
+    path, a visibly disclosed zero-effect `preview_only` path, or an approved `external_owned`
+    disposition verified only for reachability, unchanged ownership, and absence of a Phase 5
+    override. Where Phase 5 owns the surface it additionally has exact composition, deterministic
+    focus/close/return, and no unauthorized network/write/history effect.
 29. Every enabled filter/control scopes all dependent KPIs, panels, rows, details, selection, and
     export; every unavailable action is natively disabled with an accessible business reason and no
     mutation handler.
@@ -5675,8 +6015,9 @@ duplicated here.
     Full-sparse refusal is additionally proven through the non-active integration harness.
 32. Production React/API contains no original sample values, mock/fallback facts, internal phase/
     package copy, fake route, or enabled inert control.
-33. All required 1440×1100 and 390×844 captures, 1024 breakpoint smoke, modal/tab/panel captures,
-    automated/manual accessibility checks, and independent per-page/whole-demo reviews pass.
+33. All required 1440×1100 and 390×844 captures and 1024 breakpoint smoke pass; every Phase 5-owned
+    modal/tab/panel has `full_review` capture, automated/manual accessibility, and independent review,
+    while every external-owned modal has only schema-valid `reachability_only` evidence.
 34. Contract, source, numerical, model, verifier, database, API, export, React, navigation,
     accessibility, visual, local smoke, sparse-harness, and negative-state suites pass with retained
     IDs/hashes/counts.

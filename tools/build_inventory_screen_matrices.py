@@ -50,6 +50,43 @@ APPROVAL = {
     ),
 }
 
+PRESENTATION_AMENDMENTS = [
+    {
+        "amendmentId": "IRP-V1-A1",
+        "amendedAt": "2026-08-11",
+        "title": "Inventory Overview page-local filter disposition",
+        "affectedElements": ["#inventoryOverview .toolbar .filter"],
+        "frozenBehavior": {
+            "rendered": False,
+            "referenceCaptions": [
+                "All Regions",
+                "All Categories",
+                "All Health Statuses",
+                "All Locations",
+            ],
+            "reason": (
+                "The unused Inventory Overview page-local filter strip is "
+                "intentionally omitted; this amendment authorizes no other "
+                "reference-element removal."
+            ),
+        },
+        "approval": {
+            "status": "approved",
+            "actor": "nilay.shah",
+            "approvedAt": "2026-08-11",
+            "authorization": (
+                "The user explicitly confirmed that the Inventory Overview "
+                "filter removal was deliberate."
+            ),
+            "classification": "explicit_user_authorization",
+            "reviewOutstanding": (
+                "Per-screen human visual review remains required before the "
+                "next client-demo sign-off."
+            ),
+        },
+    }
+]
+
 UNAVAILABLE = "Not available"
 
 #: One row per destination. `elements` lists the load-bearing KPI/table/panel
@@ -334,10 +371,12 @@ def build_document() -> dict[str, Any]:
             "inheritFrom": "contracts/screens/data-management.yaml",
             "preserve": (
                 "navigation order, labels, filters, KPI/table/control positions "
-                "and design tokens from the reference HTML; no redesign, rename, "
-                "removal or addition of visible product concepts"
+                "and design tokens from the reference HTML except elements "
+                "expressly dispositioned by presentationAmendments; no other "
+                "redesign, rename, removal or addition of visible product concepts"
             ),
         },
+        "presentationAmendments": PRESENTATION_AMENDMENTS,
         "actionBehavior": (
             "visible and natively disabled with aria-disabled; no mutation "
             "endpoint or handler exists (P4-D9/P4-D11)"

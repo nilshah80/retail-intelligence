@@ -59,6 +59,14 @@ SCREEN_IDS = (
     "replenishmentExceptions",
 )
 
+# IRP-V1-A1 reviewed UI disposition. Inventory Overview intentionally omits the
+# reference's unused page-local filter strip. Keep the exception in the source
+# generator so regeneration cannot silently restore controls the implemented UI
+# has deliberately removed; all other screen filters remain HTML-derived.
+FILTER_CAPTION_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "inventoryOverview": (),
+}
+
 
 class ExtractionError(RuntimeError):
     """The reference document does not have the shape this extractor requires."""
@@ -125,6 +133,8 @@ def _extract(block: str, screen_id: str) -> dict[str, Any]:
         ]
         if options:
             filters.append(options[0])
+    if screen_id in FILTER_CAPTION_OVERRIDES:
+        filters = list(FILTER_CAPTION_OVERRIDES[screen_id])
     kpis = [
         _strip_tags(caption)
         for caption in re.findall(r"<small>(.*?)</small>", block, re.S)

@@ -153,6 +153,36 @@ def test_the_approval_does_not_overclaim_human_review() -> None:
     assert approval["reviewOutstanding"]
 
 
+def test_inventory_overview_filter_omission_has_an_explicit_amendment() -> None:
+    """The deliberate omission must not look like accidental reference drift."""
+
+    amendments = {
+        row["amendmentId"]: row
+        for row in _document()["presentationAmendments"]
+    }
+    amendment = amendments["IRP-V1-A1"]
+    assert amendment["affectedElements"] == [
+        "#inventoryOverview .toolbar .filter"
+    ]
+    assert amendment["frozenBehavior"] == {
+        "rendered": False,
+        "referenceCaptions": [
+            "All Regions",
+            "All Categories",
+            "All Health Statuses",
+            "All Locations",
+        ],
+        "reason": (
+            "The unused Inventory Overview page-local filter strip is "
+            "intentionally omitted; this amendment authorizes no other "
+            "reference-element removal."
+        ),
+    }
+    assert amendment["approval"]["classification"] == (
+        "explicit_user_authorization"
+    )
+
+
 def test_matrices_match_their_generator() -> None:
     """A hand-edited matrix silently diverging from the definition is drift."""
 

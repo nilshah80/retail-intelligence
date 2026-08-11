@@ -31,7 +31,7 @@ export const REFERENCE_SCREENS: readonly ReferenceScreen[] = [
   {
     screenId: "inventoryOverview",
     actions: ["Inventory Action Center", "Store Drilldown", "Warehouse Drilldown", "Run Inventory Scenario", "Export Inventory Report"],
-    filters: ["All Regions", "All Categories", "All Health Statuses", "All Locations"],
+    filters: [],
     kpiCaptions: ["On-Hand Inventory", "Available to Promise", "Inventory in Transit", "Inventory at Risk", "Stock Turn"],
     cards: [
       {kind: "donut", heading: "Inventory by Health", link: "Enterprise view", layout: "grid-3", columns: [], labels: ["Healthy", "At Risk", "Overstock", "Out of Stock"]},

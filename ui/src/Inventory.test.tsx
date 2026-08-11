@@ -112,28 +112,21 @@ describe("inventory & replenishment destinations", () => {
     ]);
   });
 
-  it("populates inventory filters only from the active tenant", async () => {
-    const payload = {
-      ...partialPayload,
-      filterOptions: {
-        regions: ["GJ", "MH", "TN"],
-        categories: ["Gulf - Adblue", "Gulf - Pcmo"],
-        healthStatuses: ["healthy", "stockout"],
-        locationKinds: ["dc", "store"]
-      }
-    };
+  it("does not render the unused Inventory Overview filters", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true, json: async () => payload
+      ok: true, json: async () => partialPayload
     }));
     renderPage("inventoryOverview");
 
-    const category = await screen.findByLabelText("All Categories");
-    expect(await within(category).findByText("Gulf - Adblue"))
-      .toBeInTheDocument();
-    expect(within(category).queryByText("Footwear")).not.toBeInTheDocument();
-    const region = screen.getByLabelText("All Regions");
-    expect(within(region).getByText("GJ")).toBeInTheDocument();
-    expect(within(region).queryByText("West")).not.toBeInTheDocument();
+    await screen.findByLabelText("inventoryOverview actions");
+    for (const label of [
+      "All Regions",
+      "All Categories",
+      "All Health Statuses",
+      "All Locations"
+    ]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
   });
 
   it("renders every reference table column, in order, headers included", async () => {
