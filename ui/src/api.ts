@@ -88,6 +88,18 @@ const channelTypeFilterSchema = z.object({
   marketIds: z.array(z.string()).min(1)
 });
 
+const categoryFilterSchema = z.object({
+  categoryId: z.string(),
+  name: z.string()
+});
+
+const channelFilterSchema = z.object({
+  channelId: z.string(),
+  marketId: z.string(),
+  name: z.string(),
+  type: z.string()
+});
+
 export const dashboardSchema = z.object({
   schemaVersion: z.literal("retail-data-management-dashboard/v1"),
   dataMode: z.literal("live"),
@@ -115,6 +127,8 @@ export const dashboardSchema = z.object({
     markets: z.array(marketFilterSchema),
     stores: z.array(storeFilterSchema),
     channelTypes: z.array(channelTypeFilterSchema),
+    channels: z.array(channelFilterSchema).optional(),
+    categories: z.array(categoryFilterSchema).optional(),
     currencies: z.array(z.string())
   })
 });

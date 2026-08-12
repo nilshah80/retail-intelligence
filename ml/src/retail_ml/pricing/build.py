@@ -216,7 +216,7 @@ def build_pricing_artifacts(
     )
     response = run_response_assessment(panel, response_policy)
     pricing_scopes = panel[
-        [*KEYS, "department_id", "category", "region"]
+        [*KEYS, "department_id", "category", "category_label", "region"]
     ].drop_duplicates(list(KEYS)).reset_index(drop=True)
     competitor_assessments, competitor_bounds, competitor_evaluation = (
         build_competitor_foundation(

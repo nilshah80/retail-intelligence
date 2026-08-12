@@ -26,6 +26,8 @@ import {useEffect, useRef, useState, type ReactNode} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {loadInventorySlice, type InventorySlice} from "./api";
 import {DIRECT_EXPORT_LIMIT, downloadDirectExport} from "./directExport";
+import {formatAggregateMoneyMinor} from "./currencyFormat";
+import {categoryNameFromLabel} from "./dimensionLabels";
 import {
   REFERENCE_SCREEN_BY_ID,
   type ReferenceScreen
@@ -417,8 +419,6 @@ function badgeClass(value: string): string {
 
 /* -- formatting ------------------------------------------------------------- */
 
-const CURRENCY_SYMBOL: Record<string, string> = {INR: "₹", USD: "$"};
-
 /**
  * Money in the reference's own notation: Indian crore/lakh for INR, M/K for USD.
  * Minor units in, market-local out. Nothing is converted here -- policy v2 forbids
@@ -426,16 +426,7 @@ const CURRENCY_SYMBOL: Record<string, string> = {INR: "₹", USD: "$"};
  * than added.
  */
 function formatMoney(minor: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOL[currency] ?? `${currency} `;
-  const major = minor / 100;
-  if (currency === "INR") {
-    if (major >= 1e7) return `${symbol}${(major / 1e7).toFixed(2)} Cr`;
-    if (major >= 1e5) return `${symbol}${(major / 1e5).toFixed(2)}L`;
-    return `${symbol}${major.toLocaleString("en-IN", {maximumFractionDigits: 0})}`;
-  }
-  if (major >= 1e6) return `${symbol}${(major / 1e6).toFixed(2)}M`;
-  if (major >= 1e3) return `${symbol}${(major / 1e3).toFixed(1)}K`;
-  return `${symbol}${major.toLocaleString("en-US", {maximumFractionDigits: 0})}`;
+  return formatAggregateMoneyMinor(minor, currency);
 }
 
 function asNumber(value: unknown): number | null {
@@ -1387,6 +1378,9 @@ function Cell({
     );
   }
   const value = row[column.field];
+  if (column.field === "categoryLabel" && typeof value === "string") {
+    return <td>{categoryNameFromLabel(value)}</td>;
+  }
   if (column.badge && value !== null && value !== undefined) {
     const text = formatValue(value, "text", currency);
     return (
@@ -1533,7 +1527,7 @@ function filterValues(
 ): readonly string[] {
   if (!options) return [];
   if (caption.includes("Region")) return options.regions;
-  if (caption.includes("Categor")) return options.categories;
+  if (caption.includes("Categor")) return options.categories.map(categoryNameFromLabel);
   if (caption.includes("Health")) {
     return options.healthStatuses.map((value) => ({
       healthy: "Healthy",
@@ -1641,7 +1635,7 @@ function InventoryActionDialog({spec, returnFocus, onClose}: {
         </div>
         <div className="modal-body">
           <div className="callout compact-callout">
-            <strong>Preview only</strong>
+            <strong>Workflow unavailable</strong>
             <p>The operational workflow and governed identities are not configured. Exploring this dialog does not create a request or action.</p>
           </div>
           {spec.kind === "stock_owner" ? (
@@ -1754,7 +1748,7 @@ function ActionStrip({
               title={isExport
                 ? disabledReason || "Download the reviewed rows from the server"
                 : preview
-                  ? "Preview only; this action does not create or change a workflow record."
+                  ? "This action does not create or change a workflow record."
                   : disabledReason}
               onClick={isExport
                 ? onExport
@@ -1763,7 +1757,6 @@ function ActionStrip({
                   : undefined}
             >
               {isExport && exporting ? "Exporting…" : label}
-              {preview && <small className="preview-label">Preview only</small>}
             </button>
           );
         })}

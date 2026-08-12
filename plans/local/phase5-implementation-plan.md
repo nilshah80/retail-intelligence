@@ -46,7 +46,7 @@ downstream jobs receive explicit pin/authority paths; Phase 5 result-selection e
 activation-set share one PostgreSQL transaction while post-commit JSON is evidence only; repository
 paths follow the established `ml/src/retail_ml`, `db/migrations/versions`, `datagen/configs`, and
 package-local test structure; selection identity exclusions are versioned and cross-language; local
-serving configuration is secret-free; preview-only controls are distinct from business-live and hard-
+serving configuration is secret-free; non-mutating controls are distinct from business-live and hard-
 disabled controls; the duplicate competitor-modal selector families have one explicit presentation
 authority; and the Promotion Performance Forecast chart interpretation is decided. Phase 5 ends at
 independently verified bundles, transactional materialization, a separate activation, and local
@@ -1752,9 +1752,9 @@ with a business prerequisite, no click handler, and no mutation endpoint, except
 approved presentation-only `preview_only` surrogate described below; every actual submit remains
 disabled. A preview trigger is intentionally clickable but is never classified as `business_live`. A
 toast after clicking an enabled-looking disabled action is not acceptable. To make every
-mandatory original modal inspectable for the client, approve a **preview-only** presentation
+mandatory original modal inspectable for the client, approve a **non-mutating** presentation
 amendment for each §8.8 surface whose original trigger would otherwise be disabled. The original
-trigger label remains first and is explicitly labelled/described `Preview only`; it opens a non-
+trigger label remains first and is explicitly labelled/described `Workflow unavailable`; it opens a non-
 submitting dialog, makes text/date inputs read-only, permits enumerated controls only to explore
 local preview states, keeps prohibited options individually disabled, disables every submit/
 mutation action, and performs no network, write, history, or audit operation. The trigger is a
@@ -2487,7 +2487,7 @@ and all three existing screen contracts are available.
    toolbar positions, source-specific freshness, validation detail,
    Healthy/Delayed/Needs Attention/stale/missing/failure status-and-reason vocabulary, badge mapping,
    and exact action disposition. Preserve Add Data Source, Upload Sample Data, and `Run Validation`
-   in their original order. Add Data Source uses the approved visibly labelled preview-only trigger
+   in their original order. Add Data Source uses the approved visibly labelled non-mutating trigger
    from §8.8.5 while `Connect` remains disabled; Upload Sample Data and Run Validation remain natively
    disabled with accessible business reasons and no handler/network call because Phase 5 has no
    source/validation mutation. Expose the latest retained Validation Results composition only
@@ -2552,7 +2552,7 @@ and all three existing screen contracts are available.
 15. Freeze and approve the explicit §8.8.5 access contract for every original existing-page modal,
     including Add Data Source/Validation Results, all seven Demand Forecast dialogs, and every shared
     Inventory/Replenishment action dialog. A mutation trigger opens only a non-submitting preview
-    with its visible `Preview only` treatment and accessible business prerequisite; text/date fields
+    with its visible `Workflow unavailable` treatment and accessible business prerequisite; text/date fields
     are read-only, enumerated controls change local preview state only, prohibited options remain
     disabled, every submit/mutation control is disabled, and the preview performs no request/write/
     history action. Every distinct original modal is reachable as `business_live`, `read_only`,
@@ -3354,7 +3354,7 @@ and generated schemas pass.
    define. Never conflate visible trigger labels with modal titles on any owned surface.
 5. Build Price Recommendations exactly as §8.2, including all tabs/table columns and read-only
    detail/Compare Selected/Export surfaces. Pricing Action Center and workflow form bodies use only
-   their approved preview-only access; their submit/mutation actions remain disabled.
+   their approved non-mutating access; their submit/mutation actions remain disabled.
 6. Build Price Simulation exactly as §8.3 with local validation, the one approved synthetic-margin
    panel location, competitor Include/not-included execution truth, and live stateless results.
 7. Build Competitor Monitor exactly as §8.4 with controlled read-only queue selection, match/filter/
@@ -3398,7 +3398,7 @@ and generated schemas pass.
 - canonical query URL, Demand-Forecast fallback, browser back/forward, direct links, refresh,
   active submenu, route-change scroll/focus, and invalid page normalization work exactly;
 - original titles, subtitles, action/filter/card/tab/table/modal order and required IDs match;
-- no enabled-looking control is inert and no disabled control can mutate; approved preview-only
+- no enabled-looking control is inert and no disabled control can mutate; approved non-mutating
   triggers are visibly described, locally explorable only as contracted, and make zero request/
   write/history change;
 - filter/scope/currency changes reconcile from UI to API and across summary/rows/export;
@@ -3640,12 +3640,12 @@ Phase 5 disposition:
 - row selection is local and live;
 - Compare is read-only and live for selected compatible rows;
 - Export is read-only and live with scope/currency/version lineage;
-- Pricing Action Center uses the approved preview-only trigger: its original Pending Decisions,
+- Pricing Action Center uses the approved non-mutating trigger: its original Pending Decisions,
   Value Awaiting Approval, owner, and approval-queue locations show typed workflow-unavailable
   placeholders rather than sample facts, and no queue action exists. It may become data-bearing
   read-only only after an approved amendment redefines every value as a non-workflow policy-risk
   queue;
-- Approve Selected, Send for Review, and Schedule Price Change use visibly labelled preview-only
+- Approve Selected, Send for Review, and Schedule Price Change use visibly labelled non-mutating
   triggers so their exact forms/options are inspectable; every submit/mutation action remains
   disabled with its workflow prerequisite and no request/write;
 - row/detail “Open Simulation” navigates with context and is live;
@@ -3953,7 +3953,7 @@ Every original modal surface is included in the matrix even when disabled:
 
 Only Compare Selected and lineage-bearing Export are `business_live`/`read_only` actions in Phase 5.
 Approve Selected, Send for Review, Schedule Price Change, and Pricing Action Center remain unavailable
-as business actions but their explicitly labelled `Preview only` triggers are clickable presentation
+as business actions but their explicitly labelled `Workflow unavailable` triggers are clickable presentation
 surrogates under `P5-D13`; their dialog fields are read-only or local-only enumerations, every submit
 is hard-disabled, and no request/write/history/audit effect occurs. A `hard_disabled` trigger has no
 handler and opens nothing; it must never be confused with a `preview_only` trigger.
@@ -4197,7 +4197,7 @@ pricing response.
 
 The Add Competitor form positions remain documented: Name, Type, Country/Region, URL, Data
 Collection Method, Refresh Frequency, Categories, Currency, Notes, validation callout. Creation/
-submission remains disabled; the approved §8.8 preview-only trigger is the sole live access path.
+submission remains disabled; the approved §8.8 non-mutating trigger is the sole live access path.
 The `Approved Web Collection` option conflicts with no-scraping policy and must be
 kept in its exact reference position but natively disabled/annotated with the approved legal-source
 reason; it cannot be selected or submitted. Removal requires a separate approved parity amendment.
@@ -4241,7 +4241,7 @@ the filter remains in place but is governed unavailable. Original Category optio
 Footwear, Beauty, Electronics, Apparel; live options derive from canonical categories while
 preserving placement/order expectations through the matrix.
 
-Promotion creation/submission is disabled; the approved §8.8 preview-only trigger is the sole live
+Promotion creation/submission is disabled; the approved §8.8 non-mutating trigger is the sole live
 access path to that form. Simulate Promotion is stateless/live only when `P5-D23`, `P5-D20`, and `P5-D22`
 are approved and the selected model/scope passes every acceptance gate; otherwise the control remains in its
 exact position, natively disabled with the stable evidence prerequisite, and only the distinct local
@@ -4421,7 +4421,7 @@ The following table defines what `P5-0P` must decide; it does not itself authori
 | Global scope | Derive market from reviewed local server scope and canonical Store/region; preserve the original shell with no Market control; use visible Store plus per-destination Channel applicability, disabling Channel on location-grain projections | Do not add a Market control without presentation amendment, send/claim unsupported Channel, or pretend filters apply where API remains global |
 | Currency | Separate local operating prices from convertible reporting aggregates; disposition INR/USD/EUR/GBP/AED individually with governed live rate/as-of/direction or visible disabled/unavailable behavior and a Phase 6 boundary record | Never FX-convert price-rule inputs, hide mixed currencies, or expose an enabled currency with no governed pair |
 | Footer | Freeze enterprise vs filtered scope and load independently | Do not reuse stale current-page data |
-| Data Management | Restore exact `#dataManagement` root and toolbar order: Add Data Source, Upload Sample Data, Run Validation; Add Data Source gets the §8.8.5 visibly labelled preview-only form; expose latest retained Validation Results in read-only source detail/mapping | `Connect`, Upload, and Run Validation remain disabled; Upload/Run have no handler/network call; preview has no request/write/history; no invented user identity |
+| Data Management | Restore exact `#dataManagement` root and toolbar order: Add Data Source, Upload Sample Data, Run Validation; Add Data Source gets the §8.8.5 visibly labelled non-mutating form; expose latest retained Validation Results in read-only source detail/mapping | `Connect`, Upload, and Run Validation remain disabled; Upload/Run have no handler/network call; preview has no request/write/history; no invented user identity |
 | Data Management status/actions | Freeze Healthy/Delayed/Needs Attention/stale/missing/failure reasons and badge mapping; View Mapping is read-only only where governed evidence exists | Refresh/Retry stay natively disabled without an authorized mutation route; Run Validation never masquerades as a read action |
 | Demand Forecast summary | Scope or label; lazy panel queries; region/store validity | Business Impact/replay superiority unavailable |
 | Demand Forecast granularity | Preserve Weekly, Daily, Monthly in order with Weekly live; Phase 5 recommended disposition natively disables Daily and Monthly with accessible reasons until exact API-native daily/monthly distributions and quantiles exist | Never sum weekly P50/P90 values and label the result a monthly quantile; disabled options make no request/query-key change |
@@ -4447,7 +4447,7 @@ The following table defines what `P5-0P` must decide; it does not itself authori
 | Inventory replay fields | Preserve current/replay capability split | Fill-rate/service/revenue/working-capital benefits remain withheld |
 | UI styling/accessibility | Fix missing button/trend classes; field-specific badges; dates; focus/dialog/table behavior | Do not visually conceal unavailable states |
 | Card-header metadata | Split static count/as-of/context from real actions; static values are AT-visible, non-focusable, non-pointer and handler-free | No `aria-hidden` count or pointer/link styling without an executable semantic action |
-| Disabled modal inventory | Approve exact preview-only access where live demonstration is required; trigger carries visible/accessibly described preview treatment and dialog fields/submits are disabled/no-request | Without preview amendment, hidden modal rows are structural parity only and cannot satisfy live Demo 5 coverage |
+| Disabled modal inventory | Approve exact non-mutating access where live demonstration is required; trigger carries visible/accessibly described preview treatment and dialog fields/submits are disabled/no-request | Without preview amendment, hidden modal rows are structural parity only and cannot satisfy live Demo 5 coverage |
 | Search/refetch behavior | Freeze debounce duration, retain prior data, cancel obsolete work, reject stale responses, and retain focus | No per-keystroke page flash or late-response overwrite |
 | Tests/review | Structural coverage, destination-specific live-state matrices, all-five-currency/filter-applicability evidence, and required-viewport screenshots for all twenty destinations | Existing open human-review gates cannot be declared complete by unit tests alone |
 
@@ -4504,7 +4504,7 @@ receives a trigger selector, test ID, optional capture ID, desktop/mobile review
 requires `not_applicable`, a null capture ID, and a static absence-test ID; every other access mode
 requires `full_review`. An invalid pairing blocks matrix approval. For a
 `preview_only` mutation form, the trigger preserves its original label first and adds a small
-`Preview only` treatment inside the trigger after that label; the dialog begins with one business-
+`Workflow unavailable` treatment inside the trigger after that label; the dialog begins with one business-
 prerequisite callout, uses read-only text/date fields, allows enumerated controls to change only
 local preview state, leaves prohibited choices visible but natively disabled, and keeps the original
 submit disabled. Cancel/Close remains live. No preview issues a request, changes URL/history, writes
@@ -4515,7 +4515,7 @@ Competitor Alert Rule,
 Link Different Product, and Create Promotion. This makes all reference fields/options inspectable,
 including Approved Web Collection, Bundle/BOGO/Loyalty/customer-segment, and Approval Route. Review
 Competitor Product Match is reachable read-only with all mutation footers disabled; Simulate
-Promotion is governed-live when its gates pass and uses a preview-only unavailable-state fallback
+Promotion is governed-live when its gates pass and uses a non-mutating unavailable-state fallback
 when they do not. A mandatory row cannot be downgraded to `structural_only`; rejection of its preview
 amendment blocks Demo 5. `structural_only` is reserved for an explicitly rejected duplicate/non-
 authoritative implementation artifact that is not a distinct reference surface.
@@ -4552,12 +4552,12 @@ Exact modal inventories:
 | Modal | Body/control order | Reference options/content order | Footer/action disposition |
 |---|---|---|---|
 | Price Recommendation Detail | Product, Recommended Action, Confidence; Commercial Impact; Decision Context; AI explanation | Commercial Impact: Current price, AI price, Revenue impact, Margin impact. Context: Competitor price, Stock cover, Forecast demand, AI reason | `Open Simulation` live navigation; Cancel/close behavior |
-| Approve Price Recommendations | Products selected, Stores affected, Average price change, Maximum price change, Estimated revenue impact, Higher approval exceptions; Approval validation; Effective Date; Approval Note | no sample value is live | preview-only access; `Confirm Approval` disabled, Cancel live; no request/write/history |
-| Send Recommendations for Review | Selected recommendations, Current status, Target status; Reviewer, Priority, Due Date, Review Reason; Comments | Reviewer choices are reference-only/unavailable without governed identities. Priority: High, Medium, Low. Reason: Price movement exceeds approval limit; Margin impact requires review; Competitor data validation; Strategic product review | preview-only access; `Send for Review` disabled, Cancel live; no request/write/history |
+| Approve Price Recommendations | Products selected, Stores affected, Average price change, Maximum price change, Estimated revenue impact, Higher approval exceptions; Approval validation; Effective Date; Approval Note | no sample value is live | non-mutating access; `Confirm Approval` disabled, Cancel live; no request/write/history |
+| Send Recommendations for Review | Selected recommendations, Current status, Target status; Reviewer, Priority, Due Date, Review Reason; Comments | Reviewer choices are reference-only/unavailable without governed identities. Priority: High, Medium, Low. Reason: Price movement exceeds approval limit; Margin impact requires review; Competitor data validation; Strategic product review | non-mutating access; `Send for Review` disabled, Cancel live; no request/write/history |
 | Export Price Recommendations | Scope, Format, Include AI explanation, Include audit history; File Name | Scope: Selected recommendations (N), Current filtered view (N), All recommendations (N). Format: CSV, Excel-compatible CSV, PDF / Print. Explanation: Yes/No. Audit: No/Yes | `Export`, Cancel; §8.2.1.1 governs counts/defaults/zero/limit, CSV encodings, filename, lineage, and errors; PDF/Print and audit Yes are visible-disabled/no-call |
-| Schedule Price Changes | Recommendations, Stores, Status; Effective Date, Effective Time, Channels, Rollback Rule | Channels: All Channels, Stores Only, E-commerce Only. Rollback: Rollback on integration failure, Manual rollback only | preview-only access; `Schedule` disabled, Cancel live; no request/write/history |
+| Schedule Price Changes | Recommendations, Stores, Status; Effective Date, Effective Time, Channels, Rollback Rule | Channels: All Channels, Stores Only, E-commerce Only. Rollback: Rollback on integration failure, Manual rollback only | non-mutating access; `Schedule` disabled, Cancel live; no request/write/history |
 | Compare Selected Recommendations | table columns Product, Action, Price Change, Revenue Impact, Margin Impact, Confidence | requires at least two selected rows; one selected receives accessible “select at least two” state | Close; read-only/live |
-| Pricing Action Center | Pending Decisions, High Priority, Value Awaiting Approval; Decision Queue, Items, Owner, Value | the three original queue rows remain in exact reference order — `Senior approval required`, `Category review`, `Approved but unscheduled` — while every count, owner, and value cell is typed workflow-unavailable rather than sample data | preview-only access; all queue actions disabled, Close live; no request/write/history unless a later approved non-workflow read model makes it live |
+| Pricing Action Center | Pending Decisions, High Priority, Value Awaiting Approval; Decision Queue, Items, Owner, Value | the three original queue rows remain in exact reference order — `Senior approval required`, `Category review`, `Approved but unscheduled` — while every count, owner, and value cell is typed workflow-unavailable rather than sample data | non-mutating access; all queue actions disabled, Close live; no request/write/history unless a later approved non-workflow read model makes it live |
 | Store Pricing Drilldown | Store, Period; Open Recommendations, Revenue Opportunity, Margin Opportunity; Top Pricing Issues; Recommended Actions | Period: This Week, This Month, Quarter to Date. Issue/action order follows §8.2.4 | `Open Store Recommendations` read-only navigation; Cancel/close |
 
 #### 8.8.2 Price Simulation modal
@@ -4571,10 +4571,10 @@ amendment described in §8.3.3.
 
 | Modal | Exact fields/options in order | Footer/action disposition |
 |---|---|---|
-| Add Competitor | Competitor Name; Competitor Type: Direct Retailer, Marketplace, Brand Website, Regional Competitor; Country / Region: India, United States, Europe, GCC; Website URL; Data Collection Method: API Feed, Approved Web Collection, CSV / SFTP Feed, Manual Upload; Refresh Frequency: Hourly, Every 4 Hours, Daily, Weekly; Categories to Monitor: All Categories, Footwear, Apparel, Electronics, Beauty; Currency: INR, USD, EUR, AED; Notes; Connection validation callout | preview-only access; submit `Add Competitor` disabled, Cancel live, no request/write; Approved Web Collection remains visible and individually disabled with its approved-source reason |
-| Create Competitor Alert Rule | Rule Name; Trigger Type: Competitor price changes, Price gap exceeds threshold, Competitor promotion detected, Competitor becomes out of stock, Competitor returns to stock, New competitor product detected; Threshold; Comparison Direction: Our price is higher, Our price is lower, Either direction; Category Scope: All Categories, Footwear, Apparel, Electronics, Beauty; Competitor Scope: All Competitors, Selected Competitor, Top 3 Competitors; Severity: High, Medium, Low; Notify: Pricing Manager, Category Manager, Pricing + Merchandising, Executive Team; Frequency: Immediately, Hourly Digest, Daily Digest; Recommended Action: Create price recommendation, Notify only, Send for manual review; Rule Description | preview-only access; `Create Rule` disabled, Cancel live; identity-dependent Notify choices disabled, no request/write/history |
-| Review Competitor Product Match | Review item, Match confidence, Current status; Our Product card; Competitor Product card; Attributes used for matching callout; Reviewer Comment | read-only/live from the inspection queue; exact footer order is `Reject Match`, `Link Different Product`, `Accept Match`, `Cancel`. Reject/Accept are disabled; Link is a live local preview control with an adjacent visible/accessibility `Preview only` treatment; Cancel is live. No Previous/Next controls and no mutation |
-| Review Competitor Product Match — Link Different Product state | In-place replacement under the unchanged `Review Competitor Product Match` title: Search competitor catalogue; columns Select, Candidate Product, Price, Confidence | preview-only state from Link; local search/selection may use only governed candidate rows already carried in the inspection payload, otherwise typed empty/unavailable; exact footer order `Save New Match`, `Cancel`, with Save disabled and Cancel live; no request/write/history |
+| Add Competitor | Competitor Name; Competitor Type: Direct Retailer, Marketplace, Brand Website, Regional Competitor; Country / Region: India, United States, Europe, GCC; Website URL; Data Collection Method: API Feed, Approved Web Collection, CSV / SFTP Feed, Manual Upload; Refresh Frequency: Hourly, Every 4 Hours, Daily, Weekly; Categories to Monitor: All Categories, Footwear, Apparel, Electronics, Beauty; Currency: INR, USD, EUR, AED; Notes; Connection validation callout | non-mutating access; submit `Add Competitor` disabled, Cancel live, no request/write; Approved Web Collection remains visible and individually disabled with its approved-source reason |
+| Create Competitor Alert Rule | Rule Name; Trigger Type: Competitor price changes, Price gap exceeds threshold, Competitor promotion detected, Competitor becomes out of stock, Competitor returns to stock, New competitor product detected; Threshold; Comparison Direction: Our price is higher, Our price is lower, Either direction; Category Scope: All Categories, Footwear, Apparel, Electronics, Beauty; Competitor Scope: All Competitors, Selected Competitor, Top 3 Competitors; Severity: High, Medium, Low; Notify: Pricing Manager, Category Manager, Pricing + Merchandising, Executive Team; Frequency: Immediately, Hourly Digest, Daily Digest; Recommended Action: Create price recommendation, Notify only, Send for manual review; Rule Description | non-mutating access; `Create Rule` disabled, Cancel live; identity-dependent Notify choices disabled, no request/write/history |
+| Review Competitor Product Match | Review item, Match confidence, Current status; Our Product card; Competitor Product card; Attributes used for matching callout; Reviewer Comment | read-only/live from the inspection queue; exact footer order is `Reject Match`, `Link Different Product`, `Accept Match`, `Cancel`. Reject/Accept are disabled; Link is a live local preview control with an adjacent visible/accessibility `Workflow unavailable` treatment; Cancel is live. No Previous/Next controls and no mutation |
+| Review Competitor Product Match — Link Different Product state | In-place replacement under the unchanged `Review Competitor Product Match` title: Search competitor catalogue; columns Select, Candidate Product, Price, Confidence | non-mutating state from Link; local search/selection may use only governed candidate rows already carried in the inspection payload, otherwise typed empty/unavailable; exact footer order `Save New Match`, `Cancel`, with Save disabled and Cancel live; no request/write/history |
 
 Selector authority for the duplicated competitor forms is closed as follows:
 
@@ -4607,7 +4607,7 @@ Product` modal title requires an explicit presentation/accessibility amendment.
 
 | Modal | Exact fields/options in order | Footer/action disposition |
 |---|---|---|
-| Create Promotion | Promotion Name; Promotion Objective: Revenue Growth, Inventory Clearance, Customer Acquisition, Basket Size Growth, Loyalty Engagement; Promotion Type: Percentage Discount, Fixed Price, Bundle Offer, Buy One Get One, Loyalty Member Price, Clearance; Discount / Offer; Category: Footwear, Beauty, Electronics, Apparel; Product Scope: AI Recommended Products, Selected SKUs, Entire Category, Ageing Inventory; Start Date; End Date; Stores / Channels: All Stores, Selected Stores, Online Only, West Region + Online; Customer Segment: All Customers, Loyalty Members, High-Value Customers, Lapsed Customers; Minimum Margin; Approval Route: Category Manager, Pricing Manager, Finance + Business Head; Business Rationale; AI validation before creation callout | preview-only access; `Create Draft` disabled, Cancel live, no request/write. Bundle/BOGO, Loyalty Member Price, segment/customer targeting, customer-level objectives, and approval route remain visibly privacy/workflow-disabled |
+| Create Promotion | Promotion Name; Promotion Objective: Revenue Growth, Inventory Clearance, Customer Acquisition, Basket Size Growth, Loyalty Engagement; Promotion Type: Percentage Discount, Fixed Price, Bundle Offer, Buy One Get One, Loyalty Member Price, Clearance; Discount / Offer; Category: Footwear, Beauty, Electronics, Apparel; Product Scope: AI Recommended Products, Selected SKUs, Entire Category, Ageing Inventory; Start Date; End Date; Stores / Channels: All Stores, Selected Stores, Online Only, West Region + Online; Customer Segment: All Customers, Loyalty Members, High-Value Customers, Lapsed Customers; Minimum Margin; Approval Route: Category Manager, Pricing Manager, Finance + Business Head; Business Rationale; AI validation before creation callout | non-mutating access; `Create Draft` disabled, Cancel live, no request/write. Bundle/BOGO, Loyalty Member Price, segment/customer targeting, customer-level objectives, and approval route remain visibly privacy/workflow-disabled |
 | Simulate Promotion | Promotion; Scenario: Expected, Best Case, Worst Case; Discount Depth; Duration: 3 Days, 7 Days, 14 Days; Store Scope: All Stores, Selected Stores, Online Only; Customer Segment: All Customers, Loyalty Members, High-Value Customers; Include Cannibalisation: Yes, No; Include Competitor Response: Yes, No | `Run Simulation`, Cancel on the live branch. Customer Segment is fixed to All Customers and other options are privacy-disabled; Cannibalisation is disabled; stateless Run is live only when `P5-D23`, `P5-D20`, and promotion-confidence gates pass. On every unavailable branch, exact footer order is disabled `Run Simulation`, secondary `Preview Results` with visible/accessibility preview treatment, Cancel. Preview Results performs an in-memory replacement only and no request/write/history |
 | Promotion Simulation Results | Expected Demand Uplift, Revenue Uplift, Gross Margin Impact, Required Stock, Sell-through Improvement, Cannibalisation Risk; Scenario Comparison columns Metric, Current Plan, AI Optimized and rows Discount, Revenue, Margin, Ending Stock; AI Recommendation callout; Stock readiness, Promotion conflict, Confidence | Close only. A live numeric result opens when `P5-D23`, `P5-D20`, and `P5-D22` pass. Otherwise the distinct Preview Results path opens the identical composition with every gated numeric value typed unavailable and its exact first business reason; no result request occurs. Confidence follows `P5-D22`; cannibalisation is null/reason; primary margin is client-actual or unavailable, and generated cost never appears in this modal or any Promotion Planner result |
 | Promotion Calendar | Month View, List View, month selector July 2026/August 2026; headings `Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun`; 35-cell grid; event badges; Calendar controls callout | Month View is active/read-only-live and month selector is live; List View is visible/natively disabled with `Governed list-view composition not approved`, no handler/request/active style, because the reference has no list body; reference months/events become source-driven through an approved data row; Close-only footer |
@@ -4630,7 +4630,7 @@ unavailable value mapping; original sample names, values, comments, owners, and 
 
 | Modal | Exact composition | Access/footer disposition |
 |---|---|---|
-| Add Data Source | Source Name; Type in order API, Database, SFTP, CSV; Refresh in order 15 minutes, Hourly, Daily | preview-only from `Add Data Source — Preview only`; `Connect` disabled, Cancel live; local enum exploration only, no file/network/write/history |
+| Add Data Source | Source Name; Type in order API, Database, SFTP, CSV; Refresh in order 15 minutes, Hourly, Daily | non-mutating from `Add Data Source — Workflow unavailable`; `Connect` disabled, Cancel live; local enum exploration only, no file/network/write/history |
 | Validation Results | metric order Quality, Valid, Duplicates, Missing | read-only from the approved latest-validation/View Mapping path using retained evidence; Close only. `Run Validation` itself remains disabled/no-handler and cannot be the route |
 
 `Upload Sample Data` remains a visible disabled control with accepted-type/prerequisite help and
@@ -4640,25 +4640,25 @@ does not open a native file chooser. It has no distinct reference application mo
 
 | Modal | Exact title/body order | Access/footer disposition |
 |---|---|---|
-| Accept Forecast | summary order Selected Forecasts, Average Confidence, Demand Value; Acceptance Comment | preview-only; selected count and any summary value are governed or unavailable; comment read-only; `Confirm Acceptance` disabled, Cancel live |
-| Add Planner Adjustment | Product / SKU; Store; AI Forecast read-only; Planner Forecast; Adjustment Reason in order Local event, Promotion change, Competitor event, Operational constraint, Commercial judgement; Effective Period in order Next Week, Next 4 Weeks, Specific Date Range; Comment | preview-only; product/store options are governed, numeric/text inputs read-only, enums local-only; `Save Adjustment` disabled, Cancel live |
+| Accept Forecast | summary order Selected Forecasts, Average Confidence, Demand Value; Acceptance Comment | non-mutating; selected count and any summary value are governed or unavailable; comment read-only; `Confirm Acceptance` disabled, Cancel live |
+| Add Planner Adjustment | Product / SKU; Store; AI Forecast read-only; Planner Forecast; Adjustment Reason in order Local event, Promotion change, Competitor event, Operational constraint, Commercial judgement; Effective Period in order Next Week, Next 4 Weeks, Specific Date Range; Comment | non-mutating; product/store options are governed, numeric/text inputs read-only, enums local-only; `Save Adjustment` disabled, Cancel live |
 | Compare Forecast Versions | columns Version, Created By, Accuracy, Bias, Demand Units, Status | read-only/live for compatible retained versions; otherwise the same six-column body shows typed unavailable/empty evidence; Close only |
 | Demand Scenario Planning | **Not specified by Phase 5.** Decision #96 and `contracts/screens/demand-forecast.parity.yaml` amendments `FSP-V1-A1` (implementation boundary) and `FSP-V1-A2` (local-demo trigger and live projection) establish the external ownership boundary; they do not silently freeze any input composition, field order, option vocabulary, footer, or focus detail they do not state | `external_owned`. Phase 5 asserts no composition, runs no parity assertion, adds no preview adapter, and must not change its access mode, request contract, or no-write boundary. Any divergence between the reference HTML and the shipped v1 modal is an `FSP-V1` amendment question, recorded in `P5-0P`'s register as an observation and referred, never repaired here |
 | Scenario Results | **Not specified by Phase 5.** Decision #96 and `contracts/screens/demand-forecast.parity.yaml` amendment `FSP-V1-A3` own the result-presentation behavior explicitly stated there; undocumented rows, footer, replacement, and focus details are not implied and require an owner amendment | `external_owned`. It is reached from the live `Run Scenario` submit, not from a preview branch; Phase 5 neither asserts its rows nor reinterprets its values. Phase 5's own weekly-quantile prohibition still binds any Phase 5 surface that consumes forecast intervals |
-| Forecast Action Center | summary order Open Exceptions, High Priority, Demand at Risk; columns Action Queue, Items, Owner, Business Exposure; row labels Under-forecast review, Over-forecast review, Data-quality correction, Model retraining | preview-only; workflow counts/owners/exposure are typed unavailable unless a governed read model is approved; Close only and no queue action |
+| Forecast Action Center | summary order Open Exceptions, High Priority, Demand at Risk; columns Action Queue, Items, Owner, Business Exposure; row labels Under-forecast review, Over-forecast review, Data-quality correction, Model retraining | non-mutating; workflow counts/owners/exposure are typed unavailable unless a governed read model is approved; Close only and no queue action |
 | Store Forecast Drilldown | Store; Period in order Next 4 Weeks, Next 8 Weeks; Store Forecast Health rows Accuracy, Bias, Demand at risk, Planner override rate; Recommended Actions rows/action and priority; footer `Open Store Forecasts` | read-only/live from governed store/version data, with per-field unavailable states; footer performs read-only navigation only, Cancel/Close live |
 
 **Stock Health:**
 
 | Surface ID / exact React selector | Exact visible trigger → modal title | Exact body order | Access/footer disposition |
 |---|---|---|---|
-| `stock-health.assign-owner` / `[data-surface-id="stock-health.assign-owner"]` | `Assign Owner` → `Assign Owner` | Owner; Priority in order High, Medium, Low; Due Date | preview-only; Owner uses governed identities or a typed unavailable option—the original Emma Johnson/Rahul Mehta/Sara Khan values are samples and never render as live; date is read-only; exact footer `Save`, Cancel with Save disabled; no request/write/history |
-| `stock-health.create-action` / `[data-surface-id="stock-health.create-action"]` | `Create Action` → `Create Stock Action` | Action in order Markdown, Transfer, Replenish, Stop Replenishment; Approval Route in order Category Manager, Pricing Manager, Business Head | preview-only local enum exploration; exact footer `Save`, Cancel with Save disabled; no request/write/history |
+| `stock-health.assign-owner` / `[data-surface-id="stock-health.assign-owner"]` | `Assign Owner` → `Assign Owner` | Owner; Priority in order High, Medium, Low; Due Date | non-mutating; Owner uses governed identities or a typed unavailable option—the original Emma Johnson/Rahul Mehta/Sara Khan values are samples and never render as live; date is read-only; exact footer `Save`, Cancel with Save disabled; no request/write/history |
+| `stock-health.create-action` / `[data-surface-id="stock-health.create-action"]` | `Create Action` → `Create Stock Action` | Action in order Markdown, Transfer, Replenish, Stop Replenishment; Approval Route in order Category Manager, Pricing Manager, Business Head | non-mutating local enum exploration; exact footer `Save`, Cancel with Save disabled; no request/write/history |
 
 The reference Stock Health buttons have no HTML IDs, so the Phase 5 React port adds only the stable
 non-visual `surfaceId`/test IDs above; visible labels, order, styling, and placement remain unchanged.
 
-**Inventory shared action dialog:** every trigger below opens the same exact preview-only structure:
+**Inventory shared action dialog:** every trigger below opens the same exact non-mutating structure:
 summary cells `<Metric>`, Priority, Decision; Owner options in order Inventory Manager, Supply Chain
 Lead, Category Manager, Finance Controller; Action Note; footer `Create Action`, Cancel. Metric values
 are governed/read-only or unavailable, Owner is local-only, note is read-only, `Create Action` is
@@ -4683,7 +4683,7 @@ disabled, and no request/write/history occurs.
 | `#expiryActionBtn` | Create Expiry Action | Create Expiry Action | Near-Expiry Inventory | Create expiry response |
 | `#wasteReductionBtn` | Create Waste Reduction Plan | Create Waste Reduction Plan | Recovery Opportunity | Create recovery plan |
 
-**Replenishment shared action dialog:** every trigger below opens the same exact preview-only
+**Replenishment shared action dialog:** every trigger below opens the same exact non-mutating
 structure: summary cells `<Metric>`, Priority, Action; Comment; footer `Create Action`, Cancel.
 Metric values are governed/read-only or unavailable, Comment is read-only, `Create Action` is
 disabled, and no request/write/history occurs.
@@ -4842,7 +4842,7 @@ never by deleting the row, and never by presenting one market as if it were two.
 | Source status | Draft, Under Review, Approved, Live, Completed from the dedicated source-native lifecycle field; missing field is unavailable. Never map `historical \| active` | No lifecycle value; exact Planner refusal |
 | Offer mechanic | Percentage Discount, Fixed Price, Clearance from dedicated mechanic/depth/terms; Loyalty Member Price, Bundle Offer, and BOGO remain privacy-disabled. Never map campaign class | No mechanic value; exact Planner refusal, with Decision #19 secondary for privacy-prohibited mechanics |
 | Audience mix | Loyalty/High-value/Lapsed/Broad aggregate percentages reconcile to exactly 100% after frozen rounding | No mix artifact or percentages; exact Planner refusal |
-| Creation-form preview | Preview-only Create Promotion form exposes exact local option states; Bundle/BOGO/Loyalty/customer-segment choices and Approval Route are visibly disabled; Create Draft is disabled and no request/write occurs | Same preview contract, but no source/model value is populated and the Planner refusal callout remains first; preview structure is not feature evidence |
+| Creation-form preview | Non-mutating Create Promotion form exposes exact local option states; Bundle/BOGO/Loyalty/customer-segment choices and Approval Route are visibly disabled; Create Draft is disabled and no request/write occurs | Same preview contract, but no source/model value is populated and the Planner refusal callout remains first; preview structure is not feature evidence |
 
 ### 9.6 Existing-page live-state minimums
 
@@ -4853,7 +4853,7 @@ or an honest explicit unavailability before generation.
 
 | Existing destination | Minimum live or explicit-unavailable demonstrations |
 |---|---|
-| Data Management | Exact `#dataManagement` root and Add Data Source → Upload Sample Data → Run Validation toolbar order; Healthy, Delayed/Needs Attention, validation failure, stale and missing source; source-specific freshness; Add Data Source preview-only form with disabled Connect; latest retained Validation Results in read-only mapping/detail; Upload/Run Validation/Refresh/Retry disabled; every preview/read path has no request mutation or write |
+| Data Management | Exact `#dataManagement` root and Add Data Source → Upload Sample Data → Run Validation toolbar order; Healthy, Delayed/Needs Attention, validation failure, stale and missing source; source-specific freshness; Add Data Source non-mutating form with disabled Connect; latest retained Validation Results in read-only mapping/detail; Upload/Run Validation/Refresh/Retry disabled; every preview/read path has no request mutation or write |
 | Demand Forecast | Weekly live; Daily/Monthly visible and natively disabled with accessible reasons unless separately approved API-native distributions/quantiles exist; no summed-weekly quantile. Non-PIT P50 with `LANDING_BACKFILL_DEPENDENCY`; Decision-#92 interval withheld; exact-zero and non-zero demand/risk; Demand at Risk and Stock-out Risk; filtered empty with Export disabled/no-call; controlled zero/one/many/select-all-visible selection driving only scoped export; Store Priority Action mapped or unavailable; Action Center and Store Drilldown explanatory empty states; compatible-version or unavailable; promotion row follows `P5-D23` branch |
 | Inventory Overview | Healthy, low/understock, urgent, and ageing candidate populations; exact-zero KPI; action bindings use understock/urgent/ageing facts; independent populated card survives an empty primary table |
 | Store Inventory | In stock, low stock, out of stock, exact zero, filtered empty; projected demand-at-risk with assessed/withheld coverage and an unavailable companion case; Store applies and Channel follows the page applicability row |
@@ -4927,7 +4927,7 @@ accept browser-provided audience identity.
    proving no runtime render, handler, or demo credit. The schema enforces both directions of all
    pairings and rejects missing or unknown classes. Any shared-mobile sampling names the exact
    equivalent surfaces and reviewer-approved rationale.
-8. A preview-only modal counts as live UI coverage only when opened through its approved visible
+8. A non-mutating modal counts as live UI coverage only when opened through its approved visible
    trigger in the running app with no fixtures, and evidence proves zero request/write/history
    effect. Every mandatory §8.8 modal must satisfy this rule, be genuinely `business_live`/
    `read_only`, or carry an approved `external_owned` disposition verified per `P5-D13`; a
@@ -5185,7 +5185,7 @@ accept browser-provided audience identity.
 - Forecast Weekly/Daily/Monthly disposition is exact and no monthly quantile is formed by summing
   weekly P50/P90; Forecast/Replenishment selection is controlled and filtered-empty export is a
   disabled no-call state.
-- Competitor selection/queue states and preview-only Add Competitor/Create Promotion options are
+- Competitor selection/queue states and non-mutating Add Competitor/Create Promotion options are
   live, local-only, and mutation-free; hidden structural modals do not count as live coverage.
 - Synthetic margin appears only at the approved §8.3.2 position, while competitor exclusion updates
   visible field, request echo, result reason, and accessible text together.
@@ -5533,7 +5533,7 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
   every unimplemented item; any omission has its own approved amendment;
 - exact `#dataManagement` root and destination-specific §9.6 live-state assertions for Data
   Management, Demand Forecast, and all fourteen Inventory destinations;
-- exact Data Management toolbar order; Add Data Source has only the approved preview-only form with
+- exact Data Management toolbar order; Add Data Source has only the approved non-mutating form with
   disabled Connect and zero request/write/history; Upload Sample Data and Run Validation remain
   disabled/accessibly reasoned with zero handler/network/write; latest retained Validation Results
   appears only in the approved read-only source detail/mapping flow;
@@ -5573,7 +5573,7 @@ owned by the approved §8 matrices and §9 state matrix; this list does not dupl
   body; a month change retains Month View and selector focus; the modal footer is Close only;
 - every control has exactly one of `business_live`, `read_only`, `preview_only`, `hard_disabled`,
   `structural_only`, or `external_owned` as its matrix state; hard-disabled workflow/privacy/source actions have no handler;
-  every mandatory new/existing preview-only trigger shows its treatment, permits only local option
+  every mandatory new/existing non-mutating trigger shows its treatment, permits only local option
   exploration, keeps prohibited options/submits disabled, and makes zero request/write/history change;
 - competitor modal parity targets only the authoritative `#newCompetitor*` and `#competitorRule*`
   selector families; every later `#fixCompetitor*` and `#fixRule*` duplicate is recorded as
@@ -5639,7 +5639,7 @@ For all twenty implemented destinations, including existing pages with no local 
 - verify no dev server mock, fixture toggle, or original sample fallback is enabled;
 - export one scoped result and reconcile it to screen/API/artifact;
 - exercise mobile navigation, direct link, back/forward, filter, currency disclosure, stateless
-  simulation, read-only detail/queue, preview-only modal with zero side effects, disabled mutation,
+  simulation, read-only detail/queue, non-mutating modal with zero side effects, disabled mutation,
   409, and 503;
 - record unresolved limitations as client-facing unavailable behavior rather than hiding them.
 
@@ -5869,7 +5869,7 @@ A structural shell may be reviewed earlier but is never labelled live.
 | request reads/refits/writes | non-determinism or phase breach | PostgreSQL-only handlers and no-file/no-write tests |
 | filter/count/export drift | client contradictions | one scope revision/count contract and server recount |
 | original sample values survive | fabricated demo facts | bundle/source scans and API-to-DOM reconciliation |
-| UI parity work conflates preview with enabled/disabled | client demo failure | closed business-live/read-only/preview-only/hard-disabled/structural-only/external-owned state enum and zero-effect tests |
+| UI parity work conflates preview with enabled/disabled | client demo failure | closed business-live/read-only/non-mutating/hard-disabled/structural-only/external-owned state enum and zero-effect tests |
 | promotion chart keeps contradictory scenario/metric axes | misleading client output | decided normalized scenario index, single caption, native-unit accessible table |
 | existing UI regresses | damages Phase 4 work | `P5-0P` amendments plus all-page regression evidence |
 | Phase 5-owned modal/export details are simplified | visible contract mismatch | exact §8 registries, byte/focus golden tests; external-owned surfaces remain reachability-only |

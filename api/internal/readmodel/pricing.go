@@ -49,6 +49,7 @@ type PricingConfig struct {
 	BundleFingerprint string
 	LogicalDatabase   string
 	DBReadPool        int
+	Presentation      *Store
 }
 
 type PricingStore struct {
@@ -68,6 +69,7 @@ type PricingStore struct {
 	decisionAsOf      time.Time
 	capabilities      map[string]any
 	selectionIDs      []string
+	presentation      *Store
 }
 
 type PricingQuery struct {
@@ -197,7 +199,7 @@ func LoadPricing(ctx context.Context, config PricingConfig) *PricingStore {
 		pool.Close()
 		return unavailablePricing(PricingReasonInvalid, "The PostgreSQL pricing schema is not at the required migration.", config.Environment)
 	}
-	store := &PricingStore{pool: pool}
+	store := &PricingStore{pool: pool, presentation: config.Presentation}
 	var capabilitiesRaw []byte
 	err = pool.QueryRow(ctx, `
 		SELECT retailer_id, tenant_id, environment, activation_set_id,
@@ -270,6 +272,55 @@ func (s *PricingStore) authority() map[string]any {
 		"inputAuthorityId":             s.inputAuthorityID,
 		"sourceAsOf":                   s.decisionAsOf.UTC().Format(time.RFC3339),
 		"selectionIds":                 s.selectionIDs,
+	}
+}
+
+// presentationLabels keeps display names tied to the governed publication
+// that started the API. Native IDs remain in the payload for filtering and
+// lineage; names are exposed in separate presentation fields.
+func (s *PricingStore) presentationLabels() (map[string]string, map[string]string, map[string]string) {
+	stores := map[string]string{}
+	channels := map[string]string{}
+	categories := map[string]string{}
+	if s == nil || s.presentation == nil {
+		return stores, channels, categories
+	}
+	business := mapValue(s.presentation.publication, "businessControls")
+	for _, item := range sliceValue(business, "stores") {
+		row, _ := item.(map[string]any)
+		if id, name := stringValue(row, "storeId"), stringValue(row, "name"); id != "" && name != "" {
+			stores[id] = name
+		}
+	}
+	for _, item := range sliceValue(business, "channels") {
+		row, _ := item.(map[string]any)
+		if id, name := stringValue(row, "channelId"), stringValue(row, "name"); id != "" && name != "" {
+			channels[id] = name
+		}
+	}
+	for _, item := range sliceValue(business, "categories") {
+		row, _ := item.(map[string]any)
+		if id, name := stringValue(row, "categoryId"), stringValue(row, "name"); id != "" && name != "" {
+			categories[id] = name
+		}
+	}
+	return stores, channels, categories
+}
+
+func (s *PricingStore) addPresentationLabels(items []map[string]any) {
+	stores, channels, categories := s.presentationLabels()
+	for _, item := range items {
+		if id, ok := item["storeId"].(string); ok {
+			item["storeName"] = stores[id]
+		}
+		if id, ok := item["channelId"].(string); ok {
+			item["channelName"] = channels[id]
+		}
+		if label, ok := item["categoryLabel"].(string); !ok || label == "" {
+			if id, categoryOK := item["category"].(string); categoryOK {
+				item["categoryLabel"] = categories[id]
+			}
+		}
 	}
 }
 
@@ -391,6 +442,7 @@ func (s *PricingStore) recommendations(ctx context.Context, query PricingQuery) 
 		       market_id AS "marketId", sku_id AS "skuId",
 		       details->>'product_name' AS "productName",
 		       details->>'category' AS category,
+		       details->>'category_label' AS "categoryLabel",
 		       store_id AS "storeId", channel_id AS "channelId", action,
 		       current_price_minor AS "currentPriceMinor",
 		       proposed_price_minor AS "proposedPriceMinor", currency_code AS "currencyCode",
@@ -420,6 +472,7 @@ func (s *PricingStore) recommendations(ctx context.Context, query PricingQuery) 
 	if err != nil {
 		return nil, pricingError(PricingReasonRead, "Pricing recommendations could not be decoded.", 503)
 	}
+	s.addPresentationLabels(items)
 	return map[string]any{
 		"schemaVersion": PricingPageSchema, "dataMode": "live",
 		"authority": s.authority(), "items": items,
@@ -535,6 +588,7 @@ func (s *PricingStore) recommendationDetail(ctx context.Context, id string) (map
 		       selectable, market_id AS "marketId", sku_id AS "skuId",
 		       details->>'product_name' AS "productName",
 		       details->>'category' AS category,
+		       details->>'category_label' AS "categoryLabel",
 		       store_id AS "storeId", channel_id AS "channelId", action,
 		       current_price_minor AS "currentPriceMinor",
 		       proposed_price_minor AS "proposedPriceMinor", currency_code AS "currencyCode",
@@ -568,6 +622,7 @@ func (s *PricingStore) recommendationDetail(ctx context.Context, id string) (map
 	if err != nil || len(items) != 1 {
 		return nil, pricingError("RECOMMENDATION_NOT_FOUND", "The selected recommendation is not in the active authority.", 404)
 	}
+	s.addPresentationLabels(items)
 	if details, ok := items[0]["details"].(map[string]any); ok {
 		if available, present := booleanFromDetails(details, "clearance_context_available"); present {
 			details["clearance_context_available"] = available
@@ -585,11 +640,14 @@ func (s *PricingStore) groupedRecommendations(ctx context.Context, dimension str
 	arguments = bindBundle(arguments, s.bundleID)
 	expression := "store_id"
 	label := "store"
+	secondaryLabel := "NULL::text"
 	if dimension == "category" {
 		expression, label = "coalesce(details->>'category','Unclassified')", "category"
+		secondaryLabel = "max(nullif(details->>'category_label',''))"
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+expression+` AS "`+label+`",
+		 `+secondaryLabel+` AS "categoryLabel",
 		 count(*) FILTER (WHERE record_kind='recommendation') AS recommendations,
 		 coalesce(sum(revenue_impact_minor) FILTER (WHERE record_kind='recommendation'),0) AS "revenueOpportunityMinor",
 		 sum(margin_impact_minor) FILTER (WHERE record_kind='recommendation') AS "marginOpportunityMinor",
@@ -604,6 +662,18 @@ func (s *PricingStore) groupedRecommendations(ctx context.Context, dimension str
 	items, err := collectMaps(rows)
 	if err != nil {
 		return nil, pricingError(PricingReasonRead, "Pricing grouped view could not be decoded.", 503)
+	}
+	stores, _, categories := s.presentationLabels()
+	for _, item := range items {
+		if dimension == "store" {
+			if id, ok := item["store"].(string); ok {
+				item["storeName"] = stores[id]
+			}
+		} else if categoryLabel, ok := item["categoryLabel"].(string); !ok || categoryLabel == "" {
+			if id, categoryOK := item["category"].(string); categoryOK {
+				item["categoryLabel"] = categories[id]
+			}
+		}
 	}
 	return map[string]any{
 		"schemaVersion": PricingPageSchema, "dataMode": "live",

@@ -20,6 +20,7 @@ SCENARIO_SEMANTICS = (
 def _response(**changes):
     return {
         **KEY, "channel_type": "store", "department_id": "lubricants", "category": "Engine Oil",
+        "category_label": "Engine Oil",
         "product_name": "Gulf Oil", "currency_code": "INR",
         "disposition": "accepted", "department_enabled": True,
         "first_failure_reason": None, "current_price_minor": 20_000,

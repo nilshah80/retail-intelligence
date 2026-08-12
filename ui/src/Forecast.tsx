@@ -10,6 +10,7 @@ import {
 } from "./generated/forecastHealthPolicy";
 import {useMutation, useQuery} from "@tanstack/react-query";
 import {useDebouncedValue} from "./useDebouncedValue";
+import {formatAggregateMoneyMinor} from "./currencyFormat";
 import {
   createColumnHelper,
   flexRender,
@@ -48,6 +49,7 @@ import {
   DIRECT_EXPORT_LIMIT,
   downloadDirectExport
 } from "./directExport";
+import {categoryName, marketName} from "./dimensionLabels";
 
 type ForecastRow = ForecastWorkbench["items"][number];
 type Tab = "Overview" | "Store View" | "SKU View" | "Demand Drivers" | "Governance";
@@ -117,10 +119,7 @@ function ratioPercentage(value: number | null | undefined, signed = false) {
  */
 function money(minor: number | null | undefined): string | null {
   if (minor === null || minor === undefined) return null;
-  const major = minor / 100;
-  if (major >= 1e7) return `\u20B9${(major / 1e7).toFixed(2)} Cr`;
-  if (major >= 1e5) return `\u20B9${(major / 1e5).toFixed(2)} L`;
-  return `\u20B9${major.toLocaleString("en-IN", {maximumFractionDigits: 0})}`;
+  return formatAggregateMoneyMinor(minor, "INR");
 }
 
 function storeLabel(name: string, city: string) {
@@ -354,7 +353,7 @@ function ForecastModal({
         </div>
         <div className="modal-body">
           {(modal === "accept" || modal === "adjust" || modal === "actions") && (
-            <div className="callout compact-callout"><strong>Preview only</strong><p>The planner workflow is not configured. Local exploration does not submit, persist, or change forecast authority.</p></div>
+            <div className="callout compact-callout"><strong>Workflow unavailable</strong><p>The planner workflow is not configured. Local exploration does not submit, persist, or change forecast authority.</p></div>
           )}
           {modal === "accept" && (
             <>
@@ -473,12 +472,7 @@ function scenarioMoney(
   if (minor === null || currency === null) return "Not available";
   const sign = minor < 0 ? "-" : signed && minor > 0 ? "+" : "";
   const absoluteMinor = Math.abs(minor);
-  if (currency === "INR") return `${sign}${money(absoluteMinor) ?? "Not available"}`;
-  return `${sign}${new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 2
-  }).format(absoluteMinor / 100)}`;
+  return `${sign}${formatAggregateMoneyMinor(absoluteMinor, currency)}`;
 }
 
 function scenarioQuantity(value: number | null, signed = false) {
@@ -542,10 +536,12 @@ function ScenarioFloatRow({
 function ScenarioMoneyRow({
   label,
   metric,
+  dashboard,
   impactDirection = "neutral"
 }: {
   label: string;
   metric: ScenarioRunResponse["calculation"]["revenuePotential"][number];
+  dashboard: Dashboard;
   impactDirection?: "positive" | "inverse" | "neutral";
 }) {
   const impact = metric.impact.valueMinor;
@@ -557,7 +553,7 @@ function ScenarioMoneyRow({
   return (
     <tr>
       <td>
-        <strong>{label} · {metric.marketId}</strong>
+        <strong>{label} · {marketName(dashboard, metric.marketId)}</strong>
         <small>{metric.current.availability.replaceAll("_", " ")} · coverage {metric.coverage.numerator}/{metric.coverage.denominator} money facts</small>
       </td>
       <td>{scenarioMoney(metric.current.valueMinor, metric.currencyCode)}</td>
@@ -571,12 +567,14 @@ function ScenarioModal({
   open,
   onClose,
   forecastVersion,
-  filters
+  filters,
+  dashboard
 }: {
   open: boolean;
   onClose: () => void;
   forecastVersion: string;
   filters: ForecastFilters;
+  dashboard: Dashboard;
 }) {
 	const dialogRef = useRef<HTMLElement>(null);
 	const [presetId, setPresetId] = useState("expected_demand");
@@ -804,9 +802,9 @@ function ScenarioModal({
                     <tbody>
                       <ScenarioFloatRow label="Demand" metric={result.calculation.demandUnits} impactValue={result.calculation.demandUnits.impactPct ?? null} impactSuffix="%" compactValues impactDirection="positive" />
                       <ScenarioFloatRow label="Stock-out Risk" metric={result.calculation.demandWeightedSeriesStockoutRiskPct} impactValue={result.calculation.demandWeightedSeriesStockoutRiskPct.impactPoints ?? null} valueSuffix="%" impactSuffix=" pts" impactDirection="inverse" />
-                      {result.calculation.revenuePotential.map((metric) => <ScenarioMoneyRow key={`revenue-${metric.marketId}-${metric.currencyCode}`} label="Revenue Potential" metric={metric} impactDirection="positive" />)}
+                      {result.calculation.revenuePotential.map((metric) => <ScenarioMoneyRow key={`revenue-${metric.marketId}-${metric.currencyCode}`} label="Revenue Potential" metric={metric} dashboard={dashboard} impactDirection="positive" />)}
                       <ScenarioFloatRow label="Required Inventory Units" metric={result.calculation.requiredInventoryUnits} impactValue={result.calculation.requiredInventoryUnits.impactPct ?? null} impactSuffix="%" compactValues />
-                      {result.calculation.requiredInventoryValue.map((metric) => <ScenarioMoneyRow key={`inventory-${metric.marketId}-${metric.currencyCode}`} label="Required Inventory Value" metric={metric} />)}
+                      {result.calculation.requiredInventoryValue.map((metric) => <ScenarioMoneyRow key={`inventory-${metric.marketId}-${metric.currencyCode}`} label="Required Inventory Value" metric={metric} dashboard={dashboard} />)}
                     </tbody>
                   </table>
                 </div>
@@ -816,7 +814,7 @@ function ScenarioModal({
                   <h4>Applied price summary</h4>
                   {result.calculation.appliedPriceSummaries.map((summary) => (
                     <p key={`${summary.marketId}-${summary.currencyCode}`}>
-                      {summary.marketId} · {summary.currencyCode}: {percentage(summary.baselineValueWeightedAppliedPriceChangePct, true)} · coverage {summary.coverage.numerator}/{summary.coverage.denominator}
+                      {marketName(dashboard, summary.marketId)} · {summary.currencyCode}: {percentage(summary.baselineValueWeightedAppliedPriceChangePct, true)} · coverage {summary.coverage.numerator}/{summary.coverage.denominator}
                     </p>
                   ))}
                   <p>Approved assumption {result.assumptionSetId} · {result.assumptionSemanticFingerprint.slice(0, 16)}…</p>
@@ -1709,8 +1707,8 @@ export function DemandForecast({
   return (
     <div id="demandForecast">
       <div className="action-toolbar" aria-label="Forecast actions">
-        <button id="acceptForecastBtn" className="btn primary" type="button" onClick={(event) => openModal("accept", event.currentTarget)} title="Preview only; forecast acceptance workflow is not configured">Accept Forecast <small className="preview-label">Preview only</small></button>
-        <button id="addForecastAdjustmentBtn" className="btn secondary" type="button" onClick={(event) => openModal("adjust", event.currentTarget)} title="Preview only; planner adjustment workflow is not configured">Add Planner Adjustment <small className="preview-label">Preview only</small></button>
+        <button id="acceptForecastBtn" className="btn primary" type="button" onClick={(event) => openModal("accept", event.currentTarget)} title="Forecast acceptance workflow is not configured">Accept Forecast</button>
+        <button id="addForecastAdjustmentBtn" className="btn secondary" type="button" onClick={(event) => openModal("adjust", event.currentTarget)} title="Planner adjustment workflow is not configured">Add Planner Adjustment</button>
         <button id="compareForecastVersionsBtn" className="btn secondary" type="button" onClick={(event) => openModal("versions", event.currentTarget)}>Compare Versions</button>
 		<button
 		  id="forecastScenarioBtn"
@@ -1725,7 +1723,7 @@ export function DemandForecast({
 		>
 		  Scenario Planning
 		</button>
-        <button id="forecastActionCenterBtn" className="btn secondary" type="button" onClick={(event) => openModal("actions", event.currentTarget)}>Forecast Action Center <small className="preview-label">Preview only</small></button>
+        <button id="forecastActionCenterBtn" className="btn secondary" type="button" onClick={(event) => openModal("actions", event.currentTarget)}>Forecast Action Center</button>
         <button
           id="exportForecastBtn"
           className="btn secondary"
@@ -1753,7 +1751,7 @@ export function DemandForecast({
         </select>
         <select id="forecastCategoryFilter" className="filter" aria-label="Forecast category" value={category} onChange={(event) => setCategory(event.target.value)}>
           <option value="">All Categories</option>
-          {summary!.categories.map((value) => <option key={value} value={value}>{value}</option>)}
+          {summary!.categories.map((value) => <option key={value} value={value}>{categoryName(dashboard, value)}</option>)}
         </select>
         <select id="forecastHorizonFilter" className="filter" aria-label="Forecast horizon" value={horizonWeeks} onChange={(event) => setHorizonWeeks(Number(event.target.value))}>
           {[4, 8, 13, 26].map((value) => <option key={value} value={value}>Next {value} Weeks</option>)}
@@ -1881,6 +1879,7 @@ export function DemandForecast({
 		  onClose={() => setModal(null)}
 		  forecastVersion={data.summary.versionId}
 		  filters={filters}
+		  dashboard={dashboard}
 		/>
 	  )}
     </div>

@@ -9,7 +9,7 @@ export const INVENTORY_VIEWPORTS = {
 } as const;
 
 export const INVENTORY_ACTION_BEHAVIOR =
-  "exports are governed live downloads; workflow actions open visibly labelled preview-only dialogs with disabled submission and no mutation endpoint, request, or history change";
+  "exports are governed live downloads; workflow actions open visibly labelled non-mutating dialogs with disabled submission and no mutation endpoint, request, or history change";
 
 export interface InventoryScreenContract {
   readonly screenId: string;

@@ -121,6 +121,7 @@ entities:
       sku_id: {type: string, required: true}
       dept_id: {type: string, required: true}
       category: {type: string, required: true}
+      category_label: {type: string, required: false}
       sub_cat: {type: string, required: true}
       pack_size: {type: int64, required: true, minimum: 1}
       product_name: {type: string, required: false}

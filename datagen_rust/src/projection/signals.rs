@@ -493,9 +493,7 @@ fn build_competitor_truth(
                 candidate_attributes.remove("gtin");
             }
             let kind = if truth_label { "positive" } else { "negative" };
-            let candidate_key = format!(
-                "truth:{}:{}:{kind}", market.market_id, variant.sku
-            );
+            let candidate_key = format!("truth:{}:{}:{kind}", market.market_id, variant.sku);
             let competitor_sku = format!(
                 "EVAL-CMP-{:08}",
                 stable_integer(

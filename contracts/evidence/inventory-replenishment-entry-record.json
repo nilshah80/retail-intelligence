@@ -193,7 +193,7 @@
   "package": "P4-0",
   "parityAmendment": {
     "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
-    "amendedContractSha256": "0405af3d2cb13c21e293ebd94ce581dc2b4ce2495482b63316109e19823b974b",
+    "amendedContractSha256": "7f242a73f25acb47fa99863489b1b76466fcef3866e08d9be56d1960c88241d1",
     "amendmentId": "P4-0P-A1",
     "approval": {
       "actor": "nilay.shah",

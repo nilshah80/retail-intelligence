@@ -74,7 +74,7 @@ reviewGate:
       accepted AI version. Prior and planner versions remain Not available.
     Q11: >-
       Unavailable controls remain in reference order with a concise business
-      prerequisite. Approved preview-only workflow triggers remain operable locally,
+      prerequisite. Approved non-mutating workflow triggers remain operable locally,
       while their submit controls are natively disabled and issue no request.
     Q12: Screenshot baselines use 1440x1100 desktop and 390x844 responsive.
     Q13: >-

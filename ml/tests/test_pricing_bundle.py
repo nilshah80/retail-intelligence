@@ -153,6 +153,7 @@ def _artifacts(*, sparse: bool = False):
             "market_id": "gulf-india",
             "channel_id": "store",
             "channel_type": "store",
+            "category_label": "Engine Oils",
             "record_kind": "withheld_assessment" if sparse else "recommendation",
             "selectable": not sparse,
             "action": None if sparse else "Increase",

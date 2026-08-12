@@ -11,7 +11,8 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {PricingPage, type PricingPageId} from "./Pricing";
+import {formatAggregateMoneyMinor, formatMoneyMinor, PricingPage, type PricingPageId} from "./Pricing";
+import {categoryNameFromLabel} from "./dimensionLabels";
 
 const authority = {
   retailerId: "gulf-oil-india",
@@ -34,9 +35,12 @@ const recommendation = {
   marketId: "gulf-india",
   skuId: "gulf-india:sku-1",
   productName: "Gulf Formula GX 5W-30",
-  category: "Engine Oil",
+  category: "gulf-mco",
+  categoryLabel: "Motorcycle Oils",
   storeId: "gulf-india:mumbai",
-  channelId: "store",
+  storeName: "Mumbai Distributor",
+  channelId: "gulf-india:gulf-online",
+  channelName: "Gulf Direct Online",
   action: "Increase",
   currentPriceMinor: 20000,
   proposedPriceMinor: 20500,
@@ -86,7 +90,7 @@ const recommendationSummary = {
   filters: {
     stores: ["gulf-india:mumbai"],
     channels: ["store"],
-    categories: ["Engine Oil"]
+    categories: ["gulf-mco"]
   },
   kpis: {
     openRecommendations: 2,
@@ -273,6 +277,22 @@ function renderPricing(pageId: PricingPageId, channelType = "") {
     <QueryClientProvider client={client}>
       <PricingPage
         pageId={pageId}
+        dashboard={{
+          schemaVersion: "retail-data-management-dashboard/v1",
+          dataMode: "live",
+          kpis: {dataFreshnessPct: 100, qualityScorePct: 100, connectedSources: 3, rejectedRecords: 0, lastRefreshAt: "2026-08-01T00:00:00Z"},
+          sources: [],
+          footer: {totalSkus: 1, activeSkus: 1, stores: 1, channels: 1, forecastCoveragePct: null, modelAccuracyPct: null},
+          filters: {
+            dateRange: {start: "2016-08-01", end: "2026-08-01"},
+            markets: [{marketId: "gulf-india", name: "India — National"}],
+            stores: [{storeId: recommendation.storeId, marketId: "gulf-india", name: "Mumbai Distributor", currencyCode: "INR", timezone: "Asia/Kolkata", region: "MH", format: "store", city: "Mumbai", active: true}],
+            channelTypes: [{type: "online", name: "E-commerce", marketIds: ["gulf-india"]}],
+            channels: [{channelId: recommendation.channelId, marketId: "gulf-india", name: "Gulf Direct Online", type: "online"}],
+            categories: [{categoryId: "gulf-mco", name: "Motorcycle Oils"}],
+            currencies: ["INR"]
+          }
+        }}
         storeId=""
         onStoreId={() => undefined}
         channelType={channelType}
@@ -289,6 +309,14 @@ afterEach(() => {
 });
 
 describe("pricing UI parity", () => {
+  it("formats local amounts using the reference compact currency notation", () => {
+    expect(formatMoneyMinor(12_480_000_000, "INR")).toBe("₹12.48 Cr");
+    expect(formatMoneyMinor(380_000_000, "INR")).toBe("₹38L");
+    expect(formatMoneyMinor(20_500, "INR")).toBe("₹205");
+    expect(formatMoneyMinor(9_210_000, "USD")).toBe("$92.1K");
+    expect(formatAggregateMoneyMinor(8_620_914, "INR")).toBe("₹0.86L");
+    expect(categoryNameFromLabel("Gulf - Hydraulic")).toBe("Hydraulic Oils");
+  });
   it("forwards only the closed local demo-state vocabulary from the page URL", async () => {
     window.history.replaceState({}, "", "/?demoState=panel&demoPanel=%2Fapi%2Fv1%2Fcompetitors%2Fsummary");
     const fetchMock = installFetchMock();
@@ -506,7 +534,7 @@ describe("pricing UI parity", () => {
     expect(within(dialog).getByRole("button", {name: "Reject Match"})).toBeDisabled();
     const reviewFooter = dialog.querySelector(".modal-foot") as HTMLElement;
     expect(within(reviewFooter).getAllByRole("button").map((button) => button.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-      "Reject Match", "Link Different Product Preview only", "Accept Match", "Cancel"
+      "Reject Match", "Link Different Product", "Accept Match", "Cancel"
     ]);
     fireEvent.click(within(dialog).getByRole("button", {name: /Link Different Product/}));
     expect(await screen.findByRole("dialog", {name: "Review Competitor Product Match"})).toBe(dialog);

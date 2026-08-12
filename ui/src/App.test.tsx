@@ -199,7 +199,8 @@ describe("Data Management screen contract", () => {
       "Monitor source systems, data freshness and data quality"
     )).toBeInTheDocument();
     const addSource = screen.getByRole("button", {name: /Add Data Source/});
-    expect(addSource).toHaveTextContent("Preview only");
+    expect(addSource).toHaveTextContent("Add Data Source");
+    expect(addSource).toHaveTextContent("Add Data Source");
     expect(screen.getByRole("button", {name: "Upload Sample Data"})).toBeDisabled();
     expect(screen.getByRole("button", {name: "Run Validation"})).toBeDisabled();
     const requestsBeforePreview = fetchMock.mock.calls.length;

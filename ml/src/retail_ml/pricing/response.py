@@ -44,6 +44,7 @@ RESPONSE_COLUMNS = (
     *SERIES_COLUMNS,
     "department_id",
     "category",
+    "category_label",
     "product_name",
     "channel_type",
     "currency_code",
@@ -419,6 +420,12 @@ def assess_response_series(
         **dict(zip(SERIES_COLUMNS, key, strict=True)),
         "department_id": str(ordered.iloc[0]["department_id"]),
         "category": str(ordered.iloc[0]["category"]),
+        "category_label": (
+            None
+            if "category_label" not in ordered.columns
+            or pd.isna(ordered.iloc[0]["category_label"])
+            else str(ordered.iloc[0]["category_label"])
+        ),
         "product_name": str(ordered.iloc[0]["product_name"]),
         "channel_type": str(ordered.iloc[0]["channel_type"]),
         "currency_code": str(ordered.iloc[0]["currency_code"]),
@@ -548,6 +555,11 @@ def _exception_response_series(
         **{column: str(first[column]) for column in SERIES_COLUMNS},
         "department_id": str(first["department_id"]),
         "category": str(first["category"]),
+        "category_label": (
+            None
+            if "category_label" not in first.index or pd.isna(first["category_label"])
+            else str(first["category_label"])
+        ),
         "product_name": str(first["product_name"]),
         "channel_type": str(first["channel_type"]),
         "currency_code": str(first["currency_code"]),

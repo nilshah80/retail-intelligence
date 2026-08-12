@@ -1512,17 +1512,6 @@ tr[data-partial="true"] {
   margin-bottom: 14px;
 }
 
-.inventory-action-strip .preview-label,
-.action-toolbar .preview-label {
-  margin-left: 6px;
-  color: var(--muted);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 700;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-}
-
 .inventory-preview-modal { max-width: 760px; }
 
 .inventory-preview-summary {

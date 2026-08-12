@@ -315,7 +315,8 @@ describe("Demand Forecast parity contract", () => {
     ]);
     const acceptTrigger = screen.getByRole("button", {name: /^Accept Forecast/});
     expect(acceptTrigger).toBeEnabled();
-    expect(acceptTrigger).toHaveTextContent("Preview only");
+    expect(acceptTrigger).toHaveTextContent("Accept Forecast");
+    expect(acceptTrigger).toHaveTextContent("Accept Forecast");
     fireEvent.click(acceptTrigger);
     let dialog = screen.getByRole("dialog", {name: "Accept Forecast"});
     expect(within(dialog).getByRole("heading", {name: "Accept Forecast"})).toHaveFocus();
@@ -510,9 +511,9 @@ describe("Demand Forecast parity contract", () => {
     expect(await within(dialog).findByRole("heading", {name: "Scenario Results"})).toBeInTheDocument();
     const comparison = within(dialog).getByRole("table", {name: "Scenario comparison"});
     expect(within(comparison).getByText("Current Forecast")).toBeInTheDocument();
-    expect(within(comparison).getByText("Revenue Potential · india-west")).toBeInTheDocument();
-    expect(within(dialog).getAllByText("₹18.60 Cr").length).toBeGreaterThan(0);
-    expect(within(comparison).getAllByText("+₹2.20 Cr").length).toBeGreaterThan(0);
+    expect(within(comparison).getByText("Revenue Potential · India West")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("₹18.6 Cr").length).toBeGreaterThan(0);
+    expect(within(comparison).getAllByText("+₹2.2 Cr").length).toBeGreaterThan(0);
     expect(within(dialog).queryByText(/Assumption-based projection; not fitted or causal/))
       .not.toBeInTheDocument();
     expect(posted).toMatchObject({

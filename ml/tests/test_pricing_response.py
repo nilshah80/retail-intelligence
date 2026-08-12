@@ -43,6 +43,7 @@ def _series(*, grade: str = "source_native", beta: float = -1.25) -> pd.DataFram
             "channel_type": "store",
             "department_id": "dept-1",
             "category": "Engine Oil",
+            "category_label": "Engine Oil",
             "product_name": "Synthetic response fixture",
             "currency_code": "INR",
             "week_start": weeks,

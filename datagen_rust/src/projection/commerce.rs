@@ -136,6 +136,15 @@ impl<'a> CommerceProjection<'a> {
         value
     }
 
+    fn channel_name(&self, channel_id: &str) -> String {
+        self.config
+            .scenario
+            .channels
+            .iter()
+            .find(|channel| channel.channel_id == channel_id)
+            .map_or_else(|| channel_id.to_owned(), |channel| channel.name.clone())
+    }
+
     pub fn new_spooling(
         config: &'a LoadedConfig,
         catalog: &'a [Product],
@@ -944,6 +953,7 @@ impl<'a> CommerceProjection<'a> {
                 },
             ),
             ("channelId", order.channel_id.clone()),
+            ("channelDisplayName", self.channel_name(&order.channel_id)),
             ("lineCount", order.line_count.to_string()),
         ]);
         self.emit_to_shops(&shops, "orders", &shopify_order);
@@ -969,6 +979,10 @@ impl<'a> CommerceProjection<'a> {
                     ("customerSegmentCode", order.customer_segment_id.clone()),
                     ("customerId", bc_uuid("Customer", &order.bc_customer_key)),
                     ("salesChannelCode", order.channel_id.clone()),
+                    (
+                        "salesChannelDisplayName",
+                        self.channel_name(&order.channel_id),
+                    ),
                 ]),
             );
         }
@@ -1890,7 +1904,7 @@ mod tests {
                 "shopify",
                 "orders",
                 1_026,
-                "af42eb9f9c2ea148ae388f85a1982a23586e5d6dd725dba80bee26045a216ad2",
+                "409eaf20ae7def540e762979127f220bc32f1e6916b072ff940487bc84d790a3",
             ),
             (
                 "shopify",
@@ -1968,7 +1982,7 @@ mod tests {
                 "businessCentral",
                 "salesInvoices",
                 1_026,
-                "431e50079c9e7f4b08be04a6963a59825882cf9f30732dd48bbc3e59710a0cc5",
+                "2072aa75d32eb95e07655974cbba5908d0ebbc4b4471af3ad86fd54b79a15311",
             ),
             (
                 "businessCentral",

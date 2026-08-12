@@ -165,6 +165,29 @@ def _business_controls(
             """
         ).fetchall()
     ]
+    product_columns = {
+        str(description[0])
+        for description in connection.execute(
+            "SELECT * FROM canonical_data.products LIMIT 0"
+        ).description
+    }
+    categories = (
+        [
+            {"categoryId": row[0], "name": row[1]}
+            for row in connection.execute(
+                """
+                SELECT category, max(category_label) AS category_label
+                FROM canonical_data.products
+                WHERE category <> '' AND category_label IS NOT NULL
+                  AND category_label <> ''
+                GROUP BY category
+                ORDER BY category
+                """
+            ).fetchall()
+        ]
+        if "category_label" in product_columns
+        else []
+    )
     markets = [
         {"marketId": market_id, "name": _market_name(market_id)}
         for market_id in sorted({row["marketId"] for row in stores})
@@ -216,6 +239,7 @@ def _business_controls(
         "markets": markets,
         "stores": stores,
         "channels": channels,
+        "categories": categories,
         "currencies": sorted({row["currencyCode"] for row in stores}),
         "fx": {
             "reportingCurrency": reporting_currencies.pop(),

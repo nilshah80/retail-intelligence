@@ -242,6 +242,7 @@ pub fn build_catalog_datasets(
                         ("brandName", product.brand.clone()),
                         ("type", "Inventory".to_owned()),
                         ("itemCategoryCode", product.category_id.clone()),
+                        ("itemCategoryDisplayName", product.category_name.clone()),
                         ("baseUnitOfMeasureCode", product.unit_of_measure.clone()),
                         ("costingMethod", product.costing_method.clone()),
                         (
@@ -617,6 +618,7 @@ fn product_row(
             .to_owned(),
         ),
         ("vendor", product.brand.clone()),
+        ("productCategoryDisplayName", product.category_name.clone()),
         ("productType", product.category_id.clone()),
         ("tags", tags.join("|")),
         (
@@ -1177,7 +1179,7 @@ mod tests {
                 ("shopify/gulf-in", "products"),
                 (
                     73,
-                    "3047695611e3e5d2b8fafb7a4174944ee4b522f6038ce9c83007bfcca79e7e94",
+                    "5eb5e7fb7977c0200f99351d46d21f24cf5d789cb8af26b072498f5d2cc42a2f",
                 ),
             ),
             (
@@ -1205,7 +1207,7 @@ mod tests {
                 ("business-central/bc-gulf-in", "items"),
                 (
                     73,
-                    "ab0dc59ac1cb84927eb15824751a99eb752b8310e58ea74c850befd10c8b48fb",
+                    "15eb71426c611d49c1b9db15eebddec09076c2403b0543e638310bc82be3487a",
                 ),
             ),
             (

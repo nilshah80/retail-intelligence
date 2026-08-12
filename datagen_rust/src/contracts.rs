@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn frozen_contract_covers_all_python_v13_datasets() {
         assert_eq!(dataset_keys().len(), 78);
-        assert_eq!(fields("shopify", "orders").expect("orders").len(), 17);
+        assert_eq!(fields("shopify", "orders").expect("orders").len(), 18);
         assert_eq!(
             fields("companion", "holidays").expect("holidays"),
             [

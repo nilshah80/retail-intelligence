@@ -124,15 +124,14 @@ impl PriceEngine {
         let response_step_scale = market.price_dynamics["responseStepScale"]
             .as_u64()
             .unwrap_or(1) as u32;
-        let (event_days, adjustments) =
-            self.schedule(
-                profile,
-                events,
-                sku,
-                day.year(),
-                inflation_anchor.year(),
-                response_step_scale,
-            );
+        let (event_days, adjustments) = self.schedule(
+            profile,
+            events,
+            sku,
+            day.year(),
+            inflation_anchor.year(),
+            response_step_scale,
+        );
         let bucket = event_days
             .partition_point(|value| *value <= day.ordinal())
             .saturating_sub(1);
@@ -190,10 +189,10 @@ impl PriceEngine {
                     anchor_year,
                     response_step_scale,
                 )
-                    .1
-                    .last()
-                    .copied()
-                    .unwrap_or_default()
+                .1
+                .last()
+                .copied()
+                .unwrap_or_default()
             };
             let mut adjustments = vec![adjustment];
             let mut prior_day = 1_i64;
@@ -232,8 +231,8 @@ impl PriceEngine {
                     } else {
                         dec("0.030") * scale
                     };
-                    adjustment = (adjustment + step)
-                        .clamp(dec("-0.08") * scale, dec("0.12") * scale);
+                    adjustment =
+                        (adjustment + step).clamp(dec("-0.08") * scale, dec("0.12") * scale);
                 } else {
                     let threshold = if adjustment >= dec("0.04") {
                         65
@@ -418,8 +417,7 @@ mod tests {
 
     #[test]
     fn response_rich_preset_applies_the_declared_wider_step_scale() {
-        let config =
-            LoadedConfig::load("configs/pricing-response-rich.yaml").expect("config");
+        let config = LoadedConfig::load("configs/pricing-response-rich.yaml").expect("config");
         let catalog = build_catalog(&config).expect("catalog");
         let market = &config.scenario.markets[0];
         let mut engine = PriceEngine::new();

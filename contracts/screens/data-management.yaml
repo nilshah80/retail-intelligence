@@ -53,7 +53,7 @@ elements:
   - selector: '[aria-label="Data Management actions"]'
     labels: [Add Data Source, Upload Sample Data, Run Validation]
     disposition: >-
-      Add Data Source opens a local preview-only dialog with Connect disabled;
+      Add Data Source opens a local non-mutating dialog with Connect disabled;
       Upload Sample Data and Run Validation remain natively disabled with business prerequisites.
 
   - selector: '#data-management-dialog-validation'

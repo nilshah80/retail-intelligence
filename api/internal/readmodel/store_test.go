@@ -111,7 +111,8 @@ func TestDashboardUsesGovernedEvidenceWithoutSampleValues(t *testing.T) {
 				`"stores":[{"storeId":"india-west:pune-koregaon",`+
 				`"marketId":"india-west","name":"Pune Koregaon Park"},`+
 				`{},{},{}],"channels":[`+
-				`{"marketId":"india-west","type":"online"},`+
+				`{"marketId":"india-west","channelId":"india-west:online",`+
+				`"name":"India Online","type":"online"},`+
 				`{"marketId":"india-west","type":"store"},`+
 				`{"marketId":"us-new-york","type":"online"},`+
 				`{"marketId":"us-new-york","type":"store"}],`+
@@ -156,8 +157,9 @@ func TestDashboardUsesGovernedEvidenceWithoutSampleValues(t *testing.T) {
 		channelTypes[1]["name"] != "Store" {
 		t.Fatalf("filter must expose channel types, not native instances: %v", filters)
 	}
-	if _, exposed := filters["channels"]; exposed {
-		t.Fatalf("market-qualified channel instances must remain internal: %v", filters)
+	channels := filters["channels"].([]any)
+	if len(channels) != 4 {
+		t.Fatalf("governed channel names must be available for presentation: %v", filters)
 	}
 	if footer["forecastCoveragePct"] != nil || footer["modelAccuracyPct"] != nil {
 		t.Fatalf("unavailable ML metrics must remain null: %v", footer)

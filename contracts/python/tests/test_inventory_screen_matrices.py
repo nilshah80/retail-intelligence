@@ -112,7 +112,7 @@ def test_no_element_is_removed_for_being_unavailable() -> None:
 def test_actions_are_disabled_with_no_mutation_path() -> None:
     behavior = _document()["actionBehavior"]
     assert "governed live downloads" in behavior
-    assert "preview-only dialogs" in behavior
+    assert "non-mutating dialogs" in behavior
     assert "no mutation" in behavior
 
 

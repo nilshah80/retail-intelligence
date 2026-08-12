@@ -121,6 +121,12 @@ def build_weekly_panel(
             if "generation_method" in price_columns
             else "NULL::VARCHAR"
         )
+        product_columns = _columns(connection, "canonical_data.products")
+        category_label = (
+            "pr.category_label"
+            if "category_label" in product_columns
+            else "pr.category"
+        )
         query = f"""
             WITH weekly_sales AS (
                 SELECT
@@ -246,6 +252,7 @@ def build_weekly_panel(
                 p.generation_method,
                 pr.dept_id AS department_id,
                 pr.category,
+                {category_label} AS category_label,
                 pr.product_name,
                 c.type AS channel_type,
                 s.region,

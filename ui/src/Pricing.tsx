@@ -8,6 +8,8 @@ import {
 import {useMutation, useQuery} from "@tanstack/react-query";
 import type {Dashboard} from "./api";
 import {useDebouncedValue} from "./useDebouncedValue";
+import {categoryName, channelName, storeName} from "./dimensionLabels";
+import {formatAggregateMoneyMinor, formatMoneyMinor} from "./currencyFormat";
 import {
   loadAlertRules,
   loadCompetitorDetail,
@@ -87,17 +89,7 @@ function parseMoneyMinor(value: string): number | null {
   return Number.isSafeInteger(minor) ? minor : null;
 }
 
-function formatMoneyMinor(
-  value: number | null | undefined,
-  currencyCode: string | null | undefined
-) {
-  if (value === null || value === undefined || !currencyCode) return unavailable;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currencyCode,
-    maximumFractionDigits: 2
-  }).format(value / 100);
-}
+export {formatAggregateMoneyMinor, formatMoneyMinor};
 
 function explanationText(value: string | null | undefined, fallback?: string | null) {
   if (!value) return reasonText(fallback);
@@ -403,11 +395,11 @@ function WorkflowPreview({kind, selectedCount, onClose}: {
       <Dialog
         open
         title="Approve Price Recommendations"
-        description="Preview only — no approval will be recorded"
+        description="Approval workflow unavailable — no approval will be recorded"
         onClose={onClose}
         footer={<PreviewFooter label="Confirm Approval" onClose={onClose} reason={reason} />}
       >
-        <div className="preview-banner"><strong>Preview only</strong>{reason}</div>
+        <div className="preview-banner"><strong>Workflow unavailable</strong>{reason}</div>
         <MetricList rows={[
           {label: "Products selected", value: selectedCount},
           {label: "Stores affected", value: <UnavailableValue reason="Server recount occurs only in an approved workflow." />},
@@ -432,11 +424,11 @@ function WorkflowPreview({kind, selectedCount, onClose}: {
       <Dialog
         open
         title="Send Recommendations for Review"
-        description="Preview only — reviewer assignment is unavailable"
+        description="Reviewer assignment is unavailable"
         onClose={onClose}
         footer={<PreviewFooter label="Send for Review" onClose={onClose} reason={reason} />}
       >
-        <div className="preview-banner"><strong>Preview only</strong>{reason}</div>
+        <div className="preview-banner"><strong>Workflow unavailable</strong>{reason}</div>
         <MetricList rows={[
           {label: "Selected recommendations", value: selectedCount},
           {label: "Current status", value: <UnavailableValue reason={reason} />},
@@ -456,11 +448,11 @@ function WorkflowPreview({kind, selectedCount, onClose}: {
     <Dialog
       open
       title="Schedule Price Changes"
-      description="Preview only — publishing is unavailable"
+      description="Publishing is unavailable"
       onClose={onClose}
       footer={<PreviewFooter label="Schedule" onClose={onClose} reason={reason} />}
     >
-      <div className="preview-banner"><strong>Preview only</strong>{reason}</div>
+      <div className="preview-banner"><strong>Workflow unavailable</strong>{reason}</div>
       <MetricList rows={[
         {label: "Recommendations", value: selectedCount},
         {label: "Stores", value: <UnavailableValue reason="Server scope validation is unavailable." />},
@@ -479,7 +471,7 @@ function WorkflowPreview({kind, selectedCount, onClose}: {
 function PricingActionCenterPreview({onClose}: {onClose: () => void}) {
   const reason = "Workflow queue evidence is unavailable.";
   return (
-    <Dialog open title="Pricing Action Center" description="Preview only — no decision can be actioned" onClose={onClose} wide>
+    <Dialog open title="Pricing Action Center" description="Workflow unavailable — no decision can be actioned" onClose={onClose} wide>
       <div className="preview-banner"><strong>Approval workflow prerequisite</strong>{reason}</div>
       <div className="grid-3">
         {["Pending Decisions", "High Priority", "Value Awaiting Approval"].map((label) => (
@@ -505,11 +497,13 @@ function PricingActionCenterPreview({onClose}: {onClose: () => void}) {
 
 function StorePricingDrilldown({
   items,
+  dashboard,
   currencyCode,
   onClose,
   onOpen
 }: {
   items: Array<Record<string, unknown>>;
+  dashboard?: Dashboard;
   currencyCode: string | undefined;
   onClose: () => void;
   onOpen: (store: string) => void;
@@ -535,14 +529,14 @@ function StorePricingDrilldown({
       <div className="pricing-form-grid two">
         <Field label="Store"><select className="filter" value={store} onChange={(event) => setStore(event.target.value)}>{items.map((candidate) => {
           const value = String(candidate.store ?? "");
-          return <option key={value} value={value}>{value}</option>;
+          return <option key={value} value={value}>{storeName(dashboard, value, String(candidate.storeName ?? ""))}</option>;
         })}</select></Field>
         <Field label="Period"><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value)}><option>This Week</option><option>This Month</option><option>Quarter to Date</option></select></Field>
       </div>
       <div className="grid-3">
         <PricingKpi label="Open Recommendations" value={formatCount(Number(item?.recommendations ?? 0))} note={period} />
-        <PricingKpi label="Revenue Opportunity" value={formatMoneyMinor(Number(item?.revenueOpportunityMinor ?? 0), currencyCode)} note="Model-implied" />
-        <PricingKpi label="Margin Opportunity" value={margin === null || margin === undefined ? unavailable : formatMoneyMinor(Number(margin), currencyCode)} note="Client-actual cost only" unavailableReason={margin === null || margin === undefined ? "Client-actual cost is unavailable." : undefined} />
+        <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(Number(item?.revenueOpportunityMinor ?? 0), currencyCode)} note="Model-implied" />
+        <PricingKpi label="Margin Opportunity" value={margin === null || margin === undefined ? unavailable : formatAggregateMoneyMinor(Number(margin), currencyCode)} note="Client-actual cost only" unavailableReason={margin === null || margin === undefined ? "Client-actual cost is unavailable." : undefined} />
       </div>
       <div className="grid-2">
         <div className="card"><h4>Top Pricing Issues</h4><MetricList rows={[
@@ -606,8 +600,8 @@ function RecommendationDetailDialog({id, onClose, onSimulation}: {
                 <MetricList rows={[
                   {label: "Current price", value: formatMoneyMinor(item.currentPriceMinor, item.currencyCode)},
                   {label: "AI price", value: formatMoneyMinor(item.proposedPriceMinor, item.currencyCode)},
-                  {label: "Revenue impact", value: formatMoneyMinor(item.revenueImpactMinor, item.currencyCode)},
-                  {label: "Margin impact", value: item.marginImpactMinor === null ? <UnavailableValue reason={reasonText(item.marginReasonCode)} /> : formatMoneyMinor(item.marginImpactMinor, item.currencyCode)}
+                  {label: "Revenue impact", value: formatAggregateMoneyMinor(item.revenueImpactMinor, item.currencyCode)},
+                  {label: "Margin impact", value: item.marginImpactMinor === null ? <UnavailableValue reason={reasonText(item.marginReasonCode)} /> : formatAggregateMoneyMinor(item.marginImpactMinor, item.currencyCode)}
                 ]} />
               </section>
               <section>
@@ -648,8 +642,8 @@ function ComparisonDialog({rows, onClose}: {
               <td><strong>{row.productName ?? row.skuId}</strong><small>{row.skuId}</small></td>
               <td>{row.action}</td>
               <td>{formatPercent(row.changePct)}</td>
-              <td>{formatMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
-              <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
+              <td>{formatAggregateMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
+              <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
               <td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td>
             </tr>
           ))}</tbody>
@@ -819,8 +813,8 @@ function RecommendationOverview({
         <div className="card">
           <CardHeader title="Pricing Opportunity Waterfall" context="Projected annualized impact" />
           <MetricList rows={[
-            {label: "Revenue", value: formatMoneyMinor(summary.kpis.revenueOpportunityMinor, revenueCurrency)},
-            {label: "Margin", value: summary.kpis.marginOpportunityMinor === null ? <UnavailableValue reason={reasonText(summary.kpis.marginReasonCode)} /> : formatMoneyMinor(summary.kpis.marginOpportunityMinor, revenueCurrency)},
+            {label: "Revenue", value: formatAggregateMoneyMinor(summary.kpis.revenueOpportunityMinor, revenueCurrency)},
+            {label: "Margin", value: summary.kpis.marginOpportunityMinor === null ? <UnavailableValue reason={reasonText(summary.kpis.marginReasonCode)} /> : formatAggregateMoneyMinor(summary.kpis.marginOpportunityMinor, revenueCurrency)},
             {label: "Markdown", value: <UnavailableValue reason="No independently accepted markdown effect is in this view." />},
             {label: "Inventory", value: <UnavailableValue reason="No non-overlapping inventory effect is published for this view." />},
             {label: "At Risk", value: formatCount(summary.kpis.recommendationsAtRisk)}
@@ -949,12 +943,12 @@ function PriceRecommendations({
         <>
           <div className="pricing-toolbar recommendation-toolbar" aria-label="Recommendation actions">
             <span className="selected-count" aria-live="polite">{selected.size} selected</span>
-            <PreviewButton onClick={() => setModal("approve")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Preview only; approval workflow is unavailable."}>Approve Selected <em>Preview only</em></PreviewButton>
-            <PreviewButton onClick={() => setModal("review")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Preview only; reviewer assignment is unavailable."}>Send for Review <em>Preview only</em></PreviewButton>
-            <PreviewButton onClick={() => setModal("schedule")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Preview only; publishing is unavailable."}>Schedule Price Change <em>Preview only</em></PreviewButton>
+            <PreviewButton onClick={() => setModal("approve")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Approval workflow is unavailable."}>Approve Selected</PreviewButton>
+            <PreviewButton onClick={() => setModal("review")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Reviewer assignment is unavailable."}>Send for Review</PreviewButton>
+            <PreviewButton onClick={() => setModal("schedule")} disabled={selected.size === 0} reason={selected.size === 0 ? "Select at least one recommendation." : "Publishing is unavailable."}>Schedule Price Change</PreviewButton>
             <PreviewButton onClick={() => setModal("compare")} disabled={selectedRows.length < 2} reason="Select at least two visible recommendations to compare.">Compare Selected</PreviewButton>
             <PreviewButton onClick={() => setModal("export")}>Export</PreviewButton>
-            <PreviewButton onClick={() => setModal("action-center")}>Pricing Action Center <em>Preview only</em></PreviewButton>
+            <PreviewButton onClick={() => setModal("action-center")}>Pricing Action Center</PreviewButton>
           </div>
 
           <div className="pricing-filter-row six">
@@ -963,11 +957,11 @@ function PriceRecommendations({
             </select>
             <select className="filter" aria-label="Recommendation category" value={category} onChange={(event) => setCategory(event.target.value)}>
               <option value="">All Categories</option>
-              {data.summary.filters.categories.map((value) => <option key={value}>{value}</option>)}
+              {data.summary.filters.categories.map((value) => <option key={value} value={value}>{categoryName(dashboard, value)}</option>)}
             </select>
             <select className="filter" aria-label="Recommendation store" value={pageStore} onChange={(event) => setPageStore(event.target.value)} disabled={Boolean(storeId)} title={storeId ? "Set by global Store" : undefined}>
               <option value="">All Stores</option>
-              {data.summary.filters.stores.map((value) => <option key={value} value={value}>{dashboard?.filters.stores.find((row) => row.storeId === value)?.name ?? value}</option>)}
+              {data.summary.filters.stores.map((value) => <option key={value} value={value}>{storeName(dashboard, value)}</option>)}
             </select>
             <select className="filter" aria-label="Recommendation action" value={action} onChange={(event) => setAction(event.target.value)}>
               <option value="">All Actions</option><option value="Increase">Increase Price</option><option value="Decrease">Reduce Price</option><option value="Hold">Hold Price</option>
@@ -980,8 +974,8 @@ function PriceRecommendations({
 
           <div className="kpi-grid pricing-kpi-grid">
             <PricingKpi label="Open Recommendations" value={formatCount(data.summary.kpis.openRecommendations)} note="Current filtered recommendations; withheld assessments excluded" />
-            <PricingKpi label="Revenue Opportunity" value={formatMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" />
-            <PricingKpi label="Margin Opportunity" value={formatMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Client-actual-cost rows only" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} />
+            <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" />
+            <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Client-actual-cost rows only" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} />
             <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note={data.summary.kpis.riskReason} />
             <PricingKpi label="Recommendation Adoption" value={unavailable} note="Workflow/realized evidence required" unavailableReason={data.summary.kpis.adoptionReason} />
           </div>
@@ -1010,7 +1004,7 @@ function PriceRecommendations({
               <div className="card">
                 <CardHeader title="Store-Level Pricing Performance" action={<PreviewButton onClick={() => setModal("store-drilldown")} disabled={!grouped.data?.items.length} reason={!grouped.data?.items.length ? "No governed store row is available to inspect." : undefined}>Open Store Drilldown</PreviewButton>} />
                 <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{String(item.store ?? unavailable)}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td><UnavailableValue reason="Approval workflow evidence is unavailable." /></td><td>{formatMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{storeName(dashboard, String(item.store ?? ""), String(item.storeName ?? ""))}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td><UnavailableValue reason="Approval workflow evidence is unavailable." /></td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
                 </PricingState>
               </div>
             )}
@@ -1018,7 +1012,7 @@ function PriceRecommendations({
               <div className="card">
                 <CardHeader title="Category Pricing Effectiveness" />
                 <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{String(item.category ?? unavailable)}</td><td>{formatMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td><UnavailableValue reason="Coverage-weighted category elasticity is not projected by this endpoint." /></td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{categoryName(dashboard, String(item.category ?? ""), String(item.categoryLabel ?? ""))}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td><UnavailableValue reason="Coverage-weighted category elasticity is not projected by this endpoint." /></td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
                 </PricingState>
                 <h4>Category Opportunity Matrix</h4>
                 <div className="opportunity-matrix">{["High demand / Low stock", "High stock / Low demand", "Competitor opportunity", "Promotion conflict"].map((label) => <div key={label}><strong>{label}</strong><UnavailableValue reason="Category opportunity-cell evidence is unavailable." /></div>)}</div>
@@ -1044,8 +1038,8 @@ function PriceRecommendations({
                 <td><input type="checkbox" aria-label={`Select ${row.productName ?? row.skuId}`} disabled={!row.selectable} checked={selected.has(row.recommendationId)} onChange={() => setSelected((current) => {const next = new Set(current); if (next.has(row.recommendationId)) next.delete(row.recommendationId); else next.add(row.recommendationId); return next;})} /></td>
                 <td><span className={`badge ${badgeClass(row.priority)}`}>{row.priority}</span></td>
                 <td><button className="link-button product-link" type="button" onClick={() => setDetailId(row.recommendationId)}><strong>{row.productName ?? "Name unavailable"}</strong><small>{row.skuId}</small></button></td>
-                <td>{row.category ?? unavailable}</td>
-                <td><span className="product-cell">{dashboard?.filters.stores.find((store) => store.storeId === row.storeId)?.name ?? row.storeId}<small>{row.channelId}</small></span></td>
+                <td>{categoryName(dashboard, row.category, row.categoryLabel)}</td>
+                <td><span className="product-cell">{storeName(dashboard, row.storeId, row.storeName)}<small>{channelName(dashboard, row.channelId, row.channelName)}</small></span></td>
                 <td>{row.action ? <span className={`badge ${badgeClass(row.action)}`}>{row.action === "Decrease" ? "Reduce Price" : `${row.action} Price`}</span> : <UnavailableValue reason={reasonText(row.firstFailureReason)} />}</td>
                 <td>{formatMoneyMinor(row.currentPriceMinor, row.currencyCode)}</td>
                 <td>{formatMoneyMinor(row.proposedPriceMinor, row.currencyCode)}</td>
@@ -1055,8 +1049,8 @@ function PriceRecommendations({
                 <td>{row.forecastDemand ?? <UnavailableValue reason="Forecast demand cohort is unavailable." />}</td>
                 <td><UnavailableValue reason="Client-actual cost is unavailable." /></td>
                 <td><UnavailableValue reason="Client-actual cost is unavailable." /></td>
-                <td>{formatMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
-                <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
+                <td>{formatAggregateMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
+                <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
                 <td className="reason-cell">{explanationText(row.aiReason, row.firstFailureReason)}</td>
                 <td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td>
                 <td><UnavailableValue reason="Approval workflow status is unavailable." /></td>
@@ -1091,6 +1085,7 @@ function PriceRecommendations({
           {modal === "store-drilldown" && (
             <StorePricingDrilldown
               items={grouped.data?.items ?? []}
+              dashboard={dashboard}
               currencyCode={rows[0]?.currencyCode}
               onClose={() => setModal(null)}
               onOpen={(nextStore) => {
@@ -1112,11 +1107,11 @@ function ScenarioValue({metric, result, currency}: {
   currency: string;
 }) {
   if (metric === "Units") return <>{formatUnits(result.units)}</>;
-  if (metric === "Revenue") return <>{formatMoneyMinor(result.revenueMinor, currency)}</>;
+  if (metric === "Revenue") return <>{formatAggregateMoneyMinor(result.revenueMinor, currency)}</>;
   if (metric === "Gross Margin") {
     return result.grossMarginMinor === null
       ? <UnavailableValue reason={reasonText(result.grossMarginReasonCode)} />
-      : <>{formatMoneyMinor(result.grossMarginMinor, currency)}</>;
+      : <>{formatAggregateMoneyMinor(result.grossMarginMinor, currency)}</>;
   }
   return result.endingStockUnits === null
     ? <UnavailableValue reason="Accepted inventory position is unavailable." />
@@ -1129,8 +1124,8 @@ function SimulationResult({result, onClose}: {
 }) {
   const resultMetrics = (
     <div className="grid-4 simulation-metrics">
-      <PricingKpi label="Revenue" value={formatMoneyMinor(result.recommendation.revenueImpactMinor, result.currencyCode)} note="Model-implied change over Next 4 Weeks" />
-      <PricingKpi label="Margin" value={formatMoneyMinor(result.recommendation.marginImpactMinor, result.currencyCode)} note="Primary result requires client-actual cost" unavailableReason={result.recommendation.marginImpactMinor === null ? reasonText(result.recommendation.marginReasonCode) : undefined} />
+      <PricingKpi label="Revenue" value={formatAggregateMoneyMinor(result.recommendation.revenueImpactMinor, result.currencyCode)} note="Model-implied change over Next 4 Weeks" />
+      <PricingKpi label="Margin" value={formatAggregateMoneyMinor(result.recommendation.marginImpactMinor, result.currencyCode)} note="Primary result requires client-actual cost" unavailableReason={result.recommendation.marginImpactMinor === null ? reasonText(result.recommendation.marginReasonCode) : undefined} />
       <PricingKpi label="Stock Risk" value={result.recommendation.stockOutRisk} note="Forecast and accepted inventory context" />
       <PricingKpi label="Confidence" value={formatPercent(result.recommendation.confidence * 100)} note="Price-response confidence" />
     </div>
@@ -1148,9 +1143,9 @@ function SimulationResult({result, onClose}: {
         <div className="synthetic-margin-panel">
           <h4>Synthetic demo margin — not client actual</h4>
           <MetricList rows={[
-            {label: "Current", value: formatMoneyMinor(result.syntheticMarginScenario.currentMinor, result.currencyCode)},
-            {label: "Proposed", value: formatMoneyMinor(result.syntheticMarginScenario.proposedMinor, result.currencyCode)},
-            {label: "AI Optimal", value: formatMoneyMinor(result.syntheticMarginScenario.aiOptimalMinor, result.currencyCode)}
+            {label: "Current", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.currentMinor, result.currencyCode)},
+            {label: "Proposed", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.proposedMinor, result.currencyCode)},
+            {label: "AI Optimal", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.aiOptimalMinor, result.currencyCode)}
           ]} />
           <p>Computed-WAC provenance · cost as of {String(result.syntheticMarginScenario.costAsOf ?? unavailable)} · Does not affect the recommendation.</p>
         </div>
@@ -1163,7 +1158,7 @@ function SimulationResult({result, onClose}: {
   return <Dialog open title="Simulation Result" onClose={onClose} wide>{resultMetrics}{recommendationCallout}</Dialog>;
 }
 
-function PriceSimulationPage({storeId, channelType}: Pick<PricingPageProps, "storeId" | "channelType">) {
+function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPageProps, "dashboard" | "storeId" | "channelType">) {
   const filters = useMemo<PricingFilters>(() => ({
     storeId,
     channelType,
@@ -1234,7 +1229,7 @@ function PriceSimulationPage({storeId, channelType}: Pick<PricingPageProps, "sto
       <div className="card scenario-builder">
         <CardHeader title="Price Scenario Builder" action={<button className="modal-action" type="button" disabled={!validPrice || detail.isPending || simulation.isPending || (objective === "Clearance" && !clearanceAvailable)} onClick={() => simulation.mutate()} title={!clearanceAvailable && objective === "Clearance" ? "Accepted ageing and inventory context is required for Clearance." : undefined}>{simulation.isPending ? "Running…" : "Run Simulation"}</button>} />
         <div className="pricing-form-grid four scenario-builder-grid">
-          <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {row.storeId} · {row.channelId}</option>)}</select></Field>
+          <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {storeName(dashboard, row.storeId, row.storeName)} · {channelName(dashboard, row.channelId, row.channelName)}</option>)}</select></Field>
           <Field label="Current Price" help={`Accepted local price${selected ? ` · ${selected.currencyCode}` : ""}`}><input className="filter" readOnly value={selected ? formatMoneyMinor(selected.currentPriceMinor, selected.currencyCode) : unavailable} /></Field>
           <Field label="Proposed Price" help={!validPrice && proposed ? "Enter a positive price with at most two decimals on the governed local grid, within support and the applicable change cap." : `Local ${selected?.currencyCode ?? "currency"}`}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && !validPrice} /></Field>
           <Field label="Simulation Period"><select className="filter" disabled><option>Next 4 Weeks</option></select></Field>
@@ -1268,7 +1263,7 @@ function CompetitorPreview({kind, onClose}: {
     : "Persisted alert-rule workflow is unavailable.";
   const title = kind === "add" ? "Add Competitor" : "Create Competitor Alert Rule";
   return (
-    <Dialog open title={title} description="Preview only — no source or rule will be created" onClose={onClose} footer={<PreviewFooter label={kind === "add" ? "Add Competitor" : "Create Rule"} onClose={onClose} reason={reason} />} wide>
+    <Dialog open title={title} description="Creation workflow unavailable — no source or rule will be created" onClose={onClose} footer={<PreviewFooter label={kind === "add" ? "Add Competitor" : "Create Rule"} onClose={onClose} reason={reason} />} wide>
       <div className="preview-banner"><strong>Business prerequisite</strong>{reason}</div>
       {kind === "add" ? (
         <div className="pricing-form-grid two">
@@ -1332,7 +1327,7 @@ function MatchReview({row, position, total, filters, onClose}: {
     ) : (
       <>
         <button className="filter" type="button" disabled title="Match mutation is unavailable.">Reject Match</button>
-        <button className="filter" type="button" onClick={() => setLinkPreview(true)}>Link Different Product <em>Preview only</em></button>
+        <button className="filter" type="button" onClick={() => setLinkPreview(true)}>Link Different Product</button>
         <button className="modal-action" type="button" disabled title="Match mutation is unavailable.">Accept Match</button>
         <button className="filter" type="button" onClick={onClose}>Cancel</button>
       </>
@@ -1412,8 +1407,8 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
       {summary.data && matches.data && (
         <>
           <div className="pricing-toolbar competitor-toolbar">
-            <PreviewButton onClick={() => setModal("add")}>Add Competitor <em>Preview only</em></PreviewButton>
-            <PreviewButton onClick={() => setModal("rule")}>Create Alert Rule <em>Preview only</em></PreviewButton>
+            <PreviewButton onClick={() => setModal("add")}>Add Competitor</PreviewButton>
+            <PreviewButton onClick={() => setModal("rule")}>Create Alert Rule</PreviewButton>
             <PreviewButton onClick={() => setModal("review")} disabled={reviewQueue.length === 0} reason="No visible selected or Needs Review match is available.">Review Matches</PreviewButton>
             <select className="filter" aria-label="Match status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All Match Statuses</option><option>Matched</option><option>Needs Review</option><option>Rejected</option></select>
             <input className="filter" aria-label="Search product or competitor" placeholder="Search product or competitor" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -1451,7 +1446,7 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
 
 function PromotionCreatePreview({onClose}: {onClose: () => void}) {
   return (
-    <Dialog open title="Create Promotion" description="Preview only — no draft will be created" onClose={onClose} wide footer={<PreviewFooter label="Create Draft" onClose={onClose} reason="Promotion creation and approval workflow are unavailable." />}>
+    <Dialog open title="Create Promotion" description="Creation workflow unavailable — no draft will be created" onClose={onClose} wide footer={<PreviewFooter label="Create Draft" onClose={onClose} reason="Promotion creation and approval workflow are unavailable." />}>
       <div className="preview-banner"><strong>AI validation before creation</strong>Origin-visible promotion-plan authority, privacy approval, inventory readiness, conflict checks, and a write workflow are required before a draft can be created.</div>
       <div className="pricing-form-grid two">
         <Field label="Promotion Name"><input className="filter" readOnly /></Field>
@@ -1485,13 +1480,13 @@ function PromotionSimulationPreview({
     <Dialog
       open
       title="Simulate Promotion"
-      description="Preview only — promotion simulation gates are unavailable"
+      description="Promotion simulation gates are unavailable"
       onClose={onClose}
       wide
       footer={(
         <>
           <button className="modal-action" type="button" disabled title={message}>Run Simulation</button>
-          <button className="filter" type="button" onClick={onResults}>Preview Results <em>Preview only</em></button>
+          <button className="filter" type="button" onClick={onResults}>Preview Results</button>
           <button className="filter" type="button" onClick={onClose}>Cancel</button>
         </>
       )}
@@ -1562,8 +1557,8 @@ function PromotionPlanner() {
       {summary.data && opportunities.data && portfolio.data && calendar.data && (
         <>
           <div className="pricing-toolbar promotion-toolbar">
-            <PreviewButton onClick={() => setModal("create")}>Create Promotion <em>Preview only</em></PreviewButton>
-            <PreviewButton onClick={() => setModal("simulate")}>Simulate Promotion <em>Preview only</em></PreviewButton>
+            <PreviewButton onClick={() => setModal("create")}>Create Promotion</PreviewButton>
+            <PreviewButton onClick={() => setModal("simulate")}>Simulate Promotion</PreviewButton>
             <PreviewButton onClick={() => setModal("calendar")}>Promotion Calendar</PreviewButton>
             <select className="filter" aria-label="Promotion status" disabled title={message}><option>All Statuses</option><option>Draft</option><option>Under Review</option><option>Approved</option><option>Live</option><option>Completed</option></select>
             <select className="filter" aria-label="Promotion category" disabled title={message}><option>All Categories</option><option>Footwear</option><option>Beauty</option><option>Electronics</option><option>Apparel</option></select>
@@ -1628,7 +1623,7 @@ export function PricingPage(props: PricingPageProps) {
     return <PriceRecommendations dashboard={props.dashboard} storeId={props.storeId} channelType={props.channelType} onNavigate={props.onNavigate} />;
   }
   if (props.pageId === "priceSimulation") {
-    return <PriceSimulationPage storeId={props.storeId} channelType={props.channelType} />;
+    return <PriceSimulationPage dashboard={props.dashboard} storeId={props.storeId} channelType={props.channelType} />;
   }
   if (props.pageId === "competitorMonitor") {
     return <CompetitorMonitor storeId={props.storeId} channelType={props.channelType} />;

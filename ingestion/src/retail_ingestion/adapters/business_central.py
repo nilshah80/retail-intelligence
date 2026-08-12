@@ -9,7 +9,7 @@ from .registry import register_adapter
 @register_adapter
 class BusinessCentralAdapter(SourceAdapter):
     source_system = "businessCentral"
-    adapter_version = "business-central-adapter/1.2.1"
+    adapter_version = "business-central-adapter/1.2.3"
     raw_schema = "raw_business_central"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -20,6 +20,15 @@ class BusinessCentralAdapter(SourceAdapter):
         snapshot_id = landing["sourceSnapshotId"]
         native_snapshot_id = landing.get("nativeSnapshotId")
         con.execute("CREATE SCHEMA IF NOT EXISTS stage_data")
+        item_columns = {
+            str(row[0])
+            for row in con.execute("DESCRIBE raw_business_central.items").fetchall()
+        }
+        category_name_sql = (
+            "i.itemCategoryDisplayName"
+            if "itemCategoryDisplayName" in item_columns
+            else "NULL::VARCHAR"
+        )
 
         con.execute(
             f"""
@@ -183,6 +192,7 @@ class BusinessCentralAdapter(SourceAdapter):
                 coalesce(i.displayName, i.description)::VARCHAR AS product_name,
                 i.brandName::VARCHAR AS brand,
                 i.itemCategoryCode::VARCHAR AS category_source_key,
+                {category_name_sql}::VARCHAR AS category_name,
                 try_cast(v.unitCost AS DECIMAL(38, 6)) AS reference_cost_major,
                 v.currencyCode::VARCHAR AS currency_code,
                 try_cast(v.introducedDate AS DATE) AS launch_date,
@@ -232,6 +242,17 @@ class BusinessCentralAdapter(SourceAdapter):
             """
         )
 
+        sales_invoice_columns = {
+            str(row[0])
+            for row in con.execute(
+                "DESCRIBE raw_business_central.sales_invoices"
+            ).fetchall()
+        }
+        sales_channel_name_sql = (
+            "i.salesChannelDisplayName"
+            if "salesChannelDisplayName" in sales_invoice_columns
+            else "i.salesChannelCode"
+        )
         con.execute(
             f"""
             CREATE OR REPLACE TABLE stage_data.bc_sales_control AS
@@ -244,6 +265,7 @@ class BusinessCentralAdapter(SourceAdapter):
                 l.sku::VARCHAR AS sku_source_key,
                 l.locationCode::VARCHAR AS demand_location_source_key,
                 i.salesChannelCode::VARCHAR AS channel_source_key,
+                {sales_channel_name_sql}::VARCHAR AS channel_name,
                 try_cast(i.invoiceDate AS DATE) AS business_date,
                 try_cast(i.postingDate AS TIMESTAMPTZ) AS known_as_of,
                 try_cast(l.quantity AS BIGINT) AS units,

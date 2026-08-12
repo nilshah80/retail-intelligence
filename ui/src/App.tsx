@@ -890,7 +890,7 @@ function DataManagementDialog({
         <div className="modal-body">
           {kind === "add" ? (
             <>
-              <div className="callout compact-callout"><strong>Preview only</strong><p>Source connection authority is not configured. These local choices do not contact or register a source.</p></div>
+              <div className="callout compact-callout"><strong>Connection unavailable</strong><p>Source connection authority is not configured. These local choices do not contact or register a source.</p></div>
               <div className="pricing-form-grid two">
                 <div className="pricing-field"><label><span>Source Name</span><input className="filter" readOnly aria-readonly="true" /></label></div>
                 <div className="pricing-field"><label><span>Type</span><select className="filter" defaultValue="API"><option>API</option><option>Database</option><option>SFTP</option><option>CSV</option></select></label></div>
@@ -1081,7 +1081,7 @@ function DataManagement({dashboard}: {dashboard: Dashboard}) {
             dialogTrigger.current = event.currentTarget;
             setDialog("add");
           }}
-        >Add Data Source <small className="preview-label">Preview only</small></button>
+        >Add Data Source</button>
         <button className="btn secondary" type="button" disabled title="A governed sample-upload workflow and accepted file contract are not configured.">Upload Sample Data</button>
         <button className="btn secondary" type="button" disabled title="A governed validation execution workflow is not configured.">Run Validation</button>
       </div>

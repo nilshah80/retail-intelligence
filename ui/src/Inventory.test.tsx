@@ -200,7 +200,7 @@ describe("inventory & replenishment destinations", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps workflow actions preview-only and export fail-closed", async () => {
+  it("keeps workflow actions non-mutating and export fail-closed", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ok: false, status: 503});
     vi.stubGlobal("fetch", fetchMock);
     renderPage("suggestedOrders");
@@ -214,7 +214,7 @@ describe("inventory & replenishment destinations", () => {
     expect(buttons[0]).toBeEnabled();
     expect(buttons[1]).toBeEnabled();
     expect(buttons[2]).toBeDisabled();
-    expect(buttons[0]).toHaveTextContent("Preview only");
+    expect(buttons[0]).toHaveTextContent(REFERENCE_SCREEN_BY_ID.suggestedOrders.actions[0]);
 
     fireEvent.click(buttons[0]);
     const dialog = screen.getByRole("dialog", {name: "Approve Suggested Orders"});

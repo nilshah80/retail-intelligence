@@ -299,19 +299,18 @@ mod tests {
             restricted: true,
             fields: vec!["id".to_owned()],
         };
-        let mut writer = ParquetDatasetWriter::create(
-            directory.path(),
-            spec,
-            Compression::Zstd,
-            16,
-        )
-        .expect("create parquet writer");
+        let mut writer =
+            ParquetDatasetWriter::create(directory.path(), spec, Compression::Zstd, 16)
+                .expect("create parquet writer");
         writer
             .push(vec![Some("row-1".to_owned())])
             .expect("write source row");
 
         let (object, _) = writer.finish().expect("finish parquet object");
         assert_eq!(object.content_determinism, "byte");
-        assert!(object.restricted, "restricted truth bytes still bind identity");
+        assert!(
+            object.restricted,
+            "restricted truth bytes still bind identity"
+        );
     }
 }

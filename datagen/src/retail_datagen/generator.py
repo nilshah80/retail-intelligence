@@ -815,6 +815,10 @@ def generate(
         execution_profile = dict(execution_profile)
         validate_profile(execution_profile)
     datagen_execution = execution_profile["datagen"]
+    channel_names = {
+        str(channel["channelId"]): str(channel["name"])
+        for channel in config["channels"]
+    }
     config_digest = config_hash(config)
     resolved_run_id = run_id(config, GENERATOR_VERSION)
     root = output_root or config["output"]["rootDirectory"]
@@ -911,6 +915,7 @@ def generate(
                             else "ACTIVE"
                         ),
                         "vendor": product["brand"],
+                        "productCategoryDisplayName": product["categoryName"],
                         "productType": product["categoryId"],
                         "tags": "|".join(
                             dict.fromkeys(
@@ -1421,6 +1426,7 @@ def generate(
                             else ""
                         ),
                         "channelId": order["channelId"],
+                        "channelDisplayName": channel_names[order["channelId"]],
                         "lineCount": order["lineCount"],
                     }
                     for order in shop_order_headers()
@@ -1675,6 +1681,7 @@ def generate(
                         "brandName": product["brand"],
                         "type": "Inventory",
                         "itemCategoryCode": product["categoryId"],
+                        "itemCategoryDisplayName": product["categoryName"],
                         "baseUnitOfMeasureCode": product["unitOfMeasure"],
                         "costingMethod": product["costingMethod"],
                         "countryRegionOfOriginCode": product["countryOfOrigin"],
@@ -1895,6 +1902,7 @@ def generate(
                             order["bcCustomerKey"],
                         ),
                         "salesChannelCode": order["channelId"],
+                        "salesChannelDisplayName": channel_names[order["channelId"]],
                     }
                     for order in company_order_headers()
                 ),

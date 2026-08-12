@@ -15,7 +15,7 @@ What a matrix freezes, per the plan:
   decision. "Partial screen" is never a reason to remove an element, and an
   unavailable element is never replaced by a fabricated zero;
 * action controls: governed exports are live; workflow controls are visibly
-  labelled preview-only dialogs whose submission stays natively disabled and
+  labelled non-mutating dialogs whose submission stays natively disabled and
   has no mutation handler (P4-D9/D11);
 * the interval rule for every interval-consuming element (P4-D17).
 
@@ -388,7 +388,7 @@ def build_document() -> dict[str, Any]:
         "presentationAmendments": PRESENTATION_AMENDMENTS,
         "actionBehavior": (
             "exports are governed live downloads; workflow actions open visibly "
-            "labelled preview-only dialogs with disabled submission and no mutation "
+            "labelled non-mutating dialogs with disabled submission and no mutation "
             "endpoint, request, or history change"
         ),
         "behavior": {

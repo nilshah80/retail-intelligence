@@ -1429,6 +1429,7 @@ def _product_from_definition(
         "brandCode": brand["code"],
         "departmentId": department["departmentId"],
         "categoryId": category["categoryId"],
+        "categoryName": category["name"],
         "catalogFamily": category["catalogFamily"],
         "taxCategory": category["taxCategory"],
         "unitOfMeasure": FAMILY_MEASUREMENTS.get(

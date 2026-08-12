@@ -15,7 +15,7 @@ from .registry import register_adapter
 @register_adapter
 class ShopifyAdapter(SourceAdapter):
     source_system = "shopify"
-    adapter_version = "shopify-adapter/1.2.0"
+    adapter_version = "shopify-adapter/1.2.2"
     raw_schema = "raw_shopify"
 
     def materialize_staging(self, context: AdapterContext) -> tuple[str, ...]:
@@ -40,6 +40,15 @@ class ShopifyAdapter(SourceAdapter):
             else "city"
         )
 
+        order_columns = {
+            str(row[0])
+            for row in con.execute("DESCRIBE raw_shopify.orders").fetchall()
+        }
+        channel_name_sql = (
+            "o.channelDisplayName"
+            if "channelDisplayName" in order_columns
+            else "o.channelId"
+        )
         con.execute(
             f"""
             CREATE OR REPLACE TABLE stage_data.shopify_merchandise AS
@@ -63,6 +72,7 @@ class ShopifyAdapter(SourceAdapter):
                 l.sku::VARCHAR AS sku_source_key,
                 o.locationId::VARCHAR AS demand_location_source_key,
                 o.channelId::VARCHAR AS channel_source_key,
+                {channel_name_sql}::VARCHAR AS channel_name,
                 cast(
                     timezone(
                         o._business_timezone,
@@ -116,6 +126,15 @@ class ShopifyAdapter(SourceAdapter):
             """
         )
 
+        product_columns = {
+            str(row[0])
+            for row in con.execute("DESCRIBE raw_shopify.products").fetchall()
+        }
+        category_name_sql = (
+            "p.productCategoryDisplayName"
+            if "productCategoryDisplayName" in product_columns
+            else "NULL::VARCHAR"
+        )
         con.execute(
             f"""
             CREATE OR REPLACE TABLE stage_data.shopify_products AS
@@ -138,6 +157,7 @@ class ShopifyAdapter(SourceAdapter):
                 p.title::VARCHAR AS product_name,
                 p.vendor::VARCHAR AS brand,
                 p.productType::VARCHAR AS category_source_key,
+                {category_name_sql}::VARCHAR AS category_name,
                 p.tags::VARCHAR AS tags,
                 try_cast(v.price AS DECIMAL(38, 6)) AS reference_price_major,
                 v.currencyCode::VARCHAR AS currency_code,

@@ -108,6 +108,8 @@ func channelTypeLabel(channelType string) string {
 	switch channelType {
 	case "online":
 		return "E-commerce"
+	case "marketplace":
+		return "Marketplace"
 	case "store":
 		return "Store"
 	default:
@@ -272,6 +274,14 @@ func (s *Store) Dashboard() map[string]any {
 			"marketIds": marketIDs,
 		})
 	}
+	categories := sliceValue(business, "categories")
+	if categories == nil {
+		categories = []any{}
+	}
+	channels := sliceValue(business, "channels")
+	if channels == nil {
+		channels = []any{}
+	}
 
 	return map[string]any{
 		"schemaVersion": "retail-data-management-dashboard/v1",
@@ -297,6 +307,8 @@ func (s *Store) Dashboard() map[string]any {
 			"markets":      business["markets"],
 			"stores":       business["stores"],
 			"channelTypes": channelTypes,
+			"channels":     channels,
+			"categories":   categories,
 			"currencies":   business["currencies"],
 		},
 	}

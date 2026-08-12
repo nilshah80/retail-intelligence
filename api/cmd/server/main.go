@@ -141,6 +141,7 @@ func main() {
 	}
 	pricingConfig.PostgresDSN = postgresDSN
 	pricingConfig.DBReadPool = profile.API.DBReadPool
+	pricingConfig.Presentation = store
 	pricingLoadContext, cancelPricingLoad := context.WithTimeout(
 		context.Background(),
 		10*time.Second,

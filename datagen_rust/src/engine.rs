@@ -918,6 +918,7 @@ fn write_static_projections(
                     "id",
                     "introducedDate",
                     "itemCategoryCode",
+                    "itemCategoryDisplayName",
                     "number",
                     "predecessorItemNumber",
                     "type",
@@ -940,6 +941,7 @@ fn write_static_projections(
                     ("id", bc_uuid("item", &product.product_key)),
                     ("introducedDate", product.launch_date.to_string()),
                     ("itemCategoryCode", product.category_id.clone()),
+                    ("itemCategoryDisplayName", product.category_name.clone()),
                     ("number", product.product_code.clone()),
                     (
                         "predecessorItemNumber",

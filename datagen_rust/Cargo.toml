@@ -1,6 +1,6 @@
 [package]
 name = "retail-datagen-rust"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 rust-version = "1.97.1"
 description = "Standalone Rust implementation of the retail source data generator"

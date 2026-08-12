@@ -307,6 +307,26 @@ def _densify_sales(connection: duckdb.DuckDBPyConnection) -> None:
 def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
     connection.execute("CREATE SCHEMA canonical_data")
 
+    product_columns = {
+        str(description[0])
+        for description in connection.execute(
+            "SELECT * FROM stage.stage_data.products LIMIT 0"
+        ).description
+    }
+    category_label_sql = (
+        "category_name" if "category_name" in product_columns else "NULL::VARCHAR"
+    )
+    merchandise_columns = {
+        str(description[0])
+        for description in connection.execute(
+            "SELECT * FROM stage.stage_data.merchandise LIMIT 0"
+        ).description
+    }
+    channel_name_sql = (
+        "channel_name" if "channel_name" in merchandise_columns
+        else "channel_source_key"
+    )
+
     connection.execute(
         f"""
         CREATE TABLE canonical_data.products AS
@@ -314,6 +334,7 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             concat(market_id, ':', sku_source_key)::VARCHAR AS sku_id,
             split_part(tags, '|', 1)::VARCHAR AS dept_id,
             split_part(tags, '|', 2)::VARCHAR AS category,
+            {category_label_sql}::VARCHAR AS category_label,
             nullif(split_part(tags, '|', 3), '')::VARCHAR AS sub_cat,
             greatest(
                 1,
@@ -389,7 +410,8 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
         SELECT
             market_id::VARCHAR AS market_id,
             concat(market_id, ':', channel_source_key)::VARCHAR AS channel_id,
-            channel_source_key::VARCHAR AS name,
+            max(coalesce(nullif({channel_name_sql}, ''), channel_source_key))::VARCHAR
+                AS name,
             {_channel_type_sql("channel_source_key")}::VARCHAR AS type,
             'Derived from the native sales channel'::VARCHAR AS description,
             true::BOOLEAN AS active,

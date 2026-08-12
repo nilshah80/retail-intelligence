@@ -140,6 +140,7 @@
       "id",
       "introducedDate",
       "itemCategoryCode",
+      "itemCategoryDisplayName",
       "number",
       "predecessorItemNumber",
       "type",
@@ -214,6 +215,7 @@
       "number",
       "postingDate",
       "salesChannelCode",
+      "salesChannelDisplayName",
       "status",
       "totalAmountExcludingTax",
       "totalAmountIncludingTax",
@@ -841,6 +843,7 @@
       "vendor"
     ],
     "shopify/orders": [
+      "channelDisplayName",
       "channelId",
       "createdAt",
       "currencyCode",
@@ -907,6 +910,7 @@
       "launchDate",
       "launchProfile",
       "predecessorProductCode",
+      "productCategoryDisplayName",
       "productType",
       "publishedAt",
       "status",

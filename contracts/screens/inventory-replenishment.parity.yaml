@@ -44,7 +44,7 @@ presentationAmendments:
     reviewOutstanding: Per-screen human visual review remains required before the next client-demo
       sign-off.
 actionBehavior: exports are governed live downloads; workflow actions open visibly labelled
-  preview-only dialogs with disabled submission and no mutation endpoint, request, or history
+  non-mutating dialogs with disabled submission and no mutation endpoint, request, or history
   change
 behavior:
   loading: Preserve the reviewed shell; show loading in value regions.

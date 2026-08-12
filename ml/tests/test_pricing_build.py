@@ -64,7 +64,7 @@ def test_weekly_panel_carries_visible_price_across_closed_assortment_weeks(
             """
             CREATE TABLE canonical_data.products (
                 sku_id VARCHAR, dept_id VARCHAR, category VARCHAR,
-                product_name VARCHAR
+                category_label VARCHAR, product_name VARCHAR
             )
             """
         )
@@ -107,7 +107,7 @@ def test_weekly_panel_carries_visible_price_across_closed_assortment_weeks(
         )
         connection.execute(
             "INSERT INTO canonical_data.products VALUES "
-            "('sku-1', 'lubricants', 'Engine Oil', 'Product')"
+                "('sku-1', 'lubricants', 'Engine Oil', 'Engine Oil', 'Product')"
         )
         connection.execute(
             "INSERT INTO canonical_data.channels VALUES "
@@ -223,6 +223,7 @@ def _inventory_frames():
             "unit_cost_minor": 1234, "cost_method": "computed_wac",
             "currency_code": "INR", "product_name": "Product",
             "category": "Engine Oil",
+            "category_label": "Engine Oil",
         }]),
         "inventory_stock_health.parquet": pd.DataFrame([{
             "market_id": "india-west", "location_id": "store-1",
