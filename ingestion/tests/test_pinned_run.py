@@ -29,6 +29,15 @@ CURATED_ROOT = (
     REPO_ROOT / "ingestion" / "data" / "curated" / "run-adac9e85dccb56e8"
 )
 
+# This file is immutable acceptance evidence for a historical pin, not a demand
+# that every developer retain tens of gigabytes forever.  Once that pin's bytes
+# are deliberately evidence-released, its content-addressed ledger remains the
+# authority and the current publication suites take over live verification.
+pytestmark = pytest.mark.skipif(
+    not MANIFEST.is_file(),
+    reason="historical pinned source bytes were intentionally evidence-released",
+)
+
 
 @pytest.mark.pinned_run
 def test_phase2_pin_identity_inventory_and_permission_lanes() -> None:

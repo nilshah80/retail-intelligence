@@ -287,6 +287,7 @@ export const forecastWorkbenchSchema = z.object({
   ...forecastEnvelope,
   schemaVersion: z.literal("retail-forecast-series/v1"),
   items: z.array(z.object({
+    rowId: z.string().min(1),
     marketId: z.string(),
     skuId: z.string(),
     storeId: z.string(),
@@ -619,19 +620,25 @@ export class ApiResponseError extends Error {
   }
 }
 
-async function get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-  const response = await fetch(path, {headers: {Accept: "application/json"}});
+async function get<T>(path: string, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, {headers: {Accept: "application/json"}, signal});
   if (!response.ok) {
     throw new Error(`${path} returned HTTP ${response.status}`);
   }
   return schema.parse(await response.json());
 }
 
-async function post<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+async function post<T>(
+  path: string,
+  body: unknown,
+  schema: z.ZodType<T>,
+  signal?: AbortSignal
+): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
     headers: {Accept: "application/json", "Content-Type": "application/json"},
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
@@ -670,36 +677,38 @@ function forecastQuery(filters: ForecastFilters, extra?: Record<string, string |
   return query ? `?${query}` : "";
 }
 
-export const loadForecastSummary = () =>
-  get("/api/v1/forecast/summary", forecastSummarySchema);
+export const loadForecastSummary = (signal?: AbortSignal) =>
+  get("/api/v1/forecast/summary", forecastSummarySchema, signal);
 /**
  * Forecast-vs-Actual is fixed to the comparable short-horizon evaluation. The
  * forward `horizonWeeks` selector does not scope this historical diagnostic.
  */
-export const loadForecastActuals = (filters: ForecastFilters) => {
+export const loadForecastActuals = (filters: ForecastFilters, signal?: AbortSignal) => {
   const {horizonWeeks: _forwardScope, ...scope} = filters;
   return get(
     `/api/v1/forecast/actuals${forecastQuery(scope, {
       view: "weekly", limit: 8, comparisonHorizon: 4
     })}`,
-    forecastActualsSchema
+    forecastActualsSchema,
+    signal
   );
 };
-export const loadForecastHorizons = (filters: ForecastFilters) =>
-  get(`/api/v1/forecast/horizons${forecastQuery(filters)}`, forecastHorizonsSchema);
-export const loadForecastStores = (filters: ForecastFilters) =>
-  get(`/api/v1/forecast/stores${forecastQuery(filters)}`, forecastStoresSchema);
-export const loadForecastWorkbench = (filters: ForecastFilters) =>
+export const loadForecastHorizons = (filters: ForecastFilters, signal?: AbortSignal) =>
+  get(`/api/v1/forecast/horizons${forecastQuery(filters)}`, forecastHorizonsSchema, signal);
+export const loadForecastStores = (filters: ForecastFilters, signal?: AbortSignal) =>
+  get(`/api/v1/forecast/stores${forecastQuery(filters)}`, forecastStoresSchema, signal);
+export const loadForecastWorkbench = (filters: ForecastFilters, signal?: AbortSignal) =>
   get(
     `/api/v1/forecast/series${forecastQuery(filters, {view: "workbench", limit: 100})}`,
-    forecastWorkbenchSchema
+    forecastWorkbenchSchema,
+    signal
   );
-export const loadForecastDrivers = () =>
-  get("/api/v1/forecast/drivers", forecastDriversSchema);
-export const loadForecastSignals = () =>
-  get("/api/v1/forecast/signals", forecastSignalsSchema);
-export const loadForecastVersions = () =>
-  get("/api/v1/forecast/versions", forecastVersionsSchema);
+export const loadForecastDrivers = (signal?: AbortSignal) =>
+  get("/api/v1/forecast/drivers", forecastDriversSchema, signal);
+export const loadForecastSignals = (signal?: AbortSignal) =>
+  get("/api/v1/forecast/signals", forecastSignalsSchema, signal);
+export const loadForecastVersions = (signal?: AbortSignal) =>
+  get("/api/v1/forecast/versions", forecastVersionsSchema, signal);
 export const loadScenarioContext = (expectedForecastVersion: string) =>
   get(
     `/api/v1/forecast/scenario/context?expectedForecastVersion=${encodeURIComponent(expectedForecastVersion)}`,

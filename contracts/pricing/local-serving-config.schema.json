@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/local-serving-config.schema.json",
+  "title": "retail-pricing-local-serving-config/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "configFingerprint", "retailerId", "tenantId", "environment", "audience", "activationSetId", "bundleId", "bundleSemanticFingerprint", "logicalDatabaseTarget", "dsnEnvironmentVariable"],
+  "properties": {
+    "schemaVersion": {"const": "retail-pricing-local-serving-config/v1"},
+    "configFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "retailerId": {"type": "string"}, "tenantId": {"type": "string"},
+    "environment": {"const": "local"},
+    "audience": {"const": "response_rich_local"},
+    "activationSetId": {"type": "string", "pattern": "^pact_[0-9a-f]{16}$"},
+    "bundleId": {"type": "string", "pattern": "^pb_[0-9a-f]{20}$"},
+    "bundleSemanticFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "logicalDatabaseTarget": {"type": "string", "minLength": 1},
+    "dsnEnvironmentVariable": {"const": "RETAIL_POSTGRES_DSN"}
+  },
+  "not": {"anyOf": [{"required": ["dsn"]}, {"required": ["password"]}, {"required": ["credentials"]}]}
+}

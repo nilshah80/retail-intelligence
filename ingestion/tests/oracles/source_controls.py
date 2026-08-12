@@ -24,7 +24,13 @@ def _units_by_market(source_run: Path, dataset: str) -> dict[str, int]:
     result: dict[str, int] = {}
     with duckdb.connect() as connection:
         for shop_id, market_id in _shop_markets(source_run):
-            path = source_run / "shopify" / shop_id / f"{dataset}.parquet"
+            shop_root = source_run / "shopify" / shop_id
+            flat = shop_root / f"{dataset}.parquet"
+            path = (
+                flat
+                if flat.is_file()
+                else shop_root / dataset / "**" / "*.parquet"
+            )
             result[market_id] = int(
                 connection.execute(
                     "SELECT coalesce(sum(try_cast(quantity AS BIGINT)), 0) "

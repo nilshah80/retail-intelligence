@@ -953,7 +953,7 @@ datasets:
   - fixtureId
   columnPolicies: *id001
 - sourceSystem: generator
-  datasetId: resolvedConfig
+  datasetId: resolvedConfigYaml
   classification: control_only
   permissionLane: public
   format: yaml
@@ -961,7 +961,7 @@ datasets:
   grainFields: &id003 []
   columnPolicies: &id004 []
 - sourceSystem: generator
-  datasetId: resolvedConfigJsonCompatibility
+  datasetId: resolvedConfigJson
   classification: control_only
   permissionLane: public
   format: json

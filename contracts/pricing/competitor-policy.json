@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "retail-competitor-assessment/v1",
+  "policyVersion": "competitor-assessment/1.0.0",
+  "marketPositionTolerancePct": "0.50",
+  "evaluationGate": {
+    "minimumPopulation": 200,
+    "minimumMissingAttributeCohort": 25,
+    "precisionMin": "0.95",
+    "recallMin": "0.90",
+    "falseMatchRateMax": "0.02",
+    "expectedCalibrationErrorMax": "0.05",
+    "truthMayBeServed": false,
+    "splitField": "truthSplit",
+    "developmentValue": "development",
+    "evaluationValue": "evaluation",
+    "scoreProtocol": "held-out-attribute-score/1.0.0"
+  },
+  "matchThresholds": {
+    "matched": "0.90",
+    "needsReview": "0.80",
+    "rejected": "0.65"
+  },
+  "freshness": {
+    "freshThroughDays": 14,
+    "nearThresholdThroughDays": 30,
+    "staleAfterDays": 30
+  },
+  "allowedEvidenceClasses": [
+    "client",
+    "licensed",
+    "synthetic"
+  ],
+  "syntheticDisclosure": {
+    "usePurpose": "synthetic_demo",
+    "label": "Synthetic demo"
+  },
+  "boundEligibility": {
+    "requiredMatchStatus": "Matched",
+    "excludedFreshness": ["Stale"],
+    "requiredCurrencyMatch": true,
+    "requiredCompliance": true
+  }
+}

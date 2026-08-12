@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "retail-publication-selection-golden-vectors/v1",
+  "identityExcludes": [
+    "/approval",
+    "/lifecycle",
+    "/selectionId",
+    "/semanticIdentityExcludes"
+  ],
+  "vectors": [
+    {
+      "name": "source-publication-active",
+      "selectionId": "sel_e18e129f3951eb8f",
+      "recordId": "rec_bf1d5c933b133015",
+      "record": {
+        "schemaVersion": "retail-publication-selection/v2",
+        "selectionId": "sel_e18e129f3951eb8f",
+        "semanticIdentityExcludes": [
+          "/approval",
+          "/lifecycle",
+          "/selectionId",
+          "/semanticIdentityExcludes"
+        ],
+        "scope": {
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo",
+          "capability": "price_revenue",
+          "environment": "local"
+        },
+        "subject": {
+          "kind": "source_publication",
+          "sourceSnapshotId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "gateASemanticFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "gateBSemanticFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "publicationSemanticFingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "manifestSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "logicalPath": "ingestion/data/curated/run-example",
+          "objectCount": 42,
+          "duckdbSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "readiness": {
+          "reportFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+          "capabilityReadiness": "ready",
+          "capabilitySufficiency": "sufficient",
+          "claimAuthorization": "authorized",
+          "reasonCodes": []
+        },
+        "lifecycle": {
+          "state": "active",
+          "supersedes": null,
+          "recordId": "rec_bf1d5c933b133015",
+          "reasonCode": "GOLDEN_VECTOR"
+        },
+        "approval": {
+          "actor": "contract-reviewer",
+          "recordedAt": "2026-08-11T00:00:00Z",
+          "reason": "Cross-language identity vector",
+          "evidenceFingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    }
+  ]
+}

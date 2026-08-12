@@ -47,8 +47,20 @@ pub struct Scenario {
     pub promotions: Vec<Promotion>,
     #[serde(default)]
     pub pandemics: Vec<Value>,
+    #[serde(default)]
+    pub pricing_evidence: Option<PricingEvidence>,
     pub operations: Operations,
     pub output: Output,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PricingEvidence {
+    pub enabled: bool,
+    pub price_known_as_of_lag_days: u32,
+    pub promotion_planning_lead_days: u32,
+    pub response_step_scale: u32,
+    pub generation_method: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -428,20 +440,8 @@ pub enum Compression {
 impl LoadedConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let source_path = path.as_ref().to_path_buf();
-        let bytes = fs::read(&source_path)
-            .with_context(|| format!("read config {}", source_path.display()))?;
-        let extension = source_path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        let mut raw: Value = match extension.as_str() {
-            "json" => serde_json::from_slice(&bytes)
-                .with_context(|| format!("parse JSON config {}", source_path.display()))?,
-            "yaml" | "yml" => yaml_serde::from_slice(&bytes)
-                .with_context(|| format!("parse YAML config {}", source_path.display()))?,
-            _ => bail!("config must end in .json, .yaml, or .yml"),
-        };
+        let mut stack = Vec::new();
+        let mut raw = load_raw_config(&source_path, &mut stack)?;
         resolve_backward_compatible_defaults(&mut raw)?;
         let scenario: Scenario = serde_json::from_value(raw.clone())
             .with_context(|| format!("decode scenario config {}", source_path.display()))?;
@@ -461,9 +461,139 @@ impl LoadedConfig {
     pub fn logical_days(&self) -> i64 {
         (self.scenario.time.end_date - self.scenario.time.start_date).num_days() + 1
     }
+
+    #[must_use]
+    pub fn pricing_evidence(&self) -> Option<&PricingEvidence> {
+        self.scenario
+            .pricing_evidence
+            .as_ref()
+            .filter(|evidence| evidence.enabled)
+    }
+}
+
+fn load_raw_config(source_path: &Path, stack: &mut Vec<PathBuf>) -> Result<Value> {
+    let canonical_path = source_path
+        .canonicalize()
+        .with_context(|| format!("resolve config {}", source_path.display()))?;
+    if let Some(cycle_start) = stack.iter().position(|path| path == &canonical_path) {
+        let mut cycle = stack[cycle_start..]
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>();
+        cycle.push(canonical_path.display().to_string());
+        bail!("config extends cycle: {}", cycle.join(" -> "));
+    }
+    stack.push(canonical_path.clone());
+    let bytes = fs::read(&canonical_path)
+        .with_context(|| format!("read config {}", canonical_path.display()))?;
+    let extension = canonical_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut raw: Value = match extension.as_str() {
+        "json" => serde_json::from_slice(&bytes)
+            .with_context(|| format!("parse JSON config {}", canonical_path.display()))?,
+        "yaml" | "yml" => yaml_serde::from_slice(&bytes)
+            .with_context(|| format!("parse YAML config {}", canonical_path.display()))?,
+        _ => bail!("config must end in .json, .yaml, or .yml"),
+    };
+    let object = raw
+        .as_object_mut()
+        .context("scenario config root must be an object")?;
+    if let Some(extends) = object.remove("extends") {
+        let relative = extends
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .context("extends must be a non-empty relative path")?;
+        let relative_path = Path::new(relative);
+        ensure!(
+            !relative_path.is_absolute(),
+            "extends must be a relative path"
+        );
+        let directory = canonical_path.parent().context("config parent directory")?;
+        let base_path = directory
+            .join(relative_path)
+            .canonicalize()
+            .with_context(|| {
+                format!(
+                    "resolve extended config {} from {}",
+                    relative,
+                    canonical_path.display()
+                )
+            })?;
+        ensure!(
+            base_path.starts_with(directory),
+            "extends must remain inside the preset directory"
+        );
+        let base = load_raw_config(&base_path, stack)?;
+        raw = merge_config(base, raw);
+    }
+    stack.pop();
+    Ok(raw)
+}
+
+fn merge_config(mut base: Value, overlay: Value) -> Value {
+    match (&mut base, overlay) {
+        (Value::Object(base_object), Value::Object(overlay_object)) => {
+            for (key, value) in overlay_object {
+                let merged = base_object
+                    .remove(&key)
+                    .map_or(value.clone(), |left| merge_config(left, value));
+                base_object.insert(key, merged);
+            }
+            base
+        }
+        (_, value) => value,
+    }
 }
 
 fn resolve_backward_compatible_defaults(raw: &mut Value) -> Result<()> {
+    if let Some(pricing_evidence) = raw
+        .get_mut("pricingEvidence")
+        .map(|value| {
+            value
+                .as_object_mut()
+                .context("pricingEvidence must be an object")
+        })
+        .transpose()?
+    {
+        pricing_evidence
+            .entry("enabled")
+            .or_insert_with(|| Value::from(false));
+        pricing_evidence
+            .entry("priceKnownAsOfLagDays")
+            .or_insert_with(|| Value::from(0));
+        pricing_evidence
+            .entry("promotionPlanningLeadDays")
+            .or_insert_with(|| Value::from(28));
+        pricing_evidence
+            .entry("responseStepScale")
+            .or_insert_with(|| Value::from(1));
+        pricing_evidence
+            .entry("generationMethod")
+            .or_insert_with(|| Value::from("deterministic-response-profile-v1"));
+    }
+    let response_step_scale = raw
+        .get("pricingEvidence")
+        .and_then(|value| value.get("responseStepScale"))
+        .and_then(Value::as_u64);
+    if let Some(response_step_scale) = response_step_scale {
+        let markets = raw
+            .get_mut("markets")
+            .and_then(Value::as_array_mut)
+            .context("markets must be an array")?;
+        for market in markets {
+            market
+                .get_mut("priceDynamics")
+                .and_then(Value::as_object_mut)
+                .context("market.priceDynamics must be an object")?
+                .insert(
+                    "responseStepScale".to_owned(),
+                    Value::from(response_step_scale),
+                );
+        }
+    }
     let operations = raw
         .get_mut("operations")
         .and_then(Value::as_object_mut)
@@ -529,6 +659,19 @@ fn validate(config: &Scenario) -> Result<()> {
         !config.identity.scenario_id.trim().is_empty(),
         "identity.scenarioId is required"
     );
+    if let Some(evidence) = &config.pricing_evidence {
+        ensure!(
+            matches!(evidence.response_step_scale, 1 | 2),
+            "pricingEvidence.responseStepScale must be 1 or 2"
+        );
+        ensure!(
+            !evidence.generation_method.is_empty()
+                && evidence.generation_method.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+                }),
+            "pricingEvidence.generationMethod must be a logical identifier"
+        );
+    }
     ensure!(
         !config.markets.is_empty(),
         "at least one market is required"
@@ -861,7 +1004,7 @@ mod tests {
             .expect("load Gulf config");
         assert_eq!(
             config.config_hash,
-            "028fdbc55d5efc55fb25f93fe4cf322bcfef4a65eeb3d4498a924b191fd50e60"
+            "5739b21117b4fbdcc1a0d196c0b4738db95a992f23c5398a519e51b15a0e37b5"
         );
         assert_eq!(config.logical_days(), 3_649);
         assert_eq!(config.scenario.catalog.product_templates.len(), 73);
@@ -893,5 +1036,27 @@ mod tests {
                 .to_string()
                 .contains("launchDate must not be after the scenario end")
         );
+    }
+
+    #[test]
+    fn pricing_presets_resolve_to_python_compatible_hashes() {
+        let rich = LoadedConfig::load("configs/pricing-response-rich.yaml")
+            .expect("load response-rich pricing config");
+        assert_eq!(
+            rich.config_hash,
+            "2173d4a90cb73655002ea4688b863a8531865641acd32b602678a78b7bb07116"
+        );
+        let evidence = rich.pricing_evidence().expect("enabled pricing evidence");
+        assert_eq!(evidence.price_known_as_of_lag_days, 0);
+        assert_eq!(evidence.promotion_planning_lead_days, 28);
+        assert_eq!(evidence.response_step_scale, 2);
+
+        let sparse = LoadedConfig::load("configs/pricing-evidence-sparse.yaml")
+            .expect("load sparse pricing config");
+        assert_eq!(
+            sparse.config_hash,
+            "71454229986128a1044d1b998712e64fbd6c59f07bad59e981e3ca1c6c8f586b"
+        );
+        assert!(sparse.pricing_evidence().is_none());
     }
 }

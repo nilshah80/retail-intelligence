@@ -14,7 +14,9 @@ What a matrix freezes, per the plan:
 * per-element status -- live, or an APPROVED unavailable state with its owning
   decision. "Partial screen" is never a reason to remove an element, and an
   unavailable element is never replaced by a fabricated zero;
-* action controls: visible, natively disabled, no mutation handler (P4-D9/D11);
+* action controls: governed exports are live; workflow controls are visibly
+  labelled preview-only dialogs whose submission stays natively disabled and
+  has no mutation handler (P4-D9/D11);
 * the interval rule for every interval-consuming element (P4-D17).
 
 Approval posture is recorded the same way as the P4-0P amendment: autonomous
@@ -144,7 +146,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Delayed receipts", "status": "live", "source": "inbound status events past expected_receipt_date and not received"},
             {"label": "Fill rate", "status": "live", "source": "replay_metrics fill by dc"},
         ],
-        "actions": ["Warehouse Export"],
+        "actions": ["Release Blocked Stock", "Review Delayed Receipts", "Export"],
     },
     {
         "screenId": "inventoryAgeing",
@@ -167,7 +169,7 @@ SCREENS: list[dict[str, Any]] = [
                 ),
             },
         ],
-        "actions": ["Ageing Export"],
+        "actions": ["Create Markdown Plan", "Create Transfer Plan", "Export"],
     },
     {
         "screenId": "inventoryTransfers",
@@ -182,7 +184,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Historical DC-to-DC movements", "status": "live", "source": "inventory_transfer_events status history"},
             {"label": "Approve / send controls", "status": "disabled_action", "decision": "P4-D11 ERP transmission is shadow_not_sent; no send path exists"},
         ],
-        "actions": ["Create Transfer", "Transfer Export"],
+        "actions": ["Create Transfer Request", "Optimize Transfers", "Export"],
     },
     {
         "screenId": "inventoryValuation",
@@ -199,7 +201,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "NRV", "status": "unavailable", "decision": "P4-D10: no approved markdown/pricing-floor policy"},
             {"label": "Provisions", "status": "unavailable", "decision": "P4-D10"},
         ],
-        "actions": ["Valuation Export"],
+        "actions": ["Run Valuation Scenario", "Reconcile with ERP", "Export"],
     },
     {
         "screenId": "expiryWaste",
@@ -221,7 +223,7 @@ SCREENS: list[dict[str, Any]] = [
             },
             {"label": "Non-expiring SKUs", "status": "not_applicable", "decision": "a SKU without shelf-life rules has no expiry; rendered as not applicable rather than zero risk"},
         ],
-        "actions": ["Expiry Export"],
+        "actions": ["Create Expiry Action", "Create Waste Reduction Plan", "Export"],
     },
     {
         "screenId": "replenishmentPlanner",
@@ -236,7 +238,14 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Budget ceiling meter", "status": "live", "source": "market-local weeklyReplenishmentBudgetMinor"},
             {"label": "Approve orders", "status": "disabled_action", "decision": "P4-D9"},
         ],
-        "actions": ["Approve Orders", "Adjust Parameters", "Planner Export"],
+        "actions": [
+            "Approve Selected Orders",
+            "Create Transfer Requests",
+            "Send to ERP",
+            "Run Scenario",
+            "Action Center",
+            "Export",
+        ],
     },
     {
         "screenId": "suggestedOrders",
@@ -250,7 +259,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "ERP status", "status": "live", "source": "constant shadow_not_sent per P4-D11 -- displayed truthfully, not as a fake Sent"},
             {"label": "Send to ERP", "status": "disabled_action", "decision": "P4-D11: no send path exists, including after controls render"},
         ],
-        "actions": ["Send to ERP", "Orders Export"],
+        "actions": ["Approve Orders", "Modify Quantity", "Export"],
     },
     {
         "screenId": "supplierPlanning",
@@ -265,7 +274,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Risk classification", "status": "live", "source": "deterministic risk from OTD and lead variability under policy v2"},
             {"label": "Capacity confirmation", "status": "live", "source": "capacity_confirmed_pct vs the frozen supplierCapacityConfirmedPctFloor"},
         ],
-        "actions": ["Supplier Export"],
+        "actions": ["Request Capacity Confirmation", "Create Expedite Request", "Export"],
     },
     {
         "screenId": "safetyStock",
@@ -279,7 +288,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Service level by class", "status": "live", "source": "market-local serviceLevelsByClass from policy v2"},
             {"label": "Cold-start H5+ rows", "status": "live", "source": "rendered as manual-judgment/unavailable with the governed exception", "intervalRule": "never zero safety stock, never a collapsed row, never a fake confidence"},
         ],
-        "actions": ["Safety Stock Export"],
+        "actions": ["Recalculate Safety Stock", "Approve Policy", "Export"],
     },
     {
         "screenId": "allocationFulfillment",
@@ -294,7 +303,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Historical requests/shortfall", "status": "live", "source": "canonical allocations evidence"},
             {"label": "Direct-DC fulfillment", "status": "live", "source": "only rows with an explicit customer_fulfillment lane; otherwise store ATP"},
         ],
-        "actions": ["Allocation Export"],
+        "actions": ["Optimize Allocation", "Release Allocation", "Export"],
     },
     {
         "screenId": "replenishmentExceptions",
@@ -309,7 +318,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "Resolution history / notes", "status": "unavailable", "decision": "P4-D9"},
             {"label": "Assign / resolve controls", "status": "disabled_action", "decision": "P4-D9: visible, natively disabled, no mutation handler"},
         ],
-        "actions": ["Assign", "Resolve", "Exceptions Export"],
+        "actions": ["Resolve Selected", "Assign Owner", "Export"],
     },
     {
         "screenId": "stockHealth",
@@ -323,7 +332,7 @@ SCREENS: list[dict[str, Any]] = [
             {"label": "AI vs Control", "status": "out_of_scope", "decision": "P4-D8: belongs to Phase 8 Performance Insights, not this destination"},
             {"label": "Model Performance", "status": "out_of_scope", "decision": "P4-D8"},
         ],
-        "actions": ["Stock Health Export"],
+        "actions": ["Assign Owner", "Create Action"],
     },
 ]
 
@@ -378,8 +387,9 @@ def build_document() -> dict[str, Any]:
         },
         "presentationAmendments": PRESENTATION_AMENDMENTS,
         "actionBehavior": (
-            "visible and natively disabled with aria-disabled; no mutation "
-            "endpoint or handler exists (P4-D9/P4-D11)"
+            "exports are governed live downloads; workflow actions open visibly "
+            "labelled preview-only dialogs with disabled submission and no mutation "
+            "endpoint, request, or history change"
         ),
         "behavior": {
             "loading": "Preserve the reviewed shell; show loading in value regions.",

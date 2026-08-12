@@ -96,6 +96,8 @@ class CompanionAdapter(SourceAdapter):
             # this entry they would fall back to landing_backfill and be
             # replay-ineligible by construction.
             "serviceLanes": "observedAt",
+            "promotions": "knownAsOf",
+            "promotionSkus": "knownAsOf",
         }
         staged_datasets: dict[str, str] = {}
         for ref in context.catalog.for_source(self.source_system):
@@ -121,7 +123,7 @@ class CompanionAdapter(SourceAdapter):
                 known_expression = f"try_cast({observed} AS TIMESTAMPTZ)"
                 evidence_grade = (
                     "native_observed"
-                    if observed == "observedAt"
+                    if observed in {"observedAt", "knownAsOf"}
                     else "native_extracted"
                 )
             else:
@@ -157,6 +159,54 @@ class CompanionAdapter(SourceAdapter):
                 FROM raw_companion.{raw_name}
                 """
             )
+            optional_columns = {
+                "competitorPrices": {
+                    "competitorBrand": "VARCHAR",
+                    "competitorModel": "VARCHAR",
+                    "competitorGtin": "VARCHAR",
+                    "competitorAttributes": "VARCHAR",
+                    "availabilityState": "VARCHAR",
+                    "evidenceClass": "VARCHAR",
+                    "derivationClass": "VARCHAR",
+                    "usePurpose": "VARCHAR",
+                    "generationMethod": "VARCHAR",
+                },
+                "competitorMatches": {
+                    "matchedAttributes": "VARCHAR",
+                    "evidenceClass": "VARCHAR",
+                    "derivationClass": "VARCHAR",
+                    "usePurpose": "VARCHAR",
+                    "generationMethod": "VARCHAR",
+                },
+                "promotions": {
+                    "knownAsOf": "VARCHAR",
+                    "lifecycleStatus": "VARCHAR",
+                    "provenanceClass": "VARCHAR",
+                    "generationMethod": "VARCHAR",
+                },
+                "promotionSkus": {
+                    "knownAsOf": "VARCHAR",
+                    "provenanceClass": "VARCHAR",
+                    "generationMethod": "VARCHAR",
+                },
+            }.get(dataset, {})
+            staged_columns = {
+                str(row[0])
+                for row in con.execute(
+                    f"DESCRIBE stage_data.{stage_name}"
+                ).fetchall()
+            }
+            for column, column_type in optional_columns.items():
+                if column not in staged_columns:
+                    con.execute(
+                        f"ALTER TABLE stage_data.{stage_name} ADD COLUMN "
+                        f"{sql_identifier(column)} {column_type}"
+                    )
+            if "provenanceClass" in optional_columns:
+                con.execute(
+                    f"UPDATE stage_data.{stage_name} SET row_provenance = "
+                    "coalesce(nullif(provenanceClass, ''), row_provenance)"
+                )
             created.append(f"stage_data.{stage_name}")
             staged_datasets[dataset] = stage_name
 

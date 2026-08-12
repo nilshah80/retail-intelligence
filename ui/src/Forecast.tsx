@@ -9,6 +9,7 @@ import {
   type ForecastHealthStatus
 } from "./generated/forecastHealthPolicy";
 import {useMutation, useQuery} from "@tanstack/react-query";
+import {useDebouncedValue} from "./useDebouncedValue";
 import {
   createColumnHelper,
   flexRender,
@@ -43,10 +44,15 @@ import {
   type ScenarioRunRequest,
   type ScenarioRunResponse
 } from "./api";
+import {
+  DIRECT_EXPORT_LIMIT,
+  downloadDirectExport
+} from "./directExport";
 
 type ForecastRow = ForecastWorkbench["items"][number];
 type Tab = "Overview" | "Store View" | "SKU View" | "Demand Drivers" | "Governance";
-type Modal = "actions" | "stores" | "versions" | "scenario" | null;
+type Modal = "accept" | "adjust" | "actions" | "stores" | "versions" | "scenario" | null;
+type OwnedForecastModal = Exclude<Modal, "scenario" | null>;
 
 const tabs: Tab[] = [
   "Overview",
@@ -249,30 +255,97 @@ function ForecastModal({
   onClose,
   summary,
   stores,
-  version
+  version,
+  workbench,
+  selectedRows,
+  activeStoreId,
+  returnFocus,
+  onOpenStore
 }: {
-  modal: Modal;
+  modal: OwnedForecastModal;
   onClose: () => void;
   summary?: ReturnType<typeof useForecastData>["summary"];
   stores?: ReturnType<typeof useForecastData>["stores"];
   version?: ReturnType<typeof useForecastData>["versions"];
+  workbench?: ReturnType<typeof useForecastData>["workbench"];
+  selectedRows: ForecastRow[];
+  activeStoreId: string;
+  returnFocus: HTMLElement | null;
+  onOpenStore: (storeId: string, horizonWeeks: number) => void;
 }) {
-  if (!modal || modal === "scenario") return null;
-  const title = modal === "actions"
-    ? "Forecast Action Center"
-    : modal === "stores"
-      ? "Open Store Drilldown"
-      : "Compare Versions";
+  const title = {
+    accept: "Accept Forecast",
+    adjust: "Add Planner Adjustment",
+    actions: "Forecast Action Center",
+    stores: "Store Forecast Drilldown",
+    versions: "Compare Forecast Versions"
+  }[modal];
+  const containerRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const onCloseRef = useRef(onClose);
   const summaryItem = summary?.items[0];
-  const versionItem = version?.items[0];
+  const allRows = workbench?.items ?? [];
+  const [adjustmentRowId, setAdjustmentRowId] = useState(
+    selectedRows[0]?.rowId ?? allRows[0]?.rowId ?? ""
+  );
+  const adjustmentRow = allRows.find((row) => row.rowId === adjustmentRowId);
+  const [drilldownStoreId, setDrilldownStoreId] = useState(
+    activeStoreId || stores?.items[0]?.storeId || ""
+  );
+  const [drilldownPeriod, setDrilldownPeriod] = useState("4");
+  const drilldownStore = stores?.items.find((store) => store.storeId === drilldownStoreId);
+  const measuredConfidence = selectedRows
+    .map((row) => row.confidence)
+    .filter((value): value is number => value !== null);
+  const averageConfidence = measuredConfidence.length === selectedRows.length && selectedRows.length > 0
+    ? measuredConfidence.reduce((sum, value) => sum + value, 0) / measuredConfidence.length
+    : null;
+  const unavailableValue = (reason: string) => unavailable(reason);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    titleRef.current?.focus();
+    const container = containerRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !container) return;
+      const controls = Array.from(container.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      ));
+      if (controls.length === 0) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === titleRef.current) {
+        event.preventDefault();
+        first.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      returnFocus?.focus();
+    };
+  }, [returnFocus]);
   return (
     <div className="modal-backdrop open" onMouseDown={(event) => {
       if (event.currentTarget === event.target) onClose();
     }}>
-      <section className="modal forecast-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <section ref={containerRef} className="modal forecast-modal" role="dialog" aria-modal="true" aria-labelledby={`forecast-dialog-${modal}`}>
         <div className="modal-head">
           <div>
-            <h3>{title}</h3>
+            <h3 ref={titleRef} id={`forecast-dialog-${modal}`} tabIndex={-1}>{title}</h3>
             <p>Live accepted forecast • {summary?.versionId ?? "Loading"}</p>
           </div>
           <button className="modal-close" type="button" aria-label={`Close ${title}`} onClick={onClose}>
@@ -280,69 +353,71 @@ function ForecastModal({
           </button>
         </div>
         <div className="modal-body">
-          {modal === "actions" && (
-            <SimpleRows rows={Object.entries(summaryItem?.exceptionCounts ?? {}).map(
-              ([key, value]) => ({
-                label: exceptionLabels[key] ?? key.replaceAll("_", " "),
-                value: count(value)
-              })
-            )} />
+          {(modal === "accept" || modal === "adjust" || modal === "actions") && (
+            <div className="callout compact-callout"><strong>Preview only</strong><p>The planner workflow is not configured. Local exploration does not submit, persist, or change forecast authority.</p></div>
           )}
-          {modal === "stores" && (
-            <div className="table-scroll">
-              <table className="table">
-                <thead>
-                  <tr><th>Store</th><th>Accuracy</th><th>Bias</th><th>P90 Coverage</th></tr>
-                </thead>
-                <tbody>
-                  {(stores?.items ?? []).map((store) => (
-                    <tr key={store.storeId}>
-                      <td>{storeLabel(store.name, store.city)}</td>
-                      <td>{percentage(store.accuracy)}</td>
-                      <td>{ratioPercentage(store.bias, true)}</td>
-                      <td>{ratioPercentage(store.p90Coverage)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {modal === "accept" && (
+            <>
+              <SimpleRows rows={[
+                {label: "Selected Forecasts", value: count(selectedRows.length)},
+                {label: "Average Confidence", value: ratioPercentage(averageConfidence)},
+                {label: "Demand Value", value: unavailableValue("A governed monetary demand value is not published for this selection")}
+              ]} />
+              <div className="pricing-field"><label><span>Acceptance Comment</span><textarea className="filter" readOnly aria-readonly="true" /></label></div>
+            </>
+          )}
+          {modal === "adjust" && (
+            <div className="pricing-form-grid two">
+              <div className="pricing-field"><label><span>Product / SKU</span><select className="filter" value={adjustmentRowId} onChange={(event) => setAdjustmentRowId(event.target.value)}>{allRows.map((row) => <option key={row.rowId} value={row.rowId}>{row.productName} · {row.skuId}</option>)}</select></label></div>
+              <div className="pricing-field"><label><span>Store</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.storeName ?? "Not available"} /></label></div>
+              <div className="pricing-field"><label><span>AI Forecast</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.aiForecast ?? "Not available"} /></label></div>
+              <div className="pricing-field"><label><span>Planner Forecast</span><input className="filter" readOnly aria-readonly="true" /></label></div>
+              <div className="pricing-field"><label><span>Adjustment Reason</span><select className="filter" defaultValue="Local event"><option>Local event</option><option>Promotion change</option><option>Competitor event</option><option>Operational constraint</option><option>Commercial judgement</option></select></label></div>
+              <div className="pricing-field"><label><span>Effective Period</span><select className="filter" defaultValue="Next Week"><option>Next Week</option><option>Next 4 Weeks</option><option>Specific Date Range</option></select></label></div>
+              <div className="pricing-field"><label><span>Comment</span><textarea className="filter" readOnly aria-readonly="true" /></label></div>
             </div>
           )}
+          {modal === "actions" && (
+            <>
+              <SimpleRows rows={[
+                {label: "Open Exceptions", value: count(summaryItem?.exceptionCount)},
+                {label: "High Priority", value: unavailableValue("Priority workflow evidence is unavailable")},
+                {label: "Demand at Risk", value: money(summaryItem?.demandAtRiskMinor) ?? unavailableValue("Costed demand-at-risk evidence is unavailable")}
+              ]} />
+              <div className="table-scroll"><table className="table"><thead><tr><th>Action Queue</th><th>Items</th><th>Owner</th><th>Business Exposure</th></tr></thead><tbody>{["Under-forecast review", "Over-forecast review", "Data-quality correction", "Model retraining"].map((label) => <tr key={label}><td>{label}</td><td>{unavailableValue("Workflow queue counts are unavailable")}</td><td>{unavailableValue("Workflow owners are unavailable")}</td><td>{unavailableValue("Governed business exposure is unavailable")}</td></tr>)}</tbody></table></div>
+            </>
+          )}
+          {modal === "stores" && (
+            <>
+              <div className="pricing-form-grid two">
+                <div className="pricing-field"><label><span>Store</span><select className="filter" value={drilldownStoreId} onChange={(event) => setDrilldownStoreId(event.target.value)}>{(stores?.items ?? []).map((store) => <option key={store.storeId} value={store.storeId}>{storeLabel(store.name, store.city)}</option>)}</select></label></div>
+                <div className="pricing-field"><label><span>Period</span><select className="filter" value={drilldownPeriod} onChange={(event) => setDrilldownPeriod(event.target.value)}><option value="4">Next 4 Weeks</option><option value="8">Next 8 Weeks</option></select></label></div>
+              </div>
+              <h4>Store Forecast Health</h4>
+              <SimpleRows rows={[
+                {label: "Accuracy", value: percentage(drilldownStore?.accuracy)},
+                {label: "Bias", value: ratioPercentage(drilldownStore?.bias, true)},
+                {label: "Demand at risk", value: drilldownStore?.demandAtRiskMinor === null || drilldownStore?.demandAtRiskMinor === undefined ? unavailableValue("Costed demand-at-risk evidence is unavailable") : scenarioMoney(drilldownStore.demandAtRiskMinor, drilldownStore.currencyCode)},
+                {label: "Planner override rate", value: unavailableValue("Planner workflow is not configured")}
+              ]} />
+              <h4>Recommended Actions</h4>
+              <div className="table-scroll"><table className="table"><thead><tr><th>Action</th><th>Priority</th></tr></thead><tbody><tr><td>{unavailableValue("A deterministic store priority action is unavailable")}</td><td>{drilldownStore?.stockoutRisk ?? unavailableValue("Store priority evidence is unavailable")}</td></tr></tbody></table></div>
+            </>
+          )}
           {modal === "versions" && (
-            <table className="table">
-              <thead>
-                <tr><th>Version</th><th>Model</th><th>Accuracy</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Baseline</td>
-                  <td>MA13</td>
-                  <td>{percentage(summaryItem?.baselineAccuracy)}</td>
-                  <td>{statusBadge("Reference")}</td>
-                </tr>
-                <tr>
-                  <td>{versionItem?.versionId ?? "Current"}</td>
-                  <td>Active AI</td>
-                  <td>{percentage(summaryItem?.accuracy)}</td>
-                  <td>{statusBadge("Active")}</td>
-                </tr>
-                <tr>
-                  <td>Prior accepted</td>
-                  <td>{unavailable("A second comparable accepted version is required")}</td>
-                  <td>{unavailable("A second comparable accepted version is required")}</td>
-                  <td>{unavailable("A second comparable accepted version is required")}</td>
-                </tr>
-                <tr>
-                  <td>Planner adjusted</td>
-                  <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
-                  <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
-                  <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div className="table-scroll"><table className="table"><thead><tr><th>Version</th><th>Created By</th><th>Accuracy</th><th>Bias</th><th>Demand Units</th><th>Status</th></tr></thead><tbody>{(version?.items ?? []).map((item) => <tr key={item.versionId}><td>{item.versionId}</td><td>{item.createdBy}</td><td>{percentage(item.accuracy)}</td><td>{percentage(item.bias, true)}</td><td>{count(item.demandUnits)}</td><td>{statusBadge(item.lifecycleStatus)}</td></tr>)}</tbody></table></div>
           )}
         </div>
         <div className="modal-foot">
-          <button className="modal-action" type="button" onClick={onClose}>Close</button>
+          {modal === "accept" ? (
+            <><button className="modal-action" type="button" disabled title="Forecast acceptance workflow is not configured.">Confirm Acceptance</button><button className="filter" type="button" onClick={onClose}>Cancel</button></>
+          ) : modal === "adjust" ? (
+            <><button className="modal-action" type="button" disabled title="Planner adjustment workflow is not configured.">Save Adjustment</button><button className="filter" type="button" onClick={onClose}>Cancel</button></>
+          ) : modal === "stores" ? (
+            <><button className="modal-action" type="button" disabled={!drilldownStoreId} onClick={() => onOpenStore(drilldownStoreId, Number(drilldownPeriod))}>Open Store Forecasts</button><button className="filter" type="button" onClick={onClose}>Cancel</button></>
+          ) : (
+            <button className="modal-action" type="button" onClick={onClose}>Close</button>
+          )}
         </div>
       </section>
     </div>
@@ -779,35 +854,39 @@ function ScenarioModal({
 function useForecastData(filters: ForecastFilters) {
   const summary = useQuery({
     queryKey: ["forecast-summary"],
-    queryFn: loadForecastSummary
+    queryFn: ({signal}) => loadForecastSummary(signal)
   });
   const actuals = useQuery({
     queryKey: ["forecast-actuals", filters],
-    queryFn: () => loadForecastActuals(filters)
+    queryFn: ({signal}) => loadForecastActuals(filters, signal),
+    placeholderData: (previous) => previous
   });
   const horizons = useQuery({
     queryKey: ["forecast-horizons", filters],
-    queryFn: () => loadForecastHorizons(filters)
+    queryFn: ({signal}) => loadForecastHorizons(filters, signal),
+    placeholderData: (previous) => previous
   });
   const stores = useQuery({
     queryKey: ["forecast-stores", filters],
-    queryFn: () => loadForecastStores(filters)
+    queryFn: ({signal}) => loadForecastStores(filters, signal),
+    placeholderData: (previous) => previous
   });
   const workbench = useQuery({
     queryKey: ["forecast-workbench", filters],
-    queryFn: () => loadForecastWorkbench(filters)
+    queryFn: ({signal}) => loadForecastWorkbench(filters, signal),
+    placeholderData: (previous) => previous
   });
   const drivers = useQuery({
     queryKey: ["forecast-drivers"],
-    queryFn: loadForecastDrivers
+    queryFn: ({signal}) => loadForecastDrivers(signal)
   });
   const signals = useQuery({
     queryKey: ["forecast-signals"],
-    queryFn: loadForecastSignals
+    queryFn: ({signal}) => loadForecastSignals(signal)
   });
   const versions = useQuery({
     queryKey: ["forecast-versions"],
-    queryFn: loadForecastVersions
+    queryFn: ({signal}) => loadForecastVersions(signal)
   });
   return {
     pending: [
@@ -849,12 +928,63 @@ function channelTypeLabel(channelType: string) {
   return "Store";
 }
 
-function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
+function ControlledMasterCheckbox({
+  label,
+  checked,
+  indeterminate,
+  onChange
+}: {
+  label: string;
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      onChange={onChange}
+    />
+  );
+}
+
+function WorkbenchTable({
+  rows,
+  selected,
+  onToggle,
+  onToggleAll
+}: {
+  rows: ForecastRow[];
+  selected: ReadonlySet<string>;
+  onToggle: (rowId: string) => void;
+  onToggleAll: () => void;
+}) {
+  const selectedVisible = rows.filter((row) => selected.has(row.rowId)).length;
   const columns = useMemo(() => [
     columnHelper.display({
       id: "select",
-      header: () => <input type="checkbox" aria-label="Select all forecast rows" />,
-      cell: ({row}) => <input type="checkbox" aria-label={`Select ${row.original.skuId}`} />
+      header: () => (
+        <ControlledMasterCheckbox
+          label="Select all visible forecast rows"
+          checked={rows.length > 0 && selectedVisible === rows.length}
+          indeterminate={selectedVisible > 0 && selectedVisible < rows.length}
+          onChange={onToggleAll}
+        />
+      ),
+      cell: ({row}) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${row.original.skuId} at ${row.original.storeName}`}
+          checked={selected.has(row.original.rowId)}
+          onChange={() => onToggle(row.original.rowId)}
+        />
+      )
     }),
     columnHelper.accessor("priority", {
       header: "Priority",
@@ -893,7 +1023,7 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
     }),
     columnHelper.accessor("plannerForecast", {
       header: "Planner Forecast",
-      cell: () => unavailable("Planner workflow belongs to Phase 6")
+      cell: () => unavailable("Planner workflow is not configured")
     }),
     columnHelper.accessor("lastActual", {
       header: "Last Actual",
@@ -979,7 +1109,7 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
       header: "Status",
       cell: (info) => statusBadge(info.getValue())
     })
-  ], []);
+  ], [onToggle, onToggleAll, rows, selected, selectedVisible]);
   const table = useReactTable({
     data: rows,
     columns,
@@ -1003,7 +1133,7 @@ function WorkbenchTable({rows}: {rows: ForecastRow[]}) {
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.original.rowId}>
               {row.getVisibleCells().map((cell) => (
                 <td key={cell.id}>
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1033,7 +1163,7 @@ function Overview({
   /** The pooled figure the Forecast Accuracy tile shows, passed rather than
    *  recomputed: two derivations of one number is how they come to disagree. */
   windowMetrics: {accuracy: number | null; bias: number | null};
-  setModal: (modal: Modal) => void;
+  setModal: (modal: Modal, trigger?: HTMLElement) => void;
 }) {
   const summary = data.summary!.items[0];
   // Decision #95 makes `forecast` the additive expected-volume estimate. P50 and
@@ -1202,7 +1332,7 @@ function Overview({
               ? unavailable("No origin-visible promotion plan exists on the active input pin")
               : count(summary.exceptionCounts[key] ?? 0)
           }))} />
-          <button className="link-button card-link" type="button" onClick={() => setModal("actions")}>
+          <button className="link-button card-link" type="button" onClick={(event) => setModal("actions", event.currentTarget)}>
             Open Action Center
           </button>
         </Card>
@@ -1220,12 +1350,12 @@ function Overview({
               label: "AI forecast accuracy",
               value: percentage(summary.portfolioAccuracy ?? summary.accuracy)
             },
-            {label: "Planner-adjusted accuracy", value: unavailable("Planner workflow belongs to Phase 6")},
+            {label: "Planner-adjusted accuracy", value: unavailable("Planner workflow is not configured")},
             {
               label: "Net FVA",
               value: percentage(summary.portfolioFvaVsMa13Pct ?? summary.fvaVsMa13Pct, true)
             },
-            {label: "Overrides adding value", value: unavailable("Planner workflow belongs to Phase 6")}
+            {label: "Overrides adding value", value: unavailable("Planner workflow is not configured")}
           ]} />
         </Card>
         <Card title="Business Impact" link="Projected">
@@ -1237,7 +1367,7 @@ function Overview({
             "Service-level improvement"
           ].map((label) => ({
             label,
-            value: unavailable("Business-impact measures belong to Phase 4")
+            value: unavailable("A governed business-impact measure is not available")
           }))} />
         </Card>
       </div>
@@ -1250,13 +1380,13 @@ function StoreView({
   setModal
 }: {
   data: ReturnType<typeof useForecastData>;
-  setModal: (modal: Modal) => void;
+  setModal: (modal: Modal, trigger?: HTMLElement) => void;
 }) {
   return (
     <Card title="Store Forecast Performance" link="Filter-scoped">
       <div className="card-toolbar">
         <span>{count(data.stores!.items.length)} current stores</span>
-        <button id="storeForecastDrilldownBtn" className="btn secondary" type="button" onClick={() => setModal("stores")}>
+        <button id="storeForecastDrilldownBtn" className="btn secondary" type="button" onClick={(event) => setModal("stores", event.currentTarget)}>
           Open Store Drilldown
         </button>
       </div>
@@ -1282,7 +1412,7 @@ function StoreView({
                         : store.stockoutRisk === "Medium" ? "b-amber" : "b-green"
                     }`}>{store.stockoutRisk}</span>
                   : unavailable("No health row for this store")}</td>
-                <td>{unavailable("Planner workflow belongs to Phase 6")}</td>
+                <td>{unavailable("Planner workflow is not configured")}</td>
                 <td>{unavailable("No priority-action business rule is frozen")}</td>
               </tr>
             ))}
@@ -1293,13 +1423,28 @@ function StoreView({
   );
 }
 
-function SkuView({data}: {data: ReturnType<typeof useForecastData>}) {
+function SkuView({
+  data,
+  selected,
+  onToggle,
+  onToggleAll
+}: {
+  data: ReturnType<typeof useForecastData>;
+  selected: ReadonlySet<string>;
+  onToggle: (rowId: string) => void;
+  onToggleAll: () => void;
+}) {
   return (
     <Card title="SKU-Store Forecast Workbench" link="Current accepted version">
       <div className="record-count" id="forecastRecordCount">
         Showing {count(data.workbench!.items.length)} of {count(data.workbench!.pagination.total)} records
       </div>
-      <WorkbenchTable rows={data.workbench!.items} />
+      <WorkbenchTable
+        rows={data.workbench!.items}
+        selected={selected}
+        onToggle={onToggle}
+        onToggleAll={onToggleAll}
+      />
     </Card>
   );
 }
@@ -1363,13 +1508,13 @@ function GovernanceView({data}: {data: ReturnType<typeof useForecastData>}) {
       <Card title="Forecast Approval & SLA">
         <div className="empty-panel">
           <strong>Not available</strong>
-          <span>Approval workflow and SLA ownership belong to Phase 6.</span>
+          <span>Approval workflow and SLA ownership are not configured.</span>
         </div>
       </Card>
       <Card title="Model & Data Controls">
         <SimpleRows rows={[
           {label: "Forecast version traceability", value: statusBadge("Good")},
-          {label: "Planner override comments", value: unavailable("Planner workflow belongs to Phase 6")},
+          {label: "Planner override comments", value: unavailable("Planner workflow is not configured")},
           {label: "Data freshness compliance", value: unavailable("Signal freshness timestamps are not materialized")},
           {label: "Model drift within tolerance", value: unavailable("A second comparable accepted version is required")},
           {label: "Back-testing coverage", value: percentage(summary.backtestCoveragePct)}
@@ -1398,8 +1543,13 @@ export function DemandForecast({
   const [horizonWeeks, setHorizonWeeks] = useState(4);
   const [granularity, setGranularity] = useState("Weekly");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim());
   const [tab, setTab] = useState<Tab>("Overview");
   const [modal, setModal] = useState<Modal>(null);
+  const modalTrigger = useRef<HTMLElement | null>(null);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
   const selectedStore = dashboard.filters.stores.find((store) => store.storeId === storeId);
   const filters = useMemo<ForecastFilters>(() => ({
     marketId: selectedStore?.marketId,
@@ -1407,10 +1557,18 @@ export function DemandForecast({
     storeId,
     channelType,
     category,
-    search: search.trim(),
+    search: debouncedSearch,
     horizonWeeks
-  }), [selectedStore?.marketId, region, storeId, channelType, category, search, horizonWeeks]);
+  }), [selectedStore?.marketId, region, storeId, channelType, category, debouncedSearch, horizonWeeks]);
   const data = useForecastData(filters);
+  const openModal = (next: Modal, trigger?: HTMLElement) => {
+    if (next) modalTrigger.current = trigger ?? document.activeElement as HTMLElement | null;
+    setModal(next);
+  };
+  useEffect(() => {
+    setSelectedRows(new Set());
+    setExportStatus("");
+  }, [filters, data.workbench?.semanticFingerprint]);
   // Decision #77 grain resolution. A channel filter never changes the grain, and
   // this screen never selects a single complete SeriesKey, so the resolved grain
   // is market/portfolio by default and store/category once one is chosen.
@@ -1461,49 +1619,77 @@ export function DemandForecast({
     (data.horizons?.metricGrain ?? "market_portfolio").replace(/_/g, " ")
   }`;
 
-  function exportWorkbench() {
-    if (!data.workbench?.items.length) return;
-    // The export carries confidence too, so it inherits decision #64 Q19: a
-    // mixed-window row exports an empty confidence and states its scope in its
-    // own columns. Writing the h1-h4 figure into a column headed `confidence`
-    // beside a whole-window `ai_forecast` would reintroduce the defect in a file
-    // that outlives the screen and carries no tooltip to qualify it.
-    const headings = [
-      "sku_id", "product_name", "store", "channel", "category", "horizon_weeks",
-      "baseline", "ai_forecast_p50", "last_actual", "accuracy", "bias", "confidence",
-      "confidence_state", "interval_covered_through_horizon",
-      "interval_withheld_weeks",
-      "primary_driver", "data_quality", "status"
-    ];
-    const rows = data.workbench.items.map((row) => [
-      row.skuId,
-      row.productName,
-      storeLabel(row.storeName, row.storeCity),
-      row.channelId,
-      row.category,
-      row.horizonWeeks,
-      row.baseline,
-      row.aiForecast,
-      row.lastActual,
-      row.accuracy,
-      row.bias,
-      row.confidenceState === "unavailable_mixed_window" ? null : row.confidence,
-      row.confidenceState,
-      row.intervalCoveredThroughHorizon,
-      row.intervalWithheldWeeks,
-      row.primaryDriver,
-      row.dataQuality,
-      row.status
-    ]);
-    const csv = [headings, ...rows].map((row) =>
-      row.map((value) => `"${String(value ?? "").replaceAll("\"", "\"\"")}"`).join(",")
-    ).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], {type: "text/csv"}));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `demand-forecast-${data.summary?.versionId ?? "active"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const visibleRowIds = data.workbench?.items.map((row) => row.rowId) ?? [];
+  const selectedForecastRows = data.workbench?.items.filter((row) => selectedRows.has(row.rowId)) ?? [];
+  const exportCount = selectedRows.size > 0
+    ? selectedRows.size
+    : data.workbench?.pagination.total ?? 0;
+  const exportDisabledReason = exporting
+    ? "Preparing the governed export…"
+    : exportCount === 0
+      ? "No rows available to export"
+      : exportCount > DIRECT_EXPORT_LIMIT
+        ? `Export limit is ${DIRECT_EXPORT_LIMIT} rows; narrow filters or selection`
+        : "";
+
+  function toggleWorkbenchRow(rowId: string) {
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+    setExportStatus("");
+  }
+
+  function toggleAllWorkbenchRows() {
+    setSelectedRows((current) => {
+      const allVisibleSelected = visibleRowIds.length > 0 &&
+        visibleRowIds.every((rowId) => current.has(rowId));
+      const next = new Set(current);
+      for (const rowId of visibleRowIds) {
+        if (allVisibleSelected) next.delete(rowId);
+        else next.add(rowId);
+      }
+      return next;
+    });
+    setExportStatus("");
+  }
+
+  async function exportWorkbench() {
+    if (!data.workbench || exportDisabledReason) return;
+    setExporting(true);
+    setExportStatus("");
+    try {
+      const selected = [...selectedRows].sort();
+      const currency = selectedStore?.currencyCode ??
+        (dashboard.filters.currencies.length === 1
+          ? dashboard.filters.currencies[0]
+          : "MULTI");
+      const result = await downloadDirectExport({
+        exportId: "exportForecastBtn",
+        scope: selected.length > 0 ? "selected_visible" : "current_filtered",
+        expectedCount: exportCount,
+        ids: selected,
+        currency,
+        storeId,
+        channelType,
+        filters: {
+          marketId: filters.marketId,
+          region: filters.region,
+          storeId: filters.storeId,
+          channelType: filters.channelType,
+          category: filters.category,
+          search: filters.search,
+          horizonWeeks: filters.horizonWeeks
+        }
+      });
+      setExportStatus(`Downloaded ${result.count.toLocaleString("en-US")} rows as ${result.filename}.`);
+    } catch (error) {
+      setExportStatus(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   if (data.error) {
@@ -1523,25 +1709,36 @@ export function DemandForecast({
   return (
     <div id="demandForecast">
       <div className="action-toolbar" aria-label="Forecast actions">
-        <button id="acceptForecastBtn" className="btn primary" type="button" disabled aria-disabled="true" title="Forecast acceptance workflow belongs to Phase 6">Accept Forecast</button>
-        <button id="addForecastAdjustmentBtn" className="btn secondary" type="button" disabled aria-disabled="true" title="Planner adjustment workflow belongs to Phase 6">Add Planner Adjustment</button>
-        <button id="compareForecastVersionsBtn" className="btn secondary" type="button" onClick={() => setModal("versions")}>Compare Versions</button>
+        <button id="acceptForecastBtn" className="btn primary" type="button" onClick={(event) => openModal("accept", event.currentTarget)} title="Preview only; forecast acceptance workflow is not configured">Accept Forecast <small className="preview-label">Preview only</small></button>
+        <button id="addForecastAdjustmentBtn" className="btn secondary" type="button" onClick={(event) => openModal("adjust", event.currentTarget)} title="Preview only; planner adjustment workflow is not configured">Add Planner Adjustment <small className="preview-label">Preview only</small></button>
+        <button id="compareForecastVersionsBtn" className="btn secondary" type="button" onClick={(event) => openModal("versions", event.currentTarget)}>Compare Versions</button>
 		<button
 		  id="forecastScenarioBtn"
 		  className="btn secondary"
 		  type="button"
 		  disabled={!scenarioPlanningEnabled}
 		  aria-disabled={!scenarioPlanningEnabled}
-		  onClick={() => scenarioPlanningEnabled && setModal("scenario")}
+		  onClick={(event) => scenarioPlanningEnabled && openModal("scenario", event.currentTarget)}
 		  title={scenarioPlanningEnabled
 			? "Run a stateless assumption-based forecast scenario"
 			: "Scenario Planning awaits governed activation and its live-status amendment"}
 		>
 		  Scenario Planning
 		</button>
-        <button id="forecastActionCenterBtn" className="btn secondary" type="button" onClick={() => setModal("actions")}>Forecast Action Center</button>
-        <button id="exportForecastBtn" className="btn secondary" type="button" onClick={exportWorkbench}>Export</button>
+        <button id="forecastActionCenterBtn" className="btn secondary" type="button" onClick={(event) => openModal("actions", event.currentTarget)}>Forecast Action Center <small className="preview-label">Preview only</small></button>
+        <button
+          id="exportForecastBtn"
+          className="btn secondary"
+          type="button"
+          onClick={exportWorkbench}
+          disabled={Boolean(exportDisabledReason)}
+          aria-disabled={Boolean(exportDisabledReason)}
+          title={exportDisabledReason || `Export ${exportCount.toLocaleString("en-US")} reviewed row(s)`}
+        >
+          {exporting ? "Exporting…" : "Export"}
+        </button>
       </div>
+      {exportStatus && <div className="export-status" role="status">{exportStatus}</div>}
 
       <div className="forecast-filter-toolbar">
         <select id="forecastRegionFilter" className="filter" aria-label="Forecast region" value={region} onChange={(event) => setRegion(event.target.value)}>
@@ -1608,7 +1805,7 @@ export function DemandForecast({
               ?.toLocaleString("en-US") ?? "0"} distributors
           </p>
         </div>
-        <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Available in Phase 6</p></div>
+        <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Planner workflow not configured</p></div>
         <div className="kpi">
           <small>Forecast Value Add</small>
           {/* Portfolio grain, same as the Forecast Value Add card below. Two FVA
@@ -1627,6 +1824,7 @@ export function DemandForecast({
             className={tab === item ? "active" : ""}
             type="button"
             role="tab"
+            aria-label={item}
             aria-selected={tab === item}
             onClick={() => setTab(item)}
           >
@@ -1642,21 +1840,41 @@ export function DemandForecast({
             granularity={granularity}
             horizonWeeks={horizonWeeks}
             windowMetrics={scopedMetrics}
-            setModal={setModal}
+            setModal={openModal}
           />
         )}
-        {tab === "Store View" && <StoreView data={data} setModal={setModal} />}
-        {tab === "SKU View" && <SkuView data={data} />}
+        {tab === "Store View" && <StoreView data={data} setModal={openModal} />}
+        {tab === "SKU View" && (
+          <SkuView
+            data={data}
+            selected={selectedRows}
+            onToggle={toggleWorkbenchRow}
+            onToggleAll={toggleAllWorkbenchRows}
+          />
+        )}
         {tab === "Demand Drivers" && <DriversView data={data} />}
         {tab === "Governance" && <GovernanceView data={data} />}
       </section>
-      <ForecastModal
-        modal={modal}
-        onClose={() => setModal(null)}
-        summary={data.summary}
-        stores={data.stores}
-        version={data.versions}
-      />
+      {modal && modal !== "scenario" && (
+        <ForecastModal
+          modal={modal}
+          onClose={() => setModal(null)}
+          summary={data.summary}
+          stores={data.stores}
+          version={data.versions}
+          workbench={data.workbench}
+          selectedRows={selectedForecastRows}
+          activeStoreId={storeId}
+          returnFocus={modalTrigger.current}
+          onOpenStore={(nextStoreId, nextHorizon) => {
+            onStoreId(nextStoreId);
+            setHorizonWeeks(nextHorizon);
+            setTab("SKU View");
+            setModal(null);
+            queueMicrotask(() => document.getElementById("page-heading")?.focus({preventScroll: true}));
+          }}
+        />
+      )}
 	  {scenarioPlanningEnabled && modal === "scenario" && (
 		<ScenarioModal
 		  open

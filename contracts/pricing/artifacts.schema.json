@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/artifacts.schema.json",
+  "schemaVersion": "retail-pricing-artifact-contract/v1",
+  "semanticIdentityExcludes": ["/contractFingerprint"],
+  "contractFingerprint": "2b5558c532775002f07cc3680bf16134b29edd33f0b0880dbe46ae12928586c6",
+  "artifacts": {
+    "pricing_panel": {
+      "schemaVersion": "retail-pricing-panel/v1",
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "week_start", "units", "store_shortfall_units", "store_shortfall_share", "store_availability_constrained", "regular_price_minor", "promotion_flag", "currency_code", "price_known_as_of", "sales_known_as_of", "availability_known_as_of", "price_evidence_grade", "department_id", "category", "product_name", "decision_as_of"],
+      "primaryKey": ["market_id", "sku_id", "store_id", "channel_id", "week_start"]
+    },
+    "response_assessments": {
+      "schemaVersion": "retail-price-response-assessments/v1",
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "department_id", "currency_code", "observation_count", "price_level_count", "price_transition_count", "store_shortfall_week_count", "store_shortfall_units", "current_price_minor", "development_tier_price_minor", "disposition", "first_failure_reason", "raw_beta", "shrunk_beta", "confidence", "resample_iqr_ratio", "valid_resample_draws", "development_improvement", "confirmation_improvement", "origin_diagnostics", "price_tier", "selected_configuration_id", "selected_shrinkage", "candidate_selection_diagnostics", "department_accepted_coverage", "department_distinct_sku_store_pairs", "department_enabled"],
+      "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
+    },
+    "price_candidates": {
+      "schemaVersion": "retail-price-candidates/v1",
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "candidate_price_minor", "expected_units", "expected_revenue_minor", "eligible", "rejection_reason"],
+      "primaryKey": ["market_id", "sku_id", "store_id", "channel_id", "candidate_price_minor"]
+    },
+    "price_recommendations": {
+      "schemaVersion": "retail-price-recommendations/v1",
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "recommendation_id", "record_kind", "selectable", "action", "disposition", "first_failure_reason", "current_price_minor", "proposed_price_minor", "currency_code", "expected_units_current", "expected_units_proposed", "expected_revenue_current_minor", "expected_revenue_proposed_minor", "revenue_impact_minor", "margin_impact_minor", "margin_reason_code", "confidence", "priority", "risk", "drivers", "lineage"],
+      "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
+    },
+    "competitor_assessments": {
+      "schemaVersion": "retail-competitor-assessments/v1",
+      "requiredColumns": ["match_id", "market_id", "sku_id", "comp_id", "comp_product_id", "geo_scope_type", "geo_scope_id", "observed_at", "known_as_of", "price_minor", "currency_code", "match_status", "freshness", "age_days", "bound_eligible", "first_exclusion_reason", "all_exclusion_reasons"],
+      "primaryKey": ["market_id", "sku_id", "comp_id", "comp_product_id", "geo_scope_type", "geo_scope_id"]
+    },
+    "competitor_bounds": {
+      "schemaVersion": "retail-competitor-bounds/v1",
+      "requiredColumns": ["market_id", "sku_id", "geo_scope_type", "geo_scope_id", "competitor_upper_bound_minor", "currency_code", "match_id", "comp_id", "comp_product_id", "observed_at", "known_as_of", "evidence_class", "synthetic_label"],
+      "primaryKey": ["market_id", "sku_id", "geo_scope_type", "geo_scope_id"]
+    },
+    "competitor_evaluation": {
+      "schemaVersion": "retail-competitor-evaluation/v1",
+      "requiredProperties": ["schemaVersion", "protocolVersion", "status", "firstFailureReason", "truthSha256", "truthMayBeServed", "developmentPopulation", "evaluationPopulation", "missingAttributeCohort", "truthPositiveCount", "truthNegativeCount", "truePositive", "falsePositive", "trueNegative", "falseNegative", "precision", "recall", "falseMatchRate", "expectedCalibrationError", "calibrationBins", "developmentPairSetSha256", "evaluationPairSetSha256", "developmentEvaluationOverlap", "servedTruthPairOverlap", "recordExceptionCount", "recordExceptionReasons"]
+    },
+    "promotion_protection": {
+      "schemaVersion": "retail-promotion-protection-rows/v1",
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "department_id", "category", "guard_status", "first_failure_reason", "applicable_promotion_ids", "selected_precedence"],
+      "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
+    },
+    "promotion_disposition": {
+      "schemaVersion": "retail-promotion-package-disposition/v1",
+      "requiredProperties": ["schemaVersion", "decisionId", "decisionDisposition", "packageDisposition", "plannerAvailable", "firstFailureReason", "safetyGuardInternal", "forbiddenClaims"]
+    }
+  }
+}

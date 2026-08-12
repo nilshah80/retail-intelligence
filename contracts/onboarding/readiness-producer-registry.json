@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "retail-readiness-producer-registry/v1",
+  "registryFingerprint": "0dd790a4467a763c84715e6cfc5eca3b5246a646b717472f8091634e4af4f065",
+  "semanticIdentityExcludes": [
+    "/registryFingerprint"
+  ],
+  "producers": [
+    {
+      "producerId": "registry.missing-producer",
+      "fields": [
+        "readiness",
+        "sufficiency",
+        "claimAuthorization"
+      ],
+      "proof": "Explicit fail-closed marker used when no approved producer emitted evidence",
+      "missingDisposition": "unavailable"
+    },
+    {
+      "producerId": "gate-b.capability-mask",
+      "fields": [
+        "readiness",
+        "reasonCodes"
+      ],
+      "proof": "Gate B capability-mask entries with a strict boolean available field",
+      "missingDisposition": "unavailable"
+    },
+    {
+      "producerId": "source.demand-forecast-non-pit-input",
+      "fields": [
+        "sufficiency"
+      ],
+      "appliesToCapabilities": [
+        "demand_forecast_non_pit"
+      ],
+      "proof": "The retained Gate B report must expose demand_forecast_non_pit as available. This authorizes source input evaluation only and does not claim point-in-time forecast eligibility or downstream model acceptance.",
+      "predicates": [
+        {
+          "pointer": "/capabilityMask/demand_forecast_non_pit/available",
+          "equals": true
+        }
+      ],
+      "satisfiedDisposition": "sufficient",
+      "failedDisposition": "insufficient_evidence",
+      "failureReasonCode": "DEMAND_FORECAST_SOURCE_INPUT_INSUFFICIENT",
+      "missingReasonCode": "DEMAND_FORECAST_SOURCE_INPUT_NOT_EVALUATED",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "source.inventory-current-input",
+      "fields": [
+        "sufficiency"
+      ],
+      "appliesToCapabilities": [
+        "inventory_replenishment_current_snapshot"
+      ],
+      "proof": "The retained Gate B report must expose an available current-cutoff inventory snapshot with its status split and no missing required entities. This authorizes source input evaluation only, not a replenishment result claim.",
+      "predicates": [
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_current_snapshot/available",
+          "equals": true
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_current_snapshot/currentSnapshotStatusSplitAvailable",
+          "equals": true
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_current_snapshot/missingEntities",
+          "equals": []
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_current_snapshot/scope",
+          "equals": "current_cutoff_only"
+        }
+      ],
+      "satisfiedDisposition": "sufficient",
+      "failedDisposition": "insufficient_evidence",
+      "failureReasonCode": "INVENTORY_CURRENT_SOURCE_INPUT_INSUFFICIENT",
+      "missingReasonCode": "INVENTORY_CURRENT_SOURCE_INPUT_NOT_EVALUATED",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "source.inventory-replay-input",
+      "fields": [
+        "sufficiency"
+      ],
+      "appliesToCapabilities": [
+        "inventory_replenishment_replay"
+      ],
+      "proof": "The retained Gate B report must expose replay input coverage with no premature fulfillment/status rows and at least one store-grain inventory row. This permits rebuilding the replay evaluation while preserving the separate REPLAY_NO_CANDIDATE_IMPROVEMENT result refusal.",
+      "predicates": [
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_replay/available",
+          "equals": true
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_replay/prematureFulfillmentRows",
+          "equals": 0
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_replay/prematureStatusRows",
+          "equals": 0
+        },
+        {
+          "pointer": "/capabilityMask/inventory_replenishment_replay/storeGrainInventoryRows",
+          "minimum": 1
+        }
+      ],
+      "satisfiedDisposition": "sufficient",
+      "failedDisposition": "insufficient_evidence",
+      "failureReasonCode": "INVENTORY_REPLAY_SOURCE_INPUT_INSUFFICIENT",
+      "missingReasonCode": "INVENTORY_REPLAY_SOURCE_INPUT_NOT_EVALUATED",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "statistical.price-response",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted response assessment under contracts/guardrails/price_response.yaml",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "statistical.competitor-match",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted match evaluation under the competitor foundation contract",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "statistical.promotion-response",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted promotion assessment under an approved promotion-response contract",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "governance.claim-authorization",
+      "fields": [
+        "claimAuthorization"
+      ],
+      "proof": "Versioned policy or decision explicitly authorizing the client-facing claim",
+      "missingDisposition": "descriptive_only"
+    }
+  ]
+}

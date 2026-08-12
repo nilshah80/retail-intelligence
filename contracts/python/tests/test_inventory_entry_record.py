@@ -78,6 +78,25 @@ def test_the_source_selection_names_the_publication_the_forecast_serves() -> Non
     assert record["sourceSelection"]["activeRecordId"].startswith("rec_")
 
 
+def test_the_source_selection_fields_come_from_its_current_ledger_subject() -> None:
+    source = _record()["sourceSelection"]
+    path = (
+        REPO_ROOT
+        / "contracts/evidence/publication-selections"
+        / f"publication-selection-{source['activeRecordId']}.json"
+    )
+    active = json.loads(path.read_text(encoding="utf-8"))
+    publication = active.get("subject") or active.get("publication")
+
+    assert publication is not None
+    assert active["schemaVersion"] == "retail-publication-selection/v2"
+    assert source["publicationSemanticFingerprint"] == publication[
+        "publicationSemanticFingerprint"
+    ]
+    assert source["sourceSnapshotId"] == publication["sourceSnapshotId"]
+    assert source["objectCount"] == publication["objectCount"]
+
+
 def test_the_withheld_and_evaluated_populations_are_recorded_separately() -> None:
     """These are different populations. Conflating them turns 86,636 into 8,756."""
 

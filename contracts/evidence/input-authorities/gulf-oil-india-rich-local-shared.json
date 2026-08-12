@@ -1,0 +1,101 @@
+{
+  "audience": "response_rich_local",
+  "authorityId": "auth_7907cdf7647b77bb",
+  "entryEvidence": {
+    "pointerByteSha256": "be468f5a39703e2f8c092f651f4fbede0974f0e5c78fe83526d72c3795681316",
+    "pointerPath": "contracts/evidence/capability-entry-current.json",
+    "records": [
+      {
+        "recordByteSha256": "b5a5dd286383c27126a7aec13d92e15e84564ce51aa1151fb6b53ac797ec377f",
+        "recordId": "623918ac3e6053fdfa0ab06765b71fb05e2a571a4b6d848b4231300a1d9af2e9",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-623918ac3e6053fdfa0ab06765b71fb05e2a571a4b6d848b4231300a1d9af2e9.json",
+        "scope": {
+          "capability": "demand_forecast_non_pit",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "66fd121b655d418ab59fb7290f76b14e70932d552b11749d9e2a00cd904359b9",
+        "recordId": "3ee56556d3c91622100106150d87c95f48658a3039921d02281bccfd2743fd60",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-3ee56556d3c91622100106150d87c95f48658a3039921d02281bccfd2743fd60.json",
+        "scope": {
+          "capability": "inventory_replenishment_current_snapshot",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "d3623fd84a84629060d349aab5822f068f1a10c60b934d21fb00b1891b16cdb6",
+        "recordId": "851fc6ab49ad6a3f34f348cae36985f39ddfa993ca2e9816086e18090f7c5891",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-851fc6ab49ad6a3f34f348cae36985f39ddfa993ca2e9816086e18090f7c5891.json",
+        "scope": {
+          "capability": "inventory_replenishment_replay",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      }
+    ]
+  },
+  "evidenceRoot": "ingestion/data/evidence/run-d0b447bbc9faf4ae",
+  "expectedPin": {
+    "byteSha256": "f445adf47403fede8a79f9156cf14d14071e00709edf7104a6372aab4be21b0f",
+    "path": "contracts/ml/expected-pin.json"
+  },
+  "jobPurpose": "complete_lineage_rebuild",
+  "review": {
+    "actor": "nilay.shah",
+    "reason": "Approved shared-pin complete rich local lineage rebuild for Gulf Oil India pricing evidence.",
+    "reviewedAt": "2026-08-11T19:17:57Z"
+  },
+  "runId": "run-d0b447bbc9faf4ae",
+  "schemaVersion": "retail-input-authority/v1",
+  "scopes": [
+    {
+      "capability": "demand_forecast_non_pit",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_8186a424263cbf03",
+      "selectionRecordByteSha256": "82a4663fb0cd7efae6ad209c3efd3ca4fd37393f988c6a4d175e3b5c3a9dbcf7",
+      "selectionRecordId": "rec_79b21c5066c35dce",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_79b21c5066c35dce.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_current_snapshot",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_3dedf06037dd534c",
+      "selectionRecordByteSha256": "559bf0ee7045dcd5bb8cc0bfd89ffe1b7e24b00f3f484aa2bd746e26295b0f1c",
+      "selectionRecordId": "rec_28d0fccc81bcec77",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_28d0fccc81bcec77.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_replay",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_0d1174c0353b1ec6",
+      "selectionRecordByteSha256": "2cb83aa280fa11b188fe50780eab9fea7cf4a933cb57ea21baf17981d6b1e989",
+      "selectionRecordId": "rec_c21708fb57e877fa",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_c21708fb57e877fa.json",
+      "tenantId": "tenant-demo"
+    }
+  ],
+  "semanticIdentityExcludes": [
+    "/authorityId",
+    "/review"
+  ],
+  "sourceEvidence": {
+    "gateASemanticFingerprint": "6e35065a95ad623f6d24682557aace50dceb5d7b94f187911766768c89683d87",
+    "gateBSemanticFingerprint": "6ee3292eb09acf9831877ee38c284c6e91c1bc258612819bd7206d33a5a8645f",
+    "publicationManifestSha256": "62d9804c49159190ff755f06caa464c8413c2b7ecb6f83d05f2fcd7d8d9e36fb",
+    "publicationSemanticFingerprint": "8d869fbf4715ac7665d55a055d39ed159e9fad171d92cbeccb387262637ccb72",
+    "readinessReportFingerprint": "f4f1df20f2d71aea25c040f745e9cef1ebbaef5a8b18f7764050ed4f666cf116",
+    "readinessReportSha256": "10cdfc021e75d54ba359d552c0d1cef0cbce338f9a56848172f18792a063f024",
+    "sourceSnapshotId": "850397097bd9d3e0c9a4fa6025654f84b577efe6bee67041fe94aeca9ce062c6"
+  }
+}

@@ -31,6 +31,7 @@ SELECTION_ROOT = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
 
 PREDECESSOR_SCHEMA = "retail-publication-selection-predecessor/v1"
 SELECTION_SCHEMA = "retail-publication-selection/v1"
+SELECTION_SCHEMA_V2 = "retail-publication-selection/v2"
 
 #: Every capability the repository currently selects a publication for. Exact by
 #: intent: an unexpected scope appearing here means someone activated a source
@@ -95,6 +96,51 @@ def _current() -> list[dict]:
         record
         for record in selections
         if record["lifecycle"]["recordId"] not in superseded
+    ]
+
+
+def _governed_current() -> list[dict]:
+    """Resolve currency across both immutable selection contract versions.
+
+    The v1-only helpers above continue to audit the historical chains under the
+    rules that created them. Runtime authority, however, must follow a v2
+    candidate that explicitly supersedes a v1 head, so serving assertions resolve
+    the combined ledger rather than silently stopping at the old schema boundary.
+    """
+
+    selections = [
+        record
+        for record in _records()
+        if record.get("schemaVersion") in {SELECTION_SCHEMA, SELECTION_SCHEMA_V2}
+    ]
+    superseded = {
+        record["lifecycle"]["supersedes"]
+        for record in selections
+        if record["lifecycle"].get("supersedes")
+    }
+    return [
+        record
+        for record in selections
+        if record["lifecycle"]["recordId"] not in superseded
+    ]
+
+
+def _publication(record: dict) -> dict:
+    """Return the selected source publication across v1/v2 field names."""
+
+    publication = record.get("publication") or record.get("subject") or {}
+    assert publication.get("kind") in {None, "source_publication"}
+    return publication
+
+
+def _local_governed_current() -> list[dict]:
+    """Current heads for the exact scope of the shared local expected pin."""
+
+    return [
+        record
+        for record in _governed_current()
+        if _scope_tuple(record)[:2] == ("retailer-demo", "tenant-demo")
+        and _scope_tuple(record)[3] == "local"
     ]
 
 
@@ -214,7 +260,7 @@ def test_every_observed_state_is_one_this_test_classifies() -> None:
 def test_the_current_record_for_a_live_scope_is_active_not_superseded() -> None:
     live = {
         _scope_tuple(record)[2]: record
-        for record in _current()
+        for record in _local_governed_current()
         if record["lifecycle"]["state"] == "active"
     }
     assert set(live) == EXPECTED_CAPABILITIES, (
@@ -284,7 +330,7 @@ def test_the_forecast_selection_binds_the_publication_the_ml_pin_names() -> None
 
     active = {
         _scope_tuple(record)[2]: record
-        for record in _current()
+        for record in _local_governed_current()
         if record["lifecycle"]["state"] == "active"
     }
     pin = json.loads(
@@ -292,7 +338,7 @@ def test_the_forecast_selection_binds_the_publication_the_ml_pin_names() -> None
             encoding="utf-8"
         )
     )
-    publication = active["demand_forecast_non_pit"]["publication"]
+    publication = _publication(active["demand_forecast_non_pit"])
     assert publication["sourceSnapshotId"] == pin["sourceSnapshotId"]
     assert (
         publication["gateASemanticFingerprint"]
@@ -325,14 +371,14 @@ def test_every_pinned_capability_has_an_active_selection_on_the_pinned_bytes() -
     )
     active = {
         _scope_tuple(record)[2]: record
-        for record in _current()
+        for record in _local_governed_current()
         if record["lifecycle"]["state"] == "active"
     }
     for capability in pin["requiredCapabilities"]:
         assert capability in active, (
             f"the pin requires {capability} but no selection is active for it"
         )
-        publication = active[capability]["publication"]
+        publication = _publication(active[capability])
         assert publication["sourceSnapshotId"] == pin["sourceSnapshotId"]
         assert (
             publication["publicationSemanticFingerprint"]
@@ -341,10 +387,11 @@ def test_every_pinned_capability_has_an_active_selection_on_the_pinned_bytes() -
 
 
 def test_the_selected_publications_are_present_and_match_retained_evidence() -> None:
-    for record in _current():
+    for record in _governed_current():
         if record["lifecycle"]["state"] != "active":
             continue
-        logical = REPO_ROOT / record["publication"]["logicalPath"]
+        publication = _publication(record)
+        logical = REPO_ROOT / publication["logicalPath"]
         if not logical.exists():
             pytest.skip("the selected publication is not present on this host")
         manifest_path = (
@@ -358,7 +405,6 @@ def test_the_selected_publications_are_present_and_match_retained_evidence() -> 
         if not manifest_path.is_file():
             pytest.skip("retained publication manifest is not present on this host")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        publication = record["publication"]
         assert (
             publication["publicationSemanticFingerprint"]
             == manifest["semanticFingerprint"]
@@ -367,7 +413,7 @@ def test_the_selected_publications_are_present_and_match_retained_evidence() -> 
 
 
 def test_every_active_selection_is_ready_and_sufficient() -> None:
-    for record in _current():
+    for record in _governed_current():
         if record["lifecycle"]["state"] != "active":
             continue
         readiness = record["readiness"]

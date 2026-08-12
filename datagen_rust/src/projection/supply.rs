@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use bigdecimal::RoundingMode;
 use chrono::{Datelike, Duration, NaiveDate};
 
-use crate::catalog::{Product, Variant};
+use crate::catalog::Product;
 use crate::config::{BusinessCentralInstance, LoadedConfig, Market};
 use crate::deterministic::{bc_document_number, bc_uuid, stable_integer};
 use crate::simulation::decimal::PyDecimal as Decimal;
@@ -20,7 +20,6 @@ type Emit<'a> = &'a mut dyn FnMut(&str, &str, &str, bool, FieldValues);
 struct Vendor {
     id: String,
     market_id: String,
-    brand_code: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1009,7 +1008,6 @@ fn vendors(config: &LoadedConfig, catalog: &[Product]) -> Vec<Vendor> {
                 result.push(Vendor {
                     id: bc_uuid("Vendor", &key),
                     market_id: market_id.clone(),
-                    brand_code: product.brand_code.clone(),
                 });
             }
         }

@@ -124,12 +124,10 @@ pub async fn run() -> Result<()> {
         } => {
             let loaded = LoadedConfig::load(config)?;
             let profile = resolve_execution_profile(execution_profile, execution_profile_file)?;
-            // Deliberately do not inherit output.rootDirectory: parity fixtures
-            // may point at the immutable Python reference tree. Rust output is
+            // Deliberately do not inherit output.rootDirectory: a shared config
+            // may name a Python parity-evidence tree. Accepted Rust output stays
             // isolated below this crate's Git-ignored output directory.
-            let output_root = output_root.unwrap_or_else(|| {
-                PathBuf::from("output").join(&loaded.scenario.identity.scenario_id)
-            });
+            let output_root = output_root.unwrap_or_else(|| PathBuf::from("output"));
             let result = generate(loaded, &output_root, profile).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }

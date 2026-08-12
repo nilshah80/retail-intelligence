@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState, type ReactNode} from "react";
+import {useEffect, useMemo, useRef, useState, type ReactNode} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {
   loadDashboard,
@@ -9,6 +9,11 @@ import {
 } from "./api";
 import {DemandForecast} from "./Forecast";
 import {InventoryPage, inventoryScreens, type InventoryPageId} from "./Inventory";
+import {
+  PricingPage,
+  pricingScreens,
+  type PricingPageId
+} from "./Pricing";
 
 type SourceRow = Dashboard["sources"][number];
 
@@ -28,8 +33,15 @@ const currencyNames: Record<string, string> = {
   AED: "UAE Dirham"
 };
 
+const currencyOrder = ["INR", "USD", "EUR", "GBP", "AED"] as const;
+
 const primaryNavigation = [
-  {icon: "⌂", label: "Executive Overview"}
+  {
+    icon: "⌂",
+    label: "Executive Overview",
+    disabled: true,
+    reason: "A governed Executive Overview route is not available."
+  }
 ];
 
 const pricingNavigation = [
@@ -44,7 +56,15 @@ const pricingNavigation = [
  * decoration, so the union is the navigation's source of truth and the label
  * maps below are derived from it rather than duplicated.
  */
-export type PageId = "demandForecast" | "dataManagement" | InventoryPageId;
+export type PageId =
+  | "demandForecast"
+  | "dataManagement"
+  | InventoryPageId
+  | PricingPageId;
+
+const pricingPageIds: PricingPageId[] = [
+  "priceRecommendations", "priceSimulation", "competitorMonitor", "promotionPlanner"
+];
 
 const inventoryPageIds: InventoryPageId[] = [
   "inventoryOverview", "storeInventory", "warehouseInventory",
@@ -56,12 +76,18 @@ const inventoryPageIds: InventoryPageId[] = [
 
 export function isPageId(value: string | null): value is PageId {
   if (value === "demandForecast" || value === "dataManagement") return true;
+  if (pricingPageIds.includes(value as PricingPageId)) return true;
   return inventoryPageIds.includes(value as InventoryPageId);
+}
+
+function isPricingPage(page: PageId): page is PricingPageId {
+  return pricingPageIds.includes(page as PricingPageId);
 }
 
 export function pageTitle(page: PageId): string {
   if (page === "demandForecast") return "Demand Forecast";
   if (page === "dataManagement") return "Data Management";
+  if (isPricingPage(page)) return pricingScreens[page].title;
   return inventoryScreens[page].title;
 }
 
@@ -72,17 +98,21 @@ export function pageSubtitle(page: PageId): string {
   if (page === "dataManagement") {
     return "Monitor source systems, data freshness and data quality";
   }
+  if (isPricingPage(page)) return pricingScreens[page].subtitle;
   return inventoryScreens[page].subtitle;
 }
 
 /** Nav label -> destination, keyed off the same table the parity contract uses. */
 const pageByNavLabel: Record<string, PageId> = Object.fromEntries(
-  inventoryPageIds.map((id) => [
+  [
+    ...pricingPageIds.map((id) => [pricingScreens[id].title, id] as const),
+    ...inventoryPageIds.map((id) => [
     // "Exceptions" is the nav label the reference HTML uses for the
     // replenishment exceptions destination; every other label matches its title.
     id === "replenishmentExceptions" ? "Exceptions" : inventoryScreens[id].title,
     id
-  ])
+    ] as const)
+  ]
 ) as Record<string, PageId>;
 
 const inventoryNavigation = [
@@ -103,34 +133,42 @@ const replenishmentNavigation = [
 ];
 
 const analyticsNavigation = [
-  {icon: "⌁", label: "Performance Insights"},
-  {icon: "□", label: "Reports & Exports"},
-  {icon: "♢", label: "Alerts & Notifications"}
+  {icon: "⌁", label: "Performance Insights", disabled: true, reason: "A governed performance-insights route is not available."},
+  {icon: "□", label: "Reports & Exports", disabled: true, reason: "A governed reports-and-exports route is not available."},
+  {icon: "♢", label: "Alerts & Notifications", disabled: true, reason: "A governed alerts-and-notifications route is not available."}
 ];
 
 const adminNavigation = [
   {icon: "▦", label: "Data Management"},
-  {icon: "⚙", label: "Model Management"},
-  {icon: "☼", label: "Settings"}
+  {icon: "⚙", label: "Model Management", disabled: true, reason: "A governed model-management route is not available."},
+  {icon: "♙", label: "User Management", disabled: true, reason: "Authenticated identity and user-management authority are not available."},
+  {icon: "☼", label: "Settings", disabled: true, reason: "A governed settings route is not available."}
 ];
 
 function NavItem({
   icon,
   label,
   active = false,
-  onClick
+  onClick,
+  disabled = false,
+  reason
 }: {
   icon: string;
   label: string;
   active?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
+  reason?: string;
 }) {
   return (
     <button
       className={`nav-item${active ? " active" : ""}`}
       type="button"
+      data-nav-label={label}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
+      disabled={disabled}
+      title={disabled ? reason : undefined}
     >
       <span className="nav-ico">{icon}</span>
       {label}
@@ -145,7 +183,7 @@ function NavigationSection({
   onSelect
 }: {
   title: string;
-  items: Array<{icon: string; label: string}>;
+  items: Array<{icon: string; label: string; disabled?: boolean; reason?: string}>;
   activeLabel?: string;
   onSelect?: (label: string) => void;
 }) {
@@ -157,7 +195,7 @@ function NavigationSection({
           key={item.label}
           {...item}
           active={item.label === activeLabel}
-          onClick={() => onSelect?.(item.label)}
+          onClick={item.disabled ? undefined : () => onSelect?.(item.label)}
         />
       ))}
     </div>
@@ -236,23 +274,16 @@ function Sidebar({
           <p>Dynamic Pricing &amp;<br />Demand Forecasting</p>
         </div>
       </div>
-      <div className="mobile-navigation" aria-label="Primary mobile navigation">
-        <NavItem
-          icon="▥"
-          label="Demand Forecast"
-          active={page === "demandForecast"}
-          onClick={() => onPage("demandForecast")}
-        />
-        <NavItem
-          icon="▦"
-          label="Data Management"
-          active={page === "dataManagement"}
-          onClick={() => onPage("dataManagement")}
-        />
-      </div>
-
       {primaryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
-      <NavigationSection title="PRICING" items={pricingNavigation} />
+      <NavigationSection
+        title="PRICING"
+        items={pricingNavigation}
+        activeLabel={isPricingPage(page) ? pageTitle(page) : undefined}
+        onSelect={(label) => {
+          const target = pageByNavLabel[label];
+          if (target) onPage(target);
+        }}
+      />
 
       <div className="nav-section">
         <div className="nav-title">DEMAND &amp; INVENTORY</div>
@@ -321,6 +352,13 @@ function Sidebar({
           if (label === "Data Management") onPage("dataManagement");
         }}
       />
+      <div className="sidebar-user" aria-label="User identity unavailable">
+        <div className="sidebar-user-avatar" aria-hidden="true">—</div>
+        <div>
+          <strong>Identity unavailable</strong>
+          <span>Authentication not configured</span>
+        </div>
+      </div>
     </aside>
   );
 }
@@ -428,7 +466,7 @@ function Topbar({
   onChannelType: (value: string) => void;
   currency: string;
   onCurrency: (value: string) => void;
-  onFx: () => void;
+  onFx: (trigger: HTMLElement) => void;
 }) {
   const selectedStore = dashboard?.filters.stores.find(
     (store) => store.storeId === storeId
@@ -455,7 +493,7 @@ function Topbar({
   return (
     <header className="topbar">
       <div className="title">
-        <h2>{title}</h2>
+        <h2 id="page-heading" tabIndex={-1}>{title}</h2>
         <p>{subtitle}</p>
       </div>
       <div className="filters">
@@ -479,7 +517,7 @@ function Topbar({
           value={dashboard ? formatDateRange(
             dashboard.filters.dateRange.start,
             dashboard.filters.dateRange.end
-          ) : "Loading date range"}
+          ) : "Authority decision window"}
         />
         <select
           className="filter"
@@ -498,10 +536,16 @@ function Topbar({
           className="filter"
           aria-label="Display currency"
           value={currency}
+          disabled={!dashboard}
+          title={!dashboard ? "Currency authority is loading." : undefined}
           onChange={(event) => onCurrency(event.target.value)}
         >
-          {(dashboard?.filters.currencies ?? ["INR"]).map((code) => (
-            <option key={code} value={code}>
+          {currencyOrder.map((code) => (
+            <option
+              key={code}
+              value={code}
+              disabled={!dashboard || !dashboard.filters.currencies.includes(code)}
+            >
               {currencySymbols[code] ?? ""} {code}
             </option>
           ))}
@@ -510,11 +554,17 @@ function Topbar({
           className="filter"
           type="button"
           title="Currency settings"
-          onClick={onFx}
+          onClick={(event) => onFx(event.currentTarget)}
         >
           FX
         </button>
-        <button className="filter icon-button" type="button" aria-label="Notifications">🔔</button>
+        <button
+          className="filter icon-button"
+          type="button"
+          aria-label="Notifications"
+          disabled
+          title="A governed notification source is not available."
+        >🔔</button>
       </div>
     </header>
   );
@@ -525,22 +575,56 @@ function FxModal({
   fx,
   pending,
   error,
+  returnFocus,
   onClose
 }: {
   open: boolean;
   fx?: FxRates;
   pending: boolean;
   error: Error | null;
+  returnFocus: HTMLElement | null;
   onClose: () => void;
 }) {
+  const containerRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+    titleRef.current?.focus();
+    const container = containerRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !container) return;
+      const controls = Array.from(container.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      ));
+      if (controls.length === 0) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === titleRef.current) {
+        event.preventDefault();
+        first.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open, onClose]);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      returnFocus?.focus();
+    };
+  }, [open, returnFocus]);
 
   if (!open) return null;
   return (
@@ -551,13 +635,14 @@ function FxModal({
       }}
     >
       <section
+        ref={containerRef}
         aria-labelledby="fx-modal-title"
         aria-modal="true"
         className="modal"
         role="dialog"
       >
         <div className="modal-head">
-          <h3 id="fx-modal-title">Multi-Currency Configuration</h3>
+          <h3 ref={titleRef} id="fx-modal-title" tabIndex={-1}>Multi-Currency Configuration</h3>
           <button
             aria-label="Close currency settings"
             className="modal-close"
@@ -643,7 +728,13 @@ function Kpi({
   );
 }
 
-function SourceTable({sources}: {sources: SourceRow[]}) {
+function SourceTable({
+  sources,
+  onValidation
+}: {
+  sources: SourceRow[];
+  onValidation: (source: SourceRow, trigger: HTMLElement) => void;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <div className="card source-card">
@@ -669,6 +760,7 @@ function SourceTable({sources}: {sources: SourceRow[]}) {
                 onToggle={() => setSelected(
                   selected === source.sourceSystem ? null : source.sourceSystem
                 )}
+                onValidation={onValidation}
               />
             ))}
           </tbody>
@@ -681,11 +773,13 @@ function SourceTable({sources}: {sources: SourceRow[]}) {
 function FragmentRow({
   source,
   selected,
-  onToggle
+  onToggle,
+  onValidation
 }: {
   source: SourceRow;
   selected: boolean;
   onToggle: () => void;
+  onValidation: (source: SourceRow, trigger: HTMLElement) => void;
 }) {
   return (
     <>
@@ -714,10 +808,116 @@ function FragmentRow({
             <strong>{formatCount(source.datasetCount)} mapped datasets</strong>
             <span>{formatCount(source.objectCount)} accepted source objects</span>
             <span>Source key: {source.sourceSystem}</span>
+            <button
+              className="link-button"
+              type="button"
+              onClick={(event) => onValidation(source, event.currentTarget)}
+            >Validation Results</button>
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+function DataManagementDialog({
+  kind,
+  source,
+  returnFocus,
+  onClose
+}: {
+  kind: "add" | "validation";
+  source?: SourceRow;
+  returnFocus: HTMLElement | null;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const onCloseRef = useRef(onClose);
+  const title = kind === "add" ? "Add Data Source" : "Validation Results";
+  const titleId = `data-management-dialog-${kind}`;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    titleRef.current?.focus();
+    const container = containerRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !container) return;
+      const controls = Array.from(container.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      ));
+      if (controls.length === 0) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === titleRef.current) {
+        event.preventDefault();
+        first.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      returnFocus?.focus();
+    };
+  }, [returnFocus]);
+  const unavailableValidation = (
+    <span className="cell-unavailable" title="The retained source summary does not publish this validation measure.">Not available</span>
+  );
+  return (
+    <div className="modal-backdrop open" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section ref={containerRef} className="modal pricing-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="modal-head">
+          <div>
+            <h3 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h3>
+            {kind === "validation" && <p>{source?.name ?? "Selected source"}</p>}
+          </div>
+          <button className="modal-close" type="button" aria-label={`Close ${title}`} onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {kind === "add" ? (
+            <>
+              <div className="callout compact-callout"><strong>Preview only</strong><p>Source connection authority is not configured. These local choices do not contact or register a source.</p></div>
+              <div className="pricing-form-grid two">
+                <div className="pricing-field"><label><span>Source Name</span><input className="filter" readOnly aria-readonly="true" /></label></div>
+                <div className="pricing-field"><label><span>Type</span><select className="filter" defaultValue="API"><option>API</option><option>Database</option><option>SFTP</option><option>CSV</option></select></label></div>
+                <div className="pricing-field"><label><span>Refresh</span><select className="filter" defaultValue="15 minutes"><option>15 minutes</option><option>Hourly</option><option>Daily</option></select></label></div>
+              </div>
+            </>
+          ) : (
+            <div className="simulation-metrics">
+              <div><small>Quality</small><strong>{source ? formatPct(source.qualityPct) : unavailableValidation}</strong></div>
+              <div><small>Valid</small><strong>{unavailableValidation}</strong></div>
+              <div><small>Duplicates</small><strong>{unavailableValidation}</strong></div>
+              <div><small>Missing</small><strong>{unavailableValidation}</strong></div>
+            </div>
+          )}
+        </div>
+        <div className="modal-foot">
+          {kind === "add" ? (
+            <>
+              <button className="modal-action" type="button" disabled title="Source connection authority is not configured.">Connect</button>
+              <button className="filter" type="button" onClick={onClose}>Cancel</button>
+            </>
+          ) : (
+            <button className="modal-action" type="button" onClick={onClose}>Close</button>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -799,6 +999,7 @@ function Shell({
 }) {
   const [currency, setCurrency] = useState("INR");
   const [fxOpen, setFxOpen] = useState(false);
+  const fxTrigger = useRef<HTMLElement | null>(null);
   const availableCurrencies = dashboard?.filters.currencies ?? [];
   const activeCurrency = availableCurrencies.includes(currency)
     ? currency
@@ -817,7 +1018,10 @@ function Shell({
           onChannelType={onChannelType}
           currency={activeCurrency}
           onCurrency={setCurrency}
-          onFx={() => setFxOpen(true)}
+          onFx={(trigger) => {
+            fxTrigger.current = trigger;
+            setFxOpen(true);
+          }}
         />
         <section className="content">
           <div className="currency-rate-strip">
@@ -831,7 +1035,9 @@ function Shell({
             <span>
               {page === "demandForecast"
                 ? "Demand Forecast currently presents units and percentages; no live monetary measure is converted."
-                : "All monetary values update across dashboards, tables, modals and exports."}
+                : isPricingPage(page)
+                  ? "Operating prices and aggregates remain in the governed display currency; currencies without retained FX evidence stay disabled."
+                  : "All monetary values update across dashboards, tables, modals and exports."}
             </span>
           </div>
           {children}
@@ -853,6 +1059,7 @@ function Shell({
         fx={fx}
         pending={fxPending}
         error={fxError}
+        returnFocus={fxTrigger.current}
         onClose={() => setFxOpen(false)}
       />
     </div>
@@ -860,8 +1067,24 @@ function Shell({
 }
 
 function DataManagement({dashboard}: {dashboard: Dashboard}) {
+  const [dialog, setDialog] = useState<"add" | "validation" | null>(null);
+  const [validationSource, setValidationSource] = useState<SourceRow | undefined>();
+  const dialogTrigger = useRef<HTMLElement | null>(null);
   return (
-    <>
+    <div id="dataManagement">
+      <div className="action-toolbar" aria-label="Data Management actions">
+        <button
+          id="addDataSourceBtn"
+          className="btn primary"
+          type="button"
+          onClick={(event) => {
+            dialogTrigger.current = event.currentTarget;
+            setDialog("add");
+          }}
+        >Add Data Source <small className="preview-label">Preview only</small></button>
+        <button className="btn secondary" type="button" disabled title="A governed sample-upload workflow and accepted file contract are not configured.">Upload Sample Data</button>
+        <button className="btn secondary" type="button" disabled title="A governed validation execution workflow is not configured.">Run Validation</button>
+      </div>
       <div className="kpi-grid">
         <Kpi
           name="data-freshness"
@@ -889,8 +1112,23 @@ function DataManagement({dashboard}: {dashboard: Dashboard}) {
           value={relativeTime(dashboard.kpis.lastRefreshAt, true)}
         />
       </div>
-      <SourceTable sources={dashboard.sources} />
-    </>
+      <SourceTable
+        sources={dashboard.sources}
+        onValidation={(source, trigger) => {
+          dialogTrigger.current = trigger;
+          setValidationSource(source);
+          setDialog("validation");
+        }}
+      />
+      {dialog && (
+        <DataManagementDialog
+          kind={dialog}
+          source={validationSource}
+          returnFocus={dialogTrigger.current}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </div>
   );
 }
 
@@ -911,7 +1149,7 @@ export default function App() {
   });
   const forecastSummary = useQuery({
     queryKey: ["forecast-summary"],
-    queryFn: loadForecastSummary,
+    queryFn: ({signal}) => loadForecastSummary(signal),
     enabled: page === "demandForecast"
   });
   // The tab label follows the destination. index.html hard-codes "Data
@@ -921,12 +1159,41 @@ export default function App() {
   // want, and all of them read the same.
   useEffect(() => {
     document.title = `Retail Intelligence · ${pageTitle(page)}`;
+    const heading = document.getElementById("page-heading");
+    heading?.focus({preventScroll: true});
   }, [page]);
+  useEffect(() => {
+    if (!isPageId(initialPage)) {
+      const normalized = new URL(window.location.href);
+      normalized.searchParams.set("page", "demandForecast");
+      normalized.hash = "";
+      window.history.replaceState({page: "demandForecast"}, "", normalized);
+    }
+    const restorePage = () => {
+      const requested = new URLSearchParams(window.location.search).get("page");
+      const restored: PageId = isPageId(requested) ? requested : "demandForecast";
+      if (!isPageId(requested)) {
+        const normalized = new URL(window.location.href);
+        normalized.searchParams.set("page", restored);
+        normalized.hash = "";
+        window.history.replaceState({page: restored}, "", normalized);
+      }
+      setPage(restored);
+      document.getElementById("page-heading")?.focus({preventScroll: true});
+    };
+    window.addEventListener("popstate", restorePage);
+    return () => window.removeEventListener("popstate", restorePage);
+  }, []);
   const changePage = (nextPage: PageId) => {
+    if (nextPage === page) {
+      document.getElementById("page-heading")?.focus({preventScroll: true});
+      return;
+    }
     setPage(nextPage);
     const url = new URL(window.location.href);
     url.searchParams.set("page", nextPage);
-    window.history.replaceState({}, "", url);
+    url.hash = "";
+    window.history.pushState({page: nextPage}, "", url);
   };
   const shellProps = {
     page,
@@ -945,14 +1212,14 @@ export default function App() {
       ?? forecastSummary.data?.items[0]?.accuracy
   };
 
-  if (dashboard.isPending) {
+  if (!isPricingPage(page) && dashboard.isPending) {
     return (
       <Shell {...shellProps}>
         <div className="state-card">Loading live retail data…</div>
       </Shell>
     );
   }
-  if (dashboard.error || !dashboard.data) {
+  if (!isPricingPage(page) && (dashboard.error || !dashboard.data)) {
     return (
       <Shell {...shellProps}>
         <div className="state-card error-state">
@@ -968,15 +1235,24 @@ export default function App() {
       {...shellProps}
       dashboard={dashboard.data}
     >
-      {page === "demandForecast" ? (
-        <DemandForecast
+      {isPricingPage(page) ? (
+        <PricingPage
+          pageId={page}
           dashboard={dashboard.data}
+          storeId={storeId}
+          onStoreId={setStoreId}
+          channelType={channelType}
+          onNavigate={changePage}
+        />
+      ) : page === "demandForecast" ? (
+        <DemandForecast
+          dashboard={dashboard.data!}
           storeId={storeId}
           onStoreId={setStoreId}
           channelType={channelType}
         />
       ) : page === "dataManagement" ? (
-        <DataManagement dashboard={dashboard.data} />
+        <DataManagement dashboard={dashboard.data!} />
       ) : (
         <InventoryPage pageId={page} />
       )}

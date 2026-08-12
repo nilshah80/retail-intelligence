@@ -28,6 +28,7 @@ PARTITION_DATE_FIELDS = (
     "postingDate",
     "effectiveDate",
     "effectiveFrom",
+    "knownAsOf",
     "startDate",
     "observedAt",
     "validDate",
@@ -200,6 +201,9 @@ EMPTY_DATASET_FIELDS: dict[str, tuple[str, ...]] = {
     "competitorMatchTruth": (
         "matchKey", "marketKey", "competitorId", "competitorSku", "ourSku",
         "matchMethod", "matchConfidence", "effectiveFrom", "effectiveTo",
+        "candidateKey", "departmentId", "categoryId", "referenceAttributes",
+        "candidateAttributes", "truthLabel", "truthSplit",
+        "missingAttributeCohort", "truthMethod", "generationMethod",
     ),
     "promotionSkus": (
         "marketKey", "promotionId", "sku", "departmentId", "categoryId",

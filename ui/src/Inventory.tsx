@@ -22,8 +22,10 @@
  * a partial total as an enterprise figure.
  */
 
+import {useEffect, useRef, useState, type ReactNode} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {loadInventorySlice, type InventorySlice} from "./api";
+import {DIRECT_EXPORT_LIMIT, downloadDirectExport} from "./directExport";
 import {
   REFERENCE_SCREEN_BY_ID,
   type ReferenceScreen
@@ -44,6 +46,114 @@ export type InventoryPageId =
   | "allocationFulfillment"
   | "replenishmentExceptions"
   | "stockHealth";
+
+interface InventoryExportSpec {
+  readonly exportId: string;
+  readonly card?: string;
+}
+
+const INVENTORY_EXPORTS: Partial<Record<InventoryPageId, InventoryExportSpec>> = {
+  inventoryOverview: {exportId: "inventoryExportBtn", card: "locations"},
+  storeInventory: {exportId: "storeInventoryExportBtn", card: "locations"},
+  warehouseInventory: {exportId: "warehouseExportBtn", card: "warehouses"},
+  inventoryAgeing: {exportId: "ageingExportBtn"},
+  inventoryTransfers: {exportId: "transferExportBtn"},
+  inventoryValuation: {exportId: "valuationExportBtn", card: "categories"},
+  expiryWaste: {exportId: "expiryExportBtn"},
+  replenishmentPlanner: {exportId: "replenishmentExportBtn"},
+  suggestedOrders: {exportId: "suggestedExportBtn"},
+  supplierPlanning: {exportId: "supplierExportBtn"},
+  safetyStock: {exportId: "safetyStockExportBtn"},
+  allocationFulfillment: {exportId: "allocationExportBtn"},
+  replenishmentExceptions: {exportId: "exceptionExportBtn"}
+};
+
+type InventoryActionDialogKind =
+  | "inventory"
+  | "replenishment"
+  | "stock_owner"
+  | "stock_action";
+
+interface InventoryActionDialogSpec {
+  readonly id: string;
+  readonly title: string;
+  readonly metric: string;
+  readonly decision: string;
+  readonly kind: InventoryActionDialogKind;
+  readonly surfaceId?: string;
+}
+
+const INVENTORY_ACTION_DIALOGS: Partial<
+  Record<InventoryPageId, Readonly<Record<string, InventoryActionDialogSpec>>>
+> = {
+  inventoryOverview: {
+    "Inventory Action Center": {id: "inventoryActionCenterBtn", title: "Inventory Action Center", metric: "Value at Risk", decision: "Review enterprise actions", kind: "inventory"},
+    "Store Drilldown": {id: "inventoryStoreDrilldownBtn", title: "Store Inventory Drilldown", metric: "Stores at Risk", decision: "Open store actions", kind: "inventory"},
+    "Warehouse Drilldown": {id: "inventoryWarehouseDrilldownBtn", title: "Warehouse Inventory Drilldown", metric: "Blocked Inventory", decision: "Release or reallocate", kind: "inventory"},
+    "Run Inventory Scenario": {id: "inventoryScenarioBtn", title: "Inventory Scenario", metric: "Working Capital Opportunity", decision: "Simulate inventory reduction", kind: "inventory"}
+  },
+  storeInventory: {
+    "Create Store Action": {id: "storeInventoryActionBtn", title: "Create Store Action", metric: "Lost Sales Exposure", decision: "Assign store action", kind: "inventory"},
+    "Create Transfer": {id: "storeInventoryTransferBtn", title: "Create Store Transfer", metric: "Transfer Opportunity", decision: "Create transfer", kind: "inventory"}
+  },
+  warehouseInventory: {
+    "Release Blocked Stock": {id: "warehouseReleaseBtn", title: "Release Blocked Stock", metric: "Blocked Inventory", decision: "Release stock", kind: "inventory"},
+    "Review Delayed Receipts": {id: "warehouseReceiptBtn", title: "Review Delayed Receipts", metric: "Delayed Receipts", decision: "Expedite receipts", kind: "inventory"}
+  },
+  inventoryAgeing: {
+    "Create Markdown Plan": {id: "ageingMarkdownBtn", title: "Create Markdown Plan", metric: "90+ Day Inventory", decision: "Apply controlled markdown", kind: "inventory"},
+    "Create Transfer Plan": {id: "ageingTransferBtn", title: "Create Ageing Transfer Plan", metric: "Transfer Opportunity", decision: "Rebalance inventory", kind: "inventory"}
+  },
+  inventoryTransfers: {
+    "Create Transfer Request": {id: "createInventoryTransferBtn", title: "Create Transfer Request", metric: "Open Transfer Value", decision: "Create transfer", kind: "inventory"},
+    "Optimize Transfers": {id: "optimizeTransferBtn", title: "Optimize Transfers", metric: "Expected Recovery", decision: "Run optimization", kind: "inventory"}
+  },
+  inventoryValuation: {
+    "Run Valuation Scenario": {id: "valuationScenarioBtn", title: "Run Valuation Scenario", metric: "Net Realizable Value", decision: "Recalculate provisions", kind: "inventory"},
+    "Reconcile with ERP": {id: "valuationReconcileBtn", title: "Reconcile with ERP", metric: "Inventory Variance", decision: "Start reconciliation", kind: "inventory"}
+  },
+  expiryWaste: {
+    "Create Expiry Action": {id: "expiryActionBtn", title: "Create Expiry Action", metric: "Near-Expiry Inventory", decision: "Create expiry response", kind: "inventory"},
+    "Create Waste Reduction Plan": {id: "wasteReductionBtn", title: "Create Waste Reduction Plan", metric: "Recovery Opportunity", decision: "Create recovery plan", kind: "inventory"}
+  },
+  replenishmentPlanner: {
+    "Approve Selected Orders": {id: "approveReplenishmentBtn", title: "Approve Replenishment Orders", metric: "Suggested Value", decision: "Approve selected orders", kind: "replenishment"},
+    "Create Transfer Requests": {id: "createTransferRequestsBtn", title: "Create Transfer Requests", metric: "Transfer Opportunity", decision: "Create optimized transfers", kind: "replenishment"},
+    "Send to ERP": {id: "sendReplenishmentErpBtn", title: "Send to ERP", metric: "Approved Orders", decision: "Transmit approved orders", kind: "replenishment"},
+    "Run Scenario": {id: "replenishmentScenarioBtn", title: "Replenishment Scenario", metric: "Working Capital Impact", decision: "Run service-level scenario", kind: "replenishment"},
+    "Action Center": {id: "replenishmentActionCenterBtn", title: "Replenishment Action Center", metric: "Open Exceptions", decision: "Review priority actions", kind: "replenishment"}
+  },
+  suggestedOrders: {
+    "Approve Orders": {id: "suggestedApproveBtn", title: "Approve Suggested Orders", metric: "Order Value", decision: "Approve order batch", kind: "replenishment"},
+    "Modify Quantity": {id: "suggestedModifyBtn", title: "Modify Suggested Quantity", metric: "Suggested Orders", decision: "Adjust order quantity", kind: "replenishment"}
+  },
+  supplierPlanning: {
+    "Request Capacity Confirmation": {id: "supplierCapacityBtn", title: "Supplier Capacity Confirmation", metric: "Unconfirmed Capacity", decision: "Request confirmation", kind: "replenishment"},
+    "Create Expedite Request": {id: "supplierExpediteBtn", title: "Create Expedite Request", metric: "Revenue at Risk", decision: "Expedite order", kind: "replenishment"}
+  },
+  safetyStock: {
+    "Recalculate Safety Stock": {id: "recalculateSafetyStockBtn", title: "Recalculate Safety Stock", metric: "Current Safety Stock", decision: "Recalculate policy", kind: "replenishment"},
+    "Approve Policy": {id: "approveSafetyStockBtn", title: "Approve Safety Stock Policy", metric: "Policy Coverage", decision: "Approve policy", kind: "replenishment"}
+  },
+  allocationFulfillment: {
+    "Optimize Allocation": {id: "optimizeAllocationBtn", title: "Optimize Allocation", metric: "Allocation Pool", decision: "Run optimization", kind: "replenishment"},
+    "Release Allocation": {id: "releaseAllocationBtn", title: "Release Allocation", metric: "Fulfillment Rate", decision: "Release allocation", kind: "replenishment"}
+  },
+  replenishmentExceptions: {
+    "Resolve Selected": {id: "resolveReplenishmentExceptionBtn", title: "Resolve Exceptions", metric: "Open Exceptions", decision: "Resolve selected", kind: "replenishment"},
+    "Assign Owner": {id: "assignReplenishmentExceptionBtn", title: "Assign Exceptions", metric: "High Priority", decision: "Assign owner", kind: "replenishment"}
+  },
+  stockHealth: {
+    "Assign Owner": {id: "stockHealthAssignOwnerBtn", title: "Assign Owner", metric: "Owner", decision: "Assign owner", kind: "stock_owner", surfaceId: "stock-health.assign-owner"},
+    "Create Action": {id: "stockHealthCreateActionBtn", title: "Create Stock Action", metric: "Action", decision: "Create action", kind: "stock_action", surfaceId: "stock-health.create-action"}
+  }
+};
+
+interface InventorySelection {
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (rowId: string) => void;
+  readonly onToggleAll: () => void;
+}
 
 /** How one KPI tile is filled from the live `summary` aggregate. */
 interface KpiSpec {
@@ -816,6 +926,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     ],
     tables: [
       {heading: "Priority Replenishment Recommendations", columns: [
+        {header: "select"},
         {header: "Priority", field: "replenishmentPriority", badge: true},
         {header: "SKU / Product", field: "productName"},
         {header: "Destination", field: "destinationName"},
@@ -1235,8 +1346,27 @@ function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
 }
 
 function Cell({
-  column, row, currency
-}: {column: ColumnSpec; row: Row; currency: string}) {
+  column, row, currency, selection
+}: {
+  column: ColumnSpec;
+  row: Row;
+  currency: string;
+  selection?: InventorySelection;
+}) {
+  if (column.header === "select") {
+    const rowId = typeof row.rowId === "string" ? row.rowId : "";
+    return (
+      <td>
+        <input
+          type="checkbox"
+          aria-label={`Select ${String(row.productName ?? "replenishment row")}`}
+          checked={Boolean(rowId && selection?.selected.has(rowId))}
+          disabled={!rowId || !selection}
+          onChange={() => rowId && selection?.onToggle(rowId)}
+        />
+      </td>
+    );
+  }
   if (!column.field) {
     // The reference has a column here and the platform has no measure for it.
     // Rendering the header with a governed cell is the approved element-level
@@ -1297,10 +1427,17 @@ function UnavailableCell({reason}: {reason?: string}) {
 }
 
 function DataCard({
-  table, slice
-}: {table: TableSpec; slice: InventorySlice}) {
+  table, slice, selection
+}: {table: TableSpec; slice: InventorySlice; selection?: InventorySelection}) {
   const currency = sliceCurrency(slice);
   const rows = slice.items as Row[];
+  const selectable = table.columns.some((column) => column.header === "select");
+  const visibleIds = rows.flatMap((row) =>
+    typeof row.rowId === "string" ? [row.rowId] : []
+  );
+  const selectedVisible = visibleIds.filter((rowId) =>
+    selection?.selected.has(rowId)
+  ).length;
   return (
     <div className="card">
       {(table.heading || slice.pagination) && (
@@ -1322,20 +1459,31 @@ function DataCard({
             <tr>
               {table.columns.map((column) => (
                 <th key={column.header}>
-                  {column.header === "select" ? "" : column.header}
+                  {column.header === "select" ? (
+                    <InventoryMasterCheckbox
+                      checked={visibleIds.length > 0 && selectedVisible === visibleIds.length}
+                      indeterminate={selectedVisible > 0 && selectedVisible < visibleIds.length}
+                      disabled={!selectable || !selection || visibleIds.length === 0}
+                      onChange={() => selection?.onToggleAll()}
+                    />
+                  ) : column.header}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} data-partial={isWithheld(row) ? "true" : undefined}>
+              <tr
+                key={typeof row.rowId === "string" ? row.rowId : index}
+                data-partial={isWithheld(row) ? "true" : undefined}
+              >
                 {table.columns.map((column) => (
                   <Cell
                     key={column.header}
                     column={column}
                     row={row}
                     currency={currency}
+                    selection={selection}
                   />
                 ))}
               </tr>
@@ -1344,6 +1492,33 @@ function DataCard({
         </table>
       </div>
     </div>
+  );
+}
+
+function InventoryMasterCheckbox({
+  checked,
+  indeterminate,
+  disabled,
+  onChange
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  disabled: boolean;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label="Select all visible replenishment rows"
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -1378,12 +1553,179 @@ function filterValues(
   return [];
 }
 
+function InventoryPreviewField({label, children}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="pricing-field">
+      <label>
+        <span>{label}</span>
+        {children}
+      </label>
+    </div>
+  );
+}
+
+function InventoryActionDialog({spec, returnFocus, onClose}: {
+  spec: InventoryActionDialogSpec;
+  returnFocus: HTMLElement | null;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = `inventory-dialog-${spec.id}`;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    titleRef.current?.focus();
+    const container = containerRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !container) return;
+      const controls = Array.from(container.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      ));
+      if (controls.length === 0) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === titleRef.current) {
+        event.preventDefault();
+        first.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      returnFocus?.focus();
+    };
+  }, [returnFocus]);
+
+  const unavailableMetric = (
+    <span className="cell-unavailable" title="A governed workflow summary is not published by the active inventory read model.">
+      Not available
+    </span>
+  );
+  const footerLabel = spec.kind.startsWith("stock_") ? "Save" : "Create Action";
+  return (
+    <div className="modal-backdrop open" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section
+        ref={containerRef}
+        className="modal pricing-modal inventory-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-testid={`modal.${spec.surfaceId ?? spec.id}.preview`}
+      >
+        <div className="modal-head">
+          <div>
+            <h3 ref={titleRef} id={titleId} tabIndex={-1}>{spec.title}</h3>
+            <p>Read-only workflow preview</p>
+          </div>
+          <button className="modal-close" type="button" aria-label={`Close ${spec.title}`} onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="callout compact-callout">
+            <strong>Preview only</strong>
+            <p>The operational workflow and governed identities are not configured. Exploring this dialog does not create a request or action.</p>
+          </div>
+          {spec.kind === "stock_owner" ? (
+            <div className="pricing-form-grid two">
+              <InventoryPreviewField label="Owner">
+                <select className="filter" defaultValue="unavailable" disabled title="Governed user identities are unavailable.">
+                  <option value="unavailable">Identity unavailable</option>
+                </select>
+              </InventoryPreviewField>
+              <InventoryPreviewField label="Priority">
+                <select className="filter" defaultValue="High">
+                  <option>High</option><option>Medium</option><option>Low</option>
+                </select>
+              </InventoryPreviewField>
+              <InventoryPreviewField label="Due Date">
+                <input className="filter" type="date" readOnly aria-readonly="true" />
+              </InventoryPreviewField>
+            </div>
+          ) : spec.kind === "stock_action" ? (
+            <div className="pricing-form-grid two">
+              <InventoryPreviewField label="Action">
+                <select className="filter" defaultValue="Markdown">
+                  <option>Markdown</option><option>Transfer</option><option>Replenish</option><option>Stop Replenishment</option>
+                </select>
+              </InventoryPreviewField>
+              <InventoryPreviewField label="Approval Route">
+                <select className="filter" defaultValue="Category Manager">
+                  <option>Category Manager</option><option>Pricing Manager</option><option>Business Head</option>
+                </select>
+              </InventoryPreviewField>
+            </div>
+          ) : (
+            <>
+              <div className="simulation-metrics inventory-preview-summary">
+                <div><small>{spec.metric}</small><strong>{unavailableMetric}</strong></div>
+                <div><small>Priority</small><strong>{unavailableMetric}</strong></div>
+                <div><small>{spec.kind === "inventory" ? "Decision" : "Action"}</small><strong>{spec.decision}</strong></div>
+              </div>
+              {spec.kind === "inventory" ? (
+                <div className="pricing-form-grid two">
+                  <InventoryPreviewField label="Owner">
+                    <select className="filter" defaultValue="Inventory Manager">
+                      <option>Inventory Manager</option><option>Supply Chain Lead</option><option>Category Manager</option><option>Finance Controller</option>
+                    </select>
+                  </InventoryPreviewField>
+                  <InventoryPreviewField label="Action Note">
+                    <textarea className="filter" readOnly aria-readonly="true" />
+                  </InventoryPreviewField>
+                </div>
+              ) : (
+                <InventoryPreviewField label="Comment">
+                  <textarea className="filter" readOnly aria-readonly="true" />
+                </InventoryPreviewField>
+              )}
+            </>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="modal-action" type="button" disabled title="The operational workflow is not configured.">{footerLabel}</button>
+          <button className="filter" type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ActionStrip({
+  pageId,
   reference,
-  options
+  options,
+  exportSpec,
+  exportDisabledReason,
+  exporting,
+  onExport,
+  onPreview
 }: {
+  pageId: InventoryPageId;
   reference: ReferenceScreen;
   options?: InventorySlice["filterOptions"];
+  exportSpec?: InventoryExportSpec;
+  exportDisabledReason: string;
+  exporting: boolean;
+  onExport: () => void;
+  onPreview: (spec: InventoryActionDialogSpec, trigger: HTMLElement) => void;
 }) {
   return (
     <>
@@ -1391,18 +1733,40 @@ function ActionStrip({
         className="inventory-action-strip"
         aria-label={`${reference.screenId} actions`}
       >
-        {reference.actions.map((label, index) => (
-          <button
-            key={label}
-            className={index === 0 ? "btn btn-primary" : "btn"}
-            type="button"
-            disabled
-            aria-disabled="true"
-            title="Read-only in this release; workflow actions belong to a later phase"
-          >
-            {label}
-          </button>
-        ))}
+        {reference.actions.map((label, index) => {
+          const isExport = Boolean(exportSpec && label.includes("Export"));
+          const preview = INVENTORY_ACTION_DIALOGS[pageId]?.[label];
+          const disabledReason = isExport
+            ? exportDisabledReason
+            : preview
+              ? ""
+              : "This governed workflow is not enabled";
+          return (
+            <button
+              id={isExport ? exportSpec?.exportId : preview?.id}
+              data-surface-id={preview?.surfaceId}
+              data-testid={preview ? `trigger.${preview.surfaceId ?? preview.id}` : undefined}
+              key={label}
+              className={index === 0 ? "btn btn-primary" : "btn"}
+              type="button"
+              disabled={isExport ? Boolean(disabledReason) : !preview}
+              aria-disabled={isExport ? Boolean(disabledReason) : !preview}
+              title={isExport
+                ? disabledReason || "Download the reviewed rows from the server"
+                : preview
+                  ? "Preview only; this action does not create or change a workflow record."
+                  : disabledReason}
+              onClick={isExport
+                ? onExport
+                : preview
+                  ? (event) => onPreview(preview, event.currentTarget)
+                  : undefined}
+            >
+              {isExport && exporting ? "Exporting…" : label}
+              {preview && <small className="preview-label">Preview only</small>}
+            </button>
+          );
+        })}
       </div>
       {reference.filters.length > 0 && (
         <div className="filters" style={{justifyContent: "flex-start"}}>
@@ -1429,17 +1793,112 @@ function ActionStrip({
 export function InventoryPage({pageId}: {pageId: InventoryPageId}) {
   const screen = SCREENS[pageId];
   const reference = REFERENCE_SCREEN_BY_ID[pageId];
+  const exportSpec = INVENTORY_EXPORTS[pageId];
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const [actionDialog, setActionDialog] = useState<InventoryActionDialogSpec | null>(null);
+  const actionDialogTrigger = useRef<HTMLElement | null>(null);
   const slice = useQuery({
     queryKey: ["inventory-slice", screen.endpoint],
     queryFn: () => loadInventorySlice(screen.endpoint),
     retry: false
   });
+  useEffect(() => {
+    setSelectedRows(new Set());
+    setExportStatus("");
+    setActionDialog(null);
+  }, [pageId, slice.data?.semanticFingerprint]);
+
+  const visibleRowIds = (slice.data?.items ?? []).flatMap((row) =>
+    typeof row.rowId === "string" ? [row.rowId] : []
+  );
+  const groupedCount = exportSpec?.card
+    ? slice.data?.cards?.[exportSpec.card]?.length ?? 0
+    : null;
+  const currentFilteredCount = groupedCount ??
+    slice.data?.pagination?.total ?? slice.data?.items.length ?? 0;
+  const selectionApplies = pageId === "replenishmentPlanner" && selectedRows.size > 0;
+  const exportCount = selectionApplies ? selectedRows.size : currentFilteredCount;
+  const exportDisabledReason = !slice.data
+    ? "Live data must load before export"
+    : exporting
+      ? "Preparing the governed export…"
+      : exportCount === 0
+        ? "No rows available to export"
+        : exportCount > DIRECT_EXPORT_LIMIT
+          ? `Export limit is ${DIRECT_EXPORT_LIMIT} rows; narrow filters or selection`
+          : "";
+
+  function toggleRow(rowId: string) {
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+    setExportStatus("");
+  }
+
+  function toggleAllRows() {
+    setSelectedRows((current) => {
+      const allSelected = visibleRowIds.length > 0 &&
+        visibleRowIds.every((rowId) => current.has(rowId));
+      const next = new Set(current);
+      for (const rowId of visibleRowIds) {
+        if (allSelected) next.delete(rowId);
+        else next.add(rowId);
+      }
+      return next;
+    });
+    setExportStatus("");
+  }
+
+  async function runExport() {
+    if (!slice.data || !exportSpec || exportDisabledReason) return;
+    setExporting(true);
+    setExportStatus("");
+    try {
+      const selected = selectionApplies ? [...selectedRows].sort() : [];
+      const result = await downloadDirectExport({
+        exportId: exportSpec.exportId,
+        scope: selectionApplies ? "selected_visible" : "current_filtered",
+        expectedCount: exportCount,
+        ids: selected,
+        currency: sliceCurrency(slice.data)
+      });
+      setExportStatus(`Downloaded ${result.count.toLocaleString("en-US")} rows as ${result.filename}.`);
+    } catch (error) {
+      setExportStatus(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const selection: InventorySelection = {
+    selected: selectedRows,
+    onToggle: toggleRow,
+    onToggleAll: toggleAllRows
+  };
 
   return (
     <>
       {reference && (
-        <ActionStrip reference={reference} options={slice.data?.filterOptions} />
+        <ActionStrip
+          pageId={pageId}
+          reference={reference}
+          options={slice.data?.filterOptions}
+          exportSpec={exportSpec}
+          exportDisabledReason={exportDisabledReason}
+          exporting={exporting}
+          onExport={runExport}
+          onPreview={(spec, trigger) => {
+            actionDialogTrigger.current = trigger;
+            setActionDialog(spec);
+          }}
+        />
       )}
+      {exportStatus && <div className="export-status" role="status">{exportStatus}</div>}
       {slice.isPending ? (
         <div className="state-card">Loading live inventory data…</div>
       ) : slice.error ? (
@@ -1470,10 +1929,22 @@ export function InventoryPage({pageId}: {pageId: InventoryPageId}) {
               <small>Zero rows is a governed result, not a failure.</small>
             </div>
           ) : (
-            <CardBlocks screen={screen} reference={reference} slice={slice.data} />
+            <CardBlocks
+              screen={screen}
+              reference={reference}
+              slice={slice.data}
+              selection={pageId === "replenishmentPlanner" ? selection : undefined}
+            />
           )}
         </>
       ) : null}
+      {actionDialog && (
+        <InventoryActionDialog
+          spec={actionDialog}
+          returnFocus={actionDialogTrigger.current}
+          onClose={() => setActionDialog(null)}
+        />
+      )}
     </>
   );
 }
@@ -1667,11 +2138,12 @@ function AlertsCard({
 
 /** Cards in the reference's own layout blocks and document order. */
 function CardBlocks({
-  screen, reference, slice
+  screen, reference, slice, selection
 }: {
   screen: ScreenSpec;
   reference: ReferenceScreen | undefined;
   slice: InventorySlice;
+  selection?: InventorySelection;
 }) {
   if (!reference) return null;
   const breakdown = screen.breakdown ?? [];
@@ -1811,6 +2283,7 @@ function CardBlocks({
                 key={key}
                 table={{...table, heading: card.heading}}
                 slice={slice}
+                selection={selection}
               />
             );
           })}

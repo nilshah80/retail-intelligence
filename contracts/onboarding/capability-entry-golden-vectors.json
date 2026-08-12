@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "retail-capability-entry-golden-vectors/v1",
+  "vectors": [
+    {
+      "name": "complete-single-scope-record",
+      "record": {
+        "schemaVersion": "retail-capability-entry-record/v1",
+        "identityExclusions": ["/recordId"],
+        "recordId": "0000000000000000000000000000000000000000000000000000000000000000",
+        "scope": {
+          "retailerId": "retailer-example",
+          "tenantId": "tenant-example",
+          "capability": "price_revenue",
+          "environment": "local"
+        },
+        "predecessorRecordId": null,
+        "repository": {
+          "branch": "feature/pricing-intelligence",
+          "commit": "1111111111111111111111111111111111111111",
+          "dirtyPaths": [],
+          "migrationHead": "0027",
+          "contractHashes": {
+            "contracts/onboarding/capability-entry-record.schema.json": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        },
+        "tenantMarketSet": {
+          "contractPath": "contracts/evidence/tenant-market-sets/example.json",
+          "contractSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "declaredMarkets": ["market-a"],
+          "publicationMarkets": ["market-a"],
+          "missingDeclaredMarkets": [],
+          "outOfScopePublicationMarkets": []
+        },
+        "sourceAuthority": {
+          "runId": "run-example",
+          "sourceSnapshotId": "4444444444444444444444444444444444444444444444444444444444444444",
+          "publicationPath": "ingestion/data/curated/run-example",
+          "publicationManifestSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "publicationSemanticFingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+          "objectCount": 1,
+          "gateAStatus": "pass",
+          "gateBStatus": "pass",
+          "expectedPinPath": "contracts/ml/expected-pin.json",
+          "expectedPinSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "expectedPinCheck": {
+            "exitCode": 0,
+            "stdout": "expected-pin.json matches its derivation",
+            "stderr": ""
+          },
+          "activeSelection": {
+            "selectionId": "sel_0123456789abcdef",
+            "recordId": "rec_0123456789abcdef",
+            "recordPath": "contracts/evidence/publication-selections/example.json",
+            "recordSha256": "8888888888888888888888888888888888888888888888888888888888888888",
+            "resolutionMode": "full_scope",
+            "fullScopeResolutionRequired": true
+          }
+        },
+        "upstreamAuthority": {
+          "forecast": {
+            "state": "active",
+            "runId": "forecast-run",
+            "versionId": "forecast-version",
+            "semanticFingerprint": "9999999999999999999999999999999999999999999999999999999999999999",
+            "reasonCodes": []
+          },
+          "inventory": {
+            "state": "not_applicable",
+            "runId": null,
+            "versionId": null,
+            "semanticFingerprint": null,
+            "reasonCodes": []
+          },
+          "databaseObservation": {
+            "state": "verified",
+            "reason": null
+          }
+        },
+        "carryovers": [
+          {
+            "id": "price-temporal-availability",
+            "state": "unavailable",
+            "reasonCode": "PRICE_AVAILABILITY_BACKFILLED",
+            "evidence": "canonical_data.sell_prices"
+          }
+        ],
+        "uiReview": {
+          "implementedDestinations": 16,
+          "openVisualDestinations": 16,
+          "approvedAmendments": ["IRP-V1-A1"]
+        },
+        "resumeMatrix": [
+          {
+            "dependency": "source publication",
+            "firstConsumer": "feature build",
+            "successorRequired": "feature, forecast, inventory, pricing"
+          }
+        ]
+      },
+      "recordId": "e3c73b776950164d038171a0cc6a80778198ef29fde7322b4907a33fedcb7053"
+    }
+  ]
+}

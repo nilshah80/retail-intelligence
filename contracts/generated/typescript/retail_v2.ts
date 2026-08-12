@@ -147,6 +147,8 @@ export interface SellPrices {
   promo_price?: Int64String;
   currency_code: string;
   source_price_path_id?: string;
+  provenance_class: string;
+  generation_method?: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }
@@ -239,6 +241,10 @@ export interface CompetitorProducts {
   model?: string;
   gtin?: string;
   attributes?: unknown;
+  evidence_class: string;
+  derivation_class?: string;
+  use_purpose?: string;
+  generation_method?: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }
@@ -253,7 +259,12 @@ export interface CompetitorPrices {
   price: Int64String;
   currency_code: string;
   in_stock_flag: boolean;
+  availability_state: "In Stock" | "Low Stock" | "Out of Stock" | "Unknown";
   promo_flag: boolean;
+  evidence_class: string;
+  derivation_class?: string;
+  use_purpose?: string;
+  generation_method?: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }
@@ -267,6 +278,10 @@ export interface CompetitorMatches {
   match_confidence: string;
   match_status: string;
   matched_attributes?: string;
+  evidence_class: string;
+  derivation_class?: string;
+  use_purpose?: string;
+  generation_method?: string;
 }
 
 export interface Promotions {
@@ -281,6 +296,8 @@ export interface Promotions {
   end_date: string;
   segment_id?: string;
   status: string;
+  provenance_class: string;
+  generation_method?: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }
@@ -302,6 +319,8 @@ export interface PromotionMerchandiseTargets {
   merch_scope_type: "sku" | "dept" | "category";
   merch_scope_id: string;
   discount_pct: string;
+  provenance_class: string;
+  generation_method?: string;
   known_as_of: string;
   known_as_of_evidence_grade: EvidenceGrade;
 }

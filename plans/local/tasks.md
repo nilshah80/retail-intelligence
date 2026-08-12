@@ -1972,50 +1972,62 @@ production.
       distinct production live-status amendment for `#forecastScenarioBtn`.
 
 ## Phase 5 — Pricing & promotions (`ml/models`, `ml/engines`)
-- [ ] Price-response elasticity (Poisson GLM + empirical-Bayes) + gates.
-- [ ] Declare the evaluated tenant's governed market set in `P5-1P` before generation, and freeze
+- [x] Price-response elasticity (Poisson GLM + empirical-Bayes) and independent acceptance gates
+      are implemented. The active accepted bundle is `pb_89d9518d833b885efecf`; 866 response
+      rows were accepted and 861 recommendations are actionable.
+- [x] Declare the evaluated tenant's governed market set in `P5-1P` before generation, and freeze
       it; every market-scoped gate resolves against that set under `P5-D26`, never against a market
       count written into plan text. Narrowing a set after results is refused like any other
       post-result gate change.
-- [ ] On the primary response-rich preset, require ≥25 actually gated distinct SKU×store pairs per
+- [x] On the primary response-rich preset, require ≥25 actually gated distinct SKU×store pairs per
       enabled department independently in **every market of that governed set**; configured
       SKU/store counts are not proof, and channels may not be double-counted.
-- [ ] Record the measured per-publication starting point in
-      `contracts/evidence/phase5-entry-record.json` at `P5-0` — publication identity, market set,
-      row counts, temporal grades, feasibility audit, carried unavailable reasons. The plan states
-      what is measured and what each measurement decides; it never carries the values.
-- [ ] Author the absolute `market_id + currency_code` pricing rule for every market in the governed
+- [x] Record the measured per-publication starting point in the immutable capability-entry record
+      set under `contracts/evidence/capability-entry-records/`, with the adopted set pointer in
+      `contracts/evidence/capability-entry-current.json` and execution receipts under
+      `contracts/evidence/capability-entry-receipts/` — publication identity, market set, row
+      counts, temporal grades, feasibility audit and carried unavailable reasons are all bound.
+- [x] Author the absolute `market_id + currency_code` pricing rule for every market in the governed
       set before pricing runs. Decision #39 fails closed without it; this is per-market onboarding,
       not a runtime fallback.
-- [ ] On `pricing-evidence-sparse`, publish a reason-coded `insufficient_evidence` state rather
-      than empty or fabricated recommendations.
-- [ ] Build price tiers, empirical-Bayes pools and acceptance coverage within market; never pool
+- [x] On `pricing-evidence-sparse`, publish a reason-coded `insufficient_evidence` state rather
+      than empty or fabricated recommendations. Only its compact verification evidence is retained;
+      no second full sparse datagen output is required or stored.
+- [x] Build price tiers, empirical-Bayes pools and acceptance coverage within market; never pool
       raw local-currency price levels across markets.
-- [ ] Resolve price rules by `market_id + currency_code`; require market-local absolute floor/
+- [x] Resolve price rules by `market_id + currency_code`; require market-local absolute floor/
       ceiling/step/grid/endings and share only dimensionless defaults.
-- [ ] Publish revenue-objective price recommendations first under max-change/dominance rules.
-- [ ] Enable margin objective/floor only when an accepted temporal cost ledger produces
-      provenance-matched cost-as-of in the same local currency.
-- [ ] Fitted Price Simulation. Forecast Scenario Planning v1 is the separate Decision-#96
+- [x] Publish revenue-objective price recommendations first under max-change/dominance rules.
+- [x] Keep the margin objective/floor unavailable unless an accepted temporal cost ledger produces
+      provenance-matched client actual cost-as-of in the same local currency. The current demo
+      truthfully exposes the unavailable state; synthetic scenario margin is labelled separately.
+- [x] Fitted Price Simulation. Forecast Scenario Planning v1 remains the separate Decision-#96
       pre–Phase-5 workstream; a later fitted Forecast integration requires a v2 contract.
-- [ ] Competitor monitor: product-matching + confidence gate + competitor-aware response.
-- [ ] Promotion planner: uplift / cannibalisation / bundle / segment models.
-- [ ] Resolve overlapping promotion merchandise targets by `sku > dept > category`; reject
+- [x] Competitor monitor: product-matching + confidence gate + competitor-aware response.
+- [x] Promotion planner uses the governed Decision-#53 refusal when no origin-visible promotion
+      plan exists. The complete reference UI and read-only previews remain demoable without
+      fabricating uplift, cannibalisation, bundle or segment model output.
+- [x] Resolve overlapping promotion merchandise targets by `sku > dept > category`; reject
       conflicting equal-precedence discounts and preserve promotion-scope AND/OR semantics.
-- [ ] Cost-over-time margin (WAC default; FIFO for batch-tracked; cost-as-of).
-- [ ] Freeze separate reviewed parity/data matrices for the original Price Recommendations,
+- [x] Cost-over-time margin contracts enforce WAC by default, FIFO for batch-tracked inventory and
+      cost-as-of provenance; the client-actual margin path remains unavailable for this dataset.
+- [x] Freeze separate reviewed parity/data matrices for the original Price Recommendations,
       Price Simulation, Competitor Monitor and Promotion Planner pages before extending their
       APIs. Preserve original navigation, filters, KPIs, tabs, charts, tables, action placement,
       currency formatting and common shell; map every revenue/margin/uplift/stock figure to a
       governed definition.
-- [ ] Extend the read-only Go API and build each pricing page from its approved matrix, including
+- [x] Extend the read-only Go API and build each pricing page from its approved matrix, including
       market/department reason-coded `insufficient_evidence` through the agreed element-level
       empty/unavailable state. Do not redesign the page around capability metadata, expose Phase
       5 labels or synthesize margin when cost-as-of is unavailable.
-- [ ] Require screenshot/DOM/data parity and human review for each Pricing/Competitor/Promotion
+- [~] Automated DOM/data/interaction/responsive browser QA is complete for every pricing page,
+      including dialogs and internal wide-table scrolling. Final screenshot comparison and human
+      review remain pending until the running UI is reviewed by the user.
+- [~] Require screenshot/DOM/data parity and human review for each Pricing/Competitor/Promotion
       page before Demo 5; exact local-currency symbols/formatting and global display-currency
       behavior are part of the acceptance test.
-- [ ] **Demo checkpoint 5 / exit:** gates are enforced independently for every market in the
+- [~] **Demo checkpoint 5 / exit:** implementation and automated gates are complete; final human
+      visual acceptance remains. Gates are enforced independently for every market in the
       evaluated tenant's governed set; every recommendation carries market/currency and is
       guardrail-valid; Pricing/Competitor/Promotion screens render live response-rich and
       sparse-evidence outcomes in the original UI; unavailable margin follows the reviewed

@@ -1,0 +1,40 @@
+{
+  "$schema": "./input-bundle.schema.json",
+  "schemaVersion": "retail-ml-expected-pin/v1",
+  "sourceSnapshotId": "50d83ea914eefb85414b82ea0c284aa92089f4ff9d8b4268149f0c98f23be37c",
+  "gateA": {
+    "status": "pass",
+    "semanticFingerprint": "dc215430b79a0ece331b9a9cb4cb731676988f5f69ba893a214b8cad3f1e4451",
+    "evidenceSha256": "3e21eac9d8e8a6485d22d149026d7a8f4c7482e572c855563d363df800b3185f"
+  },
+  "gateB": {
+    "status": "pass",
+    "semanticFingerprint": "215834c55a2ac4e2d7e2be87c0aea481534a6530922fdf6d4626e0aeb6091223",
+    "evidenceSha256": "9cfadc1ad7f6645f19a70c13fe6af5e12147f15bdf0ce69c4af056efd35f6094"
+  },
+  "publication": {
+    "semanticFingerprint": "14ee5d5b55c4e3275a57538b4aa4ae32420a6d4ad51d70e4f7ab7ab4009b2212",
+    "gateBSemanticFingerprint": "215834c55a2ac4e2d7e2be87c0aea481534a6530922fdf6d4626e0aeb6091223",
+    "evidenceSha256": "413f07b79f4a254f1e2bf9d5ddd53ab2b879092dd26b161070d2a996b4d439bd",
+    "objectCount": 2348,
+    "duckdb": {
+      "bytes": 3504615424,
+      "path": "retail_v2.duckdb",
+      "sha256": "53a4b9b14a9187afd9b1578be49b265b0b98f9b5802c263061527afc184353e9"
+    }
+  },
+  "retention": {
+    "schemaVersion": "retail-ingestion-retained-evidence/v1",
+    "publicationFingerprint": "14ee5d5b55c4e3275a57538b4aa4ae32420a6d4ad51d70e4f7ab7ab4009b2212",
+    "files": {
+      "gate-a.json": "3e21eac9d8e8a6485d22d149026d7a8f4c7482e572c855563d363df800b3185f",
+      "gate-b.json": "9cfadc1ad7f6645f19a70c13fe6af5e12147f15bdf0ce69c4af056efd35f6094",
+      "publication-manifest.json": "413f07b79f4a254f1e2bf9d5ddd53ab2b879092dd26b161070d2a996b4d439bd"
+    }
+  },
+  "requiredCapabilities": [
+    "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
+    "inventory_replenishment_replay"
+  ]
+}

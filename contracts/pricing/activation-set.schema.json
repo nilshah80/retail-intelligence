@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/activation-set.schema.json",
+  "title": "retail-pricing-activation-set/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "activationSetId", "retailerId", "tenantId", "environment", "audience", "bundleId", "bundleSemanticFingerprint", "activeSelectionIds", "predecessorActivationSetId", "activatedAt"],
+  "properties": {
+    "schemaVersion": {"const": "retail-pricing-activation-set/v1"},
+    "activationSetId": {"type": "string", "pattern": "^pact_[0-9a-f]{16}$"},
+    "retailerId": {"type": "string"}, "tenantId": {"type": "string"},
+    "environment": {"enum": ["local", "dev", "staging", "prod"]},
+    "audience": {"const": "response_rich_local"},
+    "bundleId": {"type": "string", "pattern": "^pb_[0-9a-f]{20}$"},
+    "bundleSemanticFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "activeSelectionIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^rsel_[0-9a-f]{16}$"}},
+    "predecessorActivationSetId": {"type": ["string", "null"]},
+    "activatedAt": {"type": "string", "format": "date-time"}
+  }
+}

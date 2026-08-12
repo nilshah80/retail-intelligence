@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "retail-pricing-result-selection-golden-vectors/v1",
+  "vectors": [
+    {
+      "name": "rich-local-candidate",
+      "scope": {
+        "retailerId": "retailer-demo",
+        "tenantId": "tenant-demo",
+        "environment": "local",
+        "audience": "response_rich_local"
+      },
+      "evidence": {
+        "sourcePublicationFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "readinessReportFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+        "inputAuthorityId": "auth_0123456789abcdef",
+        "responsePolicySha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "pricingPolicySha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "artifactContractSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "responseAssessmentsFingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+        "recommendationsFingerprint": "7777777777777777777777777777777777777777777777777777777777777777",
+        "priceRevenueCapabilityFingerprint": "8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "lifecycle": {
+        "state": "candidate",
+        "bundleId": "pb_0123456789abcdef0123",
+        "bundleSemanticFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "predecessorRecordId": null,
+        "actor": "reviewer",
+        "reason": "Golden vector.",
+        "recordedAt": "2026-08-11T00:00:00Z"
+      },
+      "expectedSelectionId": "rsel_39dfb3cd2bdf450a",
+      "expectedRecordId": "rselrec_f322b71cb7d74fd7"
+    }
+  ]
+}

@@ -310,19 +310,47 @@ def validate_openapi(path: Path) -> None:
         "/api/v1/replenishment/allocations",
         "/api/v1/replenishment/exceptions",
     }
+    pricing_get_paths = {
+        "/api/v1/pricing/recommendations/summary",
+        "/api/v1/pricing/recommendations",
+        "/api/v1/pricing/recommendations/{id}",
+        "/api/v1/pricing/recommendations/store-view",
+        "/api/v1/pricing/recommendations/category-view",
+        "/api/v1/pricing/recommendations/governance",
+        "/api/v1/pricing/export",
+        "/api/v1/direct-exports/{exportId}",
+        "/api/v1/competitors/summary",
+        "/api/v1/competitors/matches",
+        "/api/v1/competitors/matches/{id}",
+        "/api/v1/competitors/alert-rules",
+        "/api/v1/promotions/summary",
+        "/api/v1/promotions/opportunities",
+        "/api/v1/promotions/portfolio",
+        "/api/v1/promotions/calendar",
+    }
+    pricing_post_paths = {
+        "/api/v1/pricing/simulations:run",
+        "/api/v1/promotions/simulations:run",
+    }
     expected_paths = (
         live_paths
         | forecast_paths
         | inventory_paths
         | scenario_get_paths
         | scenario_post_paths
+        | pricing_get_paths
+        | pricing_post_paths
     )
     paths = document.get("paths")
     if not isinstance(paths, Mapping) or set(paths) != expected_paths:
         raise ContractValidationError("OpenAPI path inventory drifted")
     operation_ids: list[str] = []
     for endpoint, methods in paths.items():
-        expected_method = "post" if endpoint in scenario_post_paths else "get"
+        expected_method = (
+            "post"
+            if endpoint in scenario_post_paths or endpoint in pricing_post_paths
+            else "get"
+        )
         if (
             not isinstance(methods, Mapping)
             or set(methods) != {expected_method}
@@ -341,6 +369,21 @@ def validate_openapi(path: Path) -> None:
             expected_responses = {
                 "200", "400", "409", "413", "415", "422", "503"
             }
+        elif endpoint == "/api/v1/pricing/simulations:run":
+            expected_responses = {"200", "400", "409", "413", "415", "422", "503"}
+        elif endpoint == "/api/v1/promotions/simulations:run":
+            expected_responses = {"422"}
+        elif endpoint == "/api/v1/pricing/export":
+            expected_responses = {"200", "409", "422", "503"}
+        elif endpoint == "/api/v1/direct-exports/{exportId}":
+            expected_responses = {"200", "404", "409", "422", "503"}
+        elif endpoint in {
+            "/api/v1/pricing/recommendations/{id}",
+            "/api/v1/competitors/matches/{id}",
+        }:
+            expected_responses = {"200", "404", "409", "503"}
+        elif endpoint in pricing_get_paths:
+            expected_responses = {"200", "409", "503"}
         elif endpoint in forecast_paths or endpoint in inventory_paths:
             expected_responses = {"200", "409", "503"}
         else:

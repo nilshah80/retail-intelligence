@@ -17,3 +17,4 @@ __all__ = [
     "build_readiness_report",
     "load_policy",
 ]
+"""Capability readiness modules; imports stay explicit to keep tools lightweight."""

@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/input-authority.schema.json",
+  "title": "retail-input-authority/v1",
+  "description": "Reviewed, content-addressed authority for one explicit batch input. It binds the complete full-scope selection set, immutable entry evidence, pin bytes, retained publication evidence, and intended job purpose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorityId",
+    "semanticIdentityExcludes",
+    "audience",
+    "jobPurpose",
+    "runId",
+    "evidenceRoot",
+    "expectedPin",
+    "entryEvidence",
+    "scopes",
+    "sourceEvidence",
+    "review"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-input-authority/v1"
+    },
+    "authorityId": {
+      "type": "string",
+      "pattern": "^auth_[0-9a-f]{16}$"
+    },
+    "semanticIdentityExcludes": {
+      "const": [
+        "/authorityId",
+        "/review"
+      ]
+    },
+    "audience": {
+      "enum": [
+        "complete_lineage_rebuild",
+        "response_rich_local",
+        "pricing_evidence_sparse_dev"
+      ]
+    },
+    "jobPurpose": {
+      "enum": [
+        "complete_lineage_rebuild",
+        "feature_build",
+        "forecast_build",
+        "inventory_build",
+        "pricing_foundation_build",
+        "bundle_verification",
+        "materialization"
+      ]
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9][a-z0-9-]{7,95}$"
+    },
+    "evidenceRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expectedPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "byteSha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "byteSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "entryEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pointerPath",
+        "pointerByteSha256",
+        "records"
+      ],
+      "properties": {
+        "pointerPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointerByteSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "records": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scope",
+              "recordPath",
+              "recordByteSha256",
+              "recordId"
+            ],
+            "properties": {
+              "scope": {
+                "$ref": "#/$defs/scope"
+              },
+              "recordPath": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recordByteSha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "recordId": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "retailerId",
+          "tenantId",
+          "capability",
+          "environment",
+          "selectionId",
+          "selectionRecordId",
+          "selectionRecordPath",
+          "selectionRecordByteSha256"
+        ],
+        "properties": {
+          "retailerId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "tenantId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "capability": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environment": {
+            "enum": [
+              "local",
+              "dev",
+              "staging",
+              "prod"
+            ]
+          },
+          "selectionId": {
+            "type": "string",
+            "pattern": "^sel_[0-9a-f]{16}$"
+          },
+          "selectionRecordId": {
+            "type": "string",
+            "pattern": "^rec_[0-9a-f]{16}$"
+          },
+          "selectionRecordPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "selectionRecordByteSha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSnapshotId",
+        "gateASemanticFingerprint",
+        "gateBSemanticFingerprint",
+        "publicationSemanticFingerprint",
+        "publicationManifestSha256",
+        "readinessReportFingerprint",
+        "readinessReportSha256"
+      ],
+      "properties": {
+        "sourceSnapshotId": {
+          "$ref": "#/$defs/sha256"
+        },
+        "gateASemanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "gateBSemanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "publicationSemanticFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "publicationManifestSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "readinessReportFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "readinessReportSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "reviewedAt",
+        "reason"
+      ],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retailerId",
+        "tenantId",
+        "capability",
+        "environment"
+      ],
+      "properties": {
+        "retailerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environment": {
+          "enum": [
+            "local",
+            "dev",
+            "staging",
+            "prod"
+          ]
+        }
+      }
+    }
+  }
+}

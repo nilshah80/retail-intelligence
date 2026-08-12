@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -40,6 +41,203 @@ FORECAST_API_PATHS = {
     "/api/v1/forecast/signals",
     "/api/v1/forecast/exceptions",
 }
+PRICING_STANDARD_READ_PATHS = {
+    "/api/v1/pricing/recommendations/summary",
+    "/api/v1/pricing/recommendations",
+    "/api/v1/pricing/recommendations/store-view",
+    "/api/v1/pricing/recommendations/category-view",
+    "/api/v1/pricing/recommendations/governance",
+    "/api/v1/competitors/summary",
+    "/api/v1/competitors/matches",
+    "/api/v1/competitors/alert-rules",
+    "/api/v1/promotions/summary",
+    "/api/v1/promotions/opportunities",
+    "/api/v1/promotions/portfolio",
+    "/api/v1/promotions/calendar",
+}
+PRICING_DETAIL_PATHS = {
+    "/api/v1/pricing/recommendations/{id}",
+    "/api/v1/competitors/matches/{id}",
+}
+PRICING_SPECIAL_PATH_METHODS = {
+    "/api/v1/pricing/simulations:run": "post",
+    "/api/v1/pricing/export": "get",
+    "/api/v1/direct-exports/{exportId}": "get",
+    "/api/v1/promotions/simulations:run": "post",
+}
+PRICING_API_PATHS = (
+    PRICING_STANDARD_READ_PATHS
+    | PRICING_DETAIL_PATHS
+    | set(PRICING_SPECIAL_PATH_METHODS)
+)
+
+REQUIRED_CLIENT_DEMO_SURFACES = {
+    "modal.data.add-source",
+    "modal.data.validation-results",
+    "modal.forecast.accept",
+    "modal.forecast.adjustment",
+    "modal.forecast.compare-versions",
+    "modal.forecast.scenario",
+    "modal.forecast.scenario-results",
+    "modal.forecast.action-center",
+    "modal.forecast.store-drilldown",
+    "modal.pricing.recommendation-detail",
+    "modal.pricing.approve",
+    "modal.pricing.send-review",
+    "modal.pricing.export",
+    "modal.pricing.schedule",
+    "modal.pricing.compare-selected",
+    "modal.pricing.action-center",
+    "modal.pricing.store-drilldown",
+    "modal.pricing.simulation-result",
+    "modal.competitor.add",
+    "modal.competitor.alert-rule",
+    "modal.competitor.review-match.default",
+    "modal.competitor.review-match.link-different-product-state",
+    "structural.competitor.add-duplicate",
+    "structural.competitor.alert-duplicate",
+    "modal.promotion.create",
+    "modal.promotion.simulate",
+    "modal.promotion.simulation-results.unavailable-preview",
+    "modal.promotion.calendar",
+    "modal.stock-health.assign-owner.preview",
+    "modal.stock-health.create-action.preview",
+    "state.pricing.rich-active",
+    "state.pricing.sparse-diagnostic",
+    "state.pricing.exact-zero",
+    "state.pricing.filtered-empty",
+    "state.pricing.loading",
+    "state.pricing.partial",
+    "state.pricing.stale",
+    "state.pricing.missing",
+    "state.pricing.corrupt",
+    "state.pricing.panel-failure",
+}
+
+
+def _validate_client_demo_capture_manifest(
+    screen_ids: list[str],
+) -> dict[str, object]:
+    schema_path = (
+        REPO_ROOT
+        / "contracts/screens/client-demo-surface-state-capture-manifest.schema.json"
+    )
+    manifest_path = (
+        REPO_ROOT
+        / "contracts/evidence/client-demo-surface-state-capture-manifest.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(manifest)
+
+    surfaces = manifest["surfaces"]
+    surface_ids = [surface["surfaceId"] for surface in surfaces]
+    test_ids = [surface["testId"] for surface in surfaces]
+    capture_ids = [
+        surface["captureId"]
+        for surface in surfaces
+        if surface["captureId"] is not None
+    ]
+    for label, values in (
+        ("surfaceId", surface_ids),
+        ("testId", test_ids),
+        ("captureId", capture_ids),
+    ):
+        if len(values) != len(set(values)):
+            raise ValueError(f"client-demo capture manifest reuses a {label}")
+
+    page_surfaces = [surface for surface in surfaces if surface["kind"] == "page"]
+    page_ids = [surface["pageId"] for surface in page_surfaces]
+    if set(page_ids) != set(screen_ids) or len(page_ids) != len(screen_ids):
+        raise ValueError(
+            "client-demo capture manifest must contain exactly one page surface "
+            "for every screen contract"
+        )
+    missing_surfaces = sorted(REQUIRED_CLIENT_DEMO_SURFACES - set(surface_ids))
+    if missing_surfaces:
+        raise ValueError(
+            "client-demo capture manifest lacks mandatory surfaces: "
+            + ", ".join(missing_surfaces)
+        )
+
+    original = manifest["originalHtml"]
+    original_path = (REPO_ROOT / original["path"]).resolve()
+    if REPO_ROOT not in original_path.parents or not original_path.is_file():
+        raise ValueError("client-demo original HTML path is outside the repository or absent")
+    if hashlib.sha256(original_path.read_bytes()).hexdigest() != original["sha256"]:
+        raise ValueError("client-demo original HTML hash drifted")
+
+    pending = 0
+    failed = 0
+    captured = 0
+    keyboard_pending = 0
+    keyboard_failed = 0
+    for surface in surfaces:
+        for viewport in ("desktop", "mobile"):
+            evidence = surface[viewport]
+            status = evidence["status"]
+            path = evidence["path"]
+            digest = evidence["sha256"]
+            if status == "captured":
+                if not path or not digest:
+                    raise ValueError(
+                        f"{surface['surfaceId']} {viewport} capture lacks path/hash"
+                    )
+                evidence_path = (REPO_ROOT / path).resolve()
+                if REPO_ROOT not in evidence_path.parents or not evidence_path.is_file():
+                    raise ValueError(
+                        f"{surface['surfaceId']} {viewport} capture is absent"
+                    )
+                if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != digest:
+                    raise ValueError(
+                        f"{surface['surfaceId']} {viewport} capture hash drifted"
+                    )
+                captured += 1
+            elif status in {"pending", "not_applicable"}:
+                if path is not None or digest is not None:
+                    raise ValueError(
+                        f"{surface['surfaceId']} {viewport} {status} evidence must be null"
+                    )
+                pending += int(status == "pending")
+            else:
+                failed += 1
+
+        keyboard_status = surface["keyboardStatus"]
+        keyboard_pending += int(keyboard_status == "pending")
+        keyboard_failed += int(keyboard_status == "failed")
+
+    review = manifest["review"]
+    if review["automatedStatus"] == "passed" and (
+        pending or failed or keyboard_pending or keyboard_failed
+    ):
+        raise ValueError(
+            "client-demo automated review cannot pass with pending/failed "
+            "captures or keyboard checks"
+        )
+    human_status = review["humanStatus"]
+    reviewed_by = review.get("reviewedBy")
+    reviewed_at = review.get("reviewedAt")
+    if human_status == "pending_user_review" and (
+        reviewed_by is not None or reviewed_at is not None
+    ):
+        raise ValueError(
+            "pending client-demo human review cannot name a reviewer or review time"
+        )
+    if human_status in {"approved", "changes_requested"} and (
+        not reviewed_by or not reviewed_at
+    ):
+        raise ValueError(
+            "completed client-demo human review requires reviewer and review time"
+        )
+    return {
+        "surfaces": len(surfaces),
+        "pageSurfaces": len(page_surfaces),
+        "capturedViewports": captured,
+        "pendingViewports": pending,
+        "pendingKeyboardChecks": keyboard_pending,
+        "automatedStatus": review["automatedStatus"],
+        "humanStatus": review["humanStatus"],
+    }
 
 
 def _validate_publication_selections() -> dict[str, object]:
@@ -56,13 +254,21 @@ def _validate_publication_selections() -> dict[str, object]:
             "no decision-#73 publication selection exists; a source pin cannot "
             "be forecast authority without a governed selection"
         )
-    schema = json.loads(
-        (
-            REPO_ROOT / "contracts" / "onboarding" / "publication-selection.schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    Draft202012Validator.check_schema(schema)
-    validator = Draft202012Validator(schema)
+    schema_paths = {
+        "retail-publication-selection/v1": (
+            REPO_ROOT
+            / "contracts/onboarding/publication-selection.schema.json"
+        ),
+        "retail-publication-selection/v2": (
+            REPO_ROOT
+            / "contracts/onboarding/publication-selection-v2.schema.json"
+        ),
+    }
+    validators: dict[str, Draft202012Validator] = {}
+    for version, schema_path in schema_paths.items():
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        validators[version] = Draft202012Validator(schema)
 
     selections: list[dict] = []
     predecessors: list[dict] = []
@@ -71,6 +277,12 @@ def _validate_publication_selections() -> dict[str, object]:
         if record.get("schemaVersion") == "retail-publication-selection-predecessor/v1":
             predecessors.append(record)
             continue
+        version = str(record.get("schemaVersion") or "")
+        validator = validators.get(version)
+        if validator is None:
+            raise ValueError(
+                f"unsupported publication-selection schemaVersion in {path}: {version}"
+            )
         validator.validate(record)
         selections.append(record)
 
@@ -174,6 +386,11 @@ def _validate_publication_selections() -> dict[str, object]:
 
 def main() -> int:
     summary = validate_contract_tree()
+    json_schema_paths = sorted((REPO_ROOT / "contracts").rglob("*.schema.json"))
+    for schema_path in json_schema_paths:
+        Draft202012Validator.check_schema(
+            json.loads(schema_path.read_text(encoding="utf-8"))
+        )
     ml_contract_root = REPO_ROOT / "contracts" / "ml"
     input_schema = json.loads(
         (ml_contract_root / "input-bundle.schema.json").read_text(encoding="utf-8")
@@ -253,6 +470,7 @@ def main() -> int:
             raise ValueError(f"{path.name}: unknown screen contract schema")
     if len(screen_ids) != len(set(screen_ids)) or None in screen_ids:
         raise ValueError("invalid or duplicate screen contract")
+    capture_summary = _validate_client_demo_capture_manifest(screen_ids)
     # `P4-0` tasks 4/5. Decision #73 selections were an unvalidated directory:
     # the lifecycle module existed, the schema existed, and nothing checked that
     # a committed record satisfied either. An unchecked governance record reads
@@ -292,11 +510,73 @@ def main() -> int:
             raise ValueError(
                 f"{path} must declare live, stale, and unavailable states"
             )
+    if not PRICING_API_PATHS <= set(openapi.get("paths", {})):
+        missing = sorted(PRICING_API_PATHS - set(openapi.get("paths", {})))
+        raise ValueError(f"OpenAPI contract is missing pricing routes: {missing}")
+    pricing_read_responses = {
+        "200": {"$ref": "#/components/responses/PricingLive"},
+        "409": {"$ref": "#/components/responses/PricingStale"},
+        "503": {"$ref": "#/components/responses/PricingUnavailable"},
+    }
+    for path in PRICING_STANDARD_READ_PATHS:
+        if openapi["paths"][path]["get"]["responses"] != pricing_read_responses:
+            raise ValueError(
+                f"{path} must declare pricing live, stale, and unavailable states"
+            )
+    pricing_detail_responses = {
+        **pricing_read_responses,
+        "404": {"$ref": "#/components/responses/PricingUnavailable"},
+    }
+    for path in PRICING_DETAIL_PATHS:
+        if openapi["paths"][path]["get"]["responses"] != pricing_detail_responses:
+            raise ValueError(
+                f"{path} must also declare a typed missing-detail state"
+            )
+    special_response_codes = {
+        "/api/v1/pricing/simulations:run": {
+            "200", "400", "409", "413", "415", "422", "503"
+        },
+        "/api/v1/pricing/export": {"200", "409", "422", "503"},
+        "/api/v1/direct-exports/{exportId}": {
+            "200", "404", "409", "422", "503"
+        },
+        "/api/v1/promotions/simulations:run": {"422"},
+    }
+    for path, method in PRICING_SPECIAL_PATH_METHODS.items():
+        responses = openapi["paths"][path][method]["responses"]
+        if set(responses) != special_response_codes[path]:
+            raise ValueError(
+                f"{path} response states drifted: {sorted(responses)}"
+            )
+    expected_special_refs = {
+        ("/api/v1/pricing/simulations:run", "400"): "RequestInvalid",
+        ("/api/v1/pricing/simulations:run", "409"): "PricingStale",
+        ("/api/v1/pricing/simulations:run", "413"): "RequestTooLarge",
+        ("/api/v1/pricing/simulations:run", "415"): "UnsupportedMediaType",
+        ("/api/v1/pricing/simulations:run", "422"): "PricingValidationInvalid",
+        ("/api/v1/pricing/simulations:run", "503"): "PricingUnavailable",
+        ("/api/v1/pricing/export", "409"): "PricingStale",
+        ("/api/v1/pricing/export", "422"): "PricingValidationInvalid",
+        ("/api/v1/pricing/export", "503"): "PricingUnavailable",
+        ("/api/v1/direct-exports/{exportId}", "404"): "PricingUnavailable",
+        ("/api/v1/direct-exports/{exportId}", "409"): "PricingStale",
+        ("/api/v1/direct-exports/{exportId}", "422"): "PricingValidationInvalid",
+        ("/api/v1/direct-exports/{exportId}", "503"): "PricingUnavailable",
+        ("/api/v1/promotions/simulations:run", "422"): "PricingValidationInvalid",
+    }
+    for (path, status), response_name in expected_special_refs.items():
+        method = PRICING_SPECIAL_PATH_METHODS[path]
+        expected_ref = {"$ref": f"#/components/responses/{response_name}"}
+        if openapi["paths"][path][method]["responses"][status] != expected_ref:
+            raise ValueError(
+                f"{path} {status} must reference {response_name}"
+            )
     print(
         json.dumps(
             {
                 "status": "valid",
                 **summary,
+                "contractJsonSchemas": len(json_schema_paths),
                 "mlContracts": {
                     "expectedPin": expected_pin["schemaVersion"],
                     "forecastRun": forecast_schema["properties"]["schemaVersion"]["const"],
@@ -304,12 +584,15 @@ def main() -> int:
                     "classificationPolicy": classification_policy["schemaVersion"],
                 },
                 "screenContracts": screen_ids,
+                "clientDemoCaptures": capture_summary,
                 "publicationSelections": selection_summary,
                 "apiContract": {
                     "version": openapi["info"]["version"],
                     "forecastRoutes": len(FORECAST_API_PATHS),
                     "inventoryRoutes": len(INVENTORY_API_PATHS),
+                    "pricingRoutes": len(PRICING_API_PATHS),
                     "forecastState": "live_stale_or_fail_closed",
+                    "pricingState": "live_stale_missing_or_fail_closed",
                 },
                 "validationPolicy": {
                     "mode": validation_policy["validation"]["mode"],

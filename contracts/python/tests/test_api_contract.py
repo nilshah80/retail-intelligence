@@ -16,12 +16,30 @@ FORECAST_PATHS = (
     "/api/v1/forecast/signals",
     "/api/v1/forecast/exceptions",
 )
+PRICING_READ_PATHS = (
+    "/api/v1/pricing/recommendations/summary",
+    "/api/v1/pricing/recommendations",
+    "/api/v1/pricing/recommendations/store-view",
+    "/api/v1/pricing/recommendations/category-view",
+    "/api/v1/pricing/recommendations/governance",
+    "/api/v1/competitors/summary",
+    "/api/v1/competitors/matches",
+    "/api/v1/competitors/alert-rules",
+    "/api/v1/promotions/summary",
+    "/api/v1/promotions/opportunities",
+    "/api/v1/promotions/portfolio",
+    "/api/v1/promotions/calendar",
+)
+PRICING_DETAIL_PATHS = (
+    "/api/v1/pricing/recommendations/{id}",
+    "/api/v1/competitors/matches/{id}",
+)
 
 
 def test_forecast_routes_have_live_stale_and_fail_closed_contracts() -> None:
     contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
 
-    assert contract["info"]["version"] == "0.5.0"
+    assert contract["info"]["version"] == "0.6.0"
     for path in FORECAST_PATHS:
         responses = contract["paths"][path]["get"]["responses"]
         assert set(responses) == {"200", "409", "503"}
@@ -48,6 +66,30 @@ def test_unavailable_forecast_never_requires_a_fake_identity() -> None:
         "FORECAST_LINEAGE_MISMATCH",
         "FORECAST_READ_MODEL_UNAVAILABLE",
     } == set(schema["properties"]["reasonCode"]["enum"])
+
+
+def test_pricing_routes_freeze_live_stale_missing_and_refusal_states() -> None:
+    contract = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
+    expected = {
+        "200": {"$ref": "#/components/responses/PricingLive"},
+        "409": {"$ref": "#/components/responses/PricingStale"},
+        "503": {"$ref": "#/components/responses/PricingUnavailable"},
+    }
+    for path in PRICING_READ_PATHS:
+        assert contract["paths"][path]["get"]["responses"] == expected
+    for path in PRICING_DETAIL_PATHS:
+        assert contract["paths"][path]["get"]["responses"] == {
+            **expected,
+            "404": {"$ref": "#/components/responses/PricingUnavailable"},
+        }
+    assert set(
+        contract["paths"]["/api/v1/pricing/simulations:run"]["post"][
+            "responses"
+        ]
+    ) == {"200", "400", "409", "413", "415", "422", "503"}
+    assert contract["paths"]["/api/v1/promotions/simulations:run"]["post"][
+        "responses"
+    ] == {"422": {"$ref": "#/components/responses/PricingValidationInvalid"}}
 
 
 def test_scenario_bootstrap_pins_forecast_and_fails_closed() -> None:

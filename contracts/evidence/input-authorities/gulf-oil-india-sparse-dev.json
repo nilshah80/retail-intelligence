@@ -1,0 +1,101 @@
+{
+  "audience": "pricing_evidence_sparse_dev",
+  "authorityId": "auth_5264a06a17552582",
+  "entryEvidence": {
+    "pointerByteSha256": "be468f5a39703e2f8c092f651f4fbede0974f0e5c78fe83526d72c3795681316",
+    "pointerPath": "contracts/evidence/capability-entry-current.json",
+    "records": [
+      {
+        "recordByteSha256": "6e5c8c01f6616116399d6481bf7e424485f87a715941a51ec9a521b9f268acd2",
+        "recordId": "be71d558fc2452cb0f03f78b5651fa01fcf411d49e5391fabf01f7afc57bc9c4",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-be71d558fc2452cb0f03f78b5651fa01fcf411d49e5391fabf01f7afc57bc9c4.json",
+        "scope": {
+          "capability": "demand_forecast_non_pit",
+          "environment": "dev",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "c62d015f11ead4d417da91333a85ea61211bdfd74c6b9b9e433f5716b3f19e2b",
+        "recordId": "63a51ff023b4df624ae17db06abc90d0f2b1eb1684ce3a8ec88f9c4078c444c1",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-63a51ff023b4df624ae17db06abc90d0f2b1eb1684ce3a8ec88f9c4078c444c1.json",
+        "scope": {
+          "capability": "inventory_replenishment_current_snapshot",
+          "environment": "dev",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "e4ef7b023770ac5f0b5118690872bd526e58ef9db851d6179ebd44744eb9f910",
+        "recordId": "719ade5fef3dc900aafb2fc992d6fcfb833d62d8acbce8637a9ad1a2f206fa68",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-719ade5fef3dc900aafb2fc992d6fcfb833d62d8acbce8637a9ad1a2f206fa68.json",
+        "scope": {
+          "capability": "inventory_replenishment_replay",
+          "environment": "dev",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      }
+    ]
+  },
+  "evidenceRoot": "ingestion/data/evidence/run-757ca987e5c521f6",
+  "expectedPin": {
+    "byteSha256": "e184309e6637c8cd6738bcd485aa5b418abe510143a3553ffc8d2b4b81472f31",
+    "path": "contracts/ml/expected-pin-gulf-oil-india-sparse.json"
+  },
+  "jobPurpose": "complete_lineage_rebuild",
+  "review": {
+    "actor": "nilay.shah",
+    "reason": "Approved complete sparse dev upstream rebuild for non-active pricing refusal evidence.",
+    "reviewedAt": "2026-08-11T20:31:18Z"
+  },
+  "runId": "run-757ca987e5c521f6",
+  "schemaVersion": "retail-input-authority/v1",
+  "scopes": [
+    {
+      "capability": "demand_forecast_non_pit",
+      "environment": "dev",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_507f714673afcd70",
+      "selectionRecordByteSha256": "b227bea48045781fbc1838ec29ac943cf6412130e25ef3ec1b112273bb509352",
+      "selectionRecordId": "rec_8640d708291d325b",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_8640d708291d325b.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_current_snapshot",
+      "environment": "dev",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_662af890fe5a83bf",
+      "selectionRecordByteSha256": "c1b7478a83413550736272de7fd25a1a2be0fcfe0bd767147562f312a598c6be",
+      "selectionRecordId": "rec_71b4ace98a35b606",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_71b4ace98a35b606.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_replay",
+      "environment": "dev",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_cc164ef31b86d982",
+      "selectionRecordByteSha256": "64247f361d6c424f33a2ade5ceb75354819220cd6825906c3fab8455a130ea33",
+      "selectionRecordId": "rec_4ff5fb4d52b0232a",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_4ff5fb4d52b0232a.json",
+      "tenantId": "tenant-demo"
+    }
+  ],
+  "semanticIdentityExcludes": [
+    "/authorityId",
+    "/review"
+  ],
+  "sourceEvidence": {
+    "gateASemanticFingerprint": "1af98c5f67a03cdfd02e7826cbb7d1d1caf608940fc971a1cab9db4c1b1ef53c",
+    "gateBSemanticFingerprint": "3d94188a14e097db88c7c81b3772e73b9ea21ae421ea950f25537e2b97742a6f",
+    "publicationManifestSha256": "96159789ed58823dcd792eede3e781045b7e5548fa32c1266e6ae6a37d3278fd",
+    "publicationSemanticFingerprint": "3f642ddfbbe26b318838e1acec131e8f2362b76672d5fefb4d39c97039366e93",
+    "readinessReportFingerprint": "cb10517a2a227375d5b3fb6773db57369102720274d8f07f1b36ca57245370f9",
+    "readinessReportSha256": "764e6df233adde9cd76e9ce4abfe48fc9170b5b542b4939c1411c480597c8b1d",
+    "sourceSnapshotId": "4b7173de2810856718631602e9e38665f03792aeff27e2286e9cab7039012743"
+  }
+}

@@ -517,7 +517,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('src="vendor/js-yaml.min.js"', html)
         self.assertIn("jsyaml.safeDump", html)
         self.assertIn("jsyaml.safeLoad", html)
-        self.assertIn("let cfg = clone(DEMO_DECADE);", html)
+        self.assertIn("let cfg = ensurePricingEvidence(clone(DEMO_DECADE));", html)
 
     def test_builder_exposes_complete_catalog_and_lifecycle_contract(self) -> None:
         html = (DATAGEN_ROOT / "config-builder.html").read_text(encoding="utf-8")
@@ -779,6 +779,7 @@ class DemandRealismTests(unittest.TestCase):
             2025,
             365,
             2020,
+            2,
         )
         gaps = [
             later - earlier
@@ -787,7 +788,7 @@ class DemandRealismTests(unittest.TestCase):
         self.assertGreater(len(set(gaps)), 2)
         self.assertTrue(
             all(
-                Decimal("-0.08") <= Decimal(value) <= Decimal("0.12")
+                Decimal("-0.16") <= Decimal(value) <= Decimal("0.24")
                 for value in adjustments
             )
         )
@@ -802,6 +803,7 @@ class DemandRealismTests(unittest.TestCase):
             2026,
             365,
             2020,
+            2,
         )
         self.assertEqual(next_adjustments[0], adjustments[-1])
         market = load_config(SHOWCASE)["markets"][1]
@@ -1813,6 +1815,19 @@ class GenerationTests(unittest.TestCase):
                 )
 
             first_base = Path(first["outputBase"])
+            control_datasets = {
+                row["logicalPath"]: row["dataset"]
+                for row in first["manifest"]["objects"]
+                if row["sourceSystem"] == "generator"
+            }
+            self.assertEqual(
+                control_datasets["resolved-config.yaml"],
+                "resolvedConfigYaml",
+            )
+            self.assertEqual(
+                control_datasets["resolved-config.json"],
+                "resolvedConfigJson",
+            )
             self.assertEqual(
                 json.loads(
                     (first_base / "resolved-config.json").read_text(

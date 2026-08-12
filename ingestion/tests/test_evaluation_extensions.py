@@ -27,29 +27,61 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _current_run_id() -> str:
-    """The datagen run the landed snapshot was produced from.
+    """The datagen run selected for the shared local forecast authority.
 
     These paths named `run-c5eb1506ecd4c550` literally, so every regeneration broke
     four oracle tests on a run whose `_truth/` lane had been deleted -- a rebuild
     failing tests that have nothing to do with the change being made.
 
-    The landing manifest is the right authority and the cheapest one: `land` records
-    the datagen run it consumed as `nativeSnapshotId`, and the snapshot directory is
-    itself content addressed, so this resolves the run the CURRENT pipeline actually
-    ingested rather than the newest thing on disk.
+    A diagnostic dev publication can be landed after the local response-rich one, so
+    filesystem recency is not authority. Resolve the combined v1/v2 lifecycle ledger
+    at the exact local demand-forecast scope and take the run from that selected
+    publication's logical path.
     """
 
-    snapshots = REPO_ROOT / "ingestion" / "data" / "raw" / "snapshots"
-    manifests = sorted(snapshots.glob("*/landing-manifest.json"))
-    if not manifests:
-        return "run-unlanded"
-    newest = max(manifests, key=lambda path: path.stat().st_mtime)
-    return str(json.loads(newest.read_text(encoding="utf-8"))["nativeSnapshotId"])
+    ledger = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+    records: list[dict] = []
+    for path in sorted(ledger.glob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("schemaVersion") in {
+            "retail-publication-selection/v1",
+            "retail-publication-selection/v2",
+        }:
+            records.append(record)
+    superseded = {
+        record["lifecycle"]["supersedes"]
+        for record in records
+        if record["lifecycle"].get("supersedes")
+    }
+    matches: list[str] = []
+    for record in records:
+        scope = record["scope"]
+        lifecycle = record["lifecycle"]
+        if lifecycle["recordId"] in superseded or lifecycle["state"] != "active":
+            continue
+        if (
+            scope["retailerId"], scope["tenantId"], scope["capability"],
+            scope["environment"],
+        ) != (
+            "retailer-demo", "tenant-demo", "demand_forecast_non_pit", "local",
+        ):
+            continue
+        subject = record.get("publication") or record.get("subject") or {}
+        if subject.get("kind") not in {None, "source_publication"}:
+            continue
+        matches.append(Path(str(subject["logicalPath"])).name)
+    if len(matches) != 1:
+        raise AssertionError(f"expected one local forecast source authority, found {matches}")
+    return matches[0]
 
 
 RUN_ID = _current_run_id()
 SOURCE_RUN = (
-    REPO_ROOT / "datagen" / "output" / "multi-market-10-year-demo" / RUN_ID
+    REPO_ROOT
+    / "datagen_rust"
+    / "output"
+    / "gulf-oil-india-pricing-response"
+    / RUN_ID
 )
 CURATED_DATABASE = (
     REPO_ROOT / "ingestion" / "data" / "curated" / RUN_ID / "retail_v2.duckdb"
@@ -60,7 +92,7 @@ SOURCE_PROFILE = (
     / "src"
     / "retail_ingestion"
     / "profiles"
-    / "retail_datagen.yaml"
+    / "gulf_oil_india_ten_year.yaml"
 )
 
 
@@ -76,6 +108,15 @@ def _canonical_market_controls(values: dict[str, int]) -> dict[str, int]:
         aliases.get(market_id, market_id): units
         for market_id, units in values.items()
     }
+
+
+def _shopify_parquet(dataset: str) -> str:
+    """Address either the legacy flat file or the Rust partitioned dataset."""
+
+    flat = SOURCE_RUN / "shopify" / "*" / f"{dataset}.parquet"
+    if list((SOURCE_RUN / "shopify").glob(f"*/{dataset}.parquet")):
+        return str(flat)
+    return str(SOURCE_RUN / "shopify" / "*" / dataset / "**" / "*.parquet")
 
 
 def test_geographic_scope_collisions_require_market_qualification() -> None:
@@ -150,7 +191,8 @@ def test_webhook_hmac_and_identifier_parity_fixtures() -> None:
             """,
             [paths],
         ).fetchall()
-    assert len(rows) == 24
+    shop_count = len([path for path in (SOURCE_RUN / "shopify").iterdir() if path.is_dir()])
+    assert len(rows) == 12 * shop_count
     outcomes: set[bool] = set()
     for body, supplied, expected, parity_order_id in rows:
         calculated = base64.b64encode(
@@ -166,9 +208,7 @@ def test_webhook_hmac_and_identifier_parity_fixtures() -> None:
 
 @pytest.mark.pinned_run
 def test_fulfillment_return_and_refund_histories_are_consistent() -> None:
-    fulfillment_paths = str(
-        SOURCE_RUN / "shopify" / "*" / "fulfillment_status_history.parquet"
-    )
+    fulfillment_paths = _shopify_parquet("fulfillment_status_history")
     return_paths = str(
         SOURCE_RUN / "shopify" / "*" / "returns" / "**" / "*.parquet"
     )

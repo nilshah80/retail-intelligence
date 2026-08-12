@@ -444,7 +444,7 @@ datasets:
 
   - &metadata
     sourceSystem: generator
-    datasetId: resolvedConfig
+    datasetId: resolvedConfigYaml
     classification: control_only
     permissionLane: public
     format: yaml
@@ -452,7 +452,7 @@ datasets:
     grainFields: []
     columnPolicies: []
   - <<: *metadata
-    datasetId: resolvedConfigJsonCompatibility
+    datasetId: resolvedConfigJson
     format: json
   - <<: *metadata
     datasetId: sourceSchema

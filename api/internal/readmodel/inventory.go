@@ -25,7 +25,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0027_scenario_hardening"
+	InventoryMigrationRevision = "0030_pricing_intents"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -757,6 +757,7 @@ func (s *InventoryStore) tableSlice(
 		for index := 1; index < len(fields); index++ {
 			item[snakeToCamel(string(fields[index].Name))] = values[index]
 		}
+		item["rowId"] = stableRowID("inventory", item)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

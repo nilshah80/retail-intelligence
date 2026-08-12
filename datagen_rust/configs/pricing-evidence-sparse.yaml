@@ -1,0 +1,11 @@
+extends: gulf-oil-india-ten-year.yaml
+identity:
+  scenarioId: gulf-oil-india-pricing-sparse
+  scenarioVersion: 1.0.0
+  scenarioName: Gulf Oil India pricing evidence sparse diagnostic
+pricingEvidence:
+  enabled: false
+  priceKnownAsOfLagDays: 0
+  promotionPlanningLeadDays: 28
+  responseStepScale: 1
+  generationMethod: deterministic-response-profile-v1

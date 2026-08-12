@@ -39,6 +39,9 @@ Owned contents:
 - `publication/` — atomic curated Parquet/DuckDB publication.
 - `retention.py` — copies small accepted Gate/publication evidence out of disposable work and
   only then permits pruning staging/candidate artifacts.
+- `readiness/operational.py` — derives the one-way post-publication operational-readiness
+  sidecar and a separate immutable retention record that hashes its exact bytes. Neither file
+  participates in Gate or publication identity.
 
 ## Current implementation status
 
@@ -142,6 +145,12 @@ staging, canonical candidates, spill files and public-only caches are rebuildabl
 pruned after Gate A, Gate B and publication identities reconcile. Never remove raw or a prior
 curated publication merely because a work directory was finalized; production lifecycle/backup
 policy governs those durable layers separately.
+
+Published pipeline runs create `operational-readiness.json` together with its separate
+`operational-readiness-retention.json` byte record. Finalization validates and retains that pair
+atomically alongside, but outside, the fixed Gate/publication retention manifest before disposable
+work is pruned. `tools/build_operational_readiness.py --check` independently verifies both the
+semantic report identity and the retained sidecar byte hash.
 
 The checked-in datagen source profile has the stable filename
 `src/retail_ingestion/profiles/retail_datagen.yaml`. Profile and upstream source-contract

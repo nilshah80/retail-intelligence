@@ -163,6 +163,7 @@ const responses: Record<string, unknown> = {
     ...envelope,
     schemaVersion: "retail-forecast-series/v1",
     items: [{
+      rowId: "forecast_0123456789abcdef0123",
       marketId: "india-west",
       skuId: "FOODS_1_001",
       storeId: "india-west:mumbai-bandra",
@@ -303,7 +304,7 @@ describe("Demand Forecast parity contract", () => {
       .toBeInTheDocument();
     const actionLabels = within(screen.getByLabelText("Forecast actions"))
       .getAllByRole("button")
-      .map((button) => button.textContent);
+      .map((button) => button.childNodes[0]?.textContent?.trim());
     expect(actionLabels).toEqual([
       "Accept Forecast",
       "Add Planner Adjustment",
@@ -312,7 +313,23 @@ describe("Demand Forecast parity contract", () => {
       "Forecast Action Center",
       "Export"
     ]);
-    expect(screen.getByRole("button", {name: "Accept Forecast"})).toBeDisabled();
+    const acceptTrigger = screen.getByRole("button", {name: /^Accept Forecast/});
+    expect(acceptTrigger).toBeEnabled();
+    expect(acceptTrigger).toHaveTextContent("Preview only");
+    fireEvent.click(acceptTrigger);
+    let dialog = screen.getByRole("dialog", {name: "Accept Forecast"});
+    expect(within(dialog).getByRole("heading", {name: "Accept Forecast"})).toHaveFocus();
+    expect(Array.from(dialog.querySelectorAll(".metric-row > span")).map((node) => node.textContent)).toEqual(["Selected Forecasts", "Average Confidence", "Demand Value"]);
+    expect(within(dialog).getByRole("button", {name: "Confirm Acceptance"})).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
+    expect(acceptTrigger).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", {name: /^Add Planner Adjustment/}));
+    dialog = screen.getByRole("dialog", {name: "Add Planner Adjustment"});
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Adjustment Reason"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Local event", "Promotion change", "Competitor event", "Operational constraint", "Commercial judgement"]);
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Effective Period"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Next Week", "Next 4 Weeks", "Specific Date Range"]);
+    expect(within(dialog).getByRole("button", {name: "Save Adjustment"})).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
     // Both FVA figures read portfolio grain, so both show the same value.
     expect(screen.getAllByText("+25.3%")).toHaveLength(2);
     expect(screen.getByText("Slow / intermittent: -25.0% · 10.0% of actual volume"))
@@ -351,7 +368,23 @@ describe("Demand Forecast parity contract", () => {
     expect(within(workbench).getByText("Marketplace")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", {name: "Compare Versions"}));
-    expect(screen.getByRole("dialog", {name: "Compare Versions"})).toBeInTheDocument();
+    dialog = screen.getByRole("dialog", {name: "Compare Forecast Versions"});
+    expect(within(dialog).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Version", "Created By", "Accuracy", "Bias", "Demand Units", "Status"]);
+    fireEvent.click(within(dialog).getByRole("button", {name: "Close"}));
+
+    fireEvent.click(screen.getByRole("button", {name: /^Forecast Action Center/}));
+    dialog = screen.getByRole("dialog", {name: "Forecast Action Center"});
+    expect(within(dialog).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Action Queue", "Items", "Owner", "Business Exposure"]);
+    expect(within(dialog).getAllByRole("row").slice(1).map((row) => row.firstElementChild?.textContent)).toEqual(["Under-forecast review", "Over-forecast review", "Data-quality correction", "Model retraining"]);
+    fireEvent.click(within(dialog).getByRole("button", {name: "Close"}));
+
+    fireEvent.click(screen.getByRole("tab", {name: "Store View"}));
+    fireEvent.click(screen.getByRole("button", {name: "Open Store Drilldown"}));
+    dialog = screen.getByRole("dialog", {name: "Store Forecast Drilldown"});
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Period"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Next 4 Weeks", "Next 8 Weeks"]);
+    expect(within(dialog).getByText("Store Forecast Health")).toBeInTheDocument();
+    expect(within(dialog).getByText("Recommended Actions")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {name: "Open Store Forecasts"})).toBeEnabled();
   });
 
   it("runs a tuple-pinned scenario with dirty-key-only overrides", async () => {

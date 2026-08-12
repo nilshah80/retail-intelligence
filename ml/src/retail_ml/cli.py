@@ -17,6 +17,7 @@ from retail_ml.bench.memory_spike import run_memory_spike
 from retail_ml.features.build import build_features
 from retail_ml.features.characterize import characterize_features
 from retail_ml.io.bundle import discover_input_bundle
+from retail_ml.io.authority import verify_job_authority
 from retail_ml.models.backtest import RECENT_EVAL_FILENAME
 from retail_ml.models.drivers import aggregate_driver_rows
 from retail_ml.models.current_cycle import run_current_cycle
@@ -38,20 +39,36 @@ from retail_ml.serving.postgres import (
 )
 
 
-def _command_verify(args: argparse.Namespace) -> int:
-    verified = discover_input_bundle(
+def _verify_authority(args: argparse.Namespace) -> dict[str, object]:
+    return verify_job_authority(
+        repository_root=args.repository_root,
+        authority_path=args.input_authority,
+        expected_pin_path=args.expected_pin,
+        expected_run_id=args.run_id,
+        expected_job_purpose=args.job_purpose,
+        retailer_id=args.retailer,
+        tenant_id=args.tenant,
+        environment=args.environment,
+        evidence_root=args.evidence_root,
+    )
+
+
+def _verified_input_bundle(args: argparse.Namespace):
+    _verify_authority(args)
+    return discover_input_bundle(
         args.repository_root,
         expected_pin_path=args.expected_pin,
     ).verify()
+
+
+def _command_verify(args: argparse.Namespace) -> int:
+    verified = _verified_input_bundle(args)
     print(json.dumps(verified.identity, indent=2, sort_keys=True))
     return 0
 
 
 def _command_features(args: argparse.Namespace) -> int:
-    bundle = discover_input_bundle(
-        args.repository_root,
-        expected_pin_path=args.expected_pin,
-    ).verify()
+    bundle = _verified_input_bundle(args)
     stats, output = build_features(
         bundle,
         args.output_dir,
@@ -84,6 +101,7 @@ def _command_bench(args: argparse.Namespace) -> int:
 
 
 def _command_backtest(args: argparse.Namespace) -> int:
+    _verify_authority(args)
     horizons = tuple(
         int(value)
         for token in args.horizons.split(",")
@@ -103,10 +121,7 @@ def _command_backtest(args: argparse.Namespace) -> int:
 
 
 def _command_score_current(args: argparse.Namespace) -> int:
-    bundle = discover_input_bundle(
-        args.repository_root,
-        expected_pin_path=args.expected_pin,
-    ).verify()
+    bundle = _verified_input_bundle(args)
     stats = run_current_cycle(
         args.feature_dir,
         args.output_dir,
@@ -199,6 +214,7 @@ def _command_classify(args: argparse.Namespace) -> int:
 
 
 def _command_publish(args: argparse.Namespace) -> int:
+    _verify_authority(args)
     backtest_dir = args.backtest_dir.resolve()
     _, feature_manifest = _verified_feature_path(args.feature_dir.resolve())
     backtest_manifest, backtest_paths = verified_backtest_artifacts(
@@ -260,10 +276,7 @@ def _postgres_dsn(args: argparse.Namespace) -> str:
 
 
 def _command_materialize_serving(args: argparse.Namespace) -> int:
-    input_bundle = discover_input_bundle(
-        args.repository_root,
-        expected_pin_path=args.expected_pin,
-    ).verify()
+    input_bundle = _verified_input_bundle(args)
     run = verify_forecast_run(args.forecast_run)
     result = materialize_forecast_run(
         run,
@@ -275,10 +288,7 @@ def _command_materialize_serving(args: argparse.Namespace) -> int:
 
 
 def _command_activate_serving(args: argparse.Namespace) -> int:
-    input_bundle = discover_input_bundle(
-        args.repository_root,
-        expected_pin_path=args.expected_pin,
-    ).verify()
+    input_bundle = _verified_input_bundle(args)
     result = activate_forecast_version(
         postgres_dsn=_postgres_dsn(args),
         forecast_run_id=args.forecast_run_id,
@@ -299,18 +309,33 @@ def _command_not_landed(args: argparse.Namespace) -> int:
     )
 
 
+def _add_authority_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--run-id", required=True)
+    command.add_argument("--expected-pin", type=Path, required=True)
+    command.add_argument("--input-authority", type=Path, required=True)
+    command.add_argument("--job-purpose", required=True)
+    command.add_argument("--retailer", required=True)
+    command.add_argument("--tenant", required=True)
+    command.add_argument(
+        "--environment",
+        choices=("local", "dev", "staging", "prod"),
+        required=True,
+    )
+    command.add_argument("--evidence-root", type=Path, required=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     verify = subparsers.add_parser("verify")
     verify.add_argument("--repository-root", type=Path, default=Path.cwd())
-    verify.add_argument("--expected-pin", type=Path, default=None)
+    _add_authority_arguments(verify)
     verify.set_defaults(handler=_command_verify)
 
     features = subparsers.add_parser("features")
     features.add_argument("--repository-root", type=Path, default=Path.cwd())
-    features.add_argument("--expected-pin", type=Path, default=None)
+    _add_authority_arguments(features)
     features.add_argument("--output-dir", type=Path, required=True)
     features.add_argument(
         "--execution-profile",
@@ -331,6 +356,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.set_defaults(handler=_command_bench)
 
     backtest = subparsers.add_parser("backtest")
+    backtest.add_argument("--repository-root", type=Path, default=Path.cwd())
+    _add_authority_arguments(backtest)
     backtest.add_argument("--feature-dir", type=Path, required=True)
     backtest.add_argument("--output-dir", type=Path, required=True)
     backtest.add_argument(
@@ -356,7 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path.cwd(),
     )
-    score_current.add_argument("--expected-pin", type=Path, default=None)
+    _add_authority_arguments(score_current)
     score_current.add_argument("--feature-dir", type=Path, required=True)
     score_current.add_argument("--output-dir", type=Path, required=True)
     score_current.add_argument("--decision-as-of", required=True)
@@ -400,6 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
     classify.set_defaults(handler=_command_classify)
 
     publish = subparsers.add_parser("publish")
+    publish.add_argument("--repository-root", type=Path, default=Path.cwd())
+    _add_authority_arguments(publish)
     publish.add_argument("--feature-dir", type=Path, required=True)
     publish.add_argument("--backtest-dir", type=Path, required=True)
     publish.add_argument("--exceptions", type=Path, required=True)
@@ -421,7 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path.cwd(),
     )
-    materialize.add_argument("--expected-pin", type=Path, default=None)
+    _add_authority_arguments(materialize)
     materialize.add_argument("--forecast-run", type=Path, required=True)
     materialize.add_argument("--postgres-dsn", default=None)
     materialize.set_defaults(handler=_command_materialize_serving)
@@ -432,7 +461,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path.cwd(),
     )
-    activate.add_argument("--expected-pin", type=Path, default=None)
+    _add_authority_arguments(activate)
     activate.add_argument("--forecast-run-id", required=True)
     activate.add_argument("--activation-scope-fingerprint", required=True)
     activate.add_argument("--actor", required=True)

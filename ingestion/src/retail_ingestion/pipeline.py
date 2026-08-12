@@ -12,6 +12,10 @@ from retail_contracts.fingerprint import semantic_fingerprint
 from .publication import publish_candidate
 from .profiles import load_source_profile
 from .quality import run_gate_a, run_gate_b
+from .readiness.operational import (
+    write_operational_readiness_sidecar,
+    write_readiness_retention,
+)
 from .staging import build_staging
 from .transforms import build_canonical_candidate
 
@@ -30,6 +34,9 @@ class PipelineResult:
     gate_b_status: str
     semantic_fingerprint: str
     resumed_stages: tuple[str, ...]
+    readiness_report_path: Path | None = None
+    readiness_report_fingerprint: str | None = None
+    readiness_retention_path: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +49,17 @@ class PipelineResult:
             "gateBStatus": self.gate_b_status,
             "semanticFingerprint": self.semantic_fingerprint,
             "resumedStages": list(self.resumed_stages),
+            "readinessReportPath": (
+                str(self.readiness_report_path)
+                if self.readiness_report_path is not None
+                else None
+            ),
+            "readinessReportFingerprint": self.readiness_report_fingerprint,
+            "readinessRetentionPath": (
+                str(self.readiness_retention_path)
+                if self.readiness_retention_path is not None
+                else None
+            ),
         }
 
 
@@ -274,6 +292,36 @@ def run_pipeline(
         )
         publication_fingerprint = result.semantic_fingerprint
 
+    repository_root = Path(__file__).resolve().parents[3]
+    readiness_path = work / "operational-readiness.json"
+    readiness = write_operational_readiness_sidecar(
+        gate_a_path=gate_a_path,
+        gate_b_path=gate_b_path,
+        publication_manifest_path=publication_manifest,
+        destination=readiness_path,
+        producer_registry_path=(
+            repository_root
+            / "contracts/onboarding/readiness-producer-registry.json"
+        ),
+        schema_path=(
+            repository_root
+            / "contracts/onboarding/readiness-report-v2.schema.json"
+        ),
+    )
+    readiness_retention_path = work / "operational-readiness-retention.json"
+    write_readiness_retention(
+        readiness_path=readiness_path,
+        destination=readiness_retention_path,
+        schema_path=(
+            repository_root
+            / "contracts/onboarding/readiness-retention.schema.json"
+        ),
+        readiness_schema_path=(
+            repository_root
+            / "contracts/onboarding/readiness-report-v2.schema.json"
+        ),
+    )
+
     return PipelineResult(
         source_snapshot_id=source_snapshot_id,
         work_root=work,
@@ -283,6 +331,9 @@ def run_pipeline(
         gate_b_status=gate_b_payload["status"],
         semantic_fingerprint=publication_fingerprint,
         resumed_stages=tuple(resumed),
+        readiness_report_path=readiness_path,
+        readiness_report_fingerprint=readiness["reportFingerprint"],
+        readiness_retention_path=readiness_retention_path,
     )
 
 

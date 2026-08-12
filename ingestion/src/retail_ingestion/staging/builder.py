@@ -589,13 +589,22 @@ def _create_standardized_views(
                 competitorId::VARCHAR AS competitor_id,
                 competitorSku::VARCHAR AS competitor_product_id,
                 competitorProductTitle::VARCHAR AS competitor_product_title,
+                competitorBrand::VARCHAR AS competitor_brand,
+                competitorModel::VARCHAR AS competitor_model,
+                competitorGtin::VARCHAR AS competitor_gtin,
+                competitorAttributes::VARCHAR AS competitor_attributes,
                 targetType::VARCHAR AS geo_scope_type,
                 targetId::VARCHAR AS geo_scope_id,
                 observedAt::VARCHAR AS observed_at_raw,
                 price::VARCHAR AS price_raw,
                 currencyCode::VARCHAR AS currency_code,
                 available::VARCHAR AS available_raw,
+                availabilityState::VARCHAR AS availability_state,
                 promotionText::VARCHAR AS promotion_text,
+                evidenceClass::VARCHAR AS evidence_class,
+                derivationClass::VARCHAR AS derivation_class,
+                usePurpose::VARCHAR AS use_purpose,
+                generationMethod::VARCHAR AS generation_method,
                 raw_object_hash, raw_object_path
             FROM stage_data.companion_competitor_prices
         """,
@@ -608,12 +617,17 @@ def _create_standardized_views(
                 competitorSku::VARCHAR AS competitor_product_id,
                 matchConfidence::VARCHAR AS confidence_raw,
                 matchMethod::VARCHAR AS match_method,
+                matchedAttributes::VARCHAR AS matched_attributes,
+                evidenceClass::VARCHAR AS evidence_class,
+                derivationClass::VARCHAR AS derivation_class,
+                usePurpose::VARCHAR AS use_purpose,
+                generationMethod::VARCHAR AS generation_method,
                 raw_object_hash, raw_object_path
             FROM stage_data.companion_competitor_matches
         """,
         "promotions": """
             SELECT
-                market_id, known_as_of, evidence_grade, row_provenance,
+                source_system, market_id, known_as_of, evidence_grade, row_provenance,
                 promotionId::VARCHAR AS promotion_id, name::VARCHAR AS name,
                 promotionType::VARCHAR AS promotion_type,
                 startDate::VARCHAR AS start_date_raw,
@@ -623,6 +637,9 @@ def _create_standardized_views(
                 customerSegmentIds::VARCHAR AS segment_ids,
                 storeIds::VARCHAR AS store_ids,
                 channelIds::VARCHAR AS channel_ids,
+                lifecycleStatus::VARCHAR AS lifecycle_status,
+                provenanceClass::VARCHAR AS provenance_class,
+                generationMethod::VARCHAR AS generation_method,
                 raw_object_hash, raw_object_path
             FROM stage_data.companion_promotions
         """,
@@ -638,6 +655,8 @@ def _create_standardized_views(
                 coalesce(nullif(sku, ''), nullif(departmentId, ''), categoryId)
                     ::VARCHAR AS merch_scope_id,
                 discountPct::VARCHAR AS discount_pct_raw,
+                provenanceClass::VARCHAR AS provenance_class,
+                generationMethod::VARCHAR AS generation_method,
                 raw_object_hash, raw_object_path
             FROM stage_data.companion_promotion_skus
         """,

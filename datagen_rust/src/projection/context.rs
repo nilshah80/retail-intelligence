@@ -6,7 +6,9 @@ use serde_json::Value;
 
 use crate::catalog::Product;
 use crate::config::{LoadedConfig, Market};
+use crate::deterministic::stable_integer;
 use crate::projection::LogicalDataset;
+use crate::projection::catalog::local_iso_at;
 use crate::simulation::assortment;
 use crate::simulation::calendar::holidays_for_range;
 use crate::simulation::lifecycle;
@@ -85,8 +87,8 @@ pub fn build_context_datasets(
             promotions
                 .iter()
                 .filter(|plan| plan.market_id == market.market_id)
-                .map(PromotionPlan::promotion_row)
-                .collect(),
+                .map(|plan| plan.promotion_row(config, market))
+                .collect::<Result<Vec<_>>>()?,
         ));
         if config
             .scenario
@@ -99,7 +101,7 @@ pub fn build_context_datasets(
             datasets.push(dataset(
                 &prefix,
                 "promotionSkus",
-                promotion_sku_rows(&promotions, catalog, &market.market_id),
+                promotion_sku_rows(config, &promotions, catalog, &market.market_id)?,
             ));
             datasets.push(dataset(
                 &prefix,
@@ -195,8 +197,12 @@ impl PromotionPlan {
         })
     }
 
-    fn promotion_row(&self) -> BTreeMap<String, String> {
-        row([
+    fn promotion_row(
+        &self,
+        config: &LoadedConfig,
+        market: &Market,
+    ) -> Result<BTreeMap<String, String>> {
+        let mut values = row([
             ("marketKey", self.market_id.clone()),
             ("promotionId", self.promotion_id.clone()),
             ("name", self.name.clone()),
@@ -212,7 +218,38 @@ impl PromotionPlan {
             ("discountBasis", "planned-offer".to_owned()),
             ("demandMultiplier", self.demand_multiplier.clone()),
             ("promotionType", self.promotion_type.clone()),
-        ])
+        ]);
+        if let Some(evidence) = config.pricing_evidence() {
+            let known_day = self
+                .start_date
+                .checked_sub_signed(Duration::days(i64::from(
+                    evidence.promotion_planning_lead_days,
+                )))
+                .context("promotion known-as-of date overflow")?;
+            let extract_day = config.scenario.time.end_date;
+            let lifecycle_status = if self.end_date < extract_day {
+                "Completed"
+            } else if self.start_date <= extract_day && extract_day <= self.end_date {
+                "Live"
+            } else {
+                ["Draft", "Under Review", "Approved"]
+                    [stable_integer(&[&self.promotion_id, "lifecycle"], 3) as usize]
+            };
+            values.insert(
+                "knownAsOf".to_owned(),
+                local_iso_at(known_day, 9, &market.timezone)?,
+            );
+            values.insert("lifecycleStatus".to_owned(), lifecycle_status.to_owned());
+            values.insert(
+                "provenanceClass".to_owned(),
+                "generated_source_native".to_owned(),
+            );
+            values.insert(
+                "generationMethod".to_owned(),
+                evidence.generation_method.clone(),
+            );
+        }
+        Ok(values)
     }
 }
 
@@ -305,10 +342,11 @@ fn promotion_plans(config: &LoadedConfig, catalog: &[Product]) -> Result<Vec<Pro
 }
 
 fn promotion_sku_rows(
+    config: &LoadedConfig,
     promotions: &[PromotionPlan],
     catalog: &[Product],
     market_id: &str,
-) -> Vec<BTreeMap<String, String>> {
+) -> Result<Vec<BTreeMap<String, String>>> {
     let mut rows = Vec::new();
     for promotion in promotions
         .iter()
@@ -332,7 +370,7 @@ fn promotion_sku_rows(
                 if !promotion.skus.is_empty() && !promotion.skus.contains(&variant.sku) {
                     continue;
                 }
-                rows.push(row([
+                let mut values = row([
                     ("marketKey", promotion.market_id.clone()),
                     ("promotionId", promotion.promotion_id.clone()),
                     ("sku", variant.sku.clone()),
@@ -342,11 +380,32 @@ fn promotion_sku_rows(
                     ("discountBasis", "planned-offer".to_owned()),
                     ("effectiveFrom", promotion.start_date.to_string()),
                     ("effectiveTo", promotion.end_date.to_string()),
-                ]));
+                ]);
+                if let Some(evidence) = config.pricing_evidence() {
+                    let known_day = promotion
+                        .start_date
+                        .checked_sub_signed(Duration::days(i64::from(
+                            evidence.promotion_planning_lead_days,
+                        )))
+                        .context("promotion SKU known-as-of date overflow")?;
+                    values.insert(
+                        "knownAsOf".to_owned(),
+                        format!("{}T00:00:00Z", known_day.format("%Y-%m-%d")),
+                    );
+                    values.insert(
+                        "provenanceClass".to_owned(),
+                        "generated_source_native".to_owned(),
+                    );
+                    values.insert(
+                        "generationMethod".to_owned(),
+                        evidence.generation_method.clone(),
+                    );
+                }
+                rows.push(values);
             }
         }
     }
-    rows
+    Ok(rows)
 }
 
 fn customer_segment_rows(config: &LoadedConfig) -> Result<Vec<BTreeMap<String, String>>> {

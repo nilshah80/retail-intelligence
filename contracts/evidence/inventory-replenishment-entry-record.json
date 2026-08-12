@@ -1,12 +1,19 @@
 {
   "authorityLedger": {
-    "currentEventId": 1,
+    "currentEventId": 7,
     "currentPriorEventId": null,
-    "identitiesWithoutRetainedBytes": [],
-    "nullPredecessorEventIds": [
-      1
+    "identitiesWithoutRetainedBytes": [
+      "fr_7d34e90850b5a85c",
+      "fr_14b111912fb8458c",
+      "fr_546a32b4b120fd7a"
     ],
-    "supersededIdentityCount": 0
+    "nullPredecessorEventIds": [
+      1,
+      3,
+      5,
+      7
+    ],
+    "supersededIdentityCount": 3
   },
   "decision92Residue": {
     "handedTo": "P4-1",
@@ -101,15 +108,15 @@
   },
   "entryAuthorized": true,
   "forecastAuthority": {
-    "activationScopeFingerprint": "93db02a11fdcad295a192b32a0e3cfc5bbe94f2c13a733ba1c4e2d3f51ae3273",
+    "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
     "activeAuthorityCount": 1,
-    "bundlePath": "ml/data/artifacts/forecast_run_gulf_final_all_bugs_20260809",
-    "featureSemanticFingerprint": "cb96d7f7cec47663d22a14f9d40761a9ebff83116003ff266de575918be9aa22",
-    "forecastRunId": "fr_546a32b4b120fd7a",
+    "bundlePath": "ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902",
+    "featureSemanticFingerprint": "dee0c67666ff7b98b8c94fbe7426ef7b5e0fb3bbcfe9e990c730c92d21892c37",
+    "forecastRunId": "fr_e638699e9b8f6598",
     "lifecycleStatus": "accepted",
-    "publicationSemanticFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
-    "runSemanticFingerprint": "75fb6920647403196a98441650cd4fb3bf585216e523692ae1c4dc8bd3e25d62",
-    "versionId": "fv_fe8e951c1f54b89e"
+    "publicationSemanticFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
+    "runSemanticFingerprint": "6de6d0b30309c3c5eef9e7841ed73669943b051d3701e411571261dfce57682f",
+    "versionId": "fv_8e18ad608ae38a61"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
@@ -186,7 +193,7 @@
   "package": "P4-0",
   "parityAmendment": {
     "amendedContractPath": "contracts/screens/demand-forecast.parity.yaml",
-    "amendedContractSha256": "8c3a6c81e8c3221bc21604926aeee243f1a170f82f4ea69c50e5d83f258df731",
+    "amendedContractSha256": "0405af3d2cb13c21e293ebd94ce581dc2b4ce2495482b63316109e19823b974b",
     "amendmentId": "P4-0P-A1",
     "approval": {
       "actor": "nilay.shah",
@@ -225,12 +232,48 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0027_scenario_hardening",
+  "servingMigration": "0030_pricing_intents",
   "sourceSelection": {
-    "activeRecordId": "rec_7428d0aa1c0792dc",
+    "activeRecordId": "rec_0c9af5e4d419ca2d",
     "capabilityReadiness": "ready",
     "capabilitySufficiency": "sufficient",
     "lifecycleRecords": [
+      "publication-selection-rec_0418668bb478187b.json",
+      "publication-selection-rec_0c9af5e4d419ca2d.json",
+      "publication-selection-rec_25090be7fea9a3e5.json",
+      "publication-selection-rec_261993e3d76a08e3.json",
+      "publication-selection-rec_27137c844742463a.json",
+      "publication-selection-rec_28d0fccc81bcec77.json",
+      "publication-selection-rec_2c02e27cc7d2d770.json",
+      "publication-selection-rec_3926550ba9bfc379.json",
+      "publication-selection-rec_46571f40c14a3fcb.json",
+      "publication-selection-rec_4ca809a71ac74efe.json",
+      "publication-selection-rec_4ceac4d151291dee.json",
+      "publication-selection-rec_4ff5fb4d52b0232a.json",
+      "publication-selection-rec_5063f406b8813529.json",
+      "publication-selection-rec_5642401e0a1fe877.json",
+      "publication-selection-rec_5d7f8cc7a4737fd9.json",
+      "publication-selection-rec_614e65ab661143d6.json",
+      "publication-selection-rec_6bce93583896db5b.json",
+      "publication-selection-rec_71b4ace98a35b606.json",
+      "publication-selection-rec_79b21c5066c35dce.json",
+      "publication-selection-rec_7e60aab574d5ad1f.json",
+      "publication-selection-rec_8640d708291d325b.json",
+      "publication-selection-rec_8b29a2c556fc4533.json",
+      "publication-selection-rec_9e78eb70f03edc48.json",
+      "publication-selection-rec_9fa8ff64c54f1a33.json",
+      "publication-selection-rec_a68b535606859c37.json",
+      "publication-selection-rec_abc9e5b4709ed71b.json",
+      "publication-selection-rec_b0e79fa3970b9c8c.json",
+      "publication-selection-rec_bf4cea5124c49558.json",
+      "publication-selection-rec_c21708fb57e877fa.json",
+      "publication-selection-rec_d1a8f1affbeb8278.json",
+      "publication-selection-rec_dfcc0c3f31ac522a.json",
+      "publication-selection-rec_e04153a9c4f913ba.json",
+      "publication-selection-rec_e3df4ed456ed22c9.json",
+      "publication-selection-rec_e615eb7c1698b621.json",
+      "publication-selection-rec_f6210f8605cc9198.json",
+      "publication-selection-rec_fcec83e7929a39ba.json",
       "retailer-demo-demand-forecast-local-active.json",
       "retailer-demo-demand-forecast-local-approved.json",
       "retailer-demo-demand-forecast-local-candidate.json",
@@ -378,15 +421,15 @@
       "retailer-demo-inventory-replay-ten-year-local-r9-superseded.json",
       "retailer-demo-inventory-replay-ten-year-local-superseded.json"
     ],
-    "objectCount": 2309,
-    "publicationSemanticFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
+    "objectCount": 2290,
+    "publicationSemanticFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
     "scope": {
       "capability": "demand_forecast_non_pit",
       "environment": "local",
       "retailerId": "retailer-demo",
       "tenantId": "tenant-demo"
     },
-    "selectionId": "sel_89c28021ed2cf33f",
-    "sourceSnapshotId": "7d8ade35bf61ef7a569be1251874a600819eb9e83976f64eb31149574ddcda50"
+    "selectionId": "sel_247453632ae956ac",
+    "sourceSnapshotId": "62a01e3058d7215c7559c29e8b3a5c9e56dae73bb2f820b1f264ff9d6a47922b"
   }
 }

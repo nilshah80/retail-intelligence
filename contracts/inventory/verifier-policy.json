@@ -29,7 +29,7 @@
     "lineage": [
       "inputBundle fingerprints match the named curated publication",
       "sourceSelectionId names an ACTIVE decision-#73 selection for this scope",
-      "forecastAuthority matches the exactly-one active forecast under decision #90",
+      "forecastAuthority matches the explicitly supplied independently verified forecast bundle; serving materialization and activation separately require the exactly-one active forecast under decision #90",
       "policy resolvedFingerprints reproduce from inventory-policy/2.0.0 for each market"
     ]
   },

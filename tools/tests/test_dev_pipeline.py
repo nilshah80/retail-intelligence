@@ -42,6 +42,30 @@ def test_datagen_is_not_a_pipeline_stage() -> None:
     assert "generate" not in dev.PIPELINE_STAGES
 
 
+def test_datagen_command_uses_the_rust_authority_by_default() -> None:
+    args = dev.build_parser().parse_args(["datagen"])
+
+    assert args.config.parent == dev.DATAGEN_RUST_ROOT / "configs"
+    assert args.output == dev.DATAGEN_RUST_ROOT / "output"
+
+
+def test_single_pipeline_authority_creation_requires_explicit_review() -> None:
+    args = dev.build_parser().parse_args(
+        [
+            "pipeline",
+            "--input-authority",
+            "contracts/evidence/input-authorities/current.json",
+            "--input-authority-reviewer",
+            "nilay.shah",
+            "--input-authority-reason",
+            "Approved complete-lineage local rebuild",
+        ]
+    )
+
+    assert args.input_authority_reviewer == "nilay.shah"
+    assert args.input_authority_reason == "Approved complete-lineage local rebuild"
+
+
 def test_relative_publication_root_is_resolved_before_closing_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -121,12 +145,50 @@ def test_pipeline_inventory_origin_defaults_to_forecast_date() -> None:
     ) == "2026-08-02"
 
 
+def test_pipeline_default_decision_covers_retained_source_day() -> None:
+    args = dev.build_parser().parse_args(["pipeline"])
+
+    assert args.decision_as_of == "2026-07-31T18:30:00Z"
+    assert dev._pipeline_inventory_as_of(
+        args.decision_as_of,
+        args.inventory_as_of,
+    ) == "2026-07-31"
+
+
+def test_pipeline_accepts_existing_forecast_for_inventory_successor() -> None:
+    args = dev.build_parser().parse_args(
+        [
+            "pipeline",
+            "--from",
+            "inventory-build",
+            "--to",
+            "inventory-activate",
+            "--label",
+            "inventory-successor",
+            "--forecast-run",
+            "ml/data/artifacts/forecast_run_current",
+        ]
+    )
+
+    assert args.forecast_run == Path("ml/data/artifacts/forecast_run_current")
+
+
 def test_host_profile_never_returns_ultra_performance() -> None:
     """ultra-performance asks for 6 model workers x 4 threads regardless of core count,
     so on a 16-core host it oversubscribes and contends rather than going faster."""
 
     assert dev._host_execution_profile() != "ultra-performance"
     assert dev._host_execution_profile() in {"safe", "balanced", "performance"}
+
+
+def test_serve_accepts_explicit_reviewed_pricing_startup_config() -> None:
+    config = Path("contracts/evidence/pricing-authorities/current/pricing-serving.json")
+    args = dev.build_parser().parse_args(
+        ["serve", "--pricing-serving-config", str(config), "--with-ui"]
+    )
+
+    assert args.pricing_serving_config == config
+    assert args.with_ui is True
 
 
 @pytest.mark.parametrize(

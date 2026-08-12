@@ -13,6 +13,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -648,6 +649,55 @@ class TestReRunSafety:
         assert stamp.endswith("Z") and "T" in stamp
         assert not stamp.startswith("1970")
 
+    def test_migrated_repin_uses_v2_authority_instead_of_forking_v1(
+        self, monkeypatch
+    ) -> None:
+        """Once v2 owns a scope, another legacy head is never appended."""
+
+        predecessors = {
+            capability: f"rec_{index:016x}"
+            for index, capability in enumerate(
+                (
+                    "demand_forecast_non_pit",
+                    "inventory_replenishment_current_snapshot",
+                    "inventory_replenishment_replay",
+                ),
+                start=1,
+            )
+        }
+        fake_selection = SimpleNamespace(
+            RETAILER_ID="retailer-demo",
+            TENANT_ID="tenant-demo",
+            ENVIRONMENT="local",
+            AUTOMATED_ACTOR="automated/repin-policy/v1",
+            append_generation=lambda **_: pytest.fail(
+                "a migrated scope appended a legacy generation"
+            ),
+        )
+        commands = []
+        monkeypatch.setattr(dev, "_repin_v2_predecessors", lambda _: predecessors)
+        monkeypatch.setattr(dev, "_run", lambda command: commands.append(command) or 0)
+
+        assert dev._repin_apply(
+            selection=fake_selection,
+            ingestion=Path("/venv/python"),
+            run_id="run-new",
+            facts={},
+            reasons={
+                "candidate": "candidate",
+                "approved": "approved",
+                "active": "active",
+                "supersede": "supersede",
+            },
+            reason_code="HUMAN_REPIN_ADOPTION",
+            actor="reviewer",
+            reason="reviewed new source",
+            approved_at="2026-08-12T00:00:00Z",
+        ) == (0, None)
+        assert "build_publication_authority.py" in commands[0][1]
+        assert "--check" not in commands[0]
+        assert all("--no-clobber" not in command for command in commands)
+
 
 class TestPortability:
     def test_every_selected_run_is_derivable_without_local_bytes(self) -> None:
@@ -708,7 +758,17 @@ class TestCollisionAvoidance:
         """The check that stops a re-publication overwriting an attested artifact."""
 
         assert dev._generation_names_run("run-adac9e85dccb56e8-r6")
+        assert dev._generation_names_run("run-a0759b9c2721b069")
         assert not dev._generation_names_run("run-does-not-exist")
+
+    def test_v2_migration_has_one_explicit_predecessor_per_capability(self) -> None:
+        predecessors = dev._repin_v2_predecessors(selection)
+        assert predecessors is not None
+        assert set(predecessors) == set(selection._GENERATION_CAPABILITIES)
+        assert all(
+            record_id.startswith("rec_") and len(record_id) == 20
+            for record_id in predecessors.values()
+        )
 
     def test_an_unreadable_selection_cannot_make_the_collision_check_skip_it(
         self, tmp_path, monkeypatch
@@ -806,10 +866,11 @@ class TestPinAuthority:
         """
 
         pin = _load("build_expected_pin")
+        governed_run = pin._pinned_run()
         original = pin._promoted_runs
         pin._promoted_runs = lambda: ["run-freshly-published-not-adopted"]
         try:
-            assert pin._pinned_run() == pin._fallback_run()
+            assert pin._pinned_run() == governed_run
             assert pin._pinned_run() != "run-freshly-published-not-adopted"
         finally:
             pin._promoted_runs = original
@@ -863,16 +924,21 @@ class TestEntryRecordPointer:
             json.loads(path.read_text(encoding="utf-8"))
             for path in sorted(directory.glob("*.json"))
         ]
+        supported_versions = {
+            selection.SELECTION_SCHEMA_VERSION,
+            selection.SELECTION_SCHEMA_VERSION_V2,
+        }
         records = [
             record
             for record in records
-            if record.get("schemaVersion") == selection.SELECTION_SCHEMA_VERSION
+            if record.get("schemaVersion") in supported_versions
         ]
+        expected_scope = source["scope"]
         heads = [
             record
             for record in selection.current_records(records)
             if record["lifecycle"]["state"] == "active"
-            and record["scope"]["capability"] == "demand_forecast_non_pit"
+            and record["scope"] == expected_scope
         ]
         assert len(heads) == 1, f"expected one current head, found {len(heads)}"
         head = heads[0]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import calendar
+import json
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
@@ -79,6 +80,101 @@ def _iso_at(
 
 def _fraction(*parts: Any) -> float:
     return stable_integer(*parts, modulo=1_000_000) / 1_000_000
+
+
+def _competitor_match_truth(
+    *,
+    master_seed: int,
+    market_id: str,
+    variants: list[dict[str, Any]],
+    start: date,
+    end: date,
+    generation_method: str,
+) -> list[dict[str, str]]:
+    """Build held-out labelled pairs that never appear in served match data.
+
+    Each SKU contributes one development and one evaluation pair. The positive
+    and negative assignment alternates by SKU, so both splits contain both
+    labels while every candidate identity remains disjoint. Raw attributes and
+    labels are emitted; no served matcher row is copied into hidden truth.
+    """
+
+    rows: list[dict[str, str]] = []
+    for index, variant in enumerate(sorted(variants, key=lambda row: row["sku"])):
+        reference_attributes = {
+            "categoryId": str(variant["_categoryId"]),
+            "brand": str(variant["_brand"]),
+            "gtin": str(variant.get("barcode") or ""),
+            **{
+                f"option:{variant[f'option{option_index}Name']}": str(
+                    variant.get(f"option{option_index}Value") or ""
+                )
+                for option_index in range(1, 4)
+                if variant.get(f"option{option_index}Name")
+            },
+        }
+        for kind_index, truth_label in enumerate((True, False)):
+            split = (
+                "evaluation"
+                if (index + kind_index) % 2 == 0
+                else "development"
+            )
+            missing_cohort = split == "evaluation" and index % 8 == 0
+            candidate_attributes = dict(reference_attributes)
+            if not truth_label:
+                candidate_attributes = {
+                    key: f"different:{value}"
+                    for key, value in reference_attributes.items()
+                }
+            if missing_cohort:
+                candidate_attributes.pop("gtin", None)
+            kind = "positive" if truth_label else "negative"
+            candidate_key = f"truth:{market_id}:{variant['sku']}:{kind}"
+            competitor_sku = "EVAL-CMP-{:08d}".format(
+                stable_integer(
+                    master_seed,
+                    "competitor-truth-sku",
+                    market_id,
+                    variant["sku"],
+                    kind,
+                    modulo=99_999_999,
+                )
+            )
+            rows.append(
+                {
+                    # The v13 base fields remain present for source-shape
+                    # compatibility. Confidence is deliberately blank: the
+                    # evaluator, not the generator label file, scores the pair.
+                    "matchKey": candidate_key,
+                    "marketKey": market_id,
+                    "competitorId": f"truth-competitor-{market_id}",
+                    "competitorSku": competitor_sku,
+                    "ourSku": str(variant["sku"]),
+                    "matchMethod": "held-out-attribute-truth-v1",
+                    "matchConfidence": "",
+                    "effectiveFrom": start.isoformat(),
+                    "effectiveTo": end.isoformat(),
+                    "candidateKey": candidate_key,
+                    "departmentId": str(variant["_departmentId"]),
+                    "categoryId": str(variant["_categoryId"]),
+                    "referenceAttributes": json.dumps(
+                        reference_attributes,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "candidateAttributes": json.dumps(
+                        candidate_attributes,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "truthLabel": str(truth_label).lower(),
+                    "truthSplit": split,
+                    "missingAttributeCohort": str(missing_cohort).lower(),
+                    "truthMethod": "synthetic-held-out-identity-v1",
+                    "generationMethod": generation_method,
+                }
+            )
+    return rows
 
 
 def _poisson(mean: float, *seed_parts: Any) -> int:
@@ -606,6 +702,7 @@ def _annual_price_schedule(
     year: int,
     year_days: int,
     anchor_year: int,
+    response_step_scale: int = 1,
 ) -> tuple[tuple[int, ...], tuple[str, ...]]:
     """Return one continuous, irregular price-list path for a SKU/year."""
 
@@ -624,6 +721,7 @@ def _annual_price_schedule(
             year - 1,
             prior_year_days,
             anchor_year,
+            response_step_scale,
         )
         adjustment = Decimal(prior_adjustments[-1])
     adjustments: list[str] = [str(adjustment)]
@@ -659,24 +757,27 @@ def _annual_price_schedule(
             # clamp and synchronously falling back every January.
             downward_threshold = (
                 70
-                if adjustment >= Decimal("0.08")
+                if adjustment >= Decimal("0.08") * response_step_scale
                 else 20
-                if adjustment <= Decimal("-0.04")
+                if adjustment <= Decimal("-0.04") * response_step_scale
                 else 46
             )
             if draw < downward_threshold // 3:
-                step = Decimal("-0.025")
+                step = Decimal("-0.025") * response_step_scale
             elif draw < downward_threshold:
-                step = Decimal("-0.0125")
+                step = Decimal("-0.0125") * response_step_scale
             elif draw < downward_threshold + 30:
-                step = Decimal("0.010")
+                step = Decimal("0.010") * response_step_scale
             elif draw < downward_threshold + 48:
-                step = Decimal("0.020")
+                step = Decimal("0.020") * response_step_scale
             else:
-                step = Decimal("0.030")
+                step = Decimal("0.030") * response_step_scale
             adjustment = max(
-                Decimal("-0.08"),
-                min(Decimal("0.12"), adjustment + step),
+                Decimal("-0.08") * response_step_scale,
+                min(
+                    Decimal("0.12") * response_step_scale,
+                    adjustment + step,
+                ),
             )
         else:
             downward_threshold = (
@@ -717,6 +818,7 @@ def _price_for_day(
         day.year,
         year_days,
         (inflation_anchor or start).year,
+        int(dynamics.get("responseStepScale", 1)),
     )
     bucket = max(
         0,
@@ -1757,6 +1859,22 @@ def simulate(
         market_id: set()
         for market_id in markets
     }
+    pricing_evidence = config.get("pricingEvidence") or {}
+    truth_generation_method = str(
+        pricing_evidence.get("generationMethod")
+        or "deterministic-held-out-attribute-truth-v1"
+    )
+    competitor_match_truth = {
+        market_id: _competitor_match_truth(
+            master_seed=master_seed,
+            market_id=market_id,
+            variants=variants_by_market[market_id],
+            start=start,
+            end=end,
+            generation_method=truth_generation_method,
+        )
+        for market_id in markets
+    }
     pandemic_signals = {
         market_id: row_stream(f"simulation-pandemic-signals-{market_id}")
         for market_id in markets
@@ -2585,18 +2703,34 @@ def simulate(
                         )
                     )
                     competitor_sku = f"CMP-{stable_integer(match_key, modulo=99_999_999):08d}"
-                    competitor_available = (
-                        _fraction(
-                            master_seed,
-                            "competitor-availability",
-                            market_id,
-                            variant["sku"],
-                            day,
-                        )
-                        >= 0.08
+                    evidence_enabled = (config.get("pricingEvidence") or {}).get(
+                        "enabled", False
                     )
-                    competitor_prices[market_id].append(
-                        {
+                    availability_draw = _fraction(
+                        master_seed,
+                        "competitor-availability",
+                        market_id,
+                        variant["sku"],
+                        day,
+                    )
+                    if evidence_enabled:
+                        availability_state = (
+                            "Unknown"
+                            if availability_draw < 0.06
+                            else "Out of Stock"
+                            if availability_draw < 0.16
+                            else "Low Stock"
+                            if availability_draw < 0.28
+                            else "In Stock"
+                        )
+                        competitor_available = availability_state in {
+                            "In Stock",
+                            "Low Stock",
+                        }
+                    else:
+                        availability_state = ""
+                        competitor_available = availability_draw >= 0.08
+                    price_row = {
                             "marketKey": market_id,
                             "targetType": "store",
                             "targetId": market_stores[0]["storeId"],
@@ -2623,11 +2757,41 @@ def simulate(
                             "available": str(competitor_available).lower(),
                             "promotionText": "weekly-price-check" if factor < 1 else "",
                         }
-                    )
+                    if evidence_enabled:
+                        option_attributes = {
+                            str(variant.get(f"option{index}Name") or ""): str(
+                                variant.get(f"option{index}Value") or ""
+                            )
+                            for index in range(1, 4)
+                            if variant.get(f"option{index}Name")
+                        }
+                        competitor_attributes = {
+                            "categoryId": variant["_categoryId"],
+                            **option_attributes,
+                        }
+                        price_row.update(
+                            {
+                                "competitorBrand": f"Benchmark {variant['_brand']}",
+                                "competitorModel": variant["_productCode"],
+                                "competitorGtin": "",
+                                "competitorAttributes": json.dumps(
+                                    competitor_attributes,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                ),
+                                "availabilityState": availability_state,
+                                "evidenceClass": "synthetic",
+                                "derivationClass": "deterministic_competitor_projection",
+                                "usePurpose": "synthetic_demo",
+                                "generationMethod": config["pricingEvidence"][
+                                    "generationMethod"
+                                ],
+                            }
+                        )
+                    competitor_prices[market_id].append(price_row)
                     if match_key not in competitor_match_keys[market_id]:
                         competitor_match_keys[market_id].add(match_key)
-                        competitor_matches[market_id].append(
-                            {
+                        match_row = {
                                 "matchKey": match_key,
                                 "marketKey": market_id,
                                 "competitorId": f"competitor-{market_id}",
@@ -2644,7 +2808,79 @@ def simulate(
                                 "effectiveFrom": start.isoformat(),
                                 "effectiveTo": end.isoformat(),
                             }
-                        )
+                        if evidence_enabled:
+                            component_names = [
+                                str(variant.get(f"option{index}Name"))
+                                for index in range(1, 4)
+                                if variant.get(f"option{index}Name")
+                            ]
+                            component_matches = {
+                                "categoryId": _fraction(
+                                    master_seed,
+                                    "competitor-match",
+                                    match_key,
+                                    "categoryId",
+                                )
+                                >= 0.08,
+                                "brand": _fraction(
+                                    master_seed,
+                                    "competitor-match",
+                                    match_key,
+                                    "brand",
+                                )
+                                >= 0.85,
+                                **{
+                                    name: _fraction(
+                                        master_seed,
+                                        "competitor-match",
+                                        match_key,
+                                        name,
+                                    )
+                                    >= 0.20
+                                    for name in component_names
+                                },
+                            }
+                            option_weight = 5_000 // max(1, len(component_names))
+                            score_basis_points = (
+                                3_500
+                                if component_matches["categoryId"]
+                                else 0
+                            ) + (1_500 if component_matches["brand"] else 0)
+                            score_basis_points += sum(
+                                option_weight
+                                for name in component_names
+                                if component_matches[name]
+                            )
+                            score_basis_points = min(
+                                9_999,
+                                score_basis_points
+                                + stable_integer(
+                                    master_seed,
+                                    "competitor-match-jitter",
+                                    match_key,
+                                    modulo=200,
+                                ),
+                            )
+                            match_row.update(
+                                {
+                                    "matchMethod": "synthetic-attribute-match-v2",
+                                    "matchConfidence": str(
+                                        Decimal(score_basis_points) / Decimal(10_000)
+                                    ),
+                                    "matchedAttributes": json.dumps(
+                                        component_matches,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    ),
+                                    "evidenceClass": "synthetic",
+                                    "derivationClass": "deterministic_attribute_match",
+                                    "usePurpose": "synthetic_demo",
+                                    "generationMethod": config["pricingEvidence"][
+                                        "generationMethod"
+                                    ],
+                                }
+                            )
+                        competitor_matches[market_id].append(match_row)
 
             market_stores = sorted(
                 [row for row in stores.values() if row["marketId"] == market_id],
@@ -3506,6 +3742,7 @@ def simulate(
         "macroRows": macro_rows,
         "competitorPrices": competitor_prices,
         "competitorMatches": competitor_matches,
+        "competitorMatchTruth": competitor_match_truth,
         "pandemicSignals": pandemic_signals,
         "finalInventory": dict(inventory),
         "storeObservations": store_observations,

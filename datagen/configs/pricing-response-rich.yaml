@@ -1,0 +1,11 @@
+extends: gulf-oil-india-ten-year.yaml
+identity:
+  scenarioId: gulf-oil-india-pricing-response
+  scenarioVersion: 1.0.0
+  scenarioName: Gulf Oil India pricing response evidence
+pricingEvidence:
+  enabled: true
+  priceKnownAsOfLagDays: 0
+  promotionPlanningLeadDays: 28
+  responseStepScale: 2
+  generationMethod: deterministic-response-profile-v1

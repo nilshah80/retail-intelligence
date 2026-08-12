@@ -191,6 +191,28 @@ class ShopifyAdapter(SourceAdapter):
             """
         )
 
+        price_columns = {
+            str(row[0])
+            for row in con.execute("DESCRIBE raw_shopify.price_history").fetchall()
+        }
+        if "knownAsOf" in price_columns:
+            price_known_expression = "try_cast(p.knownAsOf AS TIMESTAMPTZ)"
+            price_evidence_grade = "native_observed"
+        else:
+            price_known_expression = (
+                f"try_cast('{landing['landingTime']}' AS TIMESTAMPTZ)"
+            )
+            price_evidence_grade = "landing_backfill"
+        price_provenance_expression = (
+            "coalesce(nullif(p.provenanceClass, ''), 'SHOPIFY_ACTUAL')"
+            if "provenanceClass" in price_columns
+            else "'SHOPIFY_ACTUAL'"
+        )
+        price_generation_expression = (
+            "nullif(p.generationMethod, '')::VARCHAR"
+            if "generationMethod" in price_columns
+            else "NULL::VARCHAR"
+        )
         con.execute(
             f"""
             CREATE OR REPLACE TABLE stage_data.shopify_prices AS
@@ -203,9 +225,9 @@ class ShopifyAdapter(SourceAdapter):
                 concat(p.variantId, ':', p.effectiveDate)::VARCHAR
                     AS native_record_id,
                 p._market_id AS market_id,
-                try_cast('{landing["landingTime"]}' AS TIMESTAMPTZ) AS known_as_of,
-                'landing_backfill'::VARCHAR AS evidence_grade,
-                'SHOPIFY_ACTUAL'::VARCHAR AS row_provenance,
+                {price_known_expression} AS known_as_of,
+                '{price_evidence_grade}'::VARCHAR AS evidence_grade,
+                {price_provenance_expression}::VARCHAR AS row_provenance,
                 p._raw_object_hash AS raw_object_hash,
                 '{profile_version}'::VARCHAR AS profile_version,
                 '{self.adapter_version}'::VARCHAR AS adapter_version,
@@ -215,6 +237,7 @@ class ShopifyAdapter(SourceAdapter):
                 try_cast(p.price AS DECIMAL(38, 6)) AS price_major,
                 p.currencyCode::VARCHAR AS currency_code,
                 p.priceReason::VARCHAR AS price_reason,
+                {price_generation_expression} AS generation_method,
                 p._raw_object_path AS raw_object_path
             FROM raw_shopify.price_history AS p
             """

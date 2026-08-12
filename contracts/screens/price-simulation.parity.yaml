@@ -1,0 +1,41 @@
+schemaVersion: retail-screen-contract/v1
+screenId: priceSimulation
+status: authorized_for_implementation
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  plan: plans/local/phase5-implementation-plan.md
+  api: contracts/api/openapi.yaml
+title: Price Simulation
+subtitle: Test price scenarios before applying them
+pageSelector: '#priceSimulation'
+dataMode: accepted_live_only
+builder:
+  heading: Price Scenario Builder
+  action: Run Simulation
+  fields:
+    - Product
+    - Current Price
+    - Proposed Price
+    - Simulation Period
+    - Minimum Margin
+    - Competitor Response
+    - Demand Assumption
+    - Inventory Objective
+comparison:
+  columns: [Measure, Current, Proposed, AI Optimal]
+  rows: [Units, Revenue, Gross Margin, Ending Stock]
+  syntheticPanel:
+    position: immediately_after_comparison_table
+    heading: Synthetic demo margin — not client actual
+    disclaimer: Does not affect the recommendation
+resultMetrics: [Revenue, Margin, Stock-out Risk, Confidence]
+constraints:
+  simulationPeriod: [Next 4 Weeks]
+  demandAssumption: [Expected, Best Case, Worst Case]
+  inventoryObjective: [Margin Protection, Clearance]
+  mutation: forbidden
+  currentPrice: read_only_authority_value
+  competitorResponse: disabled_evidence_status
+review:
+  authorization: Explicit user instruction to complete the approved implementation plan.
+  visualReviewOutstanding: true

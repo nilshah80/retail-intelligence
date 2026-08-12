@@ -111,8 +111,9 @@ def test_no_element_is_removed_for_being_unavailable() -> None:
 
 def test_actions_are_disabled_with_no_mutation_path() -> None:
     behavior = _document()["actionBehavior"]
-    assert "natively disabled" in behavior
-    assert "no mutation endpoint or handler" in behavior
+    assert "governed live downloads" in behavior
+    assert "preview-only dialogs" in behavior
+    assert "no mutation" in behavior
 
 
 def test_interval_consuming_screens_freeze_the_p4_d17_rule() -> None:

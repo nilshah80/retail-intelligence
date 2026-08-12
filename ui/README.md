@@ -97,6 +97,22 @@ Phase 2 and must never be filled with nearby technical counts:
 Thus “data exists in datagen” is not itself enough to display a KPI. Each visible value still needs
 its reviewed business formula, filter grain, currency/time-window semantics and API field.
 
+## Pricing, competitor, and promotion UI status
+
+The four pricing destinations are implemented in `src/Pricing.tsx` against the reviewed matrices
+under `contracts/screens/`. Price Recommendations supports governed KPI/filter/tab/table/detail,
+comparison, workflow-preview, and direct-export states. Price Simulation is a bounded stateless
+request to the live API. Competitor Monitor exposes match, freshness, alert, detail, and
+mutation-free review states. Promotion Planner preserves the full reference composition and shows
+reason-coded historical/read-only or unavailable planning states rather than inventing uplift.
+All four pages fail closed without an active verified pricing bundle and never substitute the
+reference HTML's sample values.
+
+The local capture harness can demonstrate typed pricing failures without editing database rows.
+When the API was explicitly started with `RETAIL_PRICING_DEMO_ADAPTER=enabled`, add
+`demoState=stale`, `missing`, `corrupt`, or `panel` to the page URL; `panel` also takes the exact
+`demoPanel` API path. Any other value is ignored, and normal runs do not enable the adapter.
+
 The package and script names are cross-platform and contain no shell-specific environment syntax:
 
 ```text

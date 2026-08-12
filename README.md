@@ -555,7 +555,8 @@ own claim.
 python3 -m retail_ml.cli inventory-build \
   --curated-root ingestion/data/curated/<run-id> \
   --bundle ml/data/artifacts/<bundle-name> \
-  --as-of <decision-origin> \
+  --as-of <inventory-snapshot-date> \
+  --decision-as-of <timezone-aware-authority-instant> \
   --postgres-dsn <dsn> --execution-profile performance
 python3 -m retail_ml.cli inventory-verify --bundle <bundle> --postgres-dsn <dsn>
 python3 -m retail_ml.cli inventory-materialize --bundle <bundle> --postgres-dsn <dsn>
@@ -569,6 +570,12 @@ housekeeping: a serving table accumulates one partition per activation, and afte
 stale row estimates made PostgreSQL abandon the grain indexes — the Replenishment Planner route
 went from 58ms to 52 seconds and the API served it as a closed connection rather than a governed
 error. The writer is the only place that knows a bulk load just happened.
+
+`--as-of` is the date-grain inventory snapshot/replay boundary. `--decision-as-of` is the exact
+authority instant and defaults to the selected forecast's decision instant when omitted. Keeping
+those types separate allows end-of-day source cutoffs without silently flooring the inventory
+authority to midnight, which would make the otherwise matching Scenario Planning inventory
+extension unavailable.
 
 Activation refuses a second active version for the same scope. Pass `--retire-other-scopes` when
 an earlier version is still active (decision #90: exactly one).
@@ -686,41 +693,40 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` and `/healthz` to the Go service at
 `http://127.0.0.1:8080`; start the API first. Data Management follows the strict v6 HTML shell
-and screen-data contract, with live accepted-publication values. The three source-management
-buttons and user/User Management UI are the approved current omissions. Forecast Coverage remains
-`Not available` pending its frozen business formula. Accepted Model Accuracy is now available from
-the forecast API, but it must not be added to React until the relevant parity/data matrix is
-approved. Inventory/Replenishment and Pricing/Promotion arrive with their owning capability phases,
-using the same approved shell.
+and screen-data contract, with live accepted-publication values. Source-management mutations and
+user/User Management remain outside the read-only demo authority. Forecast, the fourteen
+Inventory/Replenishment destinations, and the four Pricing/Competitor/Promotion destinations use
+the same approved shell and fail closed independently when their active authority is absent.
 
-The live filter model uses canonical markets `india-west` and `us-new-york`, with Mumbai Bandra,
-Pune Koregaon Park, Brooklyn and Manhattan stores. The global Channel filter exposes two
-business types (`E-commerce` and `Store`); market-qualified source/canonical channel instances
-remain internal. Store and Channel selections intersect, so Pune Koregaon Park + E-commerce is a
-valid filter context. Footer `Channels` therefore reports 2, not the four internal instances.
+The active Gulf India publication exposes the governed `gulf-india` market, thirteen distributor
+stores, and the Store, Marketplace, and Online channel types. Market-qualified source/canonical
+channel instances remain internal. Store and Channel selections intersect and every monetary
+recommendation remains in INR; the other reference currencies stay visibly unavailable until an
+approved reporting-FX path exists.
 
 ### 11. Inspect the curated data
 
-The accepted publication contains 47 canonical entities and 7,471,784 daily
+The active response-rich publication contains 47 canonical entities and 23,563,056 daily
 SKU×store×channel sales rows. To list tables without requiring a separate DuckDB CLI:
 
 Windows PowerShell:
 
 ```powershell
-.\ingestion\.venv\Scripts\python.exe -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-adac9e85dccb56e8/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
+.\ingestion\.venv\Scripts\python.exe -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-d0b447bbc9faf4ae/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
 ```
 
 macOS/Linux:
 
 ```bash
-ingestion/.venv/bin/python -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-adac9e85dccb56e8/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
+ingestion/.venv/bin/python -c "import duckdb; c=duckdb.connect('ingestion/data/curated/run-d0b447bbc9faf4ae/retail_v2.duckdb', read_only=True); print(c.execute('select table_name from information_schema.tables order by table_name').fetchall())"
 ```
 
 The retained publication currently enables data management, revenue reporting, accepted non-PIT
 demand forecasting and competitor analysis. Native assortment observation makes zero-demand
 labels origin-safe, but the broader point-in-time capability remains downgraded because several
-reference facts and signals are still landing-backfilled. Pricing and replenishment remain closed
-until their Phase-2 evidence requirements and later model phases are satisfied.
+reference facts and signals may still be landing-backfilled. Replenishment and revenue pricing now
+serve only from their separately verified and explicitly activated PostgreSQL projections;
+unsupported margin or promotion claims remain visibly reason-coded rather than synthesized.
 
 ### 12. Verify the repository
 

@@ -1180,6 +1180,26 @@ def build_marketing_extensions(
                     "discountBasis": "planned-offer",
                     "effectiveFrom": promotion["startDate"],
                     "effectiveTo": promotion["endDate"],
+                    **(
+                        {
+                            "knownAsOf": datetime.combine(
+                                date.fromisoformat(promotion["startDate"])
+                                - timedelta(
+                                    days=config["pricingEvidence"][
+                                        "promotionPlanningLeadDays"
+                                    ]
+                                ),
+                                datetime.min.time(),
+                            ).isoformat()
+                            + "Z",
+                            "provenanceClass": "generated_source_native",
+                            "generationMethod": config["pricingEvidence"][
+                                "generationMethod"
+                            ],
+                        }
+                        if (config.get("pricingEvidence") or {}).get("enabled", False)
+                        else {}
+                    ),
                 }
             )
     return {

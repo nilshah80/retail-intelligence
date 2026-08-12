@@ -29,10 +29,11 @@ func main() {
 	openAPISpec := flag.String(
 		"openapi-spec", "", "path to the authoritative OpenAPI YAML document",
 	)
-	postgresDSN := flag.String(
-		"postgres-dsn",
-		os.Getenv("RETAIL_POSTGRES_DSN"),
-		"PostgreSQL DSN; RETAIL_POSTGRES_DSN is the recommended source",
+	postgresDSN := os.Getenv("RETAIL_POSTGRES_DSN")
+	pricingServingConfig := flag.String(
+		"pricing-serving-config",
+		os.Getenv("RETAIL_PRICING_SERVING_CONFIG"),
+		"path to the reviewed secret-free pricing serving configuration",
 	)
 	forecastScope := flag.String(
 		"forecast-activation-scope",
@@ -88,7 +89,7 @@ func main() {
 		10*time.Second,
 	)
 	forecast := readmodel.LoadForecast(forecastLoadContext, readmodel.ForecastConfig{
-		PostgresDSN:                    *postgresDSN,
+		PostgresDSN:                    postgresDSN,
 		ExpectedPublicationFingerprint: store.PublicationFingerprint(),
 		ActivationScopeFingerprint:     *forecastScope,
 		DBReadPool:                     profile.API.DBReadPool,
@@ -107,7 +108,7 @@ func main() {
 	scenarioReportingCurrency, scenarioReportingFX, scenarioReportingSource :=
 		store.ScenarioReportingFXSource()
 	inventory := readmodel.LoadInventory(inventoryLoadContext, readmodel.InventoryConfig{
-		PostgresDSN: *postgresDSN,
+		PostgresDSN: postgresDSN,
 		DBReadPool:  profile.API.DBReadPool,
 		// Approved reporting FX from the publication the server was started
 		// against, so a cross-currency inventory total is converted rather than
@@ -122,7 +123,7 @@ func main() {
 		10*time.Second,
 	)
 	scenario := readmodel.LoadScenario(scenarioLoadContext, readmodel.ScenarioConfig{
-		PostgresDSN:                *postgresDSN,
+		PostgresDSN:                postgresDSN,
 		RetailerID:                 *scenarioRetailer,
 		TenantID:                   *scenarioTenant,
 		Environment:                *scenarioEnvironment,
@@ -133,7 +134,23 @@ func main() {
 	})
 	cancelScenarioLoad()
 	defer scenario.Close()
-	app, err := httpapi.New(store, forecast, inventory, profile, spec, scenario)
+	pricingConfig, err := readmodel.LoadPricingServingConfig(*pricingServingConfig)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	pricingConfig.PostgresDSN = postgresDSN
+	pricingConfig.DBReadPool = profile.API.DBReadPool
+	pricingLoadContext, cancelPricingLoad := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	pricing := readmodel.LoadPricing(pricingLoadContext, pricingConfig)
+	cancelPricingLoad()
+	defer pricing.Close()
+	app, err := httpapi.NewWithPricing(
+		store, forecast, inventory, profile, spec, scenario, pricing,
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

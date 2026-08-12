@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: Retail Intelligence API
-  version: 0.5.0
+  version: 0.6.0
   description: >-
-    Governed data-management, forecast, inventory and stateless assumption-
-    projection API. Read routes serve explicitly activated PostgreSQL
-    projections; the scenario POST performs no database or domain writes.
+    Governed data-management, forecast, inventory, pricing, competitor and
+    promotion-planning API. Read routes serve explicitly activated PostgreSQL
+    projections; simulation POSTs are bounded and perform no database or domain
+    writes.
 servers:
   - url: http://localhost:8080
 paths:
@@ -611,6 +612,238 @@ paths:
           $ref: "#/components/responses/InventoryStale"
         "503":
           $ref: "#/components/responses/InventoryUnavailable"
+  /api/v1/pricing/recommendations/summary:
+    get:
+      operationId: pricingRecommendationSummary
+      description: Filter-consistent recommendation KPIs and page metadata from the active pricing bundle.
+      parameters: &pricingFilters
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+        - {$ref: "#/components/parameters/PricingCategory"}
+        - {$ref: "#/components/parameters/PricingAction"}
+        - {$ref: "#/components/parameters/PricingConfidence"}
+        - {$ref: "#/components/parameters/PricingSearch"}
+      responses: &pricingReadResponses
+        "200": {$ref: "#/components/responses/PricingLive"}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/pricing/recommendations:
+    get:
+      operationId: pricingRecommendations
+      description: Bounded recommendation and withheld-assessment workbench rows.
+      parameters:
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+        - {$ref: "#/components/parameters/PricingCategory"}
+        - {$ref: "#/components/parameters/PricingAction"}
+        - {$ref: "#/components/parameters/PricingConfidence"}
+        - {$ref: "#/components/parameters/PricingSearch"}
+        - {$ref: "#/components/parameters/PricingRecordKind"}
+        - {$ref: "#/components/parameters/PricingSort"}
+        - {$ref: "#/components/parameters/PricingOffset"}
+        - {$ref: "#/components/parameters/PricingLimit"}
+      responses: *pricingReadResponses
+  /api/v1/pricing/recommendations/{id}:
+    get:
+      operationId: pricingRecommendationDetail
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, pattern: '^pr_[0-9a-f]{20}$'}}
+      responses:
+        "200": {$ref: "#/components/responses/PricingLive"}
+        "404": {$ref: "#/components/responses/PricingUnavailable"}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/pricing/recommendations/store-view:
+    get:
+      operationId: pricingRecommendationStoreView
+      parameters: *pricingFilters
+      responses: *pricingReadResponses
+  /api/v1/pricing/recommendations/category-view:
+    get:
+      operationId: pricingRecommendationCategoryView
+      parameters: *pricingFilters
+      responses: *pricingReadResponses
+  /api/v1/pricing/recommendations/governance:
+    get:
+      operationId: pricingRecommendationGovernance
+      parameters: *pricingFilters
+      responses: *pricingReadResponses
+  /api/v1/pricing/simulations:run:
+    post:
+      operationId: runPriceSimulation
+      description: Bounded deterministic calculation over already materialized response, candidate, forecast and inventory evidence. It writes no state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PriceSimulationRequest"}
+      responses:
+        "200":
+          description: Stateless price scenario result.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PriceSimulationResponse"}
+        "400": {$ref: "#/components/responses/RequestInvalid"}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "413": {$ref: "#/components/responses/RequestTooLarge"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaType"}
+        "422": {$ref: "#/components/responses/PricingValidationInvalid"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/pricing/export:
+    get:
+      operationId: exportPriceRecommendations
+      description: Server-authored bounded CSV over recommendation rows only; it writes no state and never truncates.
+      parameters:
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+        - {$ref: "#/components/parameters/PricingCategory"}
+        - {$ref: "#/components/parameters/PricingAction"}
+        - {$ref: "#/components/parameters/PricingConfidence"}
+        - {$ref: "#/components/parameters/PricingSearch"}
+        - {$ref: "#/components/parameters/PricingSort"}
+        - {name: scope, in: query, required: true, schema: {type: string, enum: [selected, filtered, all]}}
+        - {name: format, in: query, required: true, schema: {type: string, enum: [csv, excel_csv]}}
+        - {name: includeExplanation, in: query, required: true, schema: {type: string, enum: [yes, no]}}
+        - {name: filename, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 80}}
+        - {name: expectedCount, in: query, required: true, schema: {type: integer, minimum: 0, maximum: 10000}}
+        - {name: expectedActivationSetId, in: query, required: true, schema: {type: string, pattern: '^pact_[0-9a-f]{16}$'}}
+        - {name: ids, in: query, required: false, description: Comma-separated unique recommendation IDs; required only for selected scope., schema: {type: string}}
+      responses:
+        "200":
+          description: Exact server-counted recommendation export.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            Content-Disposition: {schema: {type: string, pattern: '^attachment; filename="[A-Za-z0-9_.-]+\.csv"$'}}
+            X-Export-Count: {schema: {type: integer, minimum: 1, maximum: 10000}}
+            X-Export-ID: {schema: {type: string, pattern: '^pex_[0-9a-f]{16}$'}}
+            X-Scope-Revision: {schema: {type: string, pattern: '^pact_[0-9a-f]{16}$'}}
+          content:
+            text/csv:
+              schema: {type: string, format: binary}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "422": {$ref: "#/components/responses/PricingValidationInvalid"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/direct-exports/{exportId}:
+    get:
+      operationId: exportRegisteredReadModel
+      description: >-
+        Server-authored bounded CSV for a closed Forecast, Inventory, or
+        Replenishment trigger. The metadata mode returns the opaque scope
+        revision and limit needed before an attachment request. Neither mode
+        writes state and the attachment is never silently truncated.
+      parameters:
+        - {name: exportId, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+        - {name: metadata, in: query, required: false, schema: {type: boolean, default: false}}
+        - {name: scope, in: query, required: true, schema: {type: string, enum: [selected_visible, current_filtered]}}
+        - {name: expectedCount, in: query, required: true, schema: {type: integer, minimum: 0, maximum: 1000}}
+        - {name: scopeRevision, in: query, required: false, schema: {type: string, pattern: '^scope_[0-9a-f]{20}$'}}
+        - {name: ids, in: query, required: false, description: Comma-separated unique visible row IDs., schema: {type: string}}
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannel"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+        - {$ref: "#/components/parameters/ForecastHorizonWeeks"}
+        - {$ref: "#/components/parameters/ForecastSearch"}
+        - {name: currency, in: query, required: true, schema: {type: string, pattern: '^(?:[A-Z]{3}|MULTI)$'}}
+      responses:
+        "200":
+          description: Export metadata or the exact server-counted CSV attachment.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            Content-Disposition: {schema: {type: string, pattern: '^attachment; filename="[a-z0-9-]+-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\.csv"$'}}
+            X-Export-Count: {schema: {type: integer, minimum: 1, maximum: 1000}}
+            X-Export-ID: {schema: {type: string, pattern: '^dx_[0-9a-f]{20}$'}}
+            X-Scope-Revision: {schema: {type: string, pattern: '^scope_[0-9a-f]{20}$'}}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schemaVersion, exportId, limit, scopeRevision, registered]
+                properties:
+                  schemaVersion: {const: retail-direct-export-metadata/v1}
+                  exportId: {type: string}
+                  limit: {type: integer, const: 1000}
+                  scopeRevision: {type: string, pattern: '^scope_[0-9a-f]{20}$'}
+                  registered: {type: array, items: {type: string}, uniqueItems: true}
+            text/csv:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/PricingUnavailable"}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "422": {$ref: "#/components/responses/PricingValidationInvalid"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/competitors/summary:
+    get:
+      operationId: competitorSummary
+      parameters:
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+        - {$ref: "#/components/parameters/CompetitorMatchStatus"}
+        - {$ref: "#/components/parameters/CompetitorID"}
+        - {$ref: "#/components/parameters/CompetitorFreshness"}
+        - {$ref: "#/components/parameters/PricingSearch"}
+      responses: *pricingReadResponses
+  /api/v1/competitors/matches:
+    get:
+      operationId: competitorMatches
+      parameters:
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+        - {$ref: "#/components/parameters/CompetitorMatchStatus"}
+        - {$ref: "#/components/parameters/CompetitorID"}
+        - {$ref: "#/components/parameters/CompetitorFreshness"}
+        - {$ref: "#/components/parameters/PricingSearch"}
+        - {$ref: "#/components/parameters/PricingOffset"}
+        - {$ref: "#/components/parameters/PricingLimit"}
+      responses: *pricingReadResponses
+  /api/v1/competitors/matches/{id}:
+    get:
+      operationId: competitorMatchDetail
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {$ref: "#/components/parameters/PricingStore"}
+        - {$ref: "#/components/parameters/PricingChannel"}
+        - {$ref: "#/components/parameters/PricingChannelType"}
+      responses:
+        "200": {$ref: "#/components/responses/PricingLive"}
+        "404": {$ref: "#/components/responses/PricingUnavailable"}
+        "409": {$ref: "#/components/responses/PricingStale"}
+        "503": {$ref: "#/components/responses/PricingUnavailable"}
+  /api/v1/competitors/alert-rules:
+    get:
+      operationId: competitorAlertRules
+      description: Governed availability of persisted competitor alert rules; currently explicit unavailable rather than sample rules.
+      responses: *pricingReadResponses
+  /api/v1/promotions/summary:
+    get: &promotionRead
+      operationId: promotionSummary
+      responses: *pricingReadResponses
+  /api/v1/promotions/opportunities:
+    get:
+      <<: *promotionRead
+      operationId: promotionOpportunities
+  /api/v1/promotions/portfolio:
+    get:
+      <<: *promotionRead
+      operationId: promotionPortfolio
+  /api/v1/promotions/calendar:
+    get:
+      <<: *promotionRead
+      operationId: promotionCalendar
+  /api/v1/promotions/simulations:run:
+    post:
+      operationId: runPromotionSimulation
+      description: Returns the governed negative Planner disposition and performs no calculation or write.
+      responses:
+        "422": {$ref: "#/components/responses/PricingValidationInvalid"}
 components:
   parameters:
     ForecastMarket:
@@ -663,6 +896,63 @@ components:
       name: limit
       in: query
       schema: {type: integer, minimum: 1, maximum: 1000, default: 100}
+    PricingStore:
+      name: storeId
+      in: query
+      schema: {type: string}
+    PricingChannel:
+      name: channelId
+      in: query
+      schema: {type: string}
+    PricingChannelType:
+      name: channelType
+      in: query
+      description: Shared-shell channel-type filter; channel-distinct rows remain separate.
+      schema: {type: string, enum: [store, online, marketplace]}
+    PricingCategory:
+      name: category
+      in: query
+      schema: {type: string}
+    PricingAction:
+      name: action
+      in: query
+      schema: {type: string, enum: [Increase, Decrease, Hold]}
+    PricingConfidence:
+      name: confidence
+      in: query
+      schema: {type: string, enum: ["90", "80", low]}
+    PricingRecordKind:
+      name: recordKind
+      in: query
+      schema: {type: string, enum: [recommendation, withheld_assessment]}
+    PricingSearch:
+      name: search
+      in: query
+      schema: {type: string, maxLength: 200}
+    PricingSort:
+      name: sort
+      in: query
+      schema: {type: string, enum: [priority, confidence_asc, revenue_desc, price_change_desc], default: priority}
+    PricingOffset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    PricingLimit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    CompetitorMatchStatus:
+      name: matchStatus
+      in: query
+      schema: {type: string, enum: [Matched, Needs Review, Rejected, No Match]}
+    CompetitorID:
+      name: competitorId
+      in: query
+      schema: {type: string}
+    CompetitorFreshness:
+      name: freshness
+      in: query
+      schema: {type: string, enum: [Fresh, Near threshold, Stale]}
   responses:
     ScenarioRunLive:
       description: A tuple-pinned, stateless assumption projection.
@@ -692,7 +982,7 @@ components:
           schema:
             $ref: "#/components/schemas/RequestError"
     RequestTooLarge:
-      description: The scenario request body exceeds the bounded 4 MB route limit.
+      description: The request body exceeds the bounded limit declared by its route.
       headers:
         Cache-Control:
           schema: {type: string, const: no-store}
@@ -784,7 +1074,95 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ForecastUnavailable"
+    PricingLive:
+      description: Live data from the explicitly activated, lineage-matching PostgreSQL pricing projection.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PricingPage"}
+    PricingUnavailable:
+      description: Pricing data is unavailable because no fully verified active pricing projection can be served.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PricingUnavailable"}
+    PricingStale:
+      description: The client/startup-pinned pricing activation no longer matches the active authority.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PricingUnavailable"}
+    PricingValidationInvalid:
+      description: The stateless calculation request is unsupported or lacks required evidence.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: "#/components/schemas/PricingValidationError"}
+              - {$ref: "#/components/schemas/PricingUnavailable"}
   schemas:
+    PricingAuthority:
+      type: object
+      required: [retailerId, tenantId, environment, activationSetId, bundleId, bundleSemanticFingerprint, sourcePublicationFingerprint, sourceRunId, inputAuthorityId, sourceAsOf, selectionIds]
+      properties:
+        retailerId: {type: string}
+        tenantId: {type: string}
+        environment: {type: string}
+        activationSetId: {type: string, pattern: '^pact_[0-9a-f]{16}$'}
+        bundleId: {type: string, pattern: '^pb_[0-9a-f]{20}$'}
+        bundleSemanticFingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+        sourcePublicationFingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+        sourceRunId: {type: string}
+        inputAuthorityId: {type: string}
+        sourceAsOf: {type: string, format: date-time}
+        selectionIds: {type: array, minItems: 1, items: {type: string}}
+    PricingPage:
+      type: object
+      required: [schemaVersion, dataMode, authority]
+      properties:
+        schemaVersion: {const: retail-pricing-page/v1}
+        dataMode: {const: live}
+        authority: {$ref: "#/components/schemas/PricingAuthority"}
+      additionalProperties: true
+    PricingUnavailable:
+      type: object
+      required: [schemaVersion, dataMode, reasonCode, message]
+      properties:
+        schemaVersion: {const: retail-pricing-unavailable/v1}
+        dataMode: {const: unavailable}
+        reasonCode: {type: string}
+        message: {type: string}
+    PricingValidationError:
+      type: object
+      required: [schemaVersion, reasonCode, message]
+      properties:
+        schemaVersion:
+          type: string
+          enum: [retail-price-simulation-validation/v1, retail-request-error/v1]
+        reasonCode: {type: string}
+        message: {type: string}
+    PriceSimulationRequest:
+      type: object
+      additionalProperties: false
+      required: [recommendationId, proposedPriceMinor, simulationPeriod, demandAssumption, inventoryObjective, expectedActivationSetId]
+      properties:
+        recommendationId: {type: string, pattern: '^pr_[0-9a-f]{20}$'}
+        proposedPriceMinor: {type: integer, minimum: 1}
+        simulationPeriod: {const: Next 4 Weeks}
+        demandAssumption: {type: string, enum: [Expected, Best Case, Worst Case]}
+        inventoryObjective: {type: string, enum: [Margin Protection, Clearance]}
+        expectedActivationSetId: {type: string, pattern: '^pact_[0-9a-f]{16}$'}
+    PriceSimulationResponse:
+      type: object
+      required: [schemaVersion, scope, currencyCode, simulationPeriod, demandAssumption, demandScenarioSemantics, inventoryObjective, columns, metricOrder, recommendation, competitorEvidence, syntheticMarginScenario, mutated]
+      properties:
+        schemaVersion: {const: retail-price-simulation/v1}
+        demandScenarioSemantics: {const: additive_expected_and_sum_of_weekly_planning_bounds_not_four_week_quantiles}
+        mutated: {const: false}
+      additionalProperties: true
     ScenarioUserOverrides:
       type: object
       additionalProperties: false

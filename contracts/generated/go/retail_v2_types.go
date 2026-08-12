@@ -203,6 +203,8 @@ type SellPrices struct {
 	PromoPrice *int64 `json:"promo_price,omitempty"`
 	CurrencyCode string `json:"currency_code"`
 	SourcePricePathID *string `json:"source_price_path_id,omitempty"`
+	ProvenanceClass string `json:"provenance_class"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
@@ -295,6 +297,10 @@ type CompetitorProducts struct {
 	Model *string `json:"model,omitempty"`
 	Gtin *string `json:"gtin,omitempty"`
 	Attributes map[string]any `json:"attributes,omitempty"`
+	EvidenceClass string `json:"evidence_class"`
+	DerivationClass *string `json:"derivation_class,omitempty"`
+	UsePurpose *string `json:"use_purpose,omitempty"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
@@ -309,7 +315,12 @@ type CompetitorPrices struct {
 	Price int64 `json:"price"`
 	CurrencyCode string `json:"currency_code"`
 	InStockFlag bool `json:"in_stock_flag"`
+	AvailabilityState string `json:"availability_state"`
 	PromoFlag bool `json:"promo_flag"`
+	EvidenceClass string `json:"evidence_class"`
+	DerivationClass *string `json:"derivation_class,omitempty"`
+	UsePurpose *string `json:"use_purpose,omitempty"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
@@ -323,6 +334,10 @@ type CompetitorMatches struct {
 	MatchConfidence string `json:"match_confidence"`
 	MatchStatus string `json:"match_status"`
 	MatchedAttributes *string `json:"matched_attributes,omitempty"`
+	EvidenceClass string `json:"evidence_class"`
+	DerivationClass *string `json:"derivation_class,omitempty"`
+	UsePurpose *string `json:"use_purpose,omitempty"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 }
 
 type Promotions struct {
@@ -337,6 +352,8 @@ type Promotions struct {
 	EndDate string `json:"end_date"`
 	SegmentID *string `json:"segment_id,omitempty"`
 	Status string `json:"status"`
+	ProvenanceClass string `json:"provenance_class"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }
@@ -358,6 +375,8 @@ type PromotionMerchandiseTargets struct {
 	MerchScopeType string `json:"merch_scope_type"`
 	MerchScopeID string `json:"merch_scope_id"`
 	DiscountPct string `json:"discount_pct"`
+	ProvenanceClass string `json:"provenance_class"`
+	GenerationMethod *string `json:"generation_method,omitempty"`
 	KnownAsOf string `json:"known_as_of"`
 	KnownAsOfEvidenceGrade EvidenceGrade `json:"known_as_of_evidence_grade"`
 }

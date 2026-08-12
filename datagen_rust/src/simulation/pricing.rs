@@ -19,6 +19,7 @@ struct ScheduleKey {
     sku: String,
     year: i32,
     anchor_year: i32,
+    response_step_scale: u32,
 }
 
 #[derive(Debug, Default)]
@@ -120,8 +121,18 @@ impl PriceEngine {
         let events = market.price_dynamics["priceChangeEventsPerSkuPerYear"]
             .as_u64()
             .context("priceChangeEventsPerSkuPerYear")? as usize;
+        let response_step_scale = market.price_dynamics["responseStepScale"]
+            .as_u64()
+            .unwrap_or(1) as u32;
         let (event_days, adjustments) =
-            self.schedule(profile, events, sku, day.year(), inflation_anchor.year());
+            self.schedule(
+                profile,
+                events,
+                sku,
+                day.year(),
+                inflation_anchor.year(),
+                response_step_scale,
+            );
         let bucket = event_days
             .partition_point(|value| *value <= day.ordinal())
             .saturating_sub(1);
@@ -149,6 +160,7 @@ impl PriceEngine {
         sku: &str,
         year: i32,
         anchor_year: i32,
+        response_step_scale: u32,
     ) -> (Vec<u32>, Vec<Decimal>) {
         let key = ScheduleKey {
             profile: profile.to_owned(),
@@ -156,6 +168,7 @@ impl PriceEngine {
             sku: sku.to_owned(),
             year,
             anchor_year,
+            response_step_scale,
         };
         if let Some(value) = self.schedules.get(&key) {
             return value.clone();
@@ -169,7 +182,14 @@ impl PriceEngine {
             let mut adjustment = if year <= anchor_year {
                 Decimal::ZERO
             } else {
-                self.schedule(profile, events, sku, year - 1, anchor_year)
+                self.schedule(
+                    profile,
+                    events,
+                    sku,
+                    year - 1,
+                    anchor_year,
+                    response_step_scale,
+                )
                     .1
                     .last()
                     .copied()
@@ -193,25 +213,27 @@ impl PriceEngine {
                 prior_day = event_day;
                 let draw = stable_integer(&["price-event-step", sku, &year_text, &event_text], 100);
                 if profile == "response-rich" {
-                    let threshold = if adjustment >= dec("0.08") {
+                    let scale = Decimal::from(response_step_scale);
+                    let threshold = if adjustment >= dec("0.08") * scale {
                         70
-                    } else if adjustment <= dec("-0.04") {
+                    } else if adjustment <= dec("-0.04") * scale {
                         20
                     } else {
                         46
                     };
                     let step = if draw < threshold / 3 {
-                        dec("-0.025")
+                        dec("-0.025") * scale
                     } else if draw < threshold {
-                        dec("-0.0125")
+                        dec("-0.0125") * scale
                     } else if draw < threshold + 30 {
-                        dec("0.010")
+                        dec("0.010") * scale
                     } else if draw < threshold + 48 {
-                        dec("0.020")
+                        dec("0.020") * scale
                     } else {
-                        dec("0.030")
+                        dec("0.030") * scale
                     };
-                    adjustment = (adjustment + step).clamp(dec("-0.08"), dec("0.12"));
+                    adjustment = (adjustment + step)
+                        .clamp(dec("-0.08") * scale, dec("0.12") * scale);
                 } else {
                     let threshold = if adjustment >= dec("0.04") {
                         65
@@ -373,12 +395,12 @@ mod tests {
         let market = &config.scenario.markets[0];
         let mut engine = PriceEngine::new();
         for (product_index, variant_index, expected) in [
-            (0, 0, "705.99"),
-            (0, 3, "3058.84"),
-            (10, 0, "3877.55"),
-            (10, 3, "141404.00"),
-            (72, 0, "351.21"),
-            (72, 3, "1850.99"),
+            (0, 0, "694.63"),
+            (0, 3, "3159.49"),
+            (10, 0, "4055.49"),
+            (10, 3, "149846.00"),
+            (72, 0, "365.49"),
+            (72, 3, "2037.99"),
         ] {
             let product = &catalog[product_index];
             let actual = engine
@@ -392,6 +414,26 @@ mod tests {
                 .expect("price");
             assert_eq!(actual.to_string(), expected);
         }
+    }
+
+    #[test]
+    fn response_rich_preset_applies_the_declared_wider_step_scale() {
+        let config =
+            LoadedConfig::load("configs/pricing-response-rich.yaml").expect("config");
+        let catalog = build_catalog(&config).expect("catalog");
+        let market = &config.scenario.markets[0];
+        let mut engine = PriceEngine::new();
+        let product = &catalog[0];
+        let actual = engine
+            .extract_price(
+                product,
+                &product.variants[0],
+                market,
+                config.scenario.time.start_date,
+                config.scenario.time.end_date,
+            )
+            .expect("price");
+        assert_eq!(actual.to_string(), "743.10");
     }
 
     #[test]
@@ -426,7 +468,7 @@ mod tests {
                 variant.launch_date,
             )
             .expect("regular price");
-        assert_eq!(regular.to_string(), "1018.49");
+        assert_eq!(regular.to_string(), "1069.00");
         let promotional = engine
             .promotional_price(
                 product,
@@ -442,6 +484,6 @@ mod tests {
                 &PyDecimal::from_str("1.314814814814814814814814815").unwrap(),
             )
             .expect("promotional price");
-        assert_eq!(promotional.to_string(), "1013.88");
+        assert_eq!(promotional.to_string(), "994.17");
     }
 }

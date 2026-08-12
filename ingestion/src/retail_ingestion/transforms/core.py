@@ -627,6 +627,8 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             p.currency_code,
             sha256(p.raw_object_path || ':' || p.sku_source_key)::VARCHAR
                 AS source_price_path_id,
+            p.row_provenance::VARCHAR AS provenance_class,
+            p.generation_method::VARCHAR AS generation_method,
             p.known_as_of,
             p.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.prices AS p
@@ -877,10 +879,18 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             competitor_product_id::VARCHAR AS comp_product_id,
             min(try_cast(observed_at_raw AS TIMESTAMPTZ)) AS observed_at,
             any_value(competitor_product_title)::VARCHAR AS title,
-            NULL::VARCHAR AS brand, NULL::VARCHAR AS model,
-            NULL::VARCHAR AS gtin, '{}'::VARCHAR AS attributes,
+            any_value(nullif(competitor_brand, ''))::VARCHAR AS brand,
+            any_value(nullif(competitor_model, ''))::VARCHAR AS model,
+            any_value(nullif(competitor_gtin, ''))::VARCHAR AS gtin,
+            coalesce(any_value(nullif(competitor_attributes, '')), '{}')::VARCHAR
+                AS attributes,
+            coalesce(any_value(nullif(evidence_class, '')), 'unclassified')::VARCHAR
+                AS evidence_class,
+            any_value(nullif(derivation_class, ''))::VARCHAR AS derivation_class,
+            any_value(nullif(use_purpose, ''))::VARCHAR AS use_purpose,
+            any_value(nullif(generation_method, ''))::VARCHAR AS generation_method,
             min(known_as_of) AS known_as_of,
-            'native_observed'::VARCHAR AS known_as_of_evidence_grade
+            min(evidence_grade)::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.competitor_prices
         GROUP BY market_id, competitor_id, competitor_product_id
         """
@@ -912,8 +922,17 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             } AS price,
             p.currency_code,
             coalesce(try_cast(p.available_raw AS BOOLEAN), false) AS in_stock_flag,
+            coalesce(nullif(p.availability_state, ''), CASE
+                WHEN coalesce(try_cast(p.available_raw AS BOOLEAN), false)
+                THEN 'In Stock' ELSE 'Out of Stock' END)::VARCHAR
+                AS availability_state,
             (p.promotion_text IS NOT NULL AND p.promotion_text <> '')::BOOLEAN
                 AS promo_flag,
+            coalesce(nullif(p.evidence_class, ''), 'unclassified')::VARCHAR
+                AS evidence_class,
+            nullif(p.derivation_class, '')::VARCHAR AS derivation_class,
+            nullif(p.use_purpose, '')::VARCHAR AS use_purpose,
+            nullif(p.generation_method, '')::VARCHAR AS generation_method,
             p.known_as_of,
             p.evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.competitor_prices AS p
@@ -933,7 +952,13 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             competitor_product_id::VARCHAR AS comp_product_id,
             try_cast(confidence_raw AS DECIMAL(18, 8)) AS match_confidence,
             'active'::VARCHAR AS match_status,
-            match_method::VARCHAR AS matched_attributes
+            coalesce(nullif(matched_attributes, ''), match_method)::VARCHAR
+                AS matched_attributes,
+            coalesce(nullif(evidence_class, ''), 'unclassified')::VARCHAR
+                AS evidence_class,
+            nullif(derivation_class, '')::VARCHAR AS derivation_class,
+            nullif(use_purpose, '')::VARCHAR AS use_purpose,
+            nullif(generation_method, '')::VARCHAR AS generation_method
         FROM stage.stage_data.competitor_matches
         """
     )
@@ -949,11 +974,14 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
             try_cast(start_date_raw AS DATE) AS start_date,
             try_cast(end_date_raw AS DATE) AS end_date,
             segment_ids::VARCHAR AS segment_id,
-            CASE WHEN (
+            coalesce(nullif(lifecycle_status, ''), CASE WHEN (
                     SELECT max(date) FROM canonical_data.calendar
                  ) BETWEEN try_cast(start_date_raw AS DATE)
                 AND try_cast(end_date_raw AS DATE)
-                THEN 'active' ELSE 'historical' END::VARCHAR AS status,
+                THEN 'active' ELSE 'historical' END)::VARCHAR AS status,
+            coalesce(nullif(provenance_class, ''), row_provenance)::VARCHAR
+                AS provenance_class,
+            generation_method::VARCHAR AS generation_method,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.promotions
@@ -962,18 +990,44 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
     connection.execute(
         """
         CREATE TABLE canonical_data.promotion_scopes AS
+        WITH expanded AS (
+            SELECT
+                p.*,
+                stores.store_source_id,
+                channels.channel_id
+            FROM stage.stage_data.promotions AS p
+            CROSS JOIN UNNEST(
+                CASE WHEN coalesce(p.store_ids, '') = ''
+                     THEN [NULL::VARCHAR]
+                     ELSE string_split(p.store_ids, '|') END
+            ) AS stores(store_source_id)
+            CROSS JOIN UNNEST(
+                CASE WHEN coalesce(p.channel_ids, '') = ''
+                     THEN [NULL::VARCHAR]
+                     ELSE string_split(p.channel_ids, '|') END
+            ) AS channels(channel_id)
+        )
         SELECT
-            market_id, promotion_id::VARCHAR AS promo_id,
+            p.market_id, p.promotion_id::VARCHAR AS promo_id,
             sha256(
-                market_id || ':' || promotion_id || ':' ||
-                coalesce(store_ids, '') || ':' || coalesce(channel_ids, '')
+                p.market_id || ':' || p.promotion_id || ':' ||
+                coalesce(p.store_source_id, '*') || ':' ||
+                coalesce(p.channel_id, '*')
             )::VARCHAR AS scope_row_id,
             NULL::VARCHAR AS region,
-            NULL::VARCHAR AS location_id,
-            NULL::VARCHAR AS channel_id,
-            known_as_of,
-            evidence_grade::VARCHAR AS known_as_of_evidence_grade
-        FROM stage.stage_data.promotions
+            CASE WHEN p.store_source_id IS NULL THEN NULL
+                 ELSE concat(
+                     p.market_id, ':',
+                     coalesce(x.canonical_location_key, p.store_source_id)
+                 ) END::VARCHAR AS location_id,
+            p.channel_id::VARCHAR AS channel_id,
+            p.known_as_of,
+            p.evidence_grade::VARCHAR AS known_as_of_evidence_grade
+        FROM expanded AS p
+        LEFT JOIN stage.stage_data.location_crosswalk AS x
+          ON x.source_system = p.source_system
+         AND x.market_id = p.market_id
+         AND x.source_location_key = p.store_source_id
         """
     )
     connection.execute(
@@ -988,6 +1042,9 @@ def _create_operational(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...
                 ELSE merch_scope_id
             END::VARCHAR AS merch_scope_id,
             try_cast(discount_pct_raw AS DECIMAL(18, 8)) AS discount_pct,
+            coalesce(nullif(provenance_class, ''), row_provenance)::VARCHAR
+                AS provenance_class,
+            generation_method::VARCHAR AS generation_method,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.promotion_targets

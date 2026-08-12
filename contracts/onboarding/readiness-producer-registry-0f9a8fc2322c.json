@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "retail-readiness-producer-registry/v1",
+  "registryFingerprint": "0f9a8fc2322cdc0e07089a676ea88da06117b29468c59361e7be9ffea89ba765",
+  "semanticIdentityExcludes": [
+    "/registryFingerprint"
+  ],
+  "producers": [
+    {
+      "producerId": "registry.missing-producer",
+      "fields": [
+        "readiness",
+        "sufficiency",
+        "claimAuthorization"
+      ],
+      "proof": "Explicit fail-closed marker used when no approved producer emitted evidence",
+      "missingDisposition": "unavailable"
+    },
+    {
+      "producerId": "gate-b.capability-mask",
+      "fields": [
+        "readiness",
+        "reasonCodes"
+      ],
+      "proof": "Gate B capability-mask entries with a strict boolean available field",
+      "missingDisposition": "unavailable"
+    },
+    {
+      "producerId": "statistical.price-response",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted response assessment under contracts/guardrails/price_response.yaml",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "statistical.competitor-match",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted match evaluation under the competitor foundation contract",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "statistical.promotion-response",
+      "fields": [
+        "sufficiency"
+      ],
+      "proof": "Accepted promotion assessment under an approved promotion-response contract",
+      "missingDisposition": "not_evaluated"
+    },
+    {
+      "producerId": "governance.claim-authorization",
+      "fields": [
+        "claimAuthorization"
+      ],
+      "proof": "Versioned policy or decision explicitly authorizing the client-facing claim",
+      "missingDisposition": "descriptive_only"
+    }
+  ]
+}

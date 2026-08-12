@@ -43,8 +43,9 @@ presentationAmendments:
     classification: explicit_user_authorization
     reviewOutstanding: Per-screen human visual review remains required before the next client-demo
       sign-off.
-actionBehavior: visible and natively disabled with aria-disabled; no mutation endpoint or
-  handler exists (P4-D9/P4-D11)
+actionBehavior: exports are governed live downloads; workflow actions open visibly labelled
+  preview-only dialogs with disabled submission and no mutation endpoint, request, or history
+  change
 behavior:
   loading: Preserve the reviewed shell; show loading in value regions.
   error: Preserve the shell and state that live inventory data is unavailable.
@@ -175,7 +176,9 @@ screens:
     status: live
     source: replay_metrics fill by dc
   actions:
-  - Warehouse Export
+  - Release Blocked Stock
+  - Review Delayed Receipts
+  - Export
 - screenId: inventoryAgeing
   title: Inventory Ageing
   pageSelector: '#inventoryAgeing'
@@ -201,7 +204,9 @@ screens:
       is retained in the explicit age-evidence-unavailable bucket rather than dropped or assigned
       a guessed age
   actions:
-  - Ageing Export
+  - Create Markdown Plan
+  - Create Transfer Plan
+  - Export
 - screenId: inventoryTransfers
   title: Stock Transfers
   pageSelector: '#inventoryTransfers'
@@ -224,8 +229,9 @@ screens:
     status: disabled_action
     decision: P4-D11 ERP transmission is shadow_not_sent; no send path exists
   actions:
-  - Create Transfer
-  - Transfer Export
+  - Create Transfer Request
+  - Optimize Transfers
+  - Export
 - screenId: inventoryValuation
   title: Inventory Valuation
   pageSelector: '#inventoryValuation'
@@ -256,7 +262,9 @@ screens:
     status: unavailable
     decision: P4-D10
   actions:
-  - Valuation Export
+  - Run Valuation Scenario
+  - Reconcile with ERP
+  - Export
 - screenId: expiryWaste
   title: Expiry & Waste
   pageSelector: '#expiryWaste'
@@ -278,7 +286,9 @@ screens:
     decision: a SKU without shelf-life rules has no expiry; rendered as not applicable rather
       than zero risk
   actions:
-  - Expiry Export
+  - Create Expiry Action
+  - Create Waste Reduction Plan
+  - Export
 - screenId: replenishmentPlanner
   title: Replenishment Planner
   pageSelector: '#replenishmentPlanner'
@@ -305,9 +315,12 @@ screens:
     status: disabled_action
     decision: P4-D9
   actions:
-  - Approve Orders
-  - Adjust Parameters
-  - Planner Export
+  - Approve Selected Orders
+  - Create Transfer Requests
+  - Send to ERP
+  - Run Scenario
+  - Action Center
+  - Export
 - screenId: suggestedOrders
   title: Suggested Orders
   pageSelector: '#suggestedOrders'
@@ -327,8 +340,9 @@ screens:
     status: disabled_action
     decision: 'P4-D11: no send path exists, including after controls render'
   actions:
-  - Send to ERP
-  - Orders Export
+  - Approve Orders
+  - Modify Quantity
+  - Export
 - screenId: supplierPlanning
   title: Supplier Planning
   pageSelector: '#supplierPlanning'
@@ -351,7 +365,9 @@ screens:
     status: live
     source: capacity_confirmed_pct vs the frozen supplierCapacityConfirmedPctFloor
   actions:
-  - Supplier Export
+  - Request Capacity Confirmation
+  - Create Expedite Request
+  - Export
 - screenId: safetyStock
   title: Safety Stock
   pageSelector: '#safetyStock'
@@ -372,7 +388,9 @@ screens:
     source: rendered as manual-judgment/unavailable with the governed exception
     intervalRule: never zero safety stock, never a collapsed row, never a fake confidence
   actions:
-  - Safety Stock Export
+  - Recalculate Safety Stock
+  - Approve Policy
+  - Export
 - screenId: allocationFulfillment
   title: Allocation & Fulfillment
   pageSelector: '#allocationFulfillment'
@@ -395,7 +413,9 @@ screens:
     status: live
     source: only rows with an explicit customer_fulfillment lane; otherwise store ATP
   actions:
-  - Allocation Export
+  - Optimize Allocation
+  - Release Allocation
+  - Export
 - screenId: replenishmentExceptions
   title: Replenishment Exceptions
   pageSelector: '#replenishmentExceptions'
@@ -418,9 +438,9 @@ screens:
     status: disabled_action
     decision: 'P4-D9: visible, natively disabled, no mutation handler'
   actions:
-  - Assign
-  - Resolve
-  - Exceptions Export
+  - Resolve Selected
+  - Assign Owner
+  - Export
 - screenId: stockHealth
   title: Stock Health
   pageSelector: '#stockHealth'
@@ -441,4 +461,5 @@ screens:
     status: out_of_scope
     decision: P4-D8
   actions:
-  - Stock Health Export
+  - Assign Owner
+  - Create Action

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/readiness-report-v2.schema.json",
+  "title": "retail-operational-readiness/v2",
+  "description": "One-way post-publication readiness sidecar. It cites immutable source and publication identities; those upstream artifacts never cite this report.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "semanticIdentityExcludes",
+    "reportFingerprint",
+    "sourceSnapshotId",
+    "gateASemanticFingerprint",
+    "gateBSemanticFingerprint",
+    "publicationSemanticFingerprint",
+    "publicationManifestSha256",
+    "producerRegistryFingerprint",
+    "capabilities",
+    "summary",
+    "producedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-operational-readiness/v2"
+    },
+    "semanticIdentityExcludes": {
+      "const": [
+        "/producedAt",
+        "/reportFingerprint"
+      ]
+    },
+    "reportFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "sourceSnapshotId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "gateASemanticFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "gateBSemanticFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "publicationSemanticFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "publicationManifestSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "producerRegistryFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capabilities": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "readiness",
+          "sufficiency",
+          "claimAuthorization",
+          "producerIds",
+          "reasonCodes"
+        ],
+        "properties": {
+          "readiness": {
+            "enum": [
+              "ready",
+              "validated_partial",
+              "unavailable",
+              "blocked"
+            ]
+          },
+          "sufficiency": {
+            "enum": [
+              "sufficient",
+              "insufficient_evidence",
+              "not_evaluated"
+            ]
+          },
+          "claimAuthorization": {
+            "enum": [
+              "authorized",
+              "descriptive_only",
+              "not_authorized"
+            ]
+          },
+          "consumerMayProceed": {
+            "type": "boolean"
+          },
+          "producerIds": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]{2,95}$"
+            }
+          },
+          "reasonCodes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_:.-]{2,127}$"
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ready",
+        "validatedPartial",
+        "unavailable",
+        "blocked"
+      ],
+      "properties": {
+        "ready": {
+          "$ref": "#/$defs/capabilityList"
+        },
+        "validatedPartial": {
+          "$ref": "#/$defs/capabilityList"
+        },
+        "unavailable": {
+          "$ref": "#/$defs/capabilityList"
+        },
+        "blocked": {
+          "$ref": "#/$defs/capabilityList"
+        }
+      }
+    },
+    "producedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capabilityList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

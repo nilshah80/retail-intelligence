@@ -138,6 +138,8 @@ class SellPrices(TypedDict):
     promo_price: NotRequired[int]
     currency_code: str
     source_price_path_id: NotRequired[str]
+    provenance_class: str
+    generation_method: NotRequired[str]
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
@@ -223,6 +225,10 @@ class CompetitorProducts(TypedDict):
     model: NotRequired[str]
     gtin: NotRequired[str]
     attributes: NotRequired[object]
+    evidence_class: str
+    derivation_class: NotRequired[str]
+    use_purpose: NotRequired[str]
+    generation_method: NotRequired[str]
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
@@ -236,7 +242,12 @@ class CompetitorPrices(TypedDict):
     price: int
     currency_code: str
     in_stock_flag: bool
+    availability_state: Literal["In Stock", "Low Stock", "Out of Stock", "Unknown"]
     promo_flag: bool
+    evidence_class: str
+    derivation_class: NotRequired[str]
+    use_purpose: NotRequired[str]
+    generation_method: NotRequired[str]
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
@@ -249,6 +260,10 @@ class CompetitorMatches(TypedDict):
     match_confidence: str
     match_status: str
     matched_attributes: NotRequired[str]
+    evidence_class: str
+    derivation_class: NotRequired[str]
+    use_purpose: NotRequired[str]
+    generation_method: NotRequired[str]
 
 class Promotions(TypedDict):
     market_id: str
@@ -262,6 +277,8 @@ class Promotions(TypedDict):
     end_date: str
     segment_id: NotRequired[str]
     status: str
+    provenance_class: str
+    generation_method: NotRequired[str]
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 
@@ -281,6 +298,8 @@ class PromotionMerchandiseTargets(TypedDict):
     merch_scope_type: Literal["sku", "dept", "category"]
     merch_scope_id: str
     discount_pct: str
+    provenance_class: str
+    generation_method: NotRequired[str]
     known_as_of: str
     known_as_of_evidence_grade: EvidenceGrade
 

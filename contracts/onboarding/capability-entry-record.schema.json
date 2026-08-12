@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/capability-entry-record.schema.json",
+  "title": "Immutable capability entry record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identityExclusions",
+    "recordId",
+    "scope",
+    "predecessorRecordId",
+    "repository",
+    "tenantMarketSet",
+    "sourceAuthority",
+    "upstreamAuthority",
+    "carryovers",
+    "uiReview",
+    "resumeMatrix"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "retail-capability-entry-record/v1"},
+    "identityExclusions": {
+      "const": ["/recordId"]
+    },
+    "recordId": {"$ref": "#/$defs/sha256"},
+    "scope": {"$ref": "#/$defs/scope"},
+    "predecessorRecordId": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/sha256"}
+      ]
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "commit", "dirtyPaths", "migrationHead", "contractHashes"],
+      "properties": {
+        "branch": {"type": "string", "minLength": 1},
+        "commit": {"$ref": "#/$defs/sha1"},
+        "dirtyPaths": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "migrationHead": {"type": "string", "pattern": "^[0-9]{4}$"},
+        "contractHashes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "tenantMarketSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractPath", "contractSha256", "declaredMarkets", "publicationMarkets", "missingDeclaredMarkets", "outOfScopePublicationMarkets"],
+      "properties": {
+        "contractPath": {"type": "string", "minLength": 1},
+        "contractSha256": {"$ref": "#/$defs/sha256"},
+        "declaredMarkets": {"$ref": "#/$defs/stringSet"},
+        "publicationMarkets": {"$ref": "#/$defs/stringSet"},
+        "missingDeclaredMarkets": {"$ref": "#/$defs/stringSet"},
+        "outOfScopePublicationMarkets": {"$ref": "#/$defs/stringSet"}
+      }
+    },
+    "sourceAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "sourceSnapshotId", "publicationPath", "publicationManifestSha256", "publicationSemanticFingerprint", "objectCount", "gateAStatus", "gateBStatus", "expectedPinPath", "expectedPinSha256", "expectedPinCheck", "activeSelection"],
+      "properties": {
+        "runId": {"type": "string", "pattern": "^run-[a-z0-9]+$"},
+        "sourceSnapshotId": {"$ref": "#/$defs/sha256"},
+        "publicationPath": {"type": "string", "minLength": 1},
+        "publicationManifestSha256": {"$ref": "#/$defs/sha256"},
+        "publicationSemanticFingerprint": {"$ref": "#/$defs/sha256"},
+        "objectCount": {"type": "integer", "minimum": 1},
+        "gateAStatus": {"type": "string", "minLength": 1},
+        "gateBStatus": {"type": "string", "minLength": 1},
+        "expectedPinPath": {"type": "string", "minLength": 1},
+        "expectedPinSha256": {"$ref": "#/$defs/sha256"},
+        "expectedPinCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exitCode", "stdout", "stderr"],
+          "properties": {
+            "exitCode": {"type": "integer", "minimum": 0},
+            "stdout": {"type": "string"},
+            "stderr": {"type": "string"}
+          }
+        },
+        "activeSelection": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["selectionId", "recordId", "recordPath", "recordSha256", "resolutionMode", "fullScopeResolutionRequired"],
+              "properties": {
+                "selectionId": {"type": "string", "pattern": "^sel_[a-f0-9]{16}$"},
+                "recordId": {"type": "string", "pattern": "^rec_[a-f0-9]{16}$"},
+                "recordPath": {"type": "string", "minLength": 1},
+                "recordSha256": {"$ref": "#/$defs/sha256"},
+                "resolutionMode": {"enum": ["full_scope", "capability_only"]},
+                "fullScopeResolutionRequired": {"const": true}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["state", "reasonCode", "resolutionMode", "fullScopeResolutionRequired"],
+              "properties": {
+                "state": {"const": "unresolved"},
+                "reasonCode": {"const": "NO_PRIOR_EXACT_SCOPE_SELECTION"},
+                "resolutionMode": {"const": "full_scope"},
+                "fullScopeResolutionRequired": {"const": true}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "upstreamAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forecast", "inventory", "databaseObservation"],
+      "properties": {
+        "forecast": {"$ref": "#/$defs/authorityObservation"},
+        "inventory": {"$ref": "#/$defs/authorityObservation"},
+        "databaseObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason"],
+          "properties": {
+            "state": {"enum": ["verified", "unavailable"]},
+            "reason": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "carryovers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "state", "reasonCode", "evidence"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "state": {"enum": ["available", "partial", "unavailable", "rejected", "open"]},
+          "reasonCode": {"type": ["string", "null"]},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "uiReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementedDestinations", "openVisualDestinations", "approvedAmendments"],
+      "properties": {
+        "implementedDestinations": {"type": "integer", "minimum": 0},
+        "openVisualDestinations": {"type": "integer", "minimum": 0},
+        "approvedAmendments": {"$ref": "#/$defs/stringSet"}
+      }
+    },
+    "resumeMatrix": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dependency", "firstConsumer", "successorRequired"],
+        "properties": {
+          "dependency": {"type": "string", "minLength": 1},
+          "firstConsumer": {"type": "string", "minLength": 1},
+          "successorRequired": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "sha1": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "stringSet": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retailerId", "tenantId", "capability", "environment"],
+      "properties": {
+        "retailerId": {"type": "string", "minLength": 1},
+        "tenantId": {"type": "string", "minLength": 1},
+        "capability": {"type": "string", "minLength": 1},
+        "environment": {"type": "string", "minLength": 1}
+      }
+    },
+    "authorityObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "runId", "versionId", "semanticFingerprint", "reasonCodes"],
+      "properties": {
+        "state": {"enum": ["active", "rejected", "unresolved", "not_applicable"]},
+        "runId": {"type": ["string", "null"]},
+        "versionId": {"type": ["string", "null"]},
+        "semanticFingerprint": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+        },
+        "reasonCodes": {"$ref": "#/$defs/stringSet"}
+      }
+    }
+  }
+}

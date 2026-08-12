@@ -1,0 +1,56 @@
+schemaVersion: retail-screen-contract/v1
+screenId: promotionPlanner
+status: governed_negative_branch
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  plan: plans/local/phase5-implementation-plan.md
+  api: contracts/api/openapi.yaml
+title: Promotion Planner
+subtitle: Plan, simulate and optimize retail promotions
+pageSelector: '#promotionPlanner'
+dataMode: accepted_live_only
+toolbar:
+  - Create Promotion
+  - Simulate Promotion
+  - Promotion Calendar
+  - Status
+  - Category
+  - Search promotions
+kpis:
+  - Active Promotions
+  - Projected Revenue Uplift
+  - Projected Margin Impact
+  - Required Promotional Stock
+  - Promotions Needing Review
+opportunities:
+  heading: AI Promotion Opportunities
+  columns: [Opportunity, Reason, Expected Value, Priority]
+portfolio:
+  columns:
+    - Promotion
+    - Category
+    - Period
+    - Stores / Channels
+    - Products
+    - Offer
+    - Expected Demand Uplift
+    - Revenue Uplift
+    - Margin Impact
+    - Required Stock
+    - Cannibalisation Risk
+    - Status
+    - Owner
+bottomCards: [Inventory Readiness, Audience Targeting, Approval & Risk]
+calendar:
+  views: [Month View, List View]
+  weekdays: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+  cells: 35
+disposition:
+  plannerAvailable: false
+  reasonCode: NO_ORIGIN_VISIBLE_PROMOTION_PLAN
+  createPromotion: preview_only_no_write
+  simulatePromotion: governed_unavailable_preview
+  calendar: read_only_empty_governed_state
+review:
+  authorization: Explicit user instruction to complete the approved implementation plan.
+  visualReviewOutstanding: true

@@ -231,6 +231,8 @@ entities:
       promo_price: {type: int64, required: false, semantic: money_minor}
       currency_code: {type: string, required: true}
       source_price_path_id: {type: string, required: false}
+      provenance_class: {type: string, required: true}
+      generation_method: {type: string, required: false}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
@@ -358,6 +360,10 @@ entities:
       model: {type: string, required: false}
       gtin: {type: string, required: false}
       attributes: {type: json, required: false}
+      evidence_class: {type: string, required: true}
+      derivation_class: {type: string, required: false}
+      use_purpose: {type: string, required: false}
+      generation_method: {type: string, required: false}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
@@ -377,7 +383,12 @@ entities:
       price: {type: int64, required: true, semantic: money_minor}
       currency_code: {type: string, required: true}
       in_stock_flag: {type: boolean, required: true}
+      availability_state: {type: string, required: true, enum: [In Stock, Low Stock, Out of Stock, Unknown]}
       promo_flag: {type: boolean, required: true}
+      evidence_class: {type: string, required: true}
+      derivation_class: {type: string, required: false}
+      use_purpose: {type: string, required: false}
+      generation_method: {type: string, required: false}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
@@ -395,6 +406,10 @@ entities:
       match_confidence: {type: decimal, required: true}
       match_status: {type: string, required: true}
       matched_attributes: {type: string, required: false}
+      evidence_class: {type: string, required: true}
+      derivation_class: {type: string, required: false}
+      use_purpose: {type: string, required: false}
+      generation_method: {type: string, required: false}
 
   promotions:
     ownership: in
@@ -414,6 +429,8 @@ entities:
       end_date: {type: date, required: true}
       segment_id: {type: string, required: false}
       status: {type: string, required: true}
+      provenance_class: {type: string, required: true}
+      generation_method: {type: string, required: false}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 
@@ -445,6 +462,8 @@ entities:
       merch_scope_type: {type: string, required: true, enum: [sku, dept, category]}
       merch_scope_id: {type: string, required: true}
       discount_pct: {type: decimal, required: true}
+      provenance_class: {type: string, required: true}
+      generation_method: {type: string, required: false}
       known_as_of: {type: timestamp, required: true}
       known_as_of_evidence_grade: {type: string, required: true, enumRef: evidenceGrade}
 

@@ -242,7 +242,10 @@ impl ParquetDatasetWriter {
             rows: Some(self.rows),
             bytes,
             sha256: digest,
-            content_determinism: "logical".to_owned(),
+            // Parquet objects are authoritative source bytes. This must match
+            // Python's writer contract: only source-run.duckdb is a logical,
+            // non-authoritative mirror that landing may exclude from identity.
+            content_determinism: "byte".to_owned(),
             restricted: self.spec.restricted,
         };
         Ok((object, self.spec.schema_record()))
@@ -276,4 +279,39 @@ pub fn write_json(path: &Path, value: &impl serde::Serialize) -> Result<()> {
     let mut with_newline = bytes;
     with_newline.push(b'\n');
     fs::write(path, with_newline).with_context(|| format!("write {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::{DatasetSpec, ParquetDatasetWriter};
+    use crate::config::Compression;
+
+    #[test]
+    fn parquet_is_byte_deterministic_source_content() {
+        let directory = tempdir().expect("temporary output");
+        let spec = DatasetSpec {
+            relative_path: "companion/test/rows.parquet".to_owned(),
+            logical_path: "companion/test/rows.parquet".to_owned(),
+            source_system: "companion".to_owned(),
+            dataset: "rows".to_owned(),
+            restricted: true,
+            fields: vec!["id".to_owned()],
+        };
+        let mut writer = ParquetDatasetWriter::create(
+            directory.path(),
+            spec,
+            Compression::Zstd,
+            16,
+        )
+        .expect("create parquet writer");
+        writer
+            .push(vec![Some("row-1".to_owned())])
+            .expect("write source row");
+
+        let (object, _) = writer.finish().expect("finish parquet object");
+        assert_eq!(object.content_determinism, "byte");
+        assert!(object.restricted, "restricted truth bytes still bind identity");
+    }
 }

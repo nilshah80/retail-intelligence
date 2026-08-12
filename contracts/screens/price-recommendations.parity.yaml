@@ -1,0 +1,69 @@
+schemaVersion: retail-screen-contract/v1
+screenId: priceRecommendations
+status: authorized_for_implementation
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  plan: plans/local/phase5-implementation-plan.md
+  api: contracts/api/openapi.yaml
+title: Price Recommendations
+subtitle: AI-generated SKU-level pricing actions with human approval
+pageSelector: '#priceRecommendations'
+dataMode: accepted_live_only
+toolbar:
+  - 0 selected
+  - Approve Selected
+  - Send for Review
+  - Schedule Price Change
+  - Compare Selected
+  - Export
+  - Pricing Action Center
+filters:
+  - Status
+  - Category
+  - Store
+  - Action
+  - Confidence
+  - Search product, SKU or reason
+kpis:
+  - Open Recommendations
+  - Revenue Opportunity
+  - Margin Opportunity
+  - Recommendations at Risk
+  - Recommendation Adoption
+tabs: [Overview, Store View, Category View, Governance]
+table:
+  heading: SKU-Level Price Recommendations
+  columns:
+    - Select
+    - Priority
+    - SKU / Product
+    - Category
+    - Store
+    - Action
+    - Current
+    - AI Price
+    - Change
+    - Competitor
+    - Stock Cover
+    - Forecast Demand
+    - Current Margin
+    - Expected Margin
+    - Revenue Impact
+    - Margin Impact
+    - AI Reason
+    - Confidence
+    - Status
+    - Owner
+dispositions:
+  selection: business_live_local_only
+  compare: read_only
+  export: business_live_bounded
+  openSimulation: business_live_stateless
+  approveSelected: preview_only_no_write
+  sendForReview: preview_only_no_write
+  schedulePriceChange: preview_only_no_write
+  pricingActionCenter: preview_only_workflow_unavailable
+  statusAndOwner: workflow_unavailable
+review:
+  authorization: Explicit user instruction to complete the approved implementation plan.
+  visualReviewOutstanding: true

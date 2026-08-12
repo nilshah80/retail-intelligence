@@ -182,15 +182,20 @@ def _selection() -> dict[str, Any]:
             f"activeRecordId {active['lifecycle']['recordId']} appears in "
             f"{len(duplicates)} committed records; a lifecycle recordId must be unique"
         )
+    publication = active.get("subject") or active.get("publication")
+    if not isinstance(publication, dict):
+        raise SystemExit(
+            "active selection has neither a v2 subject nor a legacy publication"
+        )
     return {
         "selectionId": active["selectionId"],
         "activeRecordId": active["lifecycle"]["recordId"],
         "scope": active["scope"],
-        "publicationSemanticFingerprint": active["publication"][
+        "publicationSemanticFingerprint": publication[
             "publicationSemanticFingerprint"
         ],
-        "sourceSnapshotId": active["publication"]["sourceSnapshotId"],
-        "objectCount": active["publication"]["objectCount"],
+        "sourceSnapshotId": publication["sourceSnapshotId"],
+        "objectCount": publication["objectCount"],
         "capabilityReadiness": active["readiness"]["capabilityReadiness"],
         "capabilitySufficiency": active["readiness"]["capabilitySufficiency"],
         "lifecycleRecords": sorted(

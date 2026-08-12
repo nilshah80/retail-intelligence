@@ -73,16 +73,18 @@ reviewGate:
       Baseline is the governed MA13 evaluation model and current is the active
       accepted AI version. Prior and planner versions remain Not available.
     Q11: >-
-      Unavailable controls remain in reference order with native disabled and
-      aria-disabled states plus a tooltip naming the owning future phase.
+      Unavailable controls remain in reference order with a concise business
+      prerequisite. Approved preview-only workflow triggers remain operable locally,
+      while their submit controls are natively disabled and issue no request.
     Q12: Screenshot baselines use 1440x1100 desktop and 390x844 responsive.
     Q13: >-
       The shared currency/FX shell remains visible, but no unit or percentage
       value is converted. Demand at Risk and Business Impact stay Not available.
     Q14: >-
-      Action Center shows live governed exception counts; Store Drilldown shows
-      live store accuracy, bias and coverage; Compare Versions shows MA13 and
-      current AI. Unsupported business, prior and planner values stay Not available.
+      Action Center preserves exact queue composition and shows only governed counts;
+      Store Drilldown shows live store accuracy, bias and costed risk where available;
+      Compare Versions lists retained compatible version rows only. Unsupported
+      workflow, business, prior and planner values stay Not available.
     Q15: >-
       FVA is relative WAPE improvement versus MA13 and is rendered as a percent
       everywhere, never as percentage points.
@@ -303,11 +305,11 @@ actions:
   - selector: "#acceptForecastBtn"
     label: Accept Forecast
     order: 1
-    status: unavailable_phase_6
+    status: preview_only
   - selector: "#addForecastAdjustmentBtn"
     label: Add Planner Adjustment
     order: 2
-    status: unavailable_phase_6
+    status: preview_only
   - selector: "#compareForecastVersionsBtn"
     label: Compare Versions
     order: 3
@@ -328,8 +330,8 @@ actions:
   - selector: "#forecastActionCenterBtn"
     label: Forecast Action Center
     order: 5
-    status: live_when_forecast_accepted
-    behavior: Show governed current-cycle exception counts.
+    status: preview_only
+    behavior: Preserve governed current-cycle counts and exact queue labels without enabling workflow mutation.
   - selector: "#exportForecastBtn"
     label: Export
     order: 6
@@ -642,14 +644,20 @@ panels:
           - {label: Back-testing coverage, source: forecast_eval_predictions distinct evaluated SeriesKey share, status: live_when_forecast_accepted}
 
 modals:
+  - trigger: "#acceptForecastBtn"
+    title: Accept Forecast
+    status: preview_only
+  - trigger: "#addForecastAdjustmentBtn"
+    title: Add Planner Adjustment
+    status: preview_only
   - trigger: "#forecastActionCenterBtn"
     title: Forecast Action Center
-    status: live_when_forecast_accepted
+    status: preview_only
   - trigger: "#storeForecastDrilldownBtn"
-    title: Open Store Drilldown
+    title: Store Forecast Drilldown
     status: live_when_forecast_accepted
   - trigger: "#compareForecastVersionsBtn"
-    title: Compare Versions
+    title: Compare Forecast Versions
     status: live_when_forecast_accepted
 
 behavior:

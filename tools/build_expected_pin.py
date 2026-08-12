@@ -29,6 +29,7 @@ sys.path.insert(0, str(REPO_ROOT / "ingestion" / "src"))
 
 from retail_ingestion.readiness.selection import (  # noqa: E402
     SELECTION_SCHEMA_VERSION,
+    SELECTION_SCHEMA_VERSION_V2,
     scope_key,
     validate_selection,
 )
@@ -83,7 +84,13 @@ def _fallback_run() -> str | None:
     return str(newest.get("run") or "") or None
 
 
-def _pinned_run() -> str:
+def _pinned_run(
+    *,
+    retailer_id: str = "retailer-demo",
+    tenant_id: str = "tenant-demo",
+    environment: str = "local",
+    selection_dir: Path = SELECTION_DIR,
+) -> str:
     """The run this pin names, derived rather than transcribed.
 
     Retained evidence is the authority: a publication may only be pinned while its
@@ -101,6 +108,36 @@ def _pinned_run() -> str:
     # "currently pinned", when the pin and every active selection still named the
     # previous one. Authority is a governed choice, not a side effect of which bytes
     # happen to be on this disk.
+    try:
+        selections = _active_selections(
+            retailer_id=retailer_id,
+            tenant_id=tenant_id,
+            environment=environment,
+            selection_dir=selection_dir,
+        )
+    except (OSError, ValueError):
+        selections = {}
+    selected_runs = {
+        Path(
+            str(
+                (
+                    selection.get("subject")
+                    or selection.get("publication")
+                    or {}
+                ).get("logicalPath")
+                or ""
+            )
+        ).name
+        for capability, selection in selections.items()
+        if capability in REQUIRED_CAPABILITIES
+    }
+    selected_runs.discard("")
+    if set(REQUIRED_CAPABILITIES) <= set(selections):
+        if len(selected_runs) != 1:
+            raise SystemExit(
+                "current exact-scope capability selections do not name one run"
+            )
+        return selected_runs.pop()
     adopted = _fallback_run()
     if adopted is not None:
         return adopted
@@ -141,8 +178,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _active_selections() -> dict[str, dict[str, Any]]:
-    """Current, active selections keyed by capability.
+def _active_selections(
+    *,
+    retailer_id: str = "retailer-demo",
+    tenant_id: str = "tenant-demo",
+    environment: str = "local",
+    selection_dir: Path = SELECTION_DIR,
+) -> dict[str, dict[str, Any]]:
+    """Current active selections for one exact retailer/tenant/environment.
 
     Currency is derived from the supersedes chain, not from filenames -- the same
     rule the selection builder uses, imported rather than restated.
@@ -150,24 +193,48 @@ def _active_selections() -> dict[str, dict[str, Any]]:
 
     records = [
         _load(path)
-        for path in sorted(SELECTION_DIR.glob("*.json"))
-        if _load(path).get("schemaVersion") == SELECTION_SCHEMA_VERSION
+        for path in sorted(selection_dir.glob("*.json"))
+        if _load(path).get("schemaVersion")
+        in {SELECTION_SCHEMA_VERSION, SELECTION_SCHEMA_VERSION_V2}
     ]
     active: dict[str, dict[str, Any]] = {}
     for record in current_records(records):
         if record["lifecycle"]["state"] != "active":
             continue
         validate_selection(record)
-        active[scope_key(record)[2]] = record
+        scope = scope_key(record)
+        if scope[:2] != (retailer_id, tenant_id) or scope[3] != environment:
+            continue
+        capability = scope[2]
+        if capability in active:
+            raise SystemExit(
+                "multiple current active selections for exact scope "
+                f"{retailer_id}/{tenant_id}/{capability}/{environment}"
+            )
+        active[capability] = record
     return active
 
 
-def build_pin(run: str | None = None) -> dict[str, Any]:
+def build_pin(
+    run: str | None = None,
+    *,
+    evidence_root: Path | None = None,
+    selection_dir: Path = SELECTION_DIR,
+    retailer_id: str = "retailer-demo",
+    tenant_id: str = "tenant-demo",
+    environment: str = "local",
+) -> dict[str, Any]:
     assert_repin_transaction_readable()
     # Resolved here rather than as a default argument value, so the derivation runs
     # at call time against the evidence on disk instead of at import time.
     run = run or _pinned_run()
-    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    evidence = evidence_root or (
+        REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    )
+    if evidence.name != run:
+        raise SystemExit(
+            f"explicit evidence root {evidence} does not end in requested run {run}"
+        )
     curated = REPO_ROOT / "ingestion" / "data" / "curated" / run
     for path in (
         evidence / "gate-a.json",
@@ -190,7 +257,12 @@ def build_pin(run: str | None = None) -> dict[str, Any]:
     # The pin must name the publication decision #73 selected, for every
     # capability the pin claims. Deriving the pin from evidence alone would still
     # let it point at a publication nobody approved.
-    active = _active_selections()
+    active = _active_selections(
+        retailer_id=retailer_id,
+        tenant_id=tenant_id,
+        environment=environment,
+        selection_dir=selection_dir,
+    )
     for capability in REQUIRED_CAPABILITIES:
         selection = active.get(capability)
         if selection is None:
@@ -198,7 +270,7 @@ def build_pin(run: str | None = None) -> dict[str, Any]:
                 f"no active decision-#73 selection for {capability}; create one "
                 "before pinning a publication that claims it"
             )
-        declared = selection["publication"]
+        declared = selection.get("subject") or selection.get("publication") or {}
         if declared["sourceSnapshotId"] != manifest["sourceSnapshotId"]:
             raise SystemExit(
                 f"the active {capability} selection names snapshot "
@@ -293,6 +365,40 @@ def main(argv: list[str] | None = None) -> int:
         help="verify the committed pin matches a fresh derivation",
     )
     parser.add_argument(
+        "--pin-path",
+        type=Path,
+        default=PIN_PATH,
+        help="explicit expected-pin file to write or check",
+    )
+    parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=None,
+        help="explicit retained evidence directory for --run",
+    )
+    parser.add_argument(
+        "--selection-ledger",
+        type=Path,
+        default=SELECTION_DIR,
+        help="explicit publication-selection ledger directory",
+    )
+    parser.add_argument("--retailer", default="retailer-demo")
+    parser.add_argument("--tenant", default="tenant-demo")
+    parser.add_argument(
+        "--environment", choices=("local", "dev", "staging", "prod"), default="local"
+    )
+    parser.add_argument(
+        "--input-authority",
+        type=Path,
+        default=None,
+        help="reviewed input authority to verify during --check",
+    )
+    parser.add_argument(
+        "--job-purpose",
+        default="complete_lineage_rebuild",
+        help="closed purpose expected in --input-authority",
+    )
+    parser.add_argument(
         "--run",
         default=None,
         help=(
@@ -309,6 +415,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # CLI paths are repository contracts, not process-working-directory
+    # contracts.  Resolve explicit relative values the same way as the absolute
+    # defaults so writing a named tenant pin cannot succeed and then fail only
+    # while formatting its confirmation message.
+    args.pin_path = (
+        args.pin_path
+        if args.pin_path.is_absolute()
+        else (REPO_ROOT / args.pin_path).resolve()
+    )
+    args.selection_ledger = (
+        args.selection_ledger
+        if args.selection_ledger.is_absolute()
+        else (REPO_ROOT / args.selection_ledger).resolve()
+    )
+    if args.evidence_root is not None and not args.evidence_root.is_absolute():
+        args.evidence_root = (REPO_ROOT / args.evidence_root).resolve()
+    if args.input_authority is not None and not args.input_authority.is_absolute():
+        args.input_authority = (REPO_ROOT / args.input_authority).resolve()
+
     if args.list:
         available = _promoted_runs()
         # Guarded for the same reason the --check comparison is: `_pinned_run()`
@@ -317,7 +442,15 @@ def main(argv: list[str] | None = None) -> int:
         # them. Raising here made the command that answers "which runs are there?"
         # fail because there was more than one.
         try:
-            print(f"currently pinned: {_pinned_run()}")
+            print(
+                "currently pinned: "
+                + _pinned_run(
+                    retailer_id=args.retailer,
+                    tenant_id=args.tenant,
+                    environment=args.environment,
+                    selection_dir=args.selection_ledger,
+                )
+            )
         except SystemExit as ambiguity:
             print(f"currently pinned: undetermined -- {ambiguity}")
         if available:
@@ -327,7 +460,12 @@ def main(argv: list[str] | None = None) -> int:
             print("  no run has retained publication evidence")
         return 0
 
-    run = args.run or _pinned_run()
+    run = args.run or _pinned_run(
+        retailer_id=args.retailer,
+        tenant_id=args.tenant,
+        environment=args.environment,
+        selection_dir=args.selection_ledger,
+    )
     # The guard exists to stop `--check --run X` quietly verifying a derivation other
     # than the committed pin's. It must not itself fail when the caller has already
     # supplied the answer: `_pinned_run()` refuses to guess between several retained
@@ -336,19 +474,27 @@ def main(argv: list[str] | None = None) -> int:
     # cannot be derived there is nothing to contradict, and `--check` compares the
     # derived pin against the committed file regardless -- so skipping the guard
     # loses no safety.
-    if args.check and args.run:
+    checking_shared_default = args.pin_path.resolve() == PIN_PATH.resolve()
+    if args.check and args.run and checking_shared_default:
         try:
-            committed = _pinned_run()
+            committed = _pinned_run(
+                retailer_id=args.retailer,
+                tenant_id=args.tenant,
+                environment=args.environment,
+                selection_dir=args.selection_ledger,
+            )
         except SystemExit:
             committed = None
         if committed is not None and args.run != committed:
             print(
-                f"--check verifies the committed pin, which names {committed}; "
+                f"--check of the shared default pin verifies {committed}; "
                 f"--run {args.run} would verify a different derivation",
                 file=sys.stderr,
             )
             return 2
-    evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    evidence = args.evidence_root or (
+        REPO_ROOT / "ingestion" / "data" / "evidence" / run
+    )
     if not (evidence / "publication-manifest.json").is_file():
         available = _promoted_runs()
         print(
@@ -363,19 +509,43 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    pin = build_pin(run=run)
+    pin = build_pin(
+        run=run,
+        evidence_root=evidence,
+        selection_dir=args.selection_ledger,
+        retailer_id=args.retailer,
+        tenant_id=args.tenant,
+        environment=args.environment,
+    )
     if args.check:
-        if not PIN_PATH.is_file():
-            print("contracts/ml/expected-pin.json is absent", file=sys.stderr)
+        if not args.pin_path.is_file():
+            print(f"{args.pin_path} is absent", file=sys.stderr)
             return 1
-        if _load(PIN_PATH) != pin:
+        if _load(args.pin_path) != pin:
             print(
-                "contracts/ml/expected-pin.json does not match a fresh derivation "
+                f"{args.pin_path} does not match a fresh derivation "
                 "from retained evidence",
                 file=sys.stderr,
             )
             return 1
-        print("expected-pin.json matches its derivation")
+        if args.input_authority is not None:
+            from retail_contracts.input_authority import verify_input_authority
+
+            verify_input_authority(
+                args.input_authority,
+                schema_path=(
+                    REPO_ROOT / "contracts/onboarding/input-authority.schema.json"
+                ),
+                repository_root=REPO_ROOT,
+                expected_run_id=run,
+                expected_job_purpose=args.job_purpose,
+                retailer_id=args.retailer,
+                tenant_id=args.tenant,
+                environment=args.environment,
+                expected_pin_path=args.pin_path,
+                evidence_root=evidence,
+            )
+        print(f"{args.pin_path} matches its derivation")
         return 0
 
     # Written through an explicit binary write rather than `write_text(newline=...)`:
@@ -384,10 +554,10 @@ def main(argv: list[str] | None = None) -> int:
     # keyword was to keep the file LF on every platform, and encoding the bytes here
     # does that unconditionally.
     atomic_write_bytes(
-        PIN_PATH, (json.dumps(pin, indent=2) + "\n").encode("utf-8")
+        args.pin_path, (json.dumps(pin, indent=2) + "\n").encode("utf-8")
     )
     print(
-        f"wrote {PIN_PATH.relative_to(REPO_ROOT)}\n"
+        f"wrote {args.pin_path.relative_to(REPO_ROOT)}\n"
         f"  snapshot:    {pin['sourceSnapshotId']}\n"
         f"  publication: {pin['publication']['semanticFingerprint']}\n"
         f"  objects:     {pin['publication']['objectCount']}\n"

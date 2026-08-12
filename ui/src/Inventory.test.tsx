@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
-import {cleanup, render, screen, within} from "@testing-library/react";
+import {cleanup, fireEvent, render, screen, within} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {
@@ -105,7 +105,7 @@ describe("inventory & replenishment destinations", () => {
 
     const strip = await screen.findByLabelText("inventoryOverview actions");
     const labels = [...strip.querySelectorAll("button")].map(
-      (button) => button.textContent
+      (button) => button.childNodes[0]?.textContent
     );
     expect(labels).toEqual([
       ...REFERENCE_SCREEN_BY_ID.inventoryOverview.actions
@@ -200,22 +200,104 @@ describe("inventory & replenishment destinations", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps every action control visible and natively disabled", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+  it("keeps workflow actions preview-only and export fail-closed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ok: false, status: 503});
+    vi.stubGlobal("fetch", fetchMock);
     renderPage("suggestedOrders");
 
     const toolbar = screen.getByLabelText("suggestedOrders actions");
     const buttons = within(toolbar).getAllByRole("button");
     // The reference's labels, not the ones an earlier version invented.
-    expect(buttons.map((button) => button.textContent)).toEqual([
+    expect(buttons.map((button) => button.childNodes[0]?.textContent)).toEqual([
       ...REFERENCE_SCREEN_BY_ID.suggestedOrders.actions
     ]);
-    for (const button of buttons) {
-      // P4-D11: the control renders and cannot fire. `disabled` is the native
-      // attribute, not a class that only looks inert.
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("aria-disabled", "true");
-    }
+    expect(buttons[0]).toBeEnabled();
+    expect(buttons[1]).toBeEnabled();
+    expect(buttons[2]).toBeDisabled();
+    expect(buttons[0]).toHaveTextContent("Preview only");
+
+    fireEvent.click(buttons[0]);
+    const dialog = screen.getByRole("dialog", {name: "Approve Suggested Orders"});
+    expect(within(dialog).getByRole("heading", {name: "Approve Suggested Orders"})).toHaveFocus();
+    expect(within(dialog).getByText("Order Value")).toBeInTheDocument();
+    expect(within(dialog).getByText("Approve order batch")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {name: "Create Action"})).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
+    expect(buttons[0]).toHaveFocus();
+  });
+
+  it("exposes both Stock Health previews with the exact local option order", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok: false, status: 503}));
+    renderPage("stockHealth");
+
+    const assign = screen.getByRole("button", {name: /Assign Owner/});
+    expect(assign).toHaveAttribute("data-surface-id", "stock-health.assign-owner");
+    fireEvent.click(assign);
+    let dialog = screen.getByRole("dialog", {name: "Assign Owner"});
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Priority"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["High", "Medium", "Low"]);
+    expect(within(dialog).getByRole("button", {name: "Save"})).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
+
+    const create = screen.getByRole("button", {name: /Create Action/});
+    expect(create).toHaveAttribute("data-surface-id", "stock-health.create-action");
+    fireEvent.click(create);
+    dialog = screen.getByRole("dialog", {name: "Create Stock Action"});
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Action"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Markdown", "Transfer", "Replenish", "Stop Replenishment"]);
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Approval Route"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Category Manager", "Pricing Manager", "Business Head"]);
+  });
+
+  it("exports exactly the controlled replenishment selection from the server", async () => {
+    const payload = {
+      ...partialPayload,
+      items: [
+        {...partialPayload.items[0], rowId: "inventory_0123456789abcdef0123"},
+        {...partialPayload.items[1], rowId: "inventory_abcdef01234567890123"}
+      ],
+      pagination: {offset: 0, limit: 100, total: 2}
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ok: true, json: async () => payload})
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        schemaVersion: "retail-direct-export-metadata/v1",
+        exportId: "replenishmentExportBtn",
+        limit: 1000,
+        scopeRevision: "scope_0123456789abcdef0123",
+        registered: ["replenishmentExportBtn"]
+      }), {status: 200, headers: {"Content-Type": "application/json"}}))
+      .mockResolvedValueOnce(new Response('"row_id"\n"inventory_0123456789abcdef0123"', {
+        status: 200,
+        headers: {
+          "Content-Disposition":
+            'attachment; filename="replenishment-planner-0123456789ab-20260811T120000Z.csv"',
+          "X-Export-Count": "1",
+          "X-Export-ID": "dx_0123456789abcdef0123",
+          "X-Scope-Revision": "scope_0123456789abcdef0123"
+        }
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:replenishment-export");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    renderPage("replenishmentPlanner");
+    const table = await findRowsTable();
+    fireEvent.click(within(table).getByLabelText("Select Fast Mover"));
+    const exportButton = screen.getByRole("button", {name: "Export"});
+    expect(exportButton).toBeEnabled();
+    fireEvent.click(exportButton);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Downloaded 1 rows");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const metadataURL = new URL(String(fetchMock.mock.calls[1][0]), "http://localhost");
+    expect(metadataURL.pathname).toBe(
+      "/api/v1/direct-exports/replenishmentExportBtn"
+    );
+    expect(metadataURL.searchParams.get("scope")).toBe("selected_visible");
+    expect(metadataURL.searchParams.get("expectedCount")).toBe("1");
+    expect(metadataURL.searchParams.get("ids")).toBe(
+      "inventory_0123456789abcdef0123"
+    );
   });
 
   it("renders live rows bound to the served envelope when a bundle is active", async () => {

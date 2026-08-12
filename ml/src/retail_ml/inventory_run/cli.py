@@ -41,41 +41,71 @@ from retail_ml.inventory_run.load import (
     load_inventory_inputs,
 )
 from retail_ml.inventory_run.replay_driver import load_market_history, run_replay
+from retail_ml.io.authority import selection_ids, verify_job_authority
+from retail_ml.io.bundle import discover_input_bundle
+from retail_ml.publish.verify import verify_forecast_run
 
 #: Weeks of history the replay covers. Fifty-two so every market sees a full
 #: annual cycle: a shorter window scores a policy on one season.
 REPLAY_WEEKS = 52
 
-
-def _selection_ids(repository_root: Path) -> dict[str, str]:
-    """The ACTIVE decision-#73 selection per capability, by derived currency."""
-
-    directory = (
-        repository_root / "contracts" / "evidence" / "publication-selections"
-    )
-    records = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(directory.glob("*.json"))
-    ]
-    selections = [
-        record
-        for record in records
-        if record.get("schemaVersion") == "retail-publication-selection/v1"
-    ]
-    superseded = {
-        record["lifecycle"]["supersedes"]
-        for record in selections
-        if record["lifecycle"].get("supersedes")
-    }
-    return {
-        record["scope"]["capability"]: record["selectionId"]
-        for record in selections
-        if record["lifecycle"]["recordId"] not in superseded
-        and record["lifecycle"]["state"] == "active"
-    }
+_FORECAST_AUTHORITY_FIELDS = (
+    "forecastRunId",
+    "forecastVersionId",
+    "runSemanticFingerprint",
+    "coverageGateMode",
+    "acceptanceSchemaVersion",
+)
 
 
-def _active_forecast(dsn: str) -> dict[str, str]:
+def _decision_instant(value: Any, *, label: str) -> datetime:
+    """Normalize an authority instant without silently flooring it to a date."""
+
+    try:
+        parsed = (
+            value
+            if isinstance(value, datetime)
+            else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        )
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"{label} is not an ISO date-time") from exc
+    if parsed.tzinfo is None:
+        raise SystemExit(f"{label} must be timezone-aware")
+    return parsed.astimezone(timezone.utc)
+
+
+def _inventory_decision_instant(
+    explicit: str | None,
+    *,
+    forecast: Mapping[str, str],
+) -> datetime:
+    """Resolve the inventory authority instant independently from its data date.
+
+    ``--as-of`` remains the date-grain snapshot/replay boundary. The immutable
+    inventory authority is an instant, however, and defaults to the forecast
+    decision it consumes. Converting the data date to midnight made a same-cycle
+    inventory bundle incompatible with Scenario Planning whenever forecast used
+    the actual end-of-day source cutoff.
+    """
+
+    value = explicit if explicit is not None else forecast.get("decisionAsOf")
+    if value is None:
+        raise SystemExit(
+            "inventory decision instant is absent; pass --decision-as-of or use "
+            "a forecast authority that declares decisionAsOf"
+        )
+    return _decision_instant(value, label="inventory decisionAsOf")
+
+
+def _published_forecast_authority(forecast: Mapping[str, str]) -> dict[str, str]:
+    """Keep the inventory manifest's frozen forecast-authority shape."""
+
+    return {field: str(forecast[field]) for field in _FORECAST_AUTHORITY_FIELDS}
+
+
+def _active_forecast(
+    dsn: str, *, expected_input: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """The live decision-#90 forecast authority, or refuse.
 
     Read from PostgreSQL rather than from a bundle on disk: the question is which
@@ -88,7 +118,8 @@ def _active_forecast(dsn: str) -> dict[str, str]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT forecast_run_id, version_id, run_semantic_fingerprint
+                SELECT forecast_run_id, version_id, run_semantic_fingerprint,
+                       publication_semantic_fingerprint, decision_as_of
                 FROM retail_serving.active_forecast_versions
                 """
             )
@@ -97,13 +128,104 @@ def _active_forecast(dsn: str) -> dict[str, str]:
         raise SystemExit(
             f"decision #90 requires exactly one active forecast; found {len(rows)}"
         )
+    if (
+        expected_input is not None
+        and str(rows[0][3]) != expected_input["publicationSemanticFingerprint"]
+    ):
+        raise SystemExit(
+            "the active forecast belongs to a different pinned publication; "
+            "pass the independently verified forecast bundle for a non-active "
+            "diagnostic rebuild"
+        )
     return {
         "forecastRunId": str(rows[0][0]),
         "forecastVersionId": str(rows[0][1]),
         "runSemanticFingerprint": str(rows[0][2]),
         "coverageGateMode": "hard",
         "acceptanceSchemaVersion": FORECAST_ACCEPTANCE_SCHEMA_VERSION,
+        "decisionAsOf": _decision_instant(
+            rows[0][4], label="active forecast decisionAsOf"
+        ).isoformat(),
     }
+
+
+def _normalise_forecast_series(frame: pd.DataFrame, *, label: str) -> pd.DataFrame:
+    frame = frame.copy()
+    if "market_id" not in frame:
+        frame["market_id"] = frame["sku_id"].astype(str).str.split(":", n=1).str[0]
+    if "interval_available" not in frame:
+        frame["interval_available"] = frame["yhat_p90"].notna()
+    required = {
+        "market_id", "store_id", "channel_id", "sku_id", "horizon_week",
+        "expected_units", "yhat_p50", "yhat_p90", "interval_available",
+    }
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise SystemExit(f"{label} forecast series lacks: {', '.join(missing)}")
+    if frame.empty:
+        raise SystemExit(f"{label} forecast projection is empty")
+    for column in ("expected_units", "yhat_p50", "yhat_p90"):
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if frame[["expected_units", "yhat_p50"]].isna().any().any():
+        raise SystemExit(
+            f"{label} forecast carries a null expected_units or P50 value"
+        )
+    if frame["interval_available"].isna().any() or not (
+        frame["interval_available"].astype(bool) == frame["yhat_p90"].notna()
+    ).all():
+        raise SystemExit(
+            f"{label} forecast interval flag disagrees with its stored P90"
+        )
+    frame["interval_available"] = frame["interval_available"].astype(bool)
+    frame["horizon_week"] = frame["horizon_week"].astype(int)
+    return frame
+
+
+def _forecast_from_bundle(
+    path: str | Path, *, expected_input: Mapping[str, str]
+) -> tuple[dict[str, str], pd.DataFrame]:
+    verified = verify_forecast_run(path)
+    if verified.lifecycle_status != "accepted":
+        raise SystemExit("inventory requires an accepted forecast bundle")
+    actual_input = verified.manifest.get("inputBundle") or {}
+    if actual_input != dict(expected_input):
+        raise SystemExit(
+            "the forecast bundle belongs to a different pinned input lineage"
+        )
+    frame = _normalise_forecast_series(
+        pd.read_parquet(verified.artifact_paths["forecast_series"]),
+        label="bundle",
+    )
+    if "version_id" not in frame:
+        raise SystemExit("forecast bundle series lacks version_id")
+    versions = sorted(set(frame["version_id"].astype(str)))
+    if len(versions) != 1:
+        raise SystemExit(
+            f"forecast bundle contains {len(versions)} version identities"
+        )
+    acceptance = json.loads(
+        verified.artifact_paths["forecast_acceptance"].read_text(encoding="utf-8")
+    )
+    if (
+        acceptance.get("schemaVersion") != FORECAST_ACCEPTANCE_SCHEMA_VERSION
+        or acceptance.get("coverageGateMode") != "hard"
+        or acceptance.get("passed") is not True
+    ):
+        raise SystemExit("forecast bundle lacks accepted hard-gate evidence")
+    return (
+        {
+            "forecastRunId": verified.forecast_run_id,
+            "forecastVersionId": versions[0],
+            "runSemanticFingerprint": verified.semantic_fingerprint,
+            "coverageGateMode": "hard",
+            "acceptanceSchemaVersion": FORECAST_ACCEPTANCE_SCHEMA_VERSION,
+            "decisionAsOf": _decision_instant(
+                verified.manifest.get("decisionAsOf"),
+                label="forecast bundle decisionAsOf",
+            ).isoformat(),
+        },
+        frame,
+    )
 
 
 def _forecast_series(dsn: str) -> pd.DataFrame:
@@ -147,26 +269,7 @@ def _forecast_series(dsn: str) -> pd.DataFrame:
             "interval_available",
         ],
     )
-    if frame.empty:
-        raise SystemExit(
-            "the active forecast projection is empty; materialize and activate a "
-            "forecast before running inventory against it"
-        )
-    for column in ("expected_units", "yhat_p50", "yhat_p90"):
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    if frame[["expected_units", "yhat_p50"]].isna().any().any():
-        raise SystemExit(
-            "the active forecast carries a null expected_units or P50 value"
-        )
-    if frame["interval_available"].isna().any() or not (
-        frame["interval_available"].astype(bool) == frame["yhat_p90"].notna()
-    ).all():
-        raise SystemExit(
-            "the active forecast interval flag disagrees with its stored P90"
-        )
-    frame["interval_available"] = frame["interval_available"].astype(bool)
-    frame["horizon_week"] = frame["horizon_week"].astype(int)
-    return frame
+    return _normalise_forecast_series(frame, label="active")
 
 
 def _policy_by_market(
@@ -209,6 +312,29 @@ def _levels(
     return points, levels
 
 
+def _verified_curated_root(args: argparse.Namespace) -> Path:
+    """Resolve the curated directory through the current input-bundle contract.
+
+    The expected pin identifies the publication by semantic and physical
+    content. Its ``publication.duckdb.path`` is relative to that publication;
+    the schema intentionally has no repository-level ``logicalPath``. The
+    canonical verifier resolves and checks the matching retained publication,
+    and inventory accepts only that verified directory.
+    """
+
+    verified = discover_input_bundle(
+        args.repository_root,
+        expected_pin_path=args.expected_pin,
+    ).verify()
+    expected = verified.paths.curated_root.resolve()
+    requested = Path(args.curated_root).resolve()
+    if requested != expected:
+        raise SystemExit(
+            f"curated root {requested} does not match verified publication {expected}"
+        )
+    return requested
+
+
 def command_build(args: argparse.Namespace) -> int:
     """Load, build, replay, then publish -- in that order and no other.
 
@@ -217,19 +343,33 @@ def command_build(args: argparse.Namespace) -> int:
     accept a policy nobody is serving.
     """
 
+    authority = _job_authority(args)
     as_of = date.fromisoformat(args.as_of)
-    curated = Path(args.curated_root)
+    curated = _verified_curated_root(args)
+    pin = _pin(args)
     dsn = args.postgres_dsn
-    forecast = _active_forecast(dsn)
-    series = _forecast_series(dsn)
+    input_bundle = _input_bundle(args)
+    if args.forecast_run is not None:
+        forecast, series = _forecast_from_bundle(
+            args.forecast_run,
+            expected_input=input_bundle,
+        )
+    else:
+        forecast = _active_forecast(dsn, expected_input=input_bundle)
+        series = _forecast_series(dsn)
+    decision_as_of = _inventory_decision_instant(
+        args.decision_as_of,
+        forecast=forecast,
+    )
     attributes = _market_attributes(curated)
-    # The markets the bundle covers are those the SERVED forecast covers. A market
-    # with locations but no active forecast has no interval to consume, so
-    # including it would publish thirteen artifacts of withheld rows.
+    # The markets the bundle covers are those the selected verified forecast
+    # covers. A market with locations but no selected forecast has no interval
+    # to consume, so including it would publish thirteen artifacts of withheld
+    # rows.
     markets = sorted(set(series["market_id"].astype(str)) & set(attributes))
     if not markets:
         raise SystemExit(
-            "no market appears in both the active forecast and the curated "
+            "no market appears in both the selected forecast and the curated "
             f"locations; forecast has {sorted(set(series['market_id']))}, "
             f"publication has {sorted(attributes)}"
         )
@@ -299,14 +439,12 @@ def command_build(args: argparse.Namespace) -> int:
         args.bundle,
         frames=artifacts,
         markets=markets,
-        decision_as_of=datetime.combine(
-            as_of, datetime.min.time(), tzinfo=timezone.utc
-        ),
-        input_bundle=_input_bundle(Path(args.repository_root)),
-        source_selection_id=_selection_ids(Path(args.repository_root))[
+        decision_as_of=decision_as_of,
+        input_bundle=input_bundle,
+        source_selection_id=selection_ids(authority)[
             "inventory_replenishment_replay"
         ],
-        forecast_authority=forecast,
+        forecast_authority=_published_forecast_authority(forecast),
         policy_fingerprints=fingerprints,
         replay=scored["replay"],
         lane_coverage_pct=float(coverage),
@@ -364,12 +502,29 @@ def _market_attributes(curated_root: Path) -> dict[str, tuple[str, str]]:
     return {str(row[0]): (str(row[1]), str(row[3])) for row in rows}
 
 
-def _input_bundle(repository_root: Path) -> dict[str, str]:
-    pin = json.loads(
-        (repository_root / "contracts" / "ml" / "expected-pin.json").read_text(
-            encoding="utf-8"
-        )
+def _pin(args: argparse.Namespace) -> dict[str, Any]:
+    pin_path = Path(args.expected_pin)
+    if not pin_path.is_absolute():
+        pin_path = Path(args.repository_root) / pin_path
+    return json.loads(pin_path.read_text(encoding="utf-8"))
+
+
+def _job_authority(args: argparse.Namespace) -> dict[str, Any]:
+    return verify_job_authority(
+        repository_root=args.repository_root,
+        authority_path=args.input_authority,
+        expected_pin_path=args.expected_pin,
+        expected_run_id=args.run_id,
+        expected_job_purpose=args.job_purpose,
+        retailer_id=args.retailer,
+        tenant_id=args.tenant,
+        environment=args.environment,
+        evidence_root=args.evidence_root,
     )
+
+
+def _input_bundle(args: argparse.Namespace) -> dict[str, str]:
+    pin = _pin(args)
     return {
         "sourceSnapshotId": pin["sourceSnapshotId"],
         "gateASemanticFingerprint": pin["gateA"]["semanticFingerprint"],
@@ -379,19 +534,24 @@ def _input_bundle(repository_root: Path) -> dict[str, str]:
 
 
 def command_verify(args: argparse.Namespace) -> int:
-    repository_root = Path(args.repository_root)
-    pin = json.loads(
-        (repository_root / "contracts" / "ml" / "expected-pin.json").read_text(
-            encoding="utf-8"
-        )
+    authority = _job_authority(args)
+    pin = _pin(args)
+    input_bundle = _input_bundle(args)
+    forecast = (
+        _forecast_from_bundle(
+            args.forecast_run,
+            expected_input=input_bundle,
+        )[0]
+        if args.forecast_run is not None
+        else _active_forecast(args.postgres_dsn, expected_input=input_bundle)
     )
     verified = verify_inventory_run(
         args.bundle,
         expected_pin=pin,
-        active_selection_id=_selection_ids(repository_root)[
+        active_selection_id=selection_ids(authority)[
             "inventory_replenishment_replay"
         ],
-        active_forecast=_active_forecast(args.postgres_dsn),
+        active_forecast=forecast,
     )
     print(
         json.dumps(
@@ -410,19 +570,18 @@ def command_verify(args: argparse.Namespace) -> int:
 
 
 def command_materialize(args: argparse.Namespace) -> int:
-    repository_root = Path(args.repository_root)
-    pin = json.loads(
-        (repository_root / "contracts" / "ml" / "expected-pin.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    authority = _job_authority(args)
+    pin = _pin(args)
     verified = verify_inventory_run(
         args.bundle,
         expected_pin=pin,
-        active_selection_id=_selection_ids(repository_root)[
+        active_selection_id=selection_ids(authority)[
             "inventory_replenishment_replay"
         ],
-        active_forecast=_active_forecast(args.postgres_dsn),
+        active_forecast=_active_forecast(
+            args.postgres_dsn,
+            expected_input=_input_bundle(args),
+        ),
     )
     result = materialize_inventory_run(verified, postgres_dsn=args.postgres_dsn)
     print(json.dumps(asdict(result), indent=2, sort_keys=True))
@@ -440,26 +599,69 @@ def command_activate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_authority_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--run-id", required=True)
+    command.add_argument("--expected-pin", type=Path, required=True)
+    command.add_argument("--input-authority", type=Path, required=True)
+    command.add_argument("--job-purpose", required=True)
+    command.add_argument("--retailer", required=True)
+    command.add_argument("--tenant", required=True)
+    command.add_argument(
+        "--environment",
+        choices=("local", "dev", "staging", "prod"),
+        required=True,
+    )
+    command.add_argument("--evidence-root", type=Path, required=True)
+
+
 def register(subparsers: Any) -> None:
     """Attach the four subcommands to `retail_ml.cli`'s parser."""
 
     build = subparsers.add_parser("inventory-build")
     build.add_argument("--repository-root", type=Path, default=Path.cwd())
+    _add_authority_arguments(build)
     build.add_argument("--curated-root", type=Path, required=True)
     build.add_argument("--bundle", type=Path, required=True)
     build.add_argument("--as-of", required=True)
+    build.add_argument(
+        "--decision-as-of",
+        default=None,
+        help=(
+            "timezone-aware inventory authority instant; defaults to the exact "
+            "decisionAsOf of the selected forecast. --as-of remains the "
+            "date-grain snapshot/replay boundary"
+        ),
+    )
+    build.add_argument(
+        "--forecast-run",
+        type=Path,
+        help=(
+            "accepted forecast bundle to consume without activating it; its "
+            "input lineage must exactly match the explicit pin"
+        ),
+    )
     build.add_argument("--postgres-dsn", required=True)
     build.add_argument("--execution-profile", default="performance")
     build.set_defaults(handler=command_build)
 
     verify = subparsers.add_parser("inventory-verify")
     verify.add_argument("--repository-root", type=Path, default=Path.cwd())
+    _add_authority_arguments(verify)
     verify.add_argument("--bundle", type=Path, required=True)
+    verify.add_argument(
+        "--forecast-run",
+        type=Path,
+        help=(
+            "independently verified forecast bundle expected by a non-active "
+            "diagnostic inventory run"
+        ),
+    )
     verify.add_argument("--postgres-dsn", required=True)
     verify.set_defaults(handler=command_verify)
 
     materialize = subparsers.add_parser("inventory-materialize")
     materialize.add_argument("--repository-root", type=Path, default=Path.cwd())
+    _add_authority_arguments(materialize)
     materialize.add_argument("--bundle", type=Path, required=True)
     materialize.add_argument("--postgres-dsn", required=True)
     materialize.set_defaults(handler=command_materialize)

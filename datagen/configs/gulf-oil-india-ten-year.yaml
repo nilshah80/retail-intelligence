@@ -422,7 +422,9 @@ markets:
     - 0.75
   priceDynamics:
     profile: response-rich
-    priceChangeEventsPerSkuPerYear: 9
+    # Four irregular list-price changes per year retain multiple price regimes
+    # while avoiding implausibly brief list-price episodes.
+    priceChangeEventsPerSkuPerYear: 4
     annualInflationRate: 0.049
     priceEndingAdherence: 0.74
   signals:

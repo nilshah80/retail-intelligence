@@ -6,13 +6,21 @@ recommendations and inventory decisions:
 
 **Language:** Python (LightGBM, statsmodels, pandas / DuckDB).
 
-**Planned contents** (copied/adapted and extended from the M5 PoC):
+**Implemented contents** (copied/adapted and extended from the M5 PoC):
 - `features/` — weekly point-in-time feature build (lags, rolling, seasonality, price/promo,
   market-local calendar and external drivers). Cross-market forecast features use
   dimensionless/local-normalized price signals rather than incomparable raw currency levels.
 - `models/` — `forecasting` (LightGBM horizon-quantile P50/P90 + Croston routing), `price_response`
   (Poisson GLM + empirical-Bayes elasticity), `baselines`, `backtest`.
 - `engines/` — reorder / safety-stock, pricing, policy, simulator, allocation, ageing/expiry.
+
+The pricing implementation lives in `retail_ml.pricing`: point-in-time panels, response fitting and
+strict acceptance, market-local recommendations and simulation, competitor matching, promotion
+protection/refusal, immutable bundle publication, outside-set verification, PostgreSQL
+materialization, prospective result-selection intent, and atomic activation preparation.
+Expected record-level data defects are retained as reason-coded withheld/exception rows so an
+unrelated series continues. Missing schemas, ambiguous authority, lineage mismatch, leakage,
+artifact corruption, or an invalid policy remain run-level failures and abort publication.
 
 **Market and money rule:** unit forecasting/reorder math may share code across markets, but
 calendars, evaluation slices, price-response pools, pricing policies and monetary outputs are
@@ -24,10 +32,11 @@ mix currencies; cross-market inventory/value reporting requires the governed loc
 reporting/quote conversion. The initial pricing round-trip is revenue-objective only until
 accepted temporal cost-as-of unlocks margin.
 
-**Evidence demos:** the primary India+US scenario must independently produce at least 25 actually
-accepted SKU×store price series per enabled department in both markets. A separate sparse preset
-must fail closed with `insufficient_evidence`. ML owns that pass/fail decision; it must not infer
-coverage from store count, configured SKU count or a datagen preset name.
+**Evidence demos:** every market declared by the evaluated tenant must independently produce at
+least 25 actually gated SKU×store price series per enabled department for the response-rich
+audience. A separate non-active diagnostic preset must fail closed with `insufficient_evidence`.
+ML owns that pass/fail decision; it must not infer coverage from store count, configured SKU count
+or a generator preset name.
 
 **Input rule:** only an `ingestion/` publication with full Gate-B pass and the capability mask
 required by a model may enter `ml/`. A partial Shopify slice never reaches this package.

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use chrono_tz::Tz;
 use rust_decimal::{Decimal, RoundingStrategy};
 use unicode_normalization::UnicodeNormalization;
@@ -878,7 +878,7 @@ fn price_history(
                     event_cost * pandemic_cost,
                 )?;
                 if prior != Some(price) {
-                    rows.push(row([
+                    let mut values = row([
                         (
                             "variantId",
                             shopify_gid(
@@ -899,7 +899,27 @@ fn price_history(
                                 phase
                             },
                         ),
-                    ]));
+                    ]);
+                    if let Some(evidence) = config.pricing_evidence() {
+                        let known_day = day
+                            .checked_add_signed(Duration::days(i64::from(
+                                evidence.price_known_as_of_lag_days,
+                            )))
+                            .context("price known-as-of date overflow")?;
+                        values.insert(
+                            "knownAsOf".to_owned(),
+                            local_iso_at(known_day, 0, &market.timezone)?,
+                        );
+                        values.insert(
+                            "provenanceClass".to_owned(),
+                            "generated_source_native".to_owned(),
+                        );
+                        values.insert(
+                            "generationMethod".to_owned(),
+                            evidence.generation_method.clone(),
+                        );
+                    }
+                    rows.push(values);
                     prior = Some(price);
                 }
                 day = day.succ_opt().context("date overflow")?;
@@ -1164,7 +1184,7 @@ mod tests {
                 ("shopify/gulf-in", "productVariants"),
                 (
                     292,
-                    "fffb9f741fa07548aafe64994af9a4271e650af3d431ace14888685be2ff33c9",
+                    "a810c3a3483e889838226cb3a3155577ec2297f0a24f050e732bdd0fb83908b9",
                 ),
             ),
             (
@@ -1192,7 +1212,7 @@ mod tests {
                 ("business-central/bc-gulf-in", "itemVariants"),
                 (
                     292,
-                    "fc1e00391550c8aaa1330fd9e6f6989fe12fa099d5127c4c894265d906a032f9",
+                    "2c5b7316a062dec92bbef1cf1dd511068dbb21666316537e96be62318358c581",
                 ),
             ),
             (
@@ -1242,8 +1262,8 @@ mod tests {
             (
                 "shopify/gulf-in",
                 "priceHistory",
-                19_789,
-                "4b2c8758fad88726b7d8113d1604a8761e7d2c346929b515ff2f7118e955071e",
+                9_999,
+                "81d4be5ee2880dda768e2ea80cf64bb9b02569ebde2120cb66d1734436c5c79e",
             ),
             (
                 "business-central/bc-gulf-in",

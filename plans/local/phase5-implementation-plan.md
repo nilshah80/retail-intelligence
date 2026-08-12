@@ -392,7 +392,7 @@ stayed inside the record but outside `recordId`, the identity would cover only p
 and two materially different files could legitimately share a name.
 
 The receipt is **one per `P5-0` execution, not one per record**, written to
-`contracts/evidence/phase5-entry-receipts/phase5-entry-receipt-<receiptId>.json`. `receiptId` is an
+`contracts/evidence/capability-entry-receipts/capability-entry-receipt-<receiptId>.json`. `receiptId` is an
 independent, lowercase canonical RFC 9562 UUIDv7 generated exactly once when the execution begins;
 it is neither a record ID nor a content hash. The embedded `receiptId` and filename ID must be equal,
 the final path is create-only, and an existing path is accepted idempotently only when its bytes are
@@ -445,12 +445,12 @@ by other artifacts and does not contain `/recordId`. Extending that shared regis
 identities elsewhere; a schema-scoped vector does not.
 
 **Layout.** Each record is written to
-`contracts/evidence/phase5-entry-records/phase5-entry-record-<recordId>.json` and carries
+`contracts/evidence/capability-entry-records/capability-entry-record-<recordId>.json` and carries
 `schemaVersion`, `recordId`, its full four-field scope, the exact publication and upstream
 identities it measured, its `predecessorRecordId` or an explicit genesis declaration, and the hash
 of every artifact it cites.
 
-**Pointer.** `contracts/evidence/phase5-entry-record-current.json` is a separate schema-validated
+**Pointer.** `contracts/evidence/capability-entry-current.json` is a separate schema-validated
 document mapping each four-field scope to exactly one adopted `recordId`. It carries its own
 `schemaVersion`, a top-level `lastAdoptionReceiptId`, at most one entry per scope, and for each entry
 the adopted `recordId`, the `predecessorRecordId` it replaces, and the `adoptionReceiptId` of the
@@ -1618,6 +1618,13 @@ evaluation/calibration protocol in `P5-1P`. Test-only generator truth may score 
 served evidence. Low-confidence/review/rejected/no-match records remain visible for transparency
 but are excluded from recommendation inputs.
 
+The frozen evaluation requires at least 200 disjoint truth-labelled candidate pairs, including at
+least 25 in the missing-attribute cohort; precision must be at least 0.95, recall at least 0.90,
+false-match rate at most 0.02, and expected calibration error at most 0.05. Truth rows can never be
+served. A truth set copied from the candidate/match output is not disjoint evidence and produces
+`MATCH_EVALUATION_TRUTH_NOT_DISJOINT`; all otherwise eligible competitor bounds are withheld while
+the descriptive Matched/Needs Review/Rejected/No Match states remain inspectable.
+
 ### P5-D9 · Competitor response — proposed binding
 
 Treat competitor price, availability, promotion, and freshness as bounded context. Never copy a
@@ -1636,6 +1643,11 @@ and conflict terms. It authorizes no uplift, Planner/Forecast promotion feature,
 display, audience, calendar, or numeric promotion claim. If that safety feed is missing/ambiguous,
 all affected actionable price rows are withheld with `PROMOTION_PROTECTION_MISSING`; it is not safe
 to treat the D23-negative Planner refusal as proof of no conflict.
+
+The protection window is frozen before result inspection as the decision date through the next 28
+calendar days, inclusive. This covers the recommendation's four-week planning context without
+turning every indefinite future promotion into a permanent price block; a promotion overlaps when
+its end is on/after the decision date and its start is on/before that inclusive horizon.
 
 ### P5-D11 · Promotion privacy disposition — proposed binding
 
@@ -2213,38 +2225,38 @@ contracts/
     publication-selection.schema.json              # retained legacy v1 bytes
     publication-selection-v2.schema.json           # Phase 5 normative identity contract
     input-authority.schema.json                     # retail-input-authority/v1
-    phase5-entry-record.schema.json                 # retail-phase5-entry-record/v1; declares ["/recordId"]
-    phase5-entry-record-current.schema.json         # scope -> record/adoption receipt + last transaction
-    phase5-entry-receipt.schema.json                # UUIDv7 execution identity + ordered set/outcome
+    capability-entry-record.schema.json             # retail-capability-entry-record/v1; declares ["/recordId"]
+    capability-entry-pointer.schema.json            # scope -> record/adoption receipt + last transaction
+    capability-entry-receipt.schema.json            # UUIDv7 execution identity + ordered set/outcome
     tenant-market-set.schema.json                   # governed market set per tenant scope
   evidence/
-    phase5-entry-record-current.json               # scope -> adopted record + receipt-bound pointer
-    phase5-entry-records/
-      phase5-entry-record-<recordId>.json          # immutable, content-addressed, one per scope
-    phase5-entry-receipts/
-      phase5-entry-receipt-<receiptId>.json        # one per P5-0 execution, success or refusal
-    .phase5-entry-adoption-staging/                 # ignored crash-recovery journals; never authority
-    phase5-ui-audit.json
-    phase5-surface-state-capture-manifest.json      # stable IDs + closed captureClass per surface/state
+    capability-entry-current.json                  # scope -> adopted record + receipt-bound pointer
+    capability-entry-records/
+      capability-entry-record-<recordId>.json      # immutable, content-addressed, one per scope
+    capability-entry-receipts/
+      capability-entry-receipt-<receiptId>.json    # one per P5-0 execution, success or refusal
+    .capability-entry-adoption-staging/             # ignored crash-recovery journals; never authority
+    client-demo-ui-audit.json
+    client-demo-surface-state-capture-manifest.json # stable IDs + closed captureClass per surface/state
     input-authorities/
-      phase5-rich-local.json
-      phase5-sparse-dev.json
+      gulf-oil-india-rich-local-shared.json
+      gulf-oil-india-sparse-dev.json
     publication-selections/
       ... rich-local and sparse-dev source-selection v2 lifecycle records ...
     result-selection-intents/
-      phase5-rich.json
-      phase5-sparse.json
+      gulf-oil-india-rich.json
+      gulf-oil-india-sparse.json
     activation-receipts/
-      phase5-rich.json                               # derived post-commit evidence only
-    serving-configs/
-      phase5-rich-local.json                        # reviewed secret-free startup scope
+      gulf-oil-india-rich.json                      # derived post-commit evidence only
+    pricing-authority/
+      gulf-oil-india-rich/pricing-serving.json     # reviewed secret-free startup scope
   guardrails/
     price_response.yaml
     pricing_rules.yaml
   ml/
     expected-pin.json
-    expected-pin-phase5-rich.json
-    expected-pin-phase5-sparse.json
+    expected-pin-gulf-oil-india-rich.json
+    expected-pin-gulf-oil-india-sparse.json
     price-response-run.schema.yaml
     price-response-acceptance.schema.json
     price-response-verifier-policy.json
@@ -2255,27 +2267,27 @@ contracts/
     cost-evidence.schema.json
     competitor-foundation.schema.json
     promotion-foundation.schema.json
-    phase5-bundle.schema.json
+    bundle.schema.json
     result-selection-intent.schema.json
-    phase5-activation-set.schema.json
-    phase5-activation-receipt.schema.json
+    activation-set.schema.json
+    activation-receipt.schema.json
   serving/
     local-serving-config.schema.json
   screens/
-    phase5-surface-state-capture-manifest.schema.json
+    client-demo-surface-state-capture-manifest.schema.json
     price-recommendations.parity.yaml
     price-simulation.parity.yaml
     competitor-monitor.parity.yaml
     promotion-planner.parity.yaml
-    existing-ui-phase5-amendments.yaml
+    ... approved amendments remain in the owning existing-screen contracts ...
   profiles/
     profile.schema.json                              # existing retailer-source profile contract
 
 datagen/
   config-builder.html
   configs/
-    phase5-response-rich.yaml
-    phase5-pricing-evidence-sparse.yaml
+    pricing-response-rich.yaml
+    pricing-evidence-sparse.yaml
   src/retail_datagen/
     ... source-native Phase 5 fields and deterministic generators ...
 
@@ -2371,8 +2383,8 @@ publication history.
 0. **Freeze the entry-record contracts before emitting any record.** `P5-0` owns this because it is
    the first package to produce a record and `P5-1`'s entry already requires the approved `P5-0`
    record set; the dependency cannot run the other way. Author and approve, as a reviewed pre-emission
-   step: `contracts/onboarding/phase5-entry-record.schema.json`, its sibling
-   `phase5-entry-record-current.schema.json`, the execution-receipt schema, and the schema-scoped
+   step: `contracts/onboarding/capability-entry-record.schema.json`, its sibling
+   `capability-entry-pointer.schema.json`, `capability-entry-receipt.schema.json`, and the schema-scoped
    identity-exclusion vector `["/recordId"]`. Publish cross-language golden vectors proving that a
    fixed record body yields a fixed `recordId`, that the embedded/filename/recomputed IDs agree, that
    a record containing execution metadata is rejected, and that the complete on-disk record is exact
@@ -3911,8 +3923,9 @@ available/unavailable; competitor used/excluded; policy-valid/withheld/protected
 sparse without copying original sample products or values.
 
 Row detail modal: Product, Recommended Action, Confidence, Commercial Impact, Decision Context, explanation,
-lineage/capability, and Open Simulation. It is read-only, deep-linkable where approved, keyboard
-accessible, and uses the selected row's live identity. For a `withheld_assessment`, Recommended
+and Open Simulation. It is read-only, deep-linkable where approved, keyboard accessible, and uses
+the selected row's live identity. Its lineage/capability remains machine-verifiable in the response
+envelope and export rather than adding a visible section absent from the original modal. For a `withheld_assessment`, Recommended
 Action and dependent impact fields remain unavailable, evidence reasons remain readable, and Open
 Simulation is natively disabled because no accepted response/recommendation context exists.
 

@@ -15,6 +15,7 @@ import datetime
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -68,6 +69,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INGESTION_ENV = REPO_ROOT / "ingestion" / ".venv"
 ML_ENV = REPO_ROOT / "ml" / ".venv"
 DATAGEN_ENV = REPO_ROOT / "datagen" / ".venv"
+DATAGEN_RUST_ROOT = REPO_ROOT / "datagen_rust"
 DB_ENV = REPO_ROOT / "db" / ".venv"
 COMPOSE_FILE = REPO_ROOT / "deploy" / "compose.yaml"
 COMPOSE_ENV = REPO_ROOT / "deploy" / ".env"
@@ -687,8 +689,12 @@ def _is_sha256(value: object) -> bool:
 def _selection_module():
     """Import the selection builder as a module so repin can read its ledger."""
 
-    for entry in (REPO_ROOT / "ingestion" / "src", REPO_ROOT / "tools"):
-        # Guarded: unconditional inserts grew sys.path by two on every call, so a
+    for entry in (
+        REPO_ROOT / "contracts" / "python" / "src",
+        REPO_ROOT / "ingestion" / "src",
+        REPO_ROOT / "tools",
+    ):
+        # Guarded: unconditional inserts grew sys.path on every call, so a
         # measurement taken after a single call read as stable when it was not.
         if str(entry) not in sys.path:
             sys.path.insert(0, str(entry))
@@ -1550,41 +1556,241 @@ def _repin_apply(
     *, selection, ingestion, run_id, facts, reasons, reason_code, actor, reason,
     approved_at,
 ) -> tuple[int, str | None]:
-    """Write the generation, derive its records, then move the pin."""
+    """Write one governed selection generation, then move the expected pin.
 
-    entry = selection.append_generation(
-        run=run_id,
-        approved_at=approved_at,
-        reason_code=reason_code,
-        candidate_reason=(reason or reasons["candidate"]),
-        approved_reason=reasons["approved"],
-        active_reason=reasons["active"],
-        supersede_reason=reasons["supersede"],
-        actor=actor,
-    )
-    print(
-        f"appended generation {entry['tag']} for {run_id} "
-        f"(actor={entry['actor']}, mode={entry['approvalMode']}, "
-        f"approvedAt={entry['approvedAt']})"
-    )
+    Once a scope has crossed into the full-scope v2 ledger, continuing the old v1
+    generation chain creates an independent active head: the v2 candidate already
+    superseded the prior v1 head, so a later v1 record cannot supersede the v2 head.
+    Adopt through v2 from that point onward. Repositories that have not migrated any
+    exact-scope authority yet retain the legacy path for historical portability.
+    """
+
+    v2_predecessors = _repin_v2_predecessors(selection)
     builder = REPO_ROOT / "tools" / "build_publication_selection.py"
-    for label, command in (
-        ("selection ledger", [str(ingestion), str(builder), "--no-clobber"]),
-        ("selection ledger verified", [str(ingestion), str(builder), "--check"]),
+    commands: list[tuple[str, list[str]]] = []
+    if v2_predecessors is None:
+        entry = selection.append_generation(
+            run=run_id,
+            approved_at=approved_at,
+            reason_code=reason_code,
+            candidate_reason=(reason or reasons["candidate"]),
+            approved_reason=reasons["approved"],
+            active_reason=reasons["active"],
+            supersede_reason=reasons["supersede"],
+            actor=actor,
+        )
+        print(
+            f"appended generation {entry['tag']} for {run_id} "
+            f"(actor={entry['actor']}, mode={entry['approvalMode']}, "
+            f"approvedAt={entry['approvedAt']})"
+        )
+        commands.append(
+            ("selection ledger", [str(ingestion), str(builder), "--no-clobber"])
+        )
+    else:
+        authority_builder = REPO_ROOT / "tools" / "build_publication_authority.py"
+        authority_command = [
+            str(ingestion),
+            str(authority_builder),
+            "--run",
+            run_id,
+            "--retailer",
+            selection.RETAILER_ID,
+            "--tenant",
+            selection.TENANT_ID,
+            "--environment",
+            selection.ENVIRONMENT,
+            "--evidence-root",
+            str(REPO_ROOT / "ingestion" / "data" / "evidence" / run_id),
+            "--publication-root",
+            str(REPO_ROOT / "ingestion" / "data" / "curated" / run_id),
+            "--actor",
+            actor or selection.AUTOMATED_ACTOR,
+            "--recorded-at",
+            approved_at,
+            "--reason",
+            reason or reasons["candidate"],
+        ]
+        for capability in sorted(v2_predecessors):
+            authority_command.extend(("--capability", capability))
+            authority_command.extend(
+                ("--predecessor", f"{capability}={v2_predecessors[capability]}")
+            )
+        print(
+            f"adopting {run_id} through the full-scope v2 authority ledger "
+            f"(actor={actor or selection.AUTOMATED_ACTOR}, "
+            f"approvedAt={approved_at})"
+        )
+        commands.append(("v2 selection authority", authority_command))
+
+    commands.extend(
         (
-            "expected pin",
-            [
-                str(ingestion),
-                str(REPO_ROOT / "tools" / "build_expected_pin.py"),
-                "--run",
-                run_id,
-            ],
-        ),
-    ):
+            ("selection ledger verified", [str(ingestion), str(builder), "--check"]),
+            (
+                "publication authority verified",
+                [
+                    str(ingestion),
+                    str(REPO_ROOT / "tools" / "build_publication_authority.py"),
+                    "--check",
+                ],
+            ),
+            (
+                "expected pin",
+                [
+                    str(ingestion),
+                    str(REPO_ROOT / "tools" / "build_expected_pin.py"),
+                    "--run",
+                    run_id,
+                ],
+            ),
+        )
+    )
+    for label, command in commands:
         result = _run(command)
         if result:
             return result, label
     return 0, None
+
+
+def _repin_selection_records(selection) -> list[dict[str, object]]:
+    """Load and validate both source-selection contract generations.
+
+    Repin is the writer for this directory, so it cannot safely make decisions from
+    only the legacy ``publication`` field after v2 renamed that block to ``subject``.
+    Reading both versions in one helper keeps collision detection and predecessor
+    resolution on the same record set.
+    """
+
+    directory = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
+    records: list[dict[str, object]] = []
+    seen_record_ids: set[str] = set()
+    for path in sorted(directory.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as broken:
+            raise SystemExit(f"selection record is unreadable: {path}: {broken}")
+        if not isinstance(record, dict):
+            raise SystemExit(
+                f"selection record {path} is {type(record).__name__}, expected an object"
+            )
+        version = record.get("schemaVersion")
+        if version not in {
+            selection.SELECTION_SCHEMA_VERSION,
+            selection.SELECTION_SCHEMA_VERSION_V2,
+        }:
+            continue
+        if version == selection.SELECTION_SCHEMA_VERSION:
+            try:
+                selection.validate_selection(record)
+            except (KeyError, TypeError, ValueError, RuntimeError) as broken:
+                raise SystemExit(f"selection record is invalid: {path}: {broken}")
+        else:
+            # Full v2 schema and semantic-ID verification runs in the ingestion
+            # environment immediately before any adoption write. The repo-level
+            # Python entry point deliberately has no third-party dependency, while
+            # importing retail_contracts.fingerprint through the package initializer
+            # requires jsonschema. Preflight still refuses every shape it consumes;
+            # it simply does not duplicate the child verifier's fingerprint work.
+            scope = record.get("scope")
+            lifecycle = record.get("lifecycle")
+            subject = record.get("subject")
+            if not all(isinstance(value, dict) for value in (scope, lifecycle, subject)):
+                raise SystemExit(f"v2 selection record has malformed blocks: {path}")
+            required_scope = ("retailerId", "tenantId", "capability", "environment")
+            if any(not isinstance(scope.get(key), str) or not scope[key] for key in required_scope):
+                raise SystemExit(f"v2 selection record has malformed scope: {path}")
+            record_id = lifecycle.get("recordId")
+            state = lifecycle.get("state")
+            predecessor = lifecycle.get("supersedes")
+            if (
+                not isinstance(record_id, str)
+                or not re.fullmatch(r"rec_[0-9a-f]{16}", record_id)
+                or state not in {"candidate", "approved", "active", "superseded", "rejected"}
+                or (
+                    predecessor is not None
+                    and (
+                        not isinstance(predecessor, str)
+                        or not re.fullmatch(r"rec_[0-9a-f]{16}", predecessor)
+                    )
+                )
+            ):
+                raise SystemExit(f"v2 selection record has malformed lifecycle: {path}")
+            if (
+                subject.get("kind") != "source_publication"
+                or not isinstance(subject.get("logicalPath"), str)
+                or not subject["logicalPath"]
+            ):
+                raise SystemExit(f"v2 selection record has malformed subject: {path}")
+        record_id = str(record["lifecycle"]["recordId"])
+        if record_id in seen_record_ids:
+            raise SystemExit(f"duplicate selection record ID {record_id}: {path}")
+        seen_record_ids.add(record_id)
+        records.append(record)
+    return records
+
+
+def _repin_v2_predecessors(selection) -> dict[str, str] | None:
+    """Resolve the one live exact-scope head each v2 adoption must supersede.
+
+    A terminal head is retained audit history. A candidate, approved, or second
+    active head is unresolved authority and blocks adoption; picking one would be an
+    implicit governance decision. ``None`` means this repository has not migrated
+    the exact scopes to v2 yet and may use the historical v1 generation path.
+    """
+
+    records = _repin_selection_records(selection)
+    exact = (
+        selection.RETAILER_ID,
+        selection.TENANT_ID,
+        selection.ENVIRONMENT,
+    )
+    migrated = any(
+        record.get("schemaVersion") == selection.SELECTION_SCHEMA_VERSION_V2
+        and selection.scope_key(record)[0] == exact[0]
+        and selection.scope_key(record)[1] == exact[1]
+        and selection.scope_key(record)[3] == exact[2]
+        and selection.scope_key(record)[2] in selection._GENERATION_CAPABILITIES
+        for record in records
+    )
+    if not migrated:
+        return None
+
+    superseded = {
+        str(record["lifecycle"]["supersedes"])
+        for record in records
+        if record["lifecycle"].get("supersedes")
+    }
+    heads = [
+        record
+        for record in records
+        if str(record["lifecycle"]["recordId"]) not in superseded
+    ]
+    predecessors: dict[str, str] = {}
+    terminal = {"superseded", "rejected"}
+    for capability in selection._GENERATION_CAPABILITIES:
+        scope = (
+            selection.RETAILER_ID,
+            selection.TENANT_ID,
+            capability,
+            selection.ENVIRONMENT,
+        )
+        scoped = [record for record in heads if selection.scope_key(record) == scope]
+        live = [
+            record
+            for record in scoped
+            if str(record["lifecycle"]["state"]) not in terminal
+        ]
+        if len(live) != 1 or live[0]["lifecycle"]["state"] != "active":
+            identities = [
+                f"{record['lifecycle']['recordId']}:{record['lifecycle']['state']}"
+                for record in live
+            ]
+            raise SystemExit(
+                "full-scope v2 adoption requires exactly one active current head "
+                f"for {'/'.join(scope)}; found {identities}"
+            )
+        predecessors[capability] = str(live[0]["lifecycle"]["recordId"])
+    return predecessors
 
 
 def command_serve(args: argparse.Namespace) -> int:
@@ -1702,6 +1908,15 @@ def command_serve(args: argparse.Namespace) -> int:
         "-scenario-tenant", args.scenario_tenant,
         "-scenario-environment", args.scenario_environment,
     ]
+    if args.pricing_serving_config is not None:
+        pricing_serving_config = args.pricing_serving_config.expanduser().resolve()
+        if not pricing_serving_config.is_file():
+            print(
+                f"pricing serving config not found: {pricing_serving_config}",
+                file=sys.stderr,
+            )
+            return 2
+        api.extend(["-pricing-serving-config", str(pricing_serving_config)])
     if not args.with_ui:
         return _run(api, cwd=REPO_ROOT / "api", env=environment)
     # Both in the foreground would each block, so the UI is a child and the API owns
@@ -2212,6 +2427,18 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
+def _rust_source_runs() -> list[Path]:
+    """Return promoted Rust runs across the former and canonical layouts."""
+
+    output = DATAGEN_RUST_ROOT / "output"
+    return sorted(
+        {
+            *output.glob("*/run-*"),
+            *output.glob("*/*/run-*"),
+        }
+    )
+
+
 def command_datagen(args: argparse.Namespace) -> int:
     """Generate a source run. Deliberately NOT part of `pipeline`.
 
@@ -2222,10 +2449,10 @@ def command_datagen(args: argparse.Namespace) -> int:
     reproducing data it already has.
     """
 
-    datagen = _require_python(DATAGEN_ENV, "datagen")
     profile = args.execution_profile or _host_execution_profile()
     if args.execution_profile is None:
         print(f"selected execution profile {profile!r} from host resources")
+    config = args.config.resolve()
     output = args.output.resolve()
 
     # Scoped to the scenario being generated, not the whole output root. The
@@ -2234,7 +2461,7 @@ def command_datagen(args: argparse.Namespace) -> int:
     # everything and a second tenant can never be generated at all while the
     # first one's run is on disk, which pushes the work somewhere it does not
     # belong.
-    scenario_id = _scenario_id(args.config)
+    scenario_id = _scenario_id(config)
     existing = sorted((output / scenario_id).glob("run-*")) if scenario_id else []
     if existing and not args.regenerate:
         print(
@@ -2254,17 +2481,19 @@ def command_datagen(args: argparse.Namespace) -> int:
     started = time.monotonic()
     code = _run(
         [
-            str(datagen),
-            "-m",
-            "retail_datagen.cli",
+            "cargo",
+            "run",
+            "--release",
+            "--",
             "generate",
-            "-c",
-            str(args.config),
-            "-o",
+            "--config",
+            str(config),
+            "--output-root",
             str(output),
             "--execution-profile",
             profile,
-        ]
+        ],
+        cwd=DATAGEN_RUST_ROOT,
     )
     # Timed like a pipeline stage even though it deliberately is not one: generation
     # is the single largest cost in a from-scratch rebuild -- 79 min of the ~2h20m
@@ -2374,26 +2603,15 @@ def _generation_names_run(run_id: str) -> bool:
     """Is this publication already adopted by some committed selection record?
 
     Read from the committed records rather than only the generations ledger, because
-    the six hand-written generations predate that ledger and a run named by one of
-    them is already adopted.
+    the six hand-written generations predate that ledger and v2 names the same source
+    block ``subject`` rather than ``publication``. A collision check that reads only
+    v1 can re-adopt an already governed v2 publication and fork the exact scope.
     """
 
     target = f"ingestion/data/curated/{run_id}"
-    directory = REPO_ROOT / "contracts" / "evidence" / "publication-selections"
-    for path in directory.glob("*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as broken:
-            raise SystemExit(
-                f"cannot verify whether {run_id} is already selected because "
-                f"{path} is unreadable: {broken}"
-            )
-        if not isinstance(record, dict):
-            raise SystemExit(
-                f"cannot verify whether {run_id} is already selected because "
-                f"{path} is {type(record).__name__}, expected an object"
-            )
-        publication = record.get("publication")
+    selection = _selection_module()
+    for record in _repin_selection_records(selection):
+        publication = record.get("publication") or record.get("subject")
         # The directory also carries the disclosed legacy-predecessor companion,
         # which deliberately has no publication block and is not a selection.
         if publication is None:
@@ -2403,7 +2621,7 @@ def _generation_names_run(run_id: str) -> bool:
         ):
             raise SystemExit(
                 f"cannot verify whether {run_id} is already selected because "
-                f"{path} has no valid publication.logicalPath"
+                "a committed record has no valid source logicalPath"
             )
         if publication["logicalPath"] == target:
             return True
@@ -2588,7 +2806,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
 
     source_root = args.source_root
     if source_root is None and "land" in stages:
-        promoted = sorted((REPO_ROOT / "datagen" / "output").glob("*/run-*"))
+        promoted = _rust_source_runs()
         if not promoted:
             print(
                 "no promoted source run; run tools/dev.py datagen first",
@@ -2615,11 +2833,13 @@ def _command_pipeline(args: argparse.Namespace) -> int:
     # single-tenant no matter which publication reached it. The ML CLI already
     # takes --expected-pin on each stage; only the orchestrator lacked a way to
     # pass one through.
-    expected_pin = args.expected_pin
-    if expected_pin is not None and not Path(expected_pin).is_file():
+    expected_pin = args.expected_pin or (
+        REPO_ROOT / "contracts" / "ml" / "expected-pin.json"
+    )
+    if not Path(expected_pin).is_file():
         print(f"expected pin not found: {expected_pin}", file=sys.stderr)
         return 2
-    pin_args = ["--expected-pin", str(expected_pin)] if expected_pin else []
+    pin_args = ["--expected-pin", str(expected_pin)]
 
     run_id = _pipeline_run_id(source_root, args.run_id)
     if run_id == "run-unknown":
@@ -2676,6 +2896,47 @@ def _command_pipeline(args: argparse.Namespace) -> int:
         REPO_ROOT / "ingestion" / "data" / "curated" / run_id,
     )
     evidence = REPO_ROOT / "ingestion" / "data" / "evidence" / run_id
+    authority_stages = {
+        "features", "backtest", "score-current", "publish", "materialize",
+        "activate", "inventory-build", "inventory-verify",
+        "inventory-materialize",
+    }
+    authority_args: list[str] = []
+    build_authority_in_pipeline = False
+    if authority_stages.intersection(stages):
+        if args.input_authority is None:
+            print(
+                "the selected ML stages require --input-authority. For a new "
+                "publication, stop after repin, create/review its complete-lineage "
+                "authority, then resume from features.",
+                file=sys.stderr,
+            )
+            return 2
+        if not Path(args.input_authority).is_file():
+            build_authority_in_pipeline = (
+                "repin" in stages
+                and bool(args.input_authority_reviewer)
+                and bool(args.input_authority_reason)
+            )
+            if not build_authority_in_pipeline:
+                print(
+                    f"input authority not found: {args.input_authority}. A single "
+                    "land-through-activation run may create it only when the slice "
+                    "includes repin and both --input-authority-reviewer and "
+                    "--input-authority-reason are explicit.",
+                    file=sys.stderr,
+                )
+                return 2
+        authority_args = [
+            "--repository-root", str(REPO_ROOT),
+            "--run-id", run_id,
+            "--input-authority", str(args.input_authority),
+            "--job-purpose", "complete_lineage_rebuild",
+            "--retailer", args.retailer,
+            "--tenant", args.tenant,
+            "--environment", args.environment,
+            "--evidence-root", str(evidence),
+        ]
     artifacts = REPO_ROOT / "ml" / "data" / "artifacts"
     # --label names the ARTIFACT directories for this cycle. The feature directory is
     # separate and defaults to matching, because features are expensive and routinely
@@ -2715,7 +2976,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
     backtest = artifacts / f"backtest_{args.label}"
     current = artifacts / f"current_{args.label}"
     classifications = artifacts / f"classifications_{args.label}"
-    bundle = artifacts / f"forecast_run_{args.label}"
+    bundle = args.forecast_run or artifacts / f"forecast_run_{args.label}"
 
     horizons = ",".join(str(h) for h in range(1, args.horizons + 1))
     decision_as_of = args.decision_as_of
@@ -2732,6 +2993,26 @@ def _command_pipeline(args: argparse.Namespace) -> int:
         decision_as_of,
         args.inventory_as_of,
     )
+
+    forecast_stages = {
+        "features", "characterize", "backtest", "score-current", "classify",
+        "publish", "materialize", "activate",
+    }
+    if args.forecast_run is not None and forecast_stages.intersection(stages):
+        print(
+            "--forecast-run is only valid for an inventory-only pipeline slice; "
+            "forecast-producing or forecast-activation stages must use the bundle "
+            "derived from --label",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        args.forecast_run is not None
+        and {"inventory-build", "inventory-verify"}.intersection(stages)
+        and not bundle.is_dir()
+    ):
+        print(f"forecast bundle not found: {bundle}", file=sys.stderr)
+        return 2
 
     # Preflight: every immutable output this slice would write, checked before the
     # first stage runs.
@@ -2918,6 +3199,36 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     "--run", run_id,
                 ],
             )
+            if build_authority_in_pipeline:
+                _pipeline_step(
+                    "repin (complete-lineage input authority)",
+                    [
+                        str(ingestion),
+                        str(REPO_ROOT / "tools" / "build_input_authority.py"),
+                        "--run", run_id,
+                        "--audience", "response_rich_local",
+                        "--job-purpose", "complete_lineage_rebuild",
+                        "--retailer", args.retailer,
+                        "--tenant", args.tenant,
+                        "--environment", args.environment,
+                        "--capability", "demand_forecast_non_pit",
+                        "--capability", "inventory_replenishment_current_snapshot",
+                        "--capability", "inventory_replenishment_replay",
+                        "--evidence-root", str(evidence),
+                        "--selection-ledger", str(
+                            REPO_ROOT / "contracts" / "evidence"
+                            / "publication-selections"
+                        ),
+                        "--entry-pointer", str(
+                            REPO_ROOT / "contracts" / "evidence"
+                            / "capability-entry-current.json"
+                        ),
+                        "--expected-pin", str(expected_pin),
+                        "--output", str(args.input_authority),
+                        "--reviewer", args.input_authority_reviewer,
+                        "--reason", args.input_authority_reason,
+                    ],
+                )
 
         if "features" in stages:
             _pipeline_step(
@@ -2927,6 +3238,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     "--output-dir", str(features),
                     "--execution-profile", profile,
                     *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -2956,6 +3268,8 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     "--horizons", horizons,
                     "--origin-count", str(args.origin_count),
                     "--execution-profile", profile,
+                    *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -2969,6 +3283,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 "--decision-as-of", decision_as_of,
                 "--execution-profile", profile,
                 *pin_args,
+                *authority_args,
             ]
             blend = backtest / "cold_start_blend_model.json"
             if blend.is_file():
@@ -3016,6 +3331,8 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     "--output-dir", str(bundle),
                     "--decision-as-of", decision_as_of,
                     "--execution-profile", profile,
+                    *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -3040,6 +3357,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     # the pipeline on the local compose stack.
                     "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
                     *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -3064,6 +3382,7 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 "--actor", args.actor,
                 "--postgres-dsn", _local_postgres_dsn(sqlalchemy=False),
                 *pin_args,
+                *authority_args,
             ]
             if args.retire_other_scopes:
                 activate_command.append("--retire-other-scopes")
@@ -3086,8 +3405,12 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     "--curated-root", str(curated),
                     "--bundle", str(inventory_bundle),
                     "--as-of", inventory_as_of,
+                    "--decision-as-of", decision_as_of,
+                    "--forecast-run", str(bundle),
                     "--postgres-dsn", dsn,
                     "--execution-profile", profile,
+                    *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -3098,7 +3421,10 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                 [
                     str(ml), "-m", "retail_ml.cli", "inventory-verify",
                     "--bundle", str(inventory_bundle),
+                    "--forecast-run", str(bundle),
                     "--postgres-dsn", dsn,
+                    *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -3109,6 +3435,8 @@ def _command_pipeline(args: argparse.Namespace) -> int:
                     str(ml), "-m", "retail_ml.cli", "inventory-materialize",
                     "--bundle", str(inventory_bundle),
                     "--postgres-dsn", dsn,
+                    *pin_args,
+                    *authority_args,
                 ],
             )
 
@@ -3241,9 +3569,14 @@ def command_config_hash(_: argparse.Namespace) -> int:
 
 
 def command_run_status(_: argparse.Namespace) -> int:
-    output = REPO_ROOT / "datagen" / "output"
-    promoted = sorted(output.glob("*/run-*"))
-    staging = sorted(output.glob("*/.run-*.staging-*"))
+    output = DATAGEN_RUST_ROOT / "output"
+    promoted = _rust_source_runs()
+    staging = sorted(
+        {
+            *output.glob("*/.run-*.rust-staging-*"),
+            *output.glob("*/*/.run-*.rust-staging-*"),
+        }
+    )
     if not promoted:
         print("no promoted run")
     for path in promoted:
@@ -3303,6 +3636,19 @@ def command_ui_build(_: argparse.Namespace) -> int:
     return _run([_npm(), "run", "build"], cwd=REPO_ROOT / "ui")
 
 
+def _ml_authority_arguments(args: argparse.Namespace) -> list[str]:
+    return [
+        "--run-id", args.run_id,
+        "--expected-pin", str(args.expected_pin),
+        "--input-authority", str(args.input_authority),
+        "--job-purpose", args.job_purpose,
+        "--retailer", args.retailer,
+        "--tenant", args.tenant,
+        "--environment", args.environment,
+        "--evidence-root", str(args.evidence_root),
+    ]
+
+
 def command_ml(args: argparse.Namespace) -> int:
     ml = _require_python(ML_ENV, "ml")
     if args.command == "ml-test":
@@ -3319,12 +3665,14 @@ def command_ml(args: argparse.Namespace) -> int:
         "forecast-activate": "activate-serving",
     }[args.command]
     command = [str(ml), "-m", "retail_ml.cli", mapped]
-    if args.command in {
+    authority_commands = {
         "features",
-        "ml-bench",
+        "backtest",
+        "ml-publish",
         "forecast-materialize",
         "forecast-activate",
-    }:
+    }
+    if args.command in authority_commands or args.command == "ml-bench":
         command.extend(["--repository-root", str(args.repository_root)])
     if args.command == "features":
         command.extend(
@@ -3419,7 +3767,143 @@ def command_ml(args: argparse.Namespace) -> int:
                 _local_postgres_dsn(sqlalchemy=False),
             ]
         )
+    if args.command in authority_commands:
+        command.extend(_ml_authority_arguments(args))
     return _run(command)
+
+
+def _pricing_authority_arguments(args: argparse.Namespace) -> list[str]:
+    return [
+        "--repository-root", str(args.repository_root),
+        "--run-id", args.run_id,
+        "--input-authority", str(args.input_authority),
+        "--job-purpose", args.job_purpose,
+        "--expected-pin", str(args.expected_pin),
+        "--retailer-id", args.retailer_id,
+        "--tenant-id", args.tenant_id,
+        "--environment", args.environment,
+        "--evidence-root", str(args.evidence_root),
+    ]
+
+
+def command_pricing(args: argparse.Namespace) -> int:
+    ml = _require_python(ML_ENV, "ml")
+    command = [str(ml), "-m", "retail_ml.pricing.cli"]
+    environment = dict(os.environ)
+    if args.command == "pricing-build":
+        command.extend(
+            [
+                "build",
+                *_pricing_authority_arguments(args),
+                "--curated-database", str(args.curated_database),
+                "--decision-as-of", args.decision_as_of,
+                "--competitor-truth", str(args.competitor_truth),
+                "--bundle-kind", args.bundle_kind,
+                "--output", str(args.output),
+            ]
+        )
+        if args.forecast_run:
+            command.extend(["--forecast-run", str(args.forecast_run)])
+        if args.inventory_run:
+            command.extend(["--inventory-run", str(args.inventory_run)])
+    elif args.command == "pricing-verify":
+        command.extend(
+            [
+                "verify",
+                *_pricing_authority_arguments(args),
+                "--bundle", str(args.bundle),
+                "--output", str(args.output),
+            ]
+        )
+    elif args.command == "pricing-materialize":
+        command.extend(
+            [
+                "materialize",
+                *_pricing_authority_arguments(args),
+                "--bundle", str(args.bundle),
+                "--verification-record", str(args.verification_record),
+            ]
+        )
+        environment.setdefault(
+            "RETAIL_POSTGRES_DSN", _local_postgres_dsn(sqlalchemy=False)
+        )
+    elif args.command == "pricing-prepare":
+        command.extend(
+            [
+                "prepare-activation",
+                "--repository-root", str(args.repository_root),
+                "--bundle", str(args.bundle),
+                "--output", str(args.output),
+                "--retailer-id", args.retailer_id,
+                "--tenant-id", args.tenant_id,
+                "--actor", args.actor,
+                "--reason", args.reason,
+                "--logical-database-target", args.logical_database_target,
+            ]
+        )
+        if args.recorded_at:
+            command.extend(["--recorded-at", args.recorded_at])
+        if args.predecessor_activation_set_id:
+            if not args.predecessor_selection_record_id:
+                raise RuntimeError(
+                    "pricing successor preparation requires a selection predecessor"
+                )
+            command.extend(
+                [
+                    "--predecessor-activation-set-id",
+                    args.predecessor_activation_set_id,
+                    "--predecessor-selection-record-id",
+                    args.predecessor_selection_record_id,
+                ]
+            )
+    elif args.command == "pricing-activate":
+        authority = args.authority_directory
+        command.extend(
+            [
+                "activate",
+                "--repository-root", str(args.repository_root),
+                "--selection-record", str(authority / "price-revenue-candidate.json"),
+                "--selection-record", str(authority / "price-revenue-approved.json"),
+                "--selection-record", str(authority / "price-revenue-active.json"),
+                "--activation-set", str(authority / "pricing-activation-set.json"),
+                "--actor", args.actor,
+                "--receipt", str(args.receipt),
+            ]
+        )
+        environment.setdefault(
+            "RETAIL_POSTGRES_DSN", _local_postgres_dsn(sqlalchemy=False)
+        )
+    else:
+        raise RuntimeError(f"unsupported pricing command: {args.command}")
+    return _run(command, env=environment)
+
+
+def _add_pricing_authority_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--repository-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--input-authority", type=Path, required=True)
+    parser.add_argument("--job-purpose", required=True)
+    parser.add_argument("--expected-pin", type=Path, required=True)
+    parser.add_argument("--retailer-id", required=True)
+    parser.add_argument("--tenant-id", required=True)
+    parser.add_argument(
+        "--environment", required=True, choices=("local", "dev", "staging", "prod")
+    )
+    parser.add_argument("--evidence-root", type=Path, required=True)
+
+
+def _add_ml_authority_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--repository-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--expected-pin", type=Path, required=True)
+    parser.add_argument("--input-authority", type=Path, required=True)
+    parser.add_argument("--job-purpose", required=True)
+    parser.add_argument("--retailer", required=True)
+    parser.add_argument("--tenant", required=True)
+    parser.add_argument(
+        "--environment", required=True, choices=("local", "dev", "staging", "prod")
+    )
+    parser.add_argument("--evidence-root", type=Path, required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3497,6 +3981,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("RETAIL_SCENARIO_ENVIRONMENT", "local"),
         help="server-owned environment scope for Forecast Scenario Planning",
     )
+    serve.add_argument(
+        "--pricing-serving-config",
+        type=Path,
+        default=None,
+        help=(
+            "reviewed secret-free pricing startup config; omitted only when "
+            "pricing routes are intentionally fail-closed"
+        ),
+    )
     serve.add_argument("--with-ui", action="store_true",
                        help="also start the Vite dev server")
     scenario_demo = subparsers.add_parser(
@@ -3540,10 +4033,10 @@ def build_parser() -> argparse.ArgumentParser:
     datagen.add_argument(
         "--config",
         type=Path,
-        default=REPO_ROOT / "datagen" / "configs" / "multi-market-10-year-demo.yaml",
+        default=DATAGEN_RUST_ROOT / "configs" / "multi-market-10-year-demo.yaml",
     )
     datagen.add_argument(
-        "--output", type=Path, default=REPO_ROOT / "datagen" / "output"
+        "--output", type=Path, default=DATAGEN_RUST_ROOT / "output"
     )
     datagen.add_argument(
         "--execution-profile", choices=("safe", "balanced", "performance", "ultra-performance"),
@@ -3585,6 +4078,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="tenant ML input pin; defaults to contracts/ml/expected-pin.json",
     )
+    pipeline.add_argument(
+        "--input-authority",
+        type=Path,
+        default=None,
+        help=(
+            "reviewed complete-lineage input authority required by every ML, "
+            "verification and materialization stage"
+        ),
+    )
+    pipeline.add_argument(
+        "--input-authority-reviewer",
+        default=None,
+        help=(
+            "explicit reviewer used only when this repin-containing pipeline "
+            "creates the requested complete-lineage input authority"
+        ),
+    )
+    pipeline.add_argument(
+        "--input-authority-reason",
+        default=None,
+        help=(
+            "explicit review reason used only when this pipeline creates its "
+            "complete-lineage input authority"
+        ),
+    )
+    pipeline.add_argument("--retailer", default="retailer-demo")
+    pipeline.add_argument("--tenant", default="tenant-demo")
+    pipeline.add_argument(
+        "--environment",
+        choices=("local", "dev", "staging", "prod"),
+        default="local",
+    )
     pipeline.add_argument("--snapshot-root", type=Path, default=None)
     pipeline.add_argument("--work-root", type=Path, default=None)
     pipeline.add_argument("--publication-root", type=Path, default=None)
@@ -3603,6 +4128,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="reuse an existing feature set; defaults to ml/data/features/<label>",
+    )
+    pipeline.add_argument(
+        "--forecast-run",
+        type=Path,
+        default=None,
+        help=(
+            "reuse one existing accepted forecast bundle for an inventory-only "
+            "successor; it must match the active forecast before materialization; "
+            "defaults to forecast_run_<label>"
+        ),
     )
     pipeline.add_argument(
         "--label",
@@ -3626,7 +4161,14 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline.add_argument("--horizons", type=int, default=26,
                           help="horizon COUNT; the comma list is derived")
     pipeline.add_argument("--origin-count", type=int, default=13)
-    pipeline.add_argument("--decision-as-of", default="2026-07-31T00:00:00Z")
+    pipeline.add_argument(
+        "--decision-as-of",
+        default="2026-07-31T18:30:00Z",
+        help=(
+            "forecast decision instant; the default is the end of the retained "
+            "2026-07-31 Asia/Kolkata source day"
+        ),
+    )
     pipeline.add_argument(
         "--inventory-as-of",
         type=_iso_date,
@@ -3681,7 +4223,7 @@ def build_parser() -> argparse.ArgumentParser:
     services.add_argument("--tail", type=int, default=200)
 
     features = subparsers.add_parser("features", help="build verified weekly ML features")
-    features.add_argument("--repository-root", type=Path, default=REPO_ROOT)
+    _add_ml_authority_arguments(features)
     features.add_argument("--output-dir", type=Path, required=True)
     features.add_argument(
         "--execution-profile",
@@ -3701,6 +4243,7 @@ def build_parser() -> argparse.ArgumentParser:
         "backtest",
         help="run the Phase-3 rolling-origin backtest",
     )
+    _add_ml_authority_arguments(backtest)
     backtest.add_argument("--feature-dir", type=Path, required=True)
     backtest.add_argument("--output-dir", type=Path, required=True)
     backtest.add_argument(
@@ -3737,6 +4280,7 @@ def build_parser() -> argparse.ArgumentParser:
         "ml-publish",
         help="publish a complete immutable forecast-run bundle",
     )
+    _add_ml_authority_arguments(ml_publish)
     ml_publish.add_argument("--feature-dir", type=Path, required=True)
     ml_publish.add_argument("--backtest-dir", type=Path, required=True)
     ml_publish.add_argument("--exceptions", type=Path, required=True)
@@ -3761,21 +4305,13 @@ def build_parser() -> argparse.ArgumentParser:
         "forecast-materialize",
         help="verify and transactionally load an accepted forecast into PostgreSQL",
     )
-    forecast_materialize.add_argument(
-        "--repository-root",
-        type=Path,
-        default=REPO_ROOT,
-    )
+    _add_ml_authority_arguments(forecast_materialize)
     forecast_materialize.add_argument("--forecast-run", type=Path, required=True)
     forecast_activate = subparsers.add_parser(
         "forecast-activate",
         help="explicitly activate a materialized accepted forecast",
     )
-    forecast_activate.add_argument(
-        "--repository-root",
-        type=Path,
-        default=REPO_ROOT,
-    )
+    _add_ml_authority_arguments(forecast_activate)
     forecast_activate.add_argument("--forecast-run-id", required=True)
     forecast_activate.add_argument(
         "--activation-scope-fingerprint",
@@ -3792,6 +4328,68 @@ def build_parser() -> argparse.ArgumentParser:
         help="regenerate the inventory & replenishment entry record",
     )
     entry_record.add_argument("--check", action="store_true")
+
+    pricing_build = subparsers.add_parser(
+        "pricing-build", help="build one governed pricing intelligence bundle"
+    )
+    _add_pricing_authority_arguments(pricing_build)
+    pricing_build.add_argument("--curated-database", type=Path, required=True)
+    pricing_build.add_argument("--decision-as-of", required=True)
+    pricing_build.add_argument("--forecast-run", type=Path)
+    pricing_build.add_argument("--inventory-run", type=Path)
+    pricing_build.add_argument("--competitor-truth", type=Path, required=True)
+    pricing_build.add_argument(
+        "--bundle-kind",
+        required=True,
+        choices=("response_rich", "evidence_sparse"),
+    )
+    pricing_build.add_argument("--output", type=Path, required=True)
+
+    pricing_verify = subparsers.add_parser(
+        "pricing-verify", help="independently verify one pricing bundle"
+    )
+    _add_pricing_authority_arguments(pricing_verify)
+    pricing_verify.add_argument("--bundle", type=Path, required=True)
+    pricing_verify.add_argument("--output", type=Path, required=True)
+
+    pricing_materialize = subparsers.add_parser(
+        "pricing-materialize",
+        help="transactionally materialize an independently verified pricing bundle",
+    )
+    _add_pricing_authority_arguments(pricing_materialize)
+    pricing_materialize.add_argument("--bundle", type=Path, required=True)
+    pricing_materialize.add_argument(
+        "--verification-record", type=Path, required=True
+    )
+
+    pricing_prepare = subparsers.add_parser(
+        "pricing-prepare",
+        help="prepare canonical local pricing selection and startup authority",
+    )
+    pricing_prepare.add_argument("--repository-root", type=Path, default=REPO_ROOT)
+    pricing_prepare.add_argument("--bundle", type=Path, required=True)
+    pricing_prepare.add_argument("--output", type=Path, required=True)
+    pricing_prepare.add_argument("--retailer-id", required=True)
+    pricing_prepare.add_argument("--tenant-id", required=True)
+    pricing_prepare.add_argument("--actor", required=True)
+    pricing_prepare.add_argument("--reason", required=True)
+    pricing_prepare.add_argument("--recorded-at")
+    pricing_prepare.add_argument("--predecessor-activation-set-id")
+    pricing_prepare.add_argument("--predecessor-selection-record-id")
+    pricing_prepare.add_argument(
+        "--logical-database-target", default="retail_intelligence"
+    )
+
+    pricing_activate = subparsers.add_parser(
+        "pricing-activate",
+        help="atomically activate prepared pricing authority and export its receipt",
+    )
+    pricing_activate.add_argument("--repository-root", type=Path, default=REPO_ROOT)
+    pricing_activate.add_argument(
+        "--authority-directory", type=Path, required=True
+    )
+    pricing_activate.add_argument("--actor", required=True)
+    pricing_activate.add_argument("--receipt", type=Path, required=True)
 
     for name in (
         "land",
@@ -3941,6 +4539,11 @@ def main(argv: list[str] | None = None) -> int:
         "scenario-demo-activate": command_scenario_demo_activate,
         "closure-record": command_closure_record,
         "inventory-entry-record": command_inventory_entry_record,
+        "pricing-build": command_pricing,
+        "pricing-verify": command_pricing,
+        "pricing-materialize": command_pricing,
+        "pricing-prepare": command_pricing,
+        "pricing-activate": command_pricing,
         "land": command_ingest_stage,
         "gate-a": command_ingest_stage,
         "stage": command_ingest_stage,

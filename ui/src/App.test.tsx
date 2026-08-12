@@ -181,21 +181,36 @@ afterEach(() => {
 
 describe("Data Management screen contract", () => {
   it("renders the original screen vocabulary with live governed values", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(
+    const fetchMock = vi.fn().mockImplementation(
       async (input: RequestInfo | URL) => ({
         ok: true,
         json: async () => String(input).includes("/api/v1/fx/rates")
           ? liveFx
           : liveDashboard
       })
-    ));
+    );
+    vi.stubGlobal("fetch", fetchMock);
     renderApp();
 
     expect(await screen.findByRole("heading", {name: "Data Management"}))
       .toBeInTheDocument();
+    await waitFor(() => expect(document.getElementById("dataManagement")).toBeInTheDocument());
     expect(screen.getByText(
       "Monitor source systems, data freshness and data quality"
     )).toBeInTheDocument();
+    const addSource = screen.getByRole("button", {name: /Add Data Source/});
+    expect(addSource).toHaveTextContent("Preview only");
+    expect(screen.getByRole("button", {name: "Upload Sample Data"})).toBeDisabled();
+    expect(screen.getByRole("button", {name: "Run Validation"})).toBeDisabled();
+    const requestsBeforePreview = fetchMock.mock.calls.length;
+    fireEvent.click(addSource);
+    let dialog = screen.getByRole("dialog", {name: "Add Data Source"});
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Type"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["API", "Database", "SFTP", "CSV"]);
+    expect(Array.from((within(dialog).getByRole("combobox", {name: "Refresh"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["15 minutes", "Hourly", "Daily"]);
+    expect(within(dialog).getByRole("button", {name: "Connect"})).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(requestsBeforePreview);
+    fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
+    expect(addSource).toHaveFocus();
 
     const sourceTable = await screen.findByRole("table");
     const headers = within(sourceTable)
@@ -219,6 +234,14 @@ describe("Data Management screen contract", () => {
     expect(
       within(sourceTable).getAllByRole("button", {name: "View mapping"})
     ).toHaveLength(3);
+    fireEvent.click(within(sourceTable).getAllByRole("button", {name: "View mapping"})[0]);
+    const validationTrigger = within(sourceTable).getByRole("button", {name: "Validation Results"});
+    fireEvent.click(validationTrigger);
+    dialog = screen.getByRole("dialog", {name: "Validation Results"});
+    expect(Array.from(dialog.querySelectorAll(".simulation-metrics small")).map((node) => node.textContent)).toEqual(["Quality", "Valid", "Duplicates", "Missing"]);
+    expect(fetchMock).toHaveBeenCalledTimes(requestsBeforePreview);
+    fireEvent.click(within(dialog).getByRole("button", {name: "Close"}));
+    expect(validationTrigger).toHaveFocus();
 
     expect(document.querySelector('[data-kpi="data-freshness"]')?.textContent)
       .toContain("100.0%");
@@ -239,9 +262,9 @@ describe("Data Management screen contract", () => {
 
     expect(screen.queryByText("PHASE 2 · GOVERNED INGESTION")).not
       .toBeInTheDocument();
-    expect(screen.queryByRole("button", {name: "Add Data Source"})).not
-      .toBeInTheDocument();
-    expect(screen.queryByText("User Management")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: /Add Data Source/})).toBeInTheDocument();
+    expect(screen.getByRole("button", {name: /User Management/}))
+      .toBeDisabled();
 
     fireEvent.change(screen.getByRole("combobox", {name: "Store"}), {
       target: {value: "india-west:pune-koregaon"}
@@ -256,10 +279,12 @@ describe("Data Management screen contract", () => {
       "online"
     );
 
-    fireEvent.click(screen.getByRole("button", {name: "FX"}));
+    const fxTrigger = screen.getByRole("button", {name: "FX"});
+    fireEvent.click(fxTrigger);
     const modal = await screen.findByRole("dialog", {
       name: "Multi-Currency Configuration"
     });
+    expect(within(modal).getByRole("heading", {name: "Multi-Currency Configuration"})).toHaveFocus();
     expect(within(modal).getByText("Accepted FX rates")).toBeInTheDocument();
     expect(within(modal).getByText("$1 = ₹83")).toBeInTheDocument();
     expect(within(modal).getByText(
@@ -267,6 +292,7 @@ describe("Data Management screen contract", () => {
     )).toBeInTheDocument();
     fireEvent.click(within(modal).getByRole("button", {name: "Close"}));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fxTrigger).toHaveFocus();
   });
 
   it("never substitutes sample data when the API fails", async () => {

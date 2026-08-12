@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/screens/client-demo-surface-state-capture-manifest.schema.json",
+  "title": "Client demo surface-state capture manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "originalHtml",
+    "viewports",
+    "surfaces",
+    "review"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-client-demo-surface-state-capture-manifest/v1"
+    },
+    "originalHtml": {
+      "$ref": "#/$defs/fileIdentity"
+    },
+    "viewports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desktop", "breakpoint", "mobile"],
+      "properties": {
+        "desktop": {"$ref": "#/$defs/viewport"},
+        "breakpoint": {"$ref": "#/$defs/viewport"},
+        "mobile": {"$ref": "#/$defs/viewport"}
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "minItems": 20,
+      "items": {"$ref": "#/$defs/surface"}
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatedStatus", "humanStatus"],
+      "properties": {
+        "automatedStatus": {
+          "enum": ["pending", "passed", "failed"]
+        },
+        "humanStatus": {
+          "enum": ["pending_user_review", "approved", "changes_requested"]
+        },
+        "reviewedBy": {"type": ["string", "null"]},
+        "reviewedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "$defs": {
+    "fileIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 320},
+        "height": {"type": "integer", "minimum": 320}
+      }
+    },
+    "captureEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path", "sha256"],
+      "properties": {
+        "status": {"enum": ["pending", "captured", "failed", "not_applicable"]},
+        "path": {"type": ["string", "null"]},
+        "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surfaceId",
+        "pageId",
+        "kind",
+        "accessMode",
+        "captureClass",
+        "triggerSelector",
+        "testId",
+        "captureId",
+        "desktop",
+        "mobile",
+        "keyboardStatus"
+      ],
+      "properties": {
+        "surfaceId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$"},
+        "pageId": {
+          "enum": [
+            "dataManagement",
+            "demandForecast",
+            "inventoryOverview",
+            "storeInventory",
+            "warehouseInventory",
+            "inventoryAgeing",
+            "inventoryTransfers",
+            "inventoryValuation",
+            "expiryWaste",
+            "replenishmentPlanner",
+            "suggestedOrders",
+            "supplierPlanning",
+            "safetyStock",
+            "allocationFulfillment",
+            "replenishmentExceptions",
+            "stockHealth",
+            "priceRecommendations",
+            "priceSimulation",
+            "competitorMonitor",
+            "promotionPlanner"
+          ]
+        },
+        "kind": {"enum": ["page", "tab", "panel", "modal", "state", "structural_absence"]},
+        "accessMode": {
+          "enum": [
+            "business_live",
+            "read_only",
+            "preview_only",
+            "hard_disabled",
+            "structural_only",
+            "external_owned"
+          ]
+        },
+        "captureClass": {"enum": ["full_review", "reachability_only", "not_applicable"]},
+        "triggerSelector": {"type": ["string", "null"]},
+        "testId": {"type": "string", "minLength": 1},
+        "captureId": {"type": ["string", "null"]},
+        "staticAbsenceTestId": {"type": ["string", "null"]},
+        "ownerDecision": {"type": ["string", "null"]},
+        "ownerContractIdentity": {"type": ["string", "null"]},
+        "desktop": {"$ref": "#/$defs/captureEvidence"},
+        "mobile": {"$ref": "#/$defs/captureEvidence"},
+        "keyboardStatus": {"enum": ["pending", "passed", "failed", "owner_evidence", "not_applicable"]},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"accessMode": {"const": "external_owned"}}, "required": ["accessMode"]},
+          "then": {
+            "properties": {
+              "captureClass": {"const": "reachability_only"},
+              "captureId": {"type": "string", "minLength": 1},
+              "ownerDecision": {"type": "string", "minLength": 1},
+              "ownerContractIdentity": {"type": "string", "minLength": 1},
+              "keyboardStatus": {"const": "owner_evidence"}
+            },
+            "required": ["ownerDecision", "ownerContractIdentity"]
+          }
+        },
+        {
+          "if": {"properties": {"accessMode": {"const": "structural_only"}}, "required": ["accessMode"]},
+          "then": {
+            "properties": {
+              "captureClass": {"const": "not_applicable"},
+              "captureId": {"type": "null"},
+              "staticAbsenceTestId": {"type": "string", "minLength": 1},
+              "keyboardStatus": {"const": "not_applicable"}
+            },
+            "required": ["staticAbsenceTestId"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "accessMode": {
+                "enum": ["business_live", "read_only", "preview_only", "hard_disabled"]
+              }
+            },
+            "required": ["accessMode"]
+          },
+          "then": {
+            "properties": {
+              "captureClass": {"const": "full_review"},
+              "captureId": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

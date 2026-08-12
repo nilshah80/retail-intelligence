@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "retail-tenant-market-set/v1",
+  "retailerId": "retailer-demo",
+  "tenantId": "tenant-demo",
+  "environment": "dev",
+  "governedMarkets": [
+    {
+      "marketId": "gulf-india",
+      "operatingCurrency": "INR",
+      "timezone": "Asia/Kolkata"
+    }
+  ],
+  "reportingCurrency": "INR",
+  "referenceCurrencies": ["INR", "USD", "EUR", "GBP", "AED"],
+  "decisionAsOf": "2026-08-11T00:00:00Z",
+  "approval": {
+    "status": "approved",
+    "actor": "nilay.shah",
+    "approvedAt": "2026-08-11",
+    "authorization": "Pricing evidence diagnostic evaluation for the Gulf Oil India dev audience."
+  }
+}

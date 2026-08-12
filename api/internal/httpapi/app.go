@@ -19,13 +19,45 @@ func New(
 	openAPISpec []byte,
 	scenarioStores ...*readmodel.ScenarioStore,
 ) (*aarv.App, error) {
+	scenario := readmodel.LoadScenario(context.Background(), readmodel.ScenarioConfig{})
+	if len(scenarioStores) > 0 && scenarioStores[0] != nil {
+		scenario = scenarioStores[0]
+	}
+	pricing := readmodel.LoadPricing(context.Background(), readmodel.PricingConfig{})
+	return newApp(store, forecast, inventory, profile, openAPISpec, scenario, pricing)
+}
+
+func NewWithPricing(
+	store *readmodel.Store,
+	forecast *readmodel.ForecastStore,
+	inventory *readmodel.InventoryStore,
+	profile execution.Resolved,
+	openAPISpec []byte,
+	scenario *readmodel.ScenarioStore,
+	pricing *readmodel.PricingStore,
+) (*aarv.App, error) {
+	return newApp(store, forecast, inventory, profile, openAPISpec, scenario, pricing)
+}
+
+func newApp(
+	store *readmodel.Store,
+	forecast *readmodel.ForecastStore,
+	inventory *readmodel.InventoryStore,
+	profile execution.Resolved,
+	openAPISpec []byte,
+	scenario *readmodel.ScenarioStore,
+	pricing *readmodel.PricingStore,
+) (*aarv.App, error) {
 	app := aarv.New(aarv.WithBanner(false))
 	permits := make(chan struct{}, profile.API.HTTPConcurrency)
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: []string{"http://127.0.0.1:5173", "http://localhost:5173"},
 		AllowMethods: []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders: []string{"Origin", "Accept", "Content-Type"},
-		MaxAge:       600,
+		ExposeHeaders: []string{
+			"Content-Disposition", "X-Export-Count", "X-Export-ID", "X-Scope-Revision",
+		},
+		MaxAge: 600,
 	}))
 	app.Use(aarv.WrapMiddleware(func(next aarv.HandlerFunc) aarv.HandlerFunc {
 		return func(c *aarv.Context) error {
@@ -64,11 +96,9 @@ func New(
 	})
 	mountForecastRoutes(app, forecast)
 	mountInventoryRoutes(app, inventory)
-	scenario := readmodel.LoadScenario(context.Background(), readmodel.ScenarioConfig{})
-	if len(scenarioStores) > 0 && scenarioStores[0] != nil {
-		scenario = scenarioStores[0]
-	}
 	mountScenarioRoutes(app, scenario)
+	mountPricingRoutes(app, pricing)
+	mountDirectExportRoute(app, forecast, inventory, pricing)
 	app.Get("/openapi.yaml", func(c *aarv.Context) error {
 		return c.Blob(
 			http.StatusOK,

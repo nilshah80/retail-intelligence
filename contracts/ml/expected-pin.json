@@ -1,35 +1,35 @@
 {
   "$schema": "./input-bundle.schema.json",
   "schemaVersion": "retail-ml-expected-pin/v1",
-  "sourceSnapshotId": "7d8ade35bf61ef7a569be1251874a600819eb9e83976f64eb31149574ddcda50",
+  "sourceSnapshotId": "62a01e3058d7215c7559c29e8b3a5c9e56dae73bb2f820b1f264ff9d6a47922b",
   "gateA": {
     "status": "pass",
-    "semanticFingerprint": "ef5333d51fcdb8dc857ea0c8bdef932c1d18bb2d1d98798ee7475d2acf4500d6",
-    "evidenceSha256": "fa27ed0f3d62311db6a172c1d3a3785e7207991b27c7fd834f031a8cb6c2efda"
+    "semanticFingerprint": "c5feb3a0b879b8567fc54dd7484b6718ba1c4b9ef07bc77a4a5ab4c86940d6a4",
+    "evidenceSha256": "d3b56c7eac9e879420f074845026473458f92ad676f69ce4364a59c2e14c0a31"
   },
   "gateB": {
     "status": "pass",
-    "semanticFingerprint": "46e0f18b2194cd02ea35f0df76c8b972073b3caffb2354f14bd848c5ae9f356a",
-    "evidenceSha256": "82bdf0078c10262902c7ba70cd2eb218b8165f3ae8c8fb04e5bba6fe2c360bcb"
+    "semanticFingerprint": "3c49aa881873e992768179605f4a59e8e8afd78fe0000bcbdd43d7eedc448de6",
+    "evidenceSha256": "628f868d5378be0c14a517ddd5f1600f76a95c7c2b5b5c7d28e68dcc0abbd143"
   },
   "publication": {
-    "semanticFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
-    "gateBSemanticFingerprint": "46e0f18b2194cd02ea35f0df76c8b972073b3caffb2354f14bd848c5ae9f356a",
-    "evidenceSha256": "e654cd081ffa619ddd1a6e91e5f2e935410ec8ed5d2a3a52e4f09f4305bed03c",
-    "objectCount": 2309,
+    "semanticFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
+    "gateBSemanticFingerprint": "3c49aa881873e992768179605f4a59e8e8afd78fe0000bcbdd43d7eedc448de6",
+    "evidenceSha256": "9aef623889989df7d343056d1f94e9e7bb0c35fc190837a8f23cc7db6eb833f7",
+    "objectCount": 2290,
     "duckdb": {
-      "bytes": 3446157312,
+      "bytes": 3458215936,
       "path": "retail_v2.duckdb",
-      "sha256": "bd6149cb048f78d63030c3d91ce3bcfdb7473c80fbd9d3e39e5944d760efe111"
+      "sha256": "78e3a7d8c0f15974d6724c8fc733755d97353b8d14cf585d29faf71df9f63139"
     }
   },
   "retention": {
     "schemaVersion": "retail-ingestion-retained-evidence/v1",
-    "publicationFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
+    "publicationFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
     "files": {
-      "gate-a.json": "fa27ed0f3d62311db6a172c1d3a3785e7207991b27c7fd834f031a8cb6c2efda",
-      "gate-b.json": "82bdf0078c10262902c7ba70cd2eb218b8165f3ae8c8fb04e5bba6fe2c360bcb",
-      "publication-manifest.json": "e654cd081ffa619ddd1a6e91e5f2e935410ec8ed5d2a3a52e4f09f4305bed03c"
+      "gate-a.json": "d3b56c7eac9e879420f074845026473458f92ad676f69ce4364a59c2e14c0a31",
+      "gate-b.json": "628f868d5378be0c14a517ddd5f1600f76a95c7c2b5b5c7d28e68dcc0abbd143",
+      "publication-manifest.json": "9aef623889989df7d343056d1f94e9e7bb0c35fc190837a8f23cc7db6eb833f7"
     }
   },
   "requiredCapabilities": [

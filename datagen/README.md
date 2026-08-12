@@ -303,6 +303,10 @@ price-event frequency, latent response and noise settings.
   cover and a Config Builder-owned 20% replenishment demand buffer. A verified 90-day v0.9.2
   scratch run reached 93.42% fill overall (India 94.30%, US 92.60%) while peak warehouse
   snapshots remained below configured capacity.
+- `pricing-response-rich` extends the ten-year Gulf Oil India scenario with native temporal
+  pricing evidence. Its four irregular list-price changes per SKU-year use the declared
+  `responseStepScale: 2`, providing sustained price regimes and repeated variation across the
+  long history without changing any non-pricing preset's price geometry.
 - `pricing-evidence-sparse` deliberately uses too little assortment and/or price movement so the
   downstream UI can demonstrate a reason-coded evidence block.
 
@@ -827,3 +831,8 @@ config hash or logical source contract.
 Downstream landing/adaptation and the first canonical Phase-2 publication are now implemented in
 `ingestion/`; ML outputs and later runtime/UI workflows remain downstream work. Datagen does not
 generate canonical rows, forecasts, recommendations, exceptions, approvals or users.
+
+For current generated-data adoption, the Rust implementation in `datagen_rust/` is the execution
+authority. This Python implementation remains fully maintained and contract-compatible so every
+logical change can be checked differentially, but its output is verification evidence rather than
+an accepted publication source.

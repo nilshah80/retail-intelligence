@@ -1,0 +1,51 @@
+schemaVersion: retail-screen-contract/v1
+screenId: competitorMonitor
+status: authorized_for_implementation
+authority:
+  html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
+  plan: plans/local/phase5-implementation-plan.md
+  api: contracts/api/openapi.yaml
+title: Competitor Monitor
+subtitle: Track market prices, promotions and availability
+pageSelector: '#competitorMonitor'
+dataMode: accepted_live_only
+toolbar:
+  - Add Competitor
+  - Create Alert Rule
+  - Review Matches
+  - Match Status
+  - Search product or competitor
+kpis:
+  - Products Monitored
+  - Above Market
+  - Below Market
+  - Competitor Out of Stock
+  - Matches Needing Review
+table:
+  heading: Competitor Product Matches
+  columns:
+    - Select
+    - Our Product
+    - Competitor
+    - Matched Product
+    - Our Price
+    - Competitor Price
+    - Difference
+    - Availability
+    - Last Updated
+    - Match Confidence
+    - Match Status
+    - Recommended Response
+alertRules:
+  heading: Active Alert Rules
+  columns: [Rule, Trigger, Scope, Recipients, Status]
+matchQualityMetrics: [Auto-Accepted, Manual Review, Rejected, Average Confidence]
+dispositions:
+  addCompetitor: preview_only_no_write
+  createAlertRule: preview_only_no_write
+  reviewMatches: read_only_inspection_queue
+  acceptRejectCommentSave: disabled_no_write
+  linkDifferentProduct: in_place_preview_only
+review:
+  authorization: Explicit user instruction to complete the approved implementation plan.
+  visualReviewOutstanding: true

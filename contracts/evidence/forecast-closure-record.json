@@ -13,24 +13,24 @@
     },
     "passed": true,
     "perCohortCoverage": {
-      "cold_start": 0.8993997697747081,
-      "established_history": 0.9295655805627315
+      "cold_start": 0.8946308172997862,
+      "established_history": 0.9235414263904292
     },
     "schemaVersion": "retail-forecast-acceptance/v6"
   },
   "acceptedRun": {
-    "decisionAsOf": "2026-08-02T00:00:00Z",
-    "forecastRunId": "fr_546a32b4b120fd7a",
-    "forecastVersionId": "fv_fe8e951c1f54b89e",
+    "decisionAsOf": "2026-07-31T18:30:00Z",
+    "forecastRunId": "fr_e638699e9b8f6598",
+    "forecastVersionId": "fv_8e18ad608ae38a61",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "75fb6920647403196a98441650cd4fb3bf585216e523692ae1c4dc8bd3e25d62"
+    "runSemanticFingerprint": "6de6d0b30309c3c5eef9e7841ed73669943b051d3701e411571261dfce57682f"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "321b2d05f84fe7e780e484a825c8f21c6f3d4c9631ba9dec9d2db659718d84ef",
-    "forecast_acceptance.json": "4d95c32e31083d1da168f51d24fc0634c306fb17e95162f514819d69f3f24cc9"
+    "forecast-run-manifest.json": "e05141e3cdf6cad32a5173ccd6d639ab73e48385c55c2773a01ca16d56c21ba5",
+    "forecast_acceptance.json": "77980ddeb8ce8ee70aeff1f56eb3678ea89b51a81583c5720963ee8f7c07736d"
   },
   "authorityLedger": {
-    "currentEventId": 1,
+    "currentEventId": 7,
     "currentPriorEventId": null,
     "events": [
       {
@@ -42,15 +42,78 @@
         "priorEventId": null,
         "recordedAt": "2026-08-09 16:35:48.766324+00",
         "versionId": "fv_fe8e951c1f54b89e"
+      },
+      {
+        "activationScopeFingerprint": "93db02a11fdcad295a192b32a0e3cfc5bbe94f2c13a733ba1c4e2d3f51ae3273",
+        "actor": "nilay.shah",
+        "eventId": 2,
+        "eventType": "superseded",
+        "forecastRunId": "fr_546a32b4b120fd7a",
+        "priorEventId": 1,
+        "recordedAt": "2026-08-11 23:35:52.902813+00",
+        "versionId": "fv_fe8e951c1f54b89e"
+      },
+      {
+        "activationScopeFingerprint": "b3da439a52aee086a148d19744e697f0fe1e1dd40126814baba92e851a0624aa",
+        "actor": "nilay.shah",
+        "eventId": 3,
+        "eventType": "active",
+        "forecastRunId": "fr_14b111912fb8458c",
+        "priorEventId": null,
+        "recordedAt": "2026-08-11 23:35:52.902813+00",
+        "versionId": "fv_880ab29dc108ad2d"
+      },
+      {
+        "activationScopeFingerprint": "b3da439a52aee086a148d19744e697f0fe1e1dd40126814baba92e851a0624aa",
+        "actor": "nilayshah",
+        "eventId": 4,
+        "eventType": "superseded",
+        "forecastRunId": "fr_14b111912fb8458c",
+        "priorEventId": 3,
+        "recordedAt": "2026-08-12 04:59:58.153807+00",
+        "versionId": "fv_880ab29dc108ad2d"
+      },
+      {
+        "activationScopeFingerprint": "be3bc41aebdb8aa679b6efe3e26cee84367090b66db50672253f4c4601ae9a08",
+        "actor": "nilayshah",
+        "eventId": 5,
+        "eventType": "active",
+        "forecastRunId": "fr_7d34e90850b5a85c",
+        "priorEventId": null,
+        "recordedAt": "2026-08-12 04:59:58.153807+00",
+        "versionId": "fv_166c0a4f8db47c0a"
+      },
+      {
+        "activationScopeFingerprint": "be3bc41aebdb8aa679b6efe3e26cee84367090b66db50672253f4c4601ae9a08",
+        "actor": "nilay.shah",
+        "eventId": 6,
+        "eventType": "superseded",
+        "forecastRunId": "fr_7d34e90850b5a85c",
+        "priorEventId": 5,
+        "recordedAt": "2026-08-12 13:16:38.681383+00",
+        "versionId": "fv_166c0a4f8db47c0a"
+      },
+      {
+        "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
+        "actor": "nilay.shah",
+        "eventId": 7,
+        "eventType": "active",
+        "forecastRunId": "fr_e638699e9b8f6598",
+        "priorEventId": null,
+        "recordedAt": "2026-08-12 13:16:38.681383+00",
+        "versionId": "fv_8e18ad608ae38a61"
       }
     ],
     "nullPredecessorEventIds": [
-      1
+      1,
+      3,
+      5,
+      7
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": []
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_gulf_final_all_bugs_20260809",
+  "bundlePath": "ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -167,10 +230,10 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "ef5333d51fcdb8dc857ea0c8bdef932c1d18bb2d1d98798ee7475d2acf4500d6",
-    "gateBSemanticFingerprint": "46e0f18b2194cd02ea35f0df76c8b972073b3caffb2354f14bd848c5ae9f356a",
-    "publicationSemanticFingerprint": "7381e88a207750ce4c7190a43c05beb743b417c7b1127ffbe5494604b2cb7559",
-    "sourceSnapshotId": "7d8ade35bf61ef7a569be1251874a600819eb9e83976f64eb31149574ddcda50"
+    "gateASemanticFingerprint": "c5feb3a0b879b8567fc54dd7484b6718ba1c4b9ef07bc77a4a5ab4c86940d6a4",
+    "gateBSemanticFingerprint": "3c49aa881873e992768179605f4a59e8e8afd78fe0000bcbdd43d7eedc448de6",
+    "publicationSemanticFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
+    "sourceSnapshotId": "62a01e3058d7215c7559c29e8b3a5c9e56dae73bb2f820b1f264ff9d6a47922b"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
@@ -188,7 +251,7 @@
     "servedRows": 249678,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0024_warehouse_service_metrics",
+      "servingMigration": "0030_pricing_intents",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -196,14 +259,42 @@
     "withheldShareOfServed": "0.093577"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "93db02a11fdcad295a192b32a0e3cfc5bbe94f2c13a733ba1c4e2d3f51ae3273",
-    "forecastRunId": "fr_546a32b4b120fd7a",
-    "forecastVersionId": "fv_fe8e951c1f54b89e"
+    "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
+    "forecastRunId": "fr_e638699e9b8f6598",
+    "forecastVersionId": "fv_8e18ad608ae38a61"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0027_scenario_hardening",
+  "servingMigration": "0030_pricing_intents",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
-  "supersededIdentities": []
+  "supersededIdentities": [
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_7d34e90850b5a85c",
+      "forecastVersionId": "fv_166c0a4f8db47c0a",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_14b111912fb8458c",
+      "forecastVersionId": "fv_880ab29dc108ad2d",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": false,
+      "bundlePath": null,
+      "forecastRunId": "fr_546a32b4b120fd7a",
+      "forecastVersionId": "fv_fe8e951c1f54b89e",
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
+    }
+  ]
 }

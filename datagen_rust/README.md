@@ -1,8 +1,9 @@
 # Rust retail datagen
 
-This directory is an isolated Rust implementation of the source-shaped retail data generator.
-It does not import, overwrite, delete, or publish into the Python generator, ingestion, ML, API,
-database, or UI paths. Rust output is comparison evidence until an explicit later cutover.
+This directory is the execution authority for accepted source-shaped generated data. It remains
+isolated from ingestion, ML, API, database and UI paths and never overwrites an existing run.
+The Python implementation is maintained in semantic lockstep for differential verification, but
+Python-generated output is not eligible for adoption as accepted input.
 
 The pinned compiler is Rust 1.97.1. `Cargo.lock` pins third-party dependencies after the first
 successful dependency resolution.
@@ -16,7 +17,7 @@ cargo run --release -- plan \
   --config configs/gulf-oil-india-ten-year.yaml \
   --execution-profile-file configs/safe.execution.yaml
 cargo run --release -- generate \
-  --config configs/gulf-oil-india-ten-year.yaml \
+  --config configs/pricing-response-rich.yaml \
   --execution-profile performance
 cargo run --release -- compare \
   --python-run ../datagen/output/gulf-oil-india-ten-year/gulf-oil-india-ten-year/run-1430a7ddabc5d4ff \
@@ -54,8 +55,7 @@ recorded as `executionProfile` in `source-run-manifest.json`. The default is `sa
 runtime profile does not affect run identity, benchmark two profiles under different
 `--output-root` containers; an existing run is intentionally never overwritten.
 
-`generate` defaults to `output/<scenarioId>/<scenarioId>/<run-id>`, matching the retained
-Python Gulf container/run hierarchy. Dataset directories, partition directories, and filenames
+`generate` defaults to `output/<scenarioId>/<run-id>`. Dataset directories, partition directories, and filenames
 inside the run are the same source-shaped names as Python. `datagen_rust/output/` is ignored by
 Git and generated comparison data must never be staged or pushed.
 
@@ -75,3 +75,11 @@ replacement policy; the initial implementation refuses an existing target.
 - Physical Parquet bytes are not required to match because the Rust Arrow writer and Python
   DuckDB writer can encode equivalent logical rows with different metadata, pages, or encodings.
 - Runtime profile: changes scheduling and memory limits only, never logical rows.
+- The response-rich pricing preset widens its otherwise identical irregular price movements with
+  the explicit `responseStepScale: 2`; the sparse preset pins `1`. Both values are part of the
+  resolved config and therefore of run identity.
+- Restricted `competitorMatchTruth` contains held-out development/evaluation candidates generated
+  independently from the served match rows. Downstream evaluators must never serve that relation.
+- Accepted generated publications must name the Rust engine identity in their source manifest.
+  Python is a required independent parity implementation and test oracle, not an accepted-data
+  producer.

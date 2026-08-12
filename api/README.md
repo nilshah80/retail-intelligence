@@ -9,8 +9,8 @@ re-validation**, staleness handling (409/503), RBAC / auth.
 
 **Delivery:** introduce a thin, versioned read-only API alongside each demoable capability rather
 than waiting for the governance phase: ingestion/quality in Phase 2, demand in Phase 3, inventory
-and replenishment in Phase 4, and pricing/promotion in Phase 5. Deterministic UI stubs use the same
-OpenAPI/read-model contracts. Phase 6 consolidates and hardens these reads and adds governed
+and replenishment in Phase 4, and pricing/promotion in Phase 5. Deterministic contract fixtures use
+the same OpenAPI/read-model contracts. Phase 6 consolidates and hardens these reads and adds governed
 write/workflow endpoints.
 
 **Language and web framework:** Go with
@@ -84,6 +84,12 @@ refer to the same immutable source snapshot, and exposes:
   — live PostgreSQL-backed Phase 3 forecast read models for the lineage-matching active version.
   The routes return the same governed 503 envelope when the projection is absent, inactive or
   publication-mismatched;
+- `GET /api/v1/inventory/*` and `GET /api/v1/replenishment/*` — the fourteen live inventory and
+  replenishment destinations plus bounded, selection-aware direct exports;
+- `GET /api/v1/pricing/*`, `GET /api/v1/competitors/*`, and `GET /api/v1/promotions/*` — the
+  activated pricing bundle's recommendations, evidence, competitor and promotion projections;
+- `POST /api/v1/pricing/simulations:run` — bounded, stateless calculation from stored accepted
+  response evidence; promotion simulation fails closed while its evidence is unavailable;
 - `GET /openapi.yaml` — the authoritative OpenAPI contract;
 - `GET /docs` — interactive Swagger UI;
 - `GET /redoc` — alternate ReDoc documentation.
@@ -92,6 +98,14 @@ The stable OpenAPI contract is `../contracts/api/openapi.yaml`; the Aarv OpenAPI
 renders it and is not a second contract source. API execution profiles are read from the shared
 `../execution/src/retail_execution/data/v1/profiles.json`; environment overrides are validated
 before `GOMAXPROCS` and HTTP concurrency are applied.
+
+Pricing startup additionally requires `RETAIL_PRICING_SERVING_CONFIG` to name the reviewed,
+secret-free `pricing-serving.json` emitted by activation preparation. The DSN remains in
+`RETAIL_POSTGRES_DSN`; browser parameters and activation receipts are never startup authority.
+For local capture work only, `RETAIL_PRICING_DEMO_ADAPTER=enabled` permits the closed
+`demoState=stale|missing|corrupt|panel` query vocabulary; `panel` additionally requires the exact
+`demoPanel=/api/...` path. The adapter is inert for non-local authority, performs no database
+write, and is intentionally absent from the public OpenAPI contract.
 
 ```powershell
 # Windows PowerShell

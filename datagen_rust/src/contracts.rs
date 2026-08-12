@@ -28,6 +28,61 @@ pub fn fields(source_system: &str, dataset: &str) -> Result<Vec<String>> {
         .with_context(|| format!("missing field contract for {source_system}/{dataset}"))
 }
 
+pub fn fields_with_pricing_evidence(
+    source_system: &str,
+    dataset: &str,
+    enabled: bool,
+) -> Result<Vec<String>> {
+    let mut resolved = fields(source_system, dataset)?;
+    if enabled {
+        let optional: &[&str] = match (source_system, dataset) {
+            ("shopify", "priceHistory") => &["knownAsOf", "provenanceClass", "generationMethod"],
+            ("companion", "promotions") => &[
+                "knownAsOf",
+                "lifecycleStatus",
+                "provenanceClass",
+                "generationMethod",
+            ],
+            ("companion", "promotionSkus") => &["knownAsOf", "provenanceClass", "generationMethod"],
+            ("companion", "competitorPrices") => &[
+                "competitorBrand",
+                "competitorModel",
+                "competitorGtin",
+                "competitorAttributes",
+                "availabilityState",
+                "evidenceClass",
+                "derivationClass",
+                "usePurpose",
+                "generationMethod",
+            ],
+            ("companion", "competitorMatches") => &[
+                "matchedAttributes",
+                "evidenceClass",
+                "derivationClass",
+                "usePurpose",
+                "generationMethod",
+            ],
+            ("hiddenTruth", "competitorMatchTruth") => &[
+                "candidateKey",
+                "departmentId",
+                "categoryId",
+                "referenceAttributes",
+                "candidateAttributes",
+                "truthLabel",
+                "truthSplit",
+                "missingAttributeCohort",
+                "truthMethod",
+                "generationMethod",
+            ],
+            _ => &[],
+        };
+        resolved.extend(optional.iter().map(|field| (*field).to_owned()));
+        resolved.sort();
+        resolved.dedup();
+    }
+    Ok(resolved)
+}
+
 #[must_use]
 pub fn dataset_keys() -> Vec<String> {
     document().datasets.keys().cloned().collect()
@@ -51,7 +106,7 @@ pub fn snake_case(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{dataset_keys, fields, snake_case};
+    use super::{dataset_keys, fields, fields_with_pricing_evidence, snake_case};
 
     #[test]
     fn frozen_contract_covers_all_python_v13_datasets() {
@@ -72,6 +127,31 @@ mod tests {
         assert_eq!(
             snake_case("fulfillmentStatusHistory"),
             "fulfillment_status_history"
+        );
+    }
+
+    #[test]
+    fn pricing_evidence_fields_are_opt_in_and_sorted_like_python() {
+        let legacy =
+            fields_with_pricing_evidence("shopify", "priceHistory", false).expect("legacy fields");
+        assert!(!legacy.iter().any(|field| field == "knownAsOf"));
+
+        let enriched =
+            fields_with_pricing_evidence("shopify", "priceHistory", true).expect("enriched fields");
+        assert_eq!(
+            enriched,
+            [
+                "currencyCode",
+                "effectiveDate",
+                "generationMethod",
+                "knownAsOf",
+                "price",
+                "priceList",
+                "priceReason",
+                "provenanceClass",
+                "sku",
+                "variantId",
+            ]
         );
     }
 }

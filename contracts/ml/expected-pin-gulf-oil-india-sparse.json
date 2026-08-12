@@ -1,0 +1,40 @@
+{
+  "$schema": "./input-bundle.schema.json",
+  "schemaVersion": "retail-ml-expected-pin/v1",
+  "sourceSnapshotId": "4b7173de2810856718631602e9e38665f03792aeff27e2286e9cab7039012743",
+  "gateA": {
+    "status": "pass",
+    "semanticFingerprint": "1af98c5f67a03cdfd02e7826cbb7d1d1caf608940fc971a1cab9db4c1b1ef53c",
+    "evidenceSha256": "ef77725e181f9ff49184d689d2f8708f9a0ca39afadec8bf3a3cb358d2018f66"
+  },
+  "gateB": {
+    "status": "pass",
+    "semanticFingerprint": "3d94188a14e097db88c7c81b3772e73b9ea21ae421ea950f25537e2b97742a6f",
+    "evidenceSha256": "2d0b8ec8635cb41848be62752c682f2ff1b8858dd1430e471f5afa6f742ae2d5"
+  },
+  "publication": {
+    "semanticFingerprint": "3f642ddfbbe26b318838e1acec131e8f2362b76672d5fefb4d39c97039366e93",
+    "gateBSemanticFingerprint": "3d94188a14e097db88c7c81b3772e73b9ea21ae421ea950f25537e2b97742a6f",
+    "evidenceSha256": "96159789ed58823dcd792eede3e781045b7e5548fa32c1266e6ae6a37d3278fd",
+    "objectCount": 2474,
+    "duckdb": {
+      "bytes": 3467653120,
+      "path": "retail_v2.duckdb",
+      "sha256": "eb06dda2df08391795b6b42c9811cabf3b97925cc1070f9b9a92ecbf1374f8bc"
+    }
+  },
+  "retention": {
+    "schemaVersion": "retail-ingestion-retained-evidence/v1",
+    "publicationFingerprint": "3f642ddfbbe26b318838e1acec131e8f2362b76672d5fefb4d39c97039366e93",
+    "files": {
+      "gate-a.json": "ef77725e181f9ff49184d689d2f8708f9a0ca39afadec8bf3a3cb358d2018f66",
+      "gate-b.json": "2d0b8ec8635cb41848be62752c682f2ff1b8858dd1430e471f5afa6f742ae2d5",
+      "publication-manifest.json": "96159789ed58823dcd792eede3e781045b7e5548fa32c1266e6ae6a37d3278fd"
+    }
+  },
+  "requiredCapabilities": [
+    "demand_forecast_non_pit",
+    "inventory_replenishment_current_snapshot",
+    "inventory_replenishment_replay"
+  ]
+}

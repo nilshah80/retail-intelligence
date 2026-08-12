@@ -19,7 +19,7 @@ const (
 	// domain with datagen and ingestion by admitting marketplace. Older runs stay
 	// immutable but are ineligible, so this pin moves with the database boundary or
 	// the API fails closed against a correctly migrated schema.
-	ForecastMigrationRevision = "0027_scenario_hardening"
+	ForecastMigrationRevision = "0030_pricing_intents"
 
 	ForecastReasonInvalid        = "FORECAST_ARTIFACT_INVALID"
 	ForecastReasonLineage        = "FORECAST_LINEAGE_MISMATCH"
@@ -1241,6 +1241,7 @@ func (s *ForecastStore) workbench(
 			coveredThrough = int(*intervalCoveredThrough)
 		}
 		items = append(items, map[string]any{
+			"rowId":    stableRowID("forecast", []string{skuID, storeID, channelID}),
 			"marketId": marketID, "skuId": skuID, "storeId": storeID,
 			"channelId": channelID, "departmentId": departmentID,
 			"category": category, "productName": productName,

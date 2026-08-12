@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/simulation.schema.json",
+  "title": "retail-price-simulation/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "currencyCode", "simulationPeriod", "demandAssumption", "demandScenarioSemantics", "inventoryObjective", "columns", "metricOrder", "recommendation", "competitorEvidence", "syntheticMarginScenario", "mutated"],
+  "properties": {
+    "schemaVersion": {"const": "retail-price-simulation/v1"},
+    "scope": {"$ref": "#/$defs/scope"},
+    "currencyCode": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "simulationPeriod": {"const": "Next 4 Weeks"},
+    "demandAssumption": {"enum": ["Expected", "Best Case", "Worst Case"]},
+    "demandScenarioSemantics": {"const": "additive_expected_and_sum_of_weekly_planning_bounds_not_four_week_quantiles"},
+    "inventoryObjective": {"enum": ["Margin Protection", "Clearance"]},
+    "columns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "proposed", "aiOptimal"],
+      "properties": {
+        "current": {"$ref": "#/$defs/result"},
+        "proposed": {"$ref": "#/$defs/result"},
+        "aiOptimal": {"$ref": "#/$defs/result"}
+      }
+    },
+    "metricOrder": {"const": ["Units", "Revenue", "Gross Margin", "Ending Stock"]},
+    "recommendation": {"type": "object"},
+    "competitorEvidence": {"type": "object"},
+    "syntheticMarginScenario": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/syntheticMargin"}]},
+    "mutated": {"const": false}
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["market_id", "sku_id", "store_id", "channel_id"],
+      "properties": {
+        "market_id": {"type": "string"}, "sku_id": {"type": "string"},
+        "store_id": {"type": "string"}, "channel_id": {"type": "string"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["priceMinor", "units", "revenueMinor", "grossMarginMinor", "grossMarginReasonCode", "endingStockUnits"]
+    },
+    "syntheticMargin": {
+      "type": "object",
+      "required": ["discriminator", "label", "currentMinor", "proposedMinor", "aiOptimalMinor", "currencyCode", "doesNotAffectRecommendation"],
+      "properties": {
+        "discriminator": {"const": "synthetic_margin_scenario"},
+        "label": {"const": "Synthetic demo margin — not client actual"},
+        "doesNotAffectRecommendation": {"const": true}
+      }
+    }
+  }
+}

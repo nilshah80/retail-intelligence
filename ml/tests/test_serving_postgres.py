@@ -80,9 +80,19 @@ def test_accepted_forecast_postgres_materialization_integration() -> None:
         input_bundle,
         postgres_dsn=dsn,
     )
-    assert materialization.row_counts["forecast_series"] == 52_884
-    assert materialization.row_counts["forecast_series_dimensions"] == 2_232
-    assert materialization.row_counts["forecast_eval_predictions"] == 708_708
+    artifacts = run.manifest["artifacts"]
+    assert (
+        materialization.row_counts["forecast_series"]
+        == artifacts["forecast_series"]["rowCount"]
+    )
+    assert (
+        materialization.row_counts["forecast_series_dimensions"]
+        == artifacts["forecast_data_quality"]["rowCount"]
+    )
+    assert (
+        materialization.row_counts["forecast_eval_predictions"]
+        == artifacts["forecast_eval_predictions"]["rowCount"]
+    )
     repeated_materialization = materialize_forecast_run(
         run,
         input_bundle,

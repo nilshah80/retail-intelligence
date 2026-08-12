@@ -65,6 +65,18 @@ def test_forecast_serving_schema_integration() -> None:
         "forecast_scenario_inventory_node_rows",
         "forecast_scenario_context_activation_events",
         "forecast_scenario_inventory_activation_events",
+        # Immutable pricing intelligence plus its independently adopted active
+        # pointer.  Materialization never changes pricing_active_state.
+        "pricing_materializations",
+        "pricing_response_assessments",
+        "price_recommendations",
+        "pricing_price_candidates",
+        "pricing_competitor_assessments",
+        "pricing_promotion_protection",
+        "pricing_promotion_dispositions",
+        "pricing_result_selection_events",
+        "pricing_activation_sets",
+        "pricing_active_state",
     }
     with psycopg.connect(dsn) as connection:
         with connection.cursor() as cursor:
@@ -74,7 +86,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0027_scenario_hardening",)
+            assert cursor.fetchone() == ("0030_pricing_intents",)
             cursor.execute(
                 """
                 SELECT table_name
@@ -84,6 +96,105 @@ def test_forecast_serving_schema_integration() -> None:
                 """
             )
             assert {row[0] for row in cursor.fetchall()} == expected_tables
+            cursor.execute(
+                """
+                SELECT table_name
+                FROM information_schema.views
+                WHERE table_schema = 'retail_serving'
+                  AND table_name IN (
+                    'active_pricing_bundles',
+                    'current_price_recommendations'
+                  )
+                """
+            )
+            assert {row[0] for row in cursor.fetchall()} == {
+                "active_pricing_bundles",
+                "current_price_recommendations",
+            }
+            cursor.execute(
+                """
+                SELECT trigger_name
+                FROM information_schema.triggers
+                WHERE trigger_schema = 'retail_serving'
+                  AND event_manipulation IN ('UPDATE', 'DELETE')
+                  AND event_object_table IN (
+                    'pricing_materializations',
+                    'pricing_response_assessments',
+                    'price_recommendations',
+                    'pricing_price_candidates',
+                    'pricing_competitor_assessments',
+                    'pricing_promotion_protection',
+                    'pricing_promotion_dispositions',
+                    'pricing_result_selection_events',
+                    'pricing_activation_sets'
+                  )
+                """
+            )
+            pricing_triggers = {row[0] for row in cursor.fetchall()}
+            assert pricing_triggers == {
+                f"trg_{table}_append_only"
+                for table in (
+                    "pricing_materializations",
+                    "pricing_response_assessments",
+                    "price_recommendations",
+                    "pricing_price_candidates",
+                    "pricing_competitor_assessments",
+                    "pricing_promotion_protection",
+                    "pricing_promotion_dispositions",
+                    "pricing_result_selection_events",
+                    "pricing_activation_sets",
+                )
+            }
+            cursor.execute(
+                """
+                SELECT table_name, column_name, is_nullable, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'retail_serving'
+                  AND (
+                    (table_name = 'pricing_result_selection_events'
+                     AND column_name IN ('record_id', 'record_sha256', 'transaction_id'))
+                    OR
+                    (table_name = 'pricing_activation_sets'
+                     AND column_name IN ('activation_set_sha256', 'transaction_id'))
+                  )
+                ORDER BY table_name, column_name
+                """
+            )
+            assert cursor.fetchall() == [
+                ("pricing_activation_sets", "activation_set_sha256", "NO", "text"),
+                ("pricing_activation_sets", "transaction_id", "NO", "uuid"),
+                ("pricing_result_selection_events", "record_id", "NO", "text"),
+                ("pricing_result_selection_events", "record_sha256", "NO", "text"),
+                ("pricing_result_selection_events", "transaction_id", "NO", "uuid"),
+            ]
+            cursor.execute(
+                """
+                SELECT is_nullable, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'retail_serving'
+                  AND table_name = 'pricing_materializations'
+                  AND column_name = 'prospective_result_selections'
+                """
+            )
+            assert cursor.fetchone() == ("NO", "json")
+            cursor.execute(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE constraint_schema = 'retail_serving'
+                  AND table_name IN (
+                    'pricing_result_selection_events', 'pricing_activation_sets'
+                  )
+                  AND constraint_type = 'UNIQUE'
+                """
+            )
+            pricing_unique_constraints = {row[0] for row in cursor.fetchall()}
+            assert "uq_pricing_selection_lifecycle" not in pricing_unique_constraints
+            assert {
+                "uq_pricing_selection_record_id",
+                "uq_pricing_selection_record_sha256",
+                "uq_pricing_activation_set_sha256",
+            } <= pricing_unique_constraints
             cursor.execute(
                 """
                 SELECT is_nullable

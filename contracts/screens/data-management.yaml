@@ -6,12 +6,7 @@ authority:
   api: contracts/api/openapi.yaml
 dataMode: live_only
 
-approvedOmissions:
-  - Add Data Source
-  - Upload Sample Data
-  - Run Validation
-  - sidebar user card
-  - User Management navigation and destination
+approvedOmissions: []
 
 shell:
   brand:
@@ -55,6 +50,18 @@ shell:
     right: Powered by AI • Built for Retail
 
 elements:
+  - selector: '[aria-label="Data Management actions"]'
+    labels: [Add Data Source, Upload Sample Data, Run Validation]
+    disposition: >-
+      Add Data Source opens a local preview-only dialog with Connect disabled;
+      Upload Sample Data and Run Validation remain natively disabled with business prerequisites.
+
+  - selector: '#data-management-dialog-validation'
+    label: Validation Results
+    disposition: >-
+      Read-only metric order Quality, Valid, Duplicates, Missing, reached only after View Mapping;
+      unavailable validation measures stay reason-coded and no validation request is issued.
+
   - selector: '[data-kpi="data-freshness"]'
     label: Data Freshness
     apiField: kpis.dataFreshnessPct

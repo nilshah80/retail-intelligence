@@ -64,6 +64,7 @@ sys.path.insert(0, str(REPO_ROOT / "ingestion" / "src"))
 
 from retail_ingestion.readiness.selection import (  # noqa: E402
     SELECTION_SCHEMA_VERSION,
+    SELECTION_SCHEMA_VERSION_V2,
     assert_one_active_per_scope,
     derive_record_id,
     derive_selection_id,
@@ -1633,7 +1634,16 @@ def main(argv: list[str] | None = None) -> int:
     records = build_lifecycle()
     if args.check:
         expected_names = {name for name, _ in records}
-        committed_names = {path.name for path in OUTPUT_DIR.glob("*.json")}
+        # Content-addressed v2 records are produced and checked by
+        # build_publication_authority.py. This legacy derivation remains the byte
+        # authority for v1 records only, so v2 files are neither unexplained
+        # residue nor inputs to this generator.
+        committed_names = {
+            path.name
+            for path in OUTPUT_DIR.glob("*.json")
+            if _load(path).get("schemaVersion")
+            != "retail-publication-selection/v2"
+        }
         extra = sorted(committed_names - expected_names)
         if extra:
             print(
@@ -1663,6 +1673,14 @@ def main(argv: list[str] | None = None) -> int:
             )[-1]
             for _, record in records
         }
+        selected_runs.update(
+            str((_load(path).get("subject") or {}).get("logicalPath", "")).rsplit(
+                "/", 1
+            )[-1]
+            for path in OUTPUT_DIR.glob("*.json")
+            if _load(path).get("schemaVersion")
+            == "retail-publication-selection/v2"
+        )
         evidence_root = REPO_ROOT / "ingestion" / "data" / "evidence"
         published = {
             path.name

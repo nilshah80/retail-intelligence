@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .readiness.operational import validate_readiness_retention
+
 
 class RetentionError(RuntimeError):
     """Accepted evidence cannot be retained or work cannot be pruned safely."""
@@ -77,7 +79,7 @@ def finalize_publication(
     *,
     prune_work: bool = False,
 ) -> RetentionResult:
-    """Retain Gate reports independently, then optionally remove rebuildable work."""
+    """Retain governed evidence atomically, then optionally prune rebuildable work."""
 
     work = Path(work_root).expanduser().resolve()
     publication = Path(publication_root).expanduser().resolve()
@@ -85,6 +87,8 @@ def finalize_publication(
     _assert_disjoint(work, publication, evidence)
     gate_a_path = work / "gate-a.json"
     gate_b_path = work / "gate-b.json"
+    readiness_path = work / "operational-readiness.json"
+    readiness_retention_path = work / "operational-readiness-retention.json"
     publication_path = publication / "publication-manifest.json"
     curated_database = publication / "retail_v2.duckdb"
     gate_a = _load(gate_a_path)
@@ -101,6 +105,43 @@ def finalize_publication(
         raise RetentionError("only Gate-A/Gate-B-approved work may be finalized")
     if not curated_database.is_file():
         raise RetentionError("curated retail_v2.duckdb is missing")
+
+    readiness_files = (readiness_path, readiness_retention_path)
+    readiness_presence = tuple(path.is_file() for path in readiness_files)
+    if any(readiness_presence) and not all(readiness_presence):
+        raise RetentionError(
+            "operational readiness and its retention record must be finalized together"
+        )
+    retain_readiness = all(readiness_presence)
+    if retain_readiness:
+        repository_root = Path(__file__).resolve().parents[3]
+        try:
+            validate_readiness_retention(
+                _load(readiness_retention_path),
+                schema_path=(
+                    repository_root
+                    / "contracts/onboarding/readiness-retention.schema.json"
+                ),
+                readiness_path=readiness_path,
+                readiness_schema_path=(
+                    repository_root
+                    / "contracts/onboarding/readiness-report-v2.schema.json"
+                ),
+            )
+        except Exception as exc:
+            raise RetentionError(f"operational readiness retention is invalid: {exc}") from exc
+        readiness = _load(readiness_path)
+        if readiness.get("sourceSnapshotId") != published.get("sourceSnapshotId"):
+            raise RetentionError(
+                "operational readiness and publication snapshot IDs differ"
+            )
+        if (
+            readiness.get("publicationSemanticFingerprint")
+            != published.get("semanticFingerprint")
+        ):
+            raise RetentionError(
+                "operational readiness and publication fingerprints differ"
+            )
 
     snapshot_id = snapshot_ids.pop()
     payload = {
@@ -119,6 +160,34 @@ def finalize_publication(
             raise RetentionError(
                 "a different retained-evidence set already occupies the target"
             )
+        retained_readiness = evidence / "operational-readiness.json"
+        retained_readiness_retention = (
+            evidence / "operational-readiness-retention.json"
+        )
+        retained_presence = (
+            retained_readiness.is_file(),
+            retained_readiness_retention.is_file(),
+        )
+        if any(retained_presence) and not all(retained_presence):
+            raise RetentionError(
+                "retained operational readiness evidence is incomplete"
+            )
+        if retain_readiness:
+            if not all(retained_presence):
+                raise RetentionError(
+                    "the existing evidence target lacks the operational readiness pair"
+                )
+            if any(
+                _sha256(source) != _sha256(retained)
+                for source, retained in zip(
+                    readiness_files,
+                    (retained_readiness, retained_readiness_retention),
+                    strict=True,
+                )
+            ):
+                raise RetentionError(
+                    "a different operational readiness pair occupies the target"
+                )
     else:
         evidence.parent.mkdir(parents=True, exist_ok=True)
         temporary = evidence.with_name(
@@ -132,6 +201,15 @@ def finalize_publication(
                 publication_path,
                 temporary / "publication-manifest.json",
             )
+            if retain_readiness:
+                shutil.copy2(
+                    readiness_path,
+                    temporary / "operational-readiness.json",
+                )
+                shutil.copy2(
+                    readiness_retention_path,
+                    temporary / "operational-readiness-retention.json",
+                )
             (temporary / "retention-manifest.json").write_text(
                 json.dumps(payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",

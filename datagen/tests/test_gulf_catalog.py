@@ -267,12 +267,16 @@ class RetailStabilityTests(unittest.TestCase):
             self.assertEqual(set(), overlap, family_id)
 
     def test_checked_in_presets_carry_the_current_pack_version(self) -> None:
-        # `_validate_catalog_pack` compares the embedded pack to the resolved
-        # metadata exactly, so a preset left un-synced fails config validation.
+        # `_validate_catalog_pack` compares the effective pack to the resolved
+        # metadata exactly. Load each preset so a deliberately small `extends`
+        # overlay is checked against the inherited pack instead of being forced
+        # to duplicate the base preset's catalog block.
         for path in sorted((ROOT / "configs").glob("*.yaml")):
-            text = path.read_text(encoding="utf-8")
-            versions = set(re.findall(r"version: '(\d{4}\.\d+)'", text))
-            self.assertIn(CATALOG_PACK_VERSION, versions, path.name)
+            config = load_config(path)
+            versions = {
+                market["catalogPack"]["version"] for market in config["markets"]
+            }
+            self.assertEqual({CATALOG_PACK_VERSION}, versions, path.name)
 
     def test_lubricants_tax_falls_back_to_the_india_default_rate(self) -> None:
         # No locale pack was edited: India's defaultRate is already 18%, which is

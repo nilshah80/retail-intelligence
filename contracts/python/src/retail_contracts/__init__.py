@@ -11,4 +11,28 @@ The package deliberately imports nothing from `ingestion`, `ml`, `api` or `datag
 CONTRACT_VERSION = "retail_v2"
 STAGING_CONTRACT_VERSION = "retail-staging/v1"
 
-__all__ = ["CONTRACT_VERSION", "STAGING_CONTRACT_VERSION"]
+from .capability_entry import (
+    ENTRY_IDENTITY_EXCLUSIONS,
+    CapabilityEntryError,
+    adopt_records,
+    record_id,
+)
+from .input_authority import (
+    InputAuthorityError,
+    authority_id,
+    validate_input_authority,
+    verify_input_authority,
+)
+
+__all__ = [
+    "CONTRACT_VERSION",
+    "ENTRY_IDENTITY_EXCLUSIONS",
+    "CapabilityEntryError",
+    "STAGING_CONTRACT_VERSION",
+    "adopt_records",
+    "record_id",
+    "InputAuthorityError",
+    "authority_id",
+    "validate_input_authority",
+    "verify_input_authority",
+]

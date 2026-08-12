@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/result-selection.schema.json",
+  "title": "retail-pricing-result-selection/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordId", "selectionId", "semanticIdentityExcludes", "retailerId", "tenantId", "environment", "capability", "audience", "evidence", "state", "bundleId", "bundleSemanticFingerprint", "predecessorRecordId", "recordedAt", "review"],
+  "properties": {
+    "schemaVersion": {"const": "retail-pricing-result-selection/v2"},
+    "recordId": {"type": "string", "pattern": "^rselrec_[0-9a-f]{16}$"},
+    "selectionId": {"type": "string", "pattern": "^rsel_[0-9a-f]{16}$"},
+    "semanticIdentityExcludes": {"const": ["/bundleId", "/bundleSemanticFingerprint", "/predecessorRecordId", "/recordId", "/recordedAt", "/review", "/selectionId", "/state"]},
+    "retailerId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "environment": {"enum": ["local", "dev", "staging", "prod"]},
+    "capability": {"const": "price_revenue"},
+    "audience": {"enum": ["response_rich_local", "pricing_evidence_sparse_dev"]},
+    "evidence": {"$ref": "#/$defs/evidence"},
+    "state": {"enum": ["candidate", "approved", "active", "superseded", "refused"]},
+    "bundleId": {"type": "string", "pattern": "^pb_[0-9a-f]{20}$"},
+    "bundleSemanticFingerprint": {"$ref": "#/$defs/sha256"},
+    "predecessorRecordId": {"type": ["string", "null"]},
+    "recordedAt": {"type": "string", "format": "date-time"},
+    "review": {"type": "object", "required": ["actor", "reason"]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint", "priceRevenueCapabilityFingerprint"],
+      "properties": {
+        "sourcePublicationFingerprint": {"$ref": "#/$defs/sha256"},
+        "readinessReportFingerprint": {"$ref": "#/$defs/sha256"},
+        "inputAuthorityId": {"type": "string", "pattern": "^auth_[0-9a-f]{16}$"},
+        "responsePolicySha256": {"$ref": "#/$defs/sha256"},
+        "pricingPolicySha256": {"$ref": "#/$defs/sha256"},
+        "artifactContractSha256": {"$ref": "#/$defs/sha256"},
+        "responseAssessmentsFingerprint": {"$ref": "#/$defs/sha256"},
+        "recommendationsFingerprint": {"$ref": "#/$defs/sha256"},
+        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

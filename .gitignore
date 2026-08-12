@@ -26,6 +26,8 @@ coverage.xml
 # persistent inode; whether it is held is an OS lock, not its presence on disk.
 contracts/evidence/publication-selection-generations.lock
 contracts/evidence/publication-selection-generations.transaction.json
+contracts/evidence/.capability-entry-adoption.lock
+contracts/evidence/.capability-entry-adoption-staging/
 .serve-runtime/
 
 # Local service credentials and overrides. Commit only *.example templates.

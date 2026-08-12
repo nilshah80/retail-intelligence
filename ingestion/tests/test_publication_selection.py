@@ -61,7 +61,10 @@ def _current_publication_path() -> Path:
             continue
         if lifecycle.get("recordId") in superseded:
             continue
-        logical = (record.get("publication") or {}).get("logicalPath")
+        selected = record.get("publication") or record.get("subject") or {}
+        if selected.get("kind") not in {None, "source_publication"}:
+            continue
+        logical = selected.get("logicalPath")
         if logical:
             return REPO_ROOT / logical
     raise AssertionError("no current active selection names a publication")

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/activation-receipt.schema.json",
+  "title": "retail-pricing-activation-receipt/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transactionId", "activationEventId", "activationSetId", "activationSetSha256", "bundleId", "retailerId", "tenantId", "environment", "selectionEvents"],
+  "properties": {
+    "schemaVersion": {"const": "retail-pricing-activation-receipt/v1"},
+    "transactionId": {"type": "string", "format": "uuid"},
+    "activationEventId": {"type": "integer", "minimum": 1},
+    "activationSetId": {"type": "string", "pattern": "^pact_[0-9a-f]{16}$"},
+    "activationSetSha256": {"$ref": "#/$defs/sha256"},
+    "bundleId": {"type": "string", "pattern": "^pb_[0-9a-f]{20}$"},
+    "retailerId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "environment": {"enum": ["local", "dev", "staging", "prod"]},
+    "selectionEvents": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["eventId", "recordId", "recordSha256", "selectionId", "state", "predecessorEventId"],
+        "properties": {
+          "eventId": {"type": "integer", "minimum": 1},
+          "recordId": {"type": "string", "pattern": "^rselrec_[0-9a-f]{16}$"},
+          "recordSha256": {"$ref": "#/$defs/sha256"},
+          "selectionId": {"type": "string", "pattern": "^rsel_[0-9a-f]{16}$"},
+          "state": {"enum": ["candidate", "approved", "active"]},
+          "predecessorEventId": {"type": ["integer", "null"], "minimum": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

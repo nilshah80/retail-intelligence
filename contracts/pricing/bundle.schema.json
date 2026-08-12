@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/pricing/bundle.schema.json",
+  "title": "retail-pricing-intelligence-bundle/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "bundleKind", "bundleId", "createdAt", "decisionAsOf", "lineage", "policies", "capabilities", "artifacts", "prospectiveResultSelections", "fingerprintContract", "semanticFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "retail-pricing-intelligence-bundle/v1"},
+    "bundleKind": {"enum": ["response_rich", "evidence_sparse"]},
+    "bundleId": {"type": "string", "pattern": "^pb_[0-9a-f]{20}$"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "decisionAsOf": {"type": "string", "format": "date-time"},
+    "lineage": {"type": "object", "minProperties": 1},
+    "policies": {"type": "object", "additionalProperties": {"$ref": "#/$defs/sha256"}},
+    "capabilities": {
+      "type": "object",
+      "required": ["priceRevenue"],
+      "properties": {
+        "priceRevenue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available", "actionableRows"],
+          "properties": {
+            "available": {"type": "boolean"},
+            "actionableRows": {"type": "integer", "minimum": 0}
+          }
+        }
+      },
+      "minProperties": 1
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pricing_panel", "response_assessments", "price_candidates", "price_recommendations", "competitor_assessments", "competitor_bounds", "competitor_evaluation", "promotion_protection", "promotion_disposition"],
+      "properties": {
+        "pricing_panel": {"$ref": "#/$defs/artifact"},
+        "response_assessments": {"$ref": "#/$defs/artifact"},
+        "price_candidates": {"$ref": "#/$defs/artifact"},
+        "price_recommendations": {"$ref": "#/$defs/artifact"},
+        "competitor_assessments": {"$ref": "#/$defs/artifact"},
+        "competitor_bounds": {"$ref": "#/$defs/artifact"},
+        "competitor_evaluation": {"$ref": "#/$defs/artifact"},
+        "promotion_protection": {"$ref": "#/$defs/artifact"},
+        "promotion_disposition": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "prospectiveResultSelections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {"$ref": "#/$defs/resultSelectionIntent"}
+    },
+    "fingerprintContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "volatilePointers"],
+      "properties": {
+        "schemaVersion": {"const": "semantic-fingerprint/v1"},
+        "volatilePointers": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "semanticFingerprint": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "resultSelectionIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "selectionId", "semanticIdentityExcludes", "retailerId", "tenantId", "environment", "capability", "audience", "evidence"],
+      "properties": {
+        "schemaVersion": {"const": "retail-pricing-result-selection/v2"},
+        "selectionId": {"type": "string", "pattern": "^rsel_[0-9a-f]{16}$"},
+        "semanticIdentityExcludes": {"const": ["/bundleId", "/bundleSemanticFingerprint", "/predecessorRecordId", "/recordId", "/recordedAt", "/review", "/selectionId", "/state"]},
+        "retailerId": {"type": "string", "minLength": 1},
+        "tenantId": {"type": "string", "minLength": 1},
+        "environment": {"enum": ["local", "dev", "staging", "prod"]},
+        "capability": {"const": "price_revenue"},
+        "audience": {"enum": ["response_rich_local", "pricing_evidence_sparse_dev"]},
+        "evidence": {"$ref": "#/$defs/resultSelectionEvidence"}
+      }
+    },
+    "resultSelectionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint", "priceRevenueCapabilityFingerprint"],
+      "properties": {
+        "sourcePublicationFingerprint": {"$ref": "#/$defs/sha256"},
+        "readinessReportFingerprint": {"$ref": "#/$defs/sha256"},
+        "inputAuthorityId": {"type": "string", "pattern": "^auth_[0-9a-f]{16}$"},
+        "responsePolicySha256": {"$ref": "#/$defs/sha256"},
+        "pricingPolicySha256": {"$ref": "#/$defs/sha256"},
+        "artifactContractSha256": {"$ref": "#/$defs/sha256"},
+        "responseAssessmentsFingerprint": {"$ref": "#/$defs/sha256"},
+        "recommendationsFingerprint": {"$ref": "#/$defs/sha256"},
+        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "schemaVersion", "rowCount", "bytes", "sha256", "semanticFingerprint"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^[a-z][a-z0-9_-]+\\.(?:parquet|json)$"},
+        "schemaVersion": {"type": "string", "minLength": 1},
+        "rowCount": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "semanticFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

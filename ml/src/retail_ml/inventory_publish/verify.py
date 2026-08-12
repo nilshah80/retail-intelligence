@@ -398,8 +398,8 @@ def verify_inventory_run(
     ):
         _require(
             forecast.get(field) == active_forecast.get(field),
-            f"forecastAuthority.{field} is not the live active forecast; an "
-            "inventory number computed from a superseded forecast is stale",
+            f"forecastAuthority.{field} is not the explicitly verified forecast "
+            "authority supplied for this inventory run",
         )
     _require(
         forecast.get("coverageGateMode") == "hard",

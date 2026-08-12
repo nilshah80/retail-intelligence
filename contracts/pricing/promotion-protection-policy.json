@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "retail-promotion-protection/v1",
+  "policyVersion": "promotion-protection/1.0.0",
+  "decisionDisposition": "not_amended",
+  "decisionId": 53,
+  "plannerFirstFailureReason": "NO_ORIGIN_VISIBLE_PROMOTION_PLAN",
+  "protectionHorizonDays": 28,
+  "merchandisePrecedence": ["sku", "dept", "category"],
+  "scopeLogic": {
+    "withinRow": "and",
+    "acrossRows": "or"
+  },
+  "equalPrecedenceConflict": "PROMOTION_CONFLICT",
+  "missingSafetyFeed": "PROMOTION_PROTECTION_MISSING",
+  "workflowReason": "WORKFLOW_UNAVAILABLE",
+  "privacyReason": "PRIVACY_RESTRICTED"
+}

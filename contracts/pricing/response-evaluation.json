@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "retail-price-response-evaluation/v1",
+  "policyVersion": "price-response-evaluation/1.0.0",
+  "semanticIdentityExcludes": [
+    "/policyFingerprint"
+  ],
+  "policyFingerprint": "820f484ecdf1643e72f589fe3217d625acfe21217430dca45e6acf686b6da2e5",
+  "grain": [
+    "market_id",
+    "sku_id",
+    "store_id",
+    "channel_id"
+  ],
+  "panel": {
+    "cadence": "week",
+    "priceMeasure": "regular_price_minor",
+    "responseMeasure": "units",
+    "exposureSemantics": {
+      "unitMeaning": "fulfilled_customer_units_including_dc_substitution",
+      "zeroUnitWeeks": "explicit_closed_source_week",
+      "offset": "none",
+      "storeAvailabilityControl": "store_shortfall_share",
+      "shortfallUnitsMustNotBeAddedToResponse": true
+    },
+    "minimumObservations": 104,
+    "minimumPriceLevels": 3,
+    "minimumTransitions": 8,
+    "minimumWeeksPerLevel": 4,
+    "maximumMissingPriceRatio": "0.05",
+    "freshnessDays": 21,
+    "prohibitedEvidenceGrades": [
+      "landing_backfill",
+      "unknown"
+    ]
+  },
+  "model": {
+    "family": "poisson",
+    "link": "log",
+    "priceTerm": "log_regular_price",
+    "features": [
+      "intercept",
+      "log_regular_price",
+      "promotion_flag",
+      "store_shortfall_share",
+      "linear_trend",
+      "annual_sine",
+      "annual_cosine"
+    ],
+    "maximumIterations": 50,
+    "convergenceTolerance": "0.00000001",
+    "ridge": "0.000001",
+    "baseline": "same_controls_without_log_price"
+  },
+  "origins": [
+    {"index": 1, "originDate": "2023-04-03", "purpose": "development"},
+    {"index": 2, "originDate": "2023-07-03", "purpose": "development"},
+    {"index": 3, "originDate": "2023-10-02", "purpose": "development"},
+    {"index": 4, "originDate": "2024-01-01", "purpose": "development"},
+    {"index": 5, "originDate": "2024-04-01", "purpose": "development"},
+    {"index": 6, "originDate": "2024-07-01", "purpose": "development"},
+    {"index": 7, "originDate": "2024-09-30", "purpose": "development"},
+    {"index": 8, "originDate": "2024-12-30", "purpose": "development"},
+    {"index": 9, "originDate": "2025-03-31", "purpose": "confirmation"},
+    {"index": 10, "originDate": "2025-06-30", "purpose": "confirmation"},
+    {"index": 11, "originDate": "2025-09-29", "purpose": "confirmation"},
+    {"index": 12, "originDate": "2025-12-29", "purpose": "confirmation"},
+    {"index": 13, "originDate": "2026-03-30", "purpose": "confirmation"}
+  ],
+  "originRules": {
+    "trainingWeeks": 156,
+    "scoringWeeks": 13,
+    "minimumTrainingWeeks": 104,
+    "priceTier": {
+      "anchor": "median_regular_price_before_first_confirmation",
+      "quantiles": ["0.25", "0.50", "0.75"]
+    },
+    "maximumCandidateConfigurations": 20,
+    "candidateConfigurations": [
+      {"id": "glm-local", "shrinkage": "none"},
+      {"id": "glm-department", "shrinkage": "department"},
+      {"id": "glm-department-tier", "shrinkage": "department_price_tier"}
+    ],
+    "selectionMetric": "poisson_deviance_improvement",
+    "tieBreak": [
+      "higher_development_safe_sign_rate",
+      "lower_mean_deviance",
+      "configuration_id"
+    ]
+  },
+  "resampling": {
+    "method": "episode_block_influence",
+    "draws": 200,
+    "blockWeeks": 13,
+    "minimumValidDraws": 50,
+    "seedDerivation": "sha256(policyFingerprint|market|sku|store|channel)"
+  },
+  "strictGates": {
+    "requireNegativeBeta": true,
+    "betaMinAbs": "0.3",
+    "betaMaxAbs": "4",
+    "signConsistencyMin": "0.9",
+    "resampleIqrRatioMax": "0.8",
+    "holdoutImprovementMin": "0"
+  },
+  "coverageGates": {
+    "departmentCoverageMin": "0.05",
+    "departmentMinDistinctSkuStorePairs": 25
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/readiness-retention.schema.json",
+  "title": "retail-operational-readiness-retention/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceSnapshotId",
+    "publicationSemanticFingerprint",
+    "readinessReportFingerprint",
+    "producerRegistryFingerprint",
+    "files"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "retail-operational-readiness-retention/v1"
+    },
+    "sourceSnapshotId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "publicationSemanticFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "readinessReportFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "producerRegistryFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operational-readiness.json"],
+      "properties": {
+        "operational-readiness.json": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

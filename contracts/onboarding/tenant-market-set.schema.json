@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retail-intelligence.local/contracts/onboarding/tenant-market-set.schema.json",
+  "title": "Governed tenant market set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "retailerId", "tenantId", "environment", "governedMarkets", "reportingCurrency", "referenceCurrencies", "decisionAsOf", "approval"],
+  "properties": {
+    "schemaVersion": {"const": "retail-tenant-market-set/v1"},
+    "retailerId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "governedMarkets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["marketId", "operatingCurrency", "timezone"],
+        "properties": {
+          "marketId": {"type": "string", "minLength": 1},
+          "operatingCurrency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+          "timezone": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "reportingCurrency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "referenceCurrencies": {
+      "const": ["INR", "USD", "EUR", "GBP", "AED"]
+    },
+    "decisionAsOf": {"type": "string", "format": "date-time"},
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "actor", "approvedAt", "authorization"],
+      "properties": {
+        "status": {"const": "approved"},
+        "actor": {"type": "string", "minLength": 1},
+        "approvedAt": {"type": "string", "format": "date"},
+        "authorization": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

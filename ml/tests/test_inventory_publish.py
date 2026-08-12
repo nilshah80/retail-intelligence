@@ -843,7 +843,10 @@ def test_a_bundle_computed_from_a_superseded_forecast_is_refused(
     tmp_path: Path,
 ) -> None:
     published = _publish(tmp_path)
-    with pytest.raises(InventoryVerificationError, match="is stale"):
+    with pytest.raises(
+        InventoryVerificationError,
+        match="not the explicitly verified forecast authority",
+    ):
         _verify(
             published.root,
             active_forecast={**FORECAST, "forecastVersionId": "fv_beefbeefbeefbeef"},

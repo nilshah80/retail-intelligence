@@ -20,7 +20,11 @@
 # status history recognises occurredAt, distributor city/region overrides flow to
 # source locations, and the configurable QC hold can preserve a truthful blocked
 # position at the inventory origin. These all change immutable source bytes.
-GENERATOR_VERSION = "0.17.0"
+#
+# 0.18.0: response-rich price-list events use a wider, still bounded and
+# mean-reverting historical step profile so the governed estimator has enough
+# independent price movement to evaluate every configured department.
+GENERATOR_VERSION = "0.18.0"
 SOURCE_SPEC_VERSION = "retail-source-config/v13"
 
 __all__ = ["GENERATOR_VERSION", "SOURCE_SPEC_VERSION"]

@@ -77,6 +77,7 @@ _SIMULATION_MARKET_STREAM_FIELDS = (
     "macroRows",
     "competitorPrices",
     "competitorMatches",
+    "competitorMatchTruth",
     "pandemicSignals",
 )
 
@@ -592,19 +593,86 @@ def _price_history_rows(
             )
             if price == prior:
                 continue
-            rows.append(
-                {
-                    "variantId": variant["id"],
-                    "sku": variant["sku"],
-                    "effectiveDate": day.isoformat(),
-                    "price": _money(price),
-                    "currencyCode": market["currencyCode"],
-                    "priceList": "market-retail",
-                    "priceReason": lifecycle_phase or "regular",
-                }
-            )
+            row = {
+                "variantId": variant["id"],
+                "sku": variant["sku"],
+                "effectiveDate": day.isoformat(),
+                "price": _money(price),
+                "currencyCode": market["currencyCode"],
+                "priceList": "market-retail",
+                "priceReason": lifecycle_phase or "regular",
+            }
+            pricing_evidence = config.get("pricingEvidence") or {"enabled": False}
+            if pricing_evidence["enabled"]:
+                known_day = day + timedelta(
+                    days=pricing_evidence["priceKnownAsOfLagDays"]
+                )
+                row.update(
+                    {
+                        "knownAsOf": datetime.combine(
+                            known_day,
+                            time.min,
+                            tzinfo=ZoneInfo(market["timezone"]),
+                        ).isoformat(),
+                        "provenanceClass": "generated_source_native",
+                        "generationMethod": pricing_evidence["generationMethod"],
+                    }
+                )
+            rows.append(row)
             prior = price
     return rows
+
+
+def _promotion_source_row(
+    config: dict[str, Any], promotion: dict[str, Any], market: dict[str, Any]
+) -> dict[str, Any]:
+    row = {
+        "marketKey": market["marketId"],
+        "promotionId": promotion["promotionId"],
+        "name": promotion["name"],
+        "startDate": promotion["startDate"],
+        "endDate": promotion["endDate"],
+        "storeIds": "|".join(promotion["storeIds"]),
+        "channelIds": "|".join(promotion["channelIds"]),
+        "departmentIds": "|".join(promotion["departmentIds"]),
+        "categoryIds": "|".join(promotion["categoryIds"]),
+        "skus": "|".join(promotion.get("_skus", [])),
+        "customerSegmentIds": "|".join(promotion["customerSegmentIds"]),
+        "discountPct": promotion["discountPct"],
+        "discountBasis": "planned-offer",
+        "demandMultiplier": promotion["demandMultiplier"],
+        "promotionType": promotion.get("promotionType", "campaign"),
+    }
+    pricing_evidence = config.get("pricingEvidence") or {"enabled": False}
+    if not pricing_evidence["enabled"]:
+        return row
+    start_day = date.fromisoformat(promotion["startDate"])
+    end_day = date.fromisoformat(promotion["endDate"])
+    extract_day = date.fromisoformat(config["time"]["endDate"])
+    known_day = start_day - timedelta(
+        days=pricing_evidence["promotionPlanningLeadDays"]
+    )
+    if end_day < extract_day:
+        lifecycle_status = "Completed"
+    elif start_day <= extract_day <= end_day:
+        lifecycle_status = "Live"
+    else:
+        lifecycle_status = ("Draft", "Under Review", "Approved")[
+            stable_integer(promotion["promotionId"], "lifecycle", modulo=3)
+        ]
+    row.update(
+        {
+            "knownAsOf": datetime.combine(
+                known_day,
+                time(hour=9),
+                tzinfo=ZoneInfo(market["timezone"]),
+            ).isoformat(),
+            "lifecycleStatus": lifecycle_status,
+            "provenanceClass": "generated_source_native",
+            "generationMethod": pricing_evidence["generationMethod"],
+        }
+    )
+    return row
 
 
 def _variant_extract_price(
@@ -798,13 +866,13 @@ def generate(
             "resolved-config.yaml",
             config,
             source_system="generator",
-            dataset="resolvedConfig",
+            dataset="resolvedConfigYaml",
         )
         writer.write_json(
             "resolved-config.json",
             config,
             source_system="generator",
-            dataset="resolvedConfigJsonCompatibility",
+            dataset="resolvedConfigJson",
         )
         stage_started = runtime_time.perf_counter()
         catalog = build_catalog(config)
@@ -2455,28 +2523,7 @@ def generate(
             writer.write_dataset(
                 f"{companion_dir}/promotions.csv",
                 [
-                    {
-                        "marketKey": market_id,
-                        "promotionId": promotion["promotionId"],
-                        "name": promotion["name"],
-                        "startDate": promotion["startDate"],
-                        "endDate": promotion["endDate"],
-                        "storeIds": "|".join(promotion["storeIds"]),
-                        "channelIds": "|".join(promotion["channelIds"]),
-                        "departmentIds": "|".join(promotion["departmentIds"]),
-                        "categoryIds": "|".join(promotion["categoryIds"]),
-                        "skus": "|".join(promotion.get("_skus", [])),
-                        "customerSegmentIds": "|".join(
-                            promotion["customerSegmentIds"]
-                        ),
-                        "discountPct": promotion["discountPct"],
-                        "discountBasis": "planned-offer",
-                        "demandMultiplier": promotion["demandMultiplier"],
-                        "promotionType": promotion.get(
-                            "promotionType",
-                            "campaign",
-                        ),
-                    }
+                    _promotion_source_row(config, promotion, market)
                     for promotion in (
                         config["promotions"] + automatic_lifecycle_promotions
                     )
@@ -2500,6 +2547,16 @@ def generate(
                     "discountBasis",
                     "demandMultiplier",
                     "promotionType",
+                    *(
+                        [
+                            "knownAsOf",
+                            "lifecycleStatus",
+                            "provenanceClass",
+                            "generationMethod",
+                        ]
+                        if (config.get("pricingEvidence") or {}).get("enabled", False)
+                        else []
+                    ),
                 ],
             )
             if config["operations"]["features"]["promotionPlanning"]:
@@ -2686,7 +2743,7 @@ def generate(
                 "_truth/competitor_match_truth.csv",
                 (
                     row
-                    for market_rows in simulation["competitorMatches"].values()
+                    for market_rows in simulation["competitorMatchTruth"].values()
                     for row in market_rows
                 ),
                 source_system="hiddenTruth",

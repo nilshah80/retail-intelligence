@@ -6,7 +6,7 @@ import json
 import re
 from copy import deepcopy
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -169,6 +169,45 @@ _STORE_INVENTORY_DEFAULTS: dict[str, Any] = {
     "spillLaneTransitDays": 2,
 }
 
+_PRICING_EVIDENCE_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "priceKnownAsOfLagDays": 0,
+    "promotionPlanningLeadDays": 28,
+    "responseStepScale": 1,
+    "generationMethod": "deterministic-response-profile-v1",
+}
+
+
+def _validate_pricing_evidence(config: dict[str, Any], errors: list[str]) -> None:
+    """Resolve optional source-native pricing evidence without changing old runs."""
+
+    configured = config.get("pricingEvidence")
+    if configured is None:
+        return
+    if not isinstance(configured, dict):
+        errors.append("pricingEvidence must be an object")
+        return
+    extra = set(configured).difference(_PRICING_EVIDENCE_DEFAULTS)
+    if extra:
+        errors.append(f"pricingEvidence contains unsupported values {sorted(extra)}")
+    for field, default in _PRICING_EVIDENCE_DEFAULTS.items():
+        configured.setdefault(field, default)
+    if not isinstance(configured.get("enabled"), bool):
+        errors.append("pricingEvidence.enabled must be boolean")
+    for field in (
+        "priceKnownAsOfLagDays",
+        "promotionPlanningLeadDays",
+        "responseStepScale",
+    ):
+        _positive_int(configured.get(field), f"pricingEvidence.{field}", errors, 0)
+    if configured.get("responseStepScale") not in {1, 2}:
+        errors.append("pricingEvidence.responseStepScale must be 1 or 2")
+    method = configured.get("generationMethod")
+    if not isinstance(method, str) or not ID_PATTERN.fullmatch(method):
+        errors.append(
+            f"pricingEvidence.generationMethod must match {ID_PATTERN.pattern}"
+        )
+
 
 def _validate_store_inventory(operations: dict[str, Any], errors: list[str]) -> None:
     """Validate the v13 store-inventory policy block.
@@ -315,6 +354,8 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         raise ConfigError(["configuration root must be an object"])
     config = deepcopy(raw)
     errors: list[str] = []
+
+    _validate_pricing_evidence(config, errors)
 
     if config.get("specVersion") != SOURCE_SPEC_VERSION:
         errors.append(f"specVersion must equal {SOURCE_SPEC_VERSION!r}")
@@ -528,6 +569,11 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(dynamics, dict):
                 errors.append(f"{path}.priceDynamics must be an object")
             else:
+                pricing_evidence = config.get("pricingEvidence")
+                if isinstance(pricing_evidence, dict):
+                    dynamics["responseStepScale"] = pricing_evidence[
+                        "responseStepScale"
+                    ]
                 if dynamics.get("profile") not in {"response-rich", "sparse", "stable"}:
                     errors.append(
                         f"{path}.priceDynamics.profile must be response-rich, sparse or stable"
@@ -1071,7 +1117,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
                     str(product.get("basePrice"))
                 ):
                     errors.append(f"{path}.baseCost must be less than basePrice")
-            except Exception:
+            except (InvalidOperation, TypeError, ValueError):
                 pass
             option_dimensions = product.get("optionDimensions")
             if not isinstance(option_dimensions, list):
@@ -1799,10 +1845,19 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def load_config(path: str | Path) -> dict[str, Any]:
+def load_config(
+    path: str | Path, *, _extends_stack: tuple[Path, ...] = ()
+) -> dict[str, Any]:
     """Load a conventional YAML config by default, or a JSON config explicitly."""
 
-    config_path = Path(path)
+    config_path = Path(path).resolve()
+    if config_path in _extends_stack:
+        cycle_start = _extends_stack.index(config_path)
+        cycle = (*_extends_stack[cycle_start:], config_path)
+        raise ConfigError(
+            ["config extends cycle: " + " -> ".join(str(item) for item in cycle)]
+        )
+    extends_stack = (*_extends_stack, config_path)
     text = config_path.read_text(encoding="utf-8")
     try:
         if config_path.suffix.lower() == ".json":
@@ -1822,4 +1877,29 @@ def load_config(path: str | Path) -> dict[str, Any]:
             ) from exc
     if not isinstance(raw, dict):
         raise ConfigError([f"{config_path} must contain a mapping/object at its root"])
+    if "extends" in raw:
+        base_name = raw.get("extends")
+        if not isinstance(base_name, str) or not base_name:
+            raise ConfigError(["extends must be a non-empty relative path"])
+        base_path = (config_path.parent / base_name).resolve()
+        try:
+            base_path.relative_to(config_path.parent.resolve())
+        except ValueError as exc:
+            raise ConfigError(["extends must remain inside the preset directory"]) from exc
+        if base_path == config_path:
+            raise ConfigError(["a preset cannot extend itself"])
+        base = load_config(base_path, _extends_stack=extends_stack)
+
+        def merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+            result = deepcopy(left)
+            for key, value in right.items():
+                if key == "extends":
+                    continue
+                if isinstance(value, dict) and isinstance(result.get(key), dict):
+                    result[key] = merge(result[key], value)
+                else:
+                    result[key] = deepcopy(value)
+            return result
+
+        raw = merge(base, raw)
     return validate_config(raw)

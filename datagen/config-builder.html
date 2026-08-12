@@ -117,7 +117,9 @@
     <button class="button ghost" id="resetVolume">2021–current volume preset</button>
     <button class="button ghost" id="resetDemoDecade">10-year demo preset</button>
     <button class="button ghost" id="resetHistory">20-year history preset</button>
-<button class="button ghost" id="resetGulfLubricants">Gulf Oil India lubricants preset</button>
+    <button class="button ghost" id="resetGulfLubricants">Gulf Oil India lubricants preset</button>
+    <button class="button ghost" id="resetPricingRich">Pricing-rich preset</button>
+    <button class="button ghost" id="resetPricingSparse">Pricing-sparse preset</button>
     <button class="button ghost" id="resetSparse">Sparse preset</button>
     <button class="button ghost" id="resetIndia">India preset</button>
     <button class="button ghost" id="resetUs">US preset</button>
@@ -18132,10 +18134,11 @@ function showcaseConfig(sparse=false) {
       item.demand.noise=.22;
     });
   }
+  ensurePricingEvidence(config, sparse);
   return config;
 }
 
-function historyConfig() { return clone(HISTORY); }
+function historyConfig() { return ensurePricingEvidence(clone(HISTORY)); }
 
 function singleMarketConfig(country) {
   const config=showcaseConfig(false);
@@ -18160,7 +18163,33 @@ function singleMarketConfig(country) {
   return config;
 }
 
-let cfg = clone(DEMO_DECADE);
+function ensurePricingEvidence(config,enabled=false) {
+  if(config.pricingEvidence===undefined) {
+    config.pricingEvidence={
+      enabled:Boolean(enabled),
+      priceKnownAsOfLagDays:0,
+      promotionPlanningLeadDays:28,
+      responseStepScale:1,
+      generationMethod:"deterministic-response-profile-v1"
+    };
+  }
+  return config;
+}
+function pricingConfig(sparse=false) {
+  const config=ensurePricingEvidence(clone(GULF_LUBRICANTS),true);
+  config.identity.scenarioId=sparse?"gulf-oil-india-pricing-evidence-sparse":"gulf-oil-india-pricing-response";
+  config.identity.scenarioVersion="1.0.0";
+  config.identity.scenarioName=sparse?"Gulf Oil India sparse pricing evidence":"Gulf Oil India pricing response evidence";
+  config.pricingEvidence.enabled=true;
+  config.pricingEvidence.responseStepScale=sparse?1:2;
+  config.markets.forEach(item=>{
+    item.priceDynamics.profile=sparse?"sparse":"response-rich";
+    if(sparse)item.priceDynamics.priceChangeEventsPerSkuPerYear=1;
+  });
+  return config;
+}
+
+let cfg = ensurePricingEvidence(clone(DEMO_DECADE));
 let executionProfile = clone(EXECUTION_PROFILES.safe);
 
 function get(path) { return path.split(".").reduce((value,key) => value[Number.isInteger(+key)?+key:key], cfg); }
@@ -18425,7 +18454,14 @@ function renderPandemics() {
   return card("Pandemics & phased market disruption","06D",`<p class="hint">Pandemic phases causally alter demand, traffic, costs, supplier lead times, channel mix and inventory loss. Multiple pandemics and overlapping phases are supported.</p><div class="rows">${rows||'<div class="notice">No pandemic scenario is active. Choose the 10-year demo or 20-year history preset, or add a pandemic scenario.</div>'}</div>`,addButton("Pandemic","pandemics"));
 }
 function renderOperations() {
-  const inventory=card("Inventory & supply simulation","07A",`<div class="grid four">
+  const pricing=card("Source-native pricing evidence","07A",`<div class="notice">Rust is the accepted-data producer. Python consumes the same fields for required differential parity checks.</div><div class="grid four" style="margin-top:12px">
+    ${field("Enable pricing evidence","pricingEvidence.enabled","checkbox")}
+    ${field("Price known-as-of lag days","pricingEvidence.priceKnownAsOfLagDays","number")}
+    ${field("Promotion planning lead days","pricingEvidence.promotionPlanningLeadDays","number")}
+    ${field("Response price-step scale","pricingEvidence.responseStepScale","number")}
+    ${field("Generation method","pricingEvidence.generationMethod")}
+  </div>`);
+  const inventory=card("Inventory & supply simulation","07B",`<div class="grid four">
     ${field("Snapshot cadence days","operations.inventory.snapshotCadenceDays","number")}
     ${field("Replenishment cycle days","operations.inventory.replenishmentCycleDays","number")}
     ${field("Supplier lead days","operations.inventory.supplierLeadTimeDays","number")}
@@ -18440,7 +18476,7 @@ function renderOperations() {
     ${field("Supplier delay rate","operations.supplyChain.supplierDelayRate","number")}
     ${field("Weather forecast days","operations.supplyChain.weatherForecastHorizonDays","number")}
   </div>`);
-  const commerce=card("Fulfillment, returns & fixtures","07B",`<div class="grid four">
+  const commerce=card("Fulfillment, returns & fixtures","07C",`<div class="grid four">
     ${field("Split fulfillment rate","operations.fulfillment.splitRate","number")}
     ${field("Processing delay hours","operations.fulfillment.processingDelayHours","number")}
     ${field("Return processing rate","operations.returns.processingRate","number")}
@@ -18450,7 +18486,7 @@ function renderOperations() {
   </div><div class="subsection"><h3>Generated source capabilities</h3><div class="grid four">
     ${Object.keys(cfg.operations.features).map(key=>field(key,`operations.features.${key}`,"checkbox")).join("")}
   </div></div>`);
-  return inventory+commerce;
+  return pricing+inventory+commerce;
 }
 function executionValue(path) {
   return path.split(".").reduce((value,key)=>value[key],executionProfile);
@@ -18767,6 +18803,14 @@ function validate() {
   if(positiveOperations.some(value=>!Number.isInteger(value)||value<1)) errors.push("operation cadence and horizon values must be positive integers");
   if(!cfg.operations.webhook.fixtureSecret) errors.push("webhook fixture secret is required");
   if(Object.values(cfg.operations.features).some(value=>typeof value!=="boolean")) errors.push("all operation features must be boolean");
+  const pricingEvidence=cfg.pricingEvidence;
+  if(!pricingEvidence||Array.isArray(pricingEvidence)||typeof pricingEvidence!=="object") errors.push("pricingEvidence must be an object");
+  else {
+    if(typeof pricingEvidence.enabled!=="boolean") errors.push("pricingEvidence.enabled must be boolean");
+    ["priceKnownAsOfLagDays","promotionPlanningLeadDays"].forEach(key=>{if(!Number.isInteger(pricingEvidence[key])||pricingEvidence[key]<0)errors.push(`pricingEvidence.${key} must be a non-negative integer`);});
+    if(![1,2].includes(pricingEvidence.responseStepScale)) errors.push("pricingEvidence.responseStepScale must be 1 or 2");
+    if(!/^[a-z][a-z0-9-]{2,127}$/.test(pricingEvidence.generationMethod||"")) errors.push("pricingEvidence.generationMethod must be a portable identifier");
+  }
   const formats=JSON.stringify(cfg.output.publicFormats);
   if(![JSON.stringify(["csv","duckdb"]),JSON.stringify(["parquet","duckdb"])].includes(formats)) errors.push("v10 publicFormats must select csv or parquet plus duckdb");
   if(!["none","snappy","zstd"].includes(cfg.output.compression)) errors.push("compression must be none, snappy or zstd");
@@ -18843,7 +18887,8 @@ async function importText(text) {
       if(!next.datagen||typeof next.datagen!=="object"||Array.isArray(next.datagen)) throw new Error("Execution profile needs a datagen mapping.");
       executionProfile=next; render(); return;
     }
-    cfg=next; render();
+    if(next.pricingEvidence!==undefined&&(next.pricingEvidence===null||Array.isArray(next.pricingEvidence)||typeof next.pricingEvidence!=="object")) throw new Error("pricingEvidence must be a mapping/object.");
+    cfg=ensurePricingEvidence(next); render();
   }
   catch(error) { alert(`Import failed. Builder v10 accepts scenario or execution-profile YAML/JSON.\\n\\n${error.message}`); }
 }
@@ -18854,9 +18899,11 @@ document.getElementById("importFile").addEventListener("change",async event=>{co
 document.getElementById("applyResolved").addEventListener("click",()=>importText(document.getElementById("resolved").value));
 document.getElementById("copyResolved").addEventListener("click",async()=>navigator.clipboard.writeText(yamlPayload()));
 document.getElementById("resetShowcase").addEventListener("click",()=>{cfg=showcaseConfig(false);render();});
-document.getElementById("resetVolume").addEventListener("click",()=>{cfg=clone(VOLUME);render();});
-document.getElementById("resetDemoDecade").addEventListener("click",()=>{cfg=clone(DEMO_DECADE);render();});
-  document.getElementById("resetGulfLubricants").addEventListener("click",()=>{cfg=clone(GULF_LUBRICANTS);render();});
+document.getElementById("resetVolume").addEventListener("click",()=>{cfg=ensurePricingEvidence(clone(VOLUME));render();});
+document.getElementById("resetDemoDecade").addEventListener("click",()=>{cfg=ensurePricingEvidence(clone(DEMO_DECADE));render();});
+document.getElementById("resetGulfLubricants").addEventListener("click",()=>{cfg=ensurePricingEvidence(clone(GULF_LUBRICANTS));render();});
+document.getElementById("resetPricingRich").addEventListener("click",()=>{cfg=pricingConfig(false);render();});
+document.getElementById("resetPricingSparse").addEventListener("click",()=>{cfg=pricingConfig(true);render();});
 document.getElementById("resetHistory").addEventListener("click",()=>{cfg=historyConfig();render();});
 document.getElementById("resetSparse").addEventListener("click",()=>{cfg=showcaseConfig(true);render();});
 document.getElementById("resetIndia").addEventListener("click",()=>{cfg=singleMarketConfig("IN");render();});

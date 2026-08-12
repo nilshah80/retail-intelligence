@@ -37,7 +37,7 @@ pub fn build_signal_datasets(
         }
         if flag(&market.signals, "competitor") {
             datasets.push(dataset(&prefix, "competitorPrices", rows.competitor_prices));
-            competitor_truth.extend(rows.competitor_matches.iter().cloned());
+            competitor_truth.extend(rows.competitor_truth);
             datasets.push(dataset(
                 &prefix,
                 "competitorMatches",
@@ -65,6 +65,7 @@ struct MarketSignals {
     macro_rows: Vec<BTreeMap<String, String>>,
     competitor_prices: Vec<BTreeMap<String, String>>,
     competitor_matches: Vec<BTreeMap<String, String>>,
+    competitor_truth: Vec<BTreeMap<String, String>>,
     pandemic_signals: Vec<BTreeMap<String, String>>,
 }
 
@@ -91,6 +92,21 @@ fn build_market_signals(
         .find(|store| store.market_id == market.market_id)
         .with_context(|| format!("market {} has no store", market.market_id))?;
     let mut competitor_match_keys = BTreeSet::new();
+    let truth_generation_method = config
+        .scenario
+        .pricing_evidence
+        .as_ref()
+        .map_or("deterministic-held-out-attribute-truth-v1", |evidence| {
+            evidence.generation_method.as_str()
+        });
+    result.competitor_truth = build_competitor_truth(
+        master_seed,
+        market,
+        &market_products,
+        start,
+        end,
+        truth_generation_method,
+    )?;
 
     let mut day = start;
     while day <= end {
@@ -233,13 +249,31 @@ fn build_market_signals(
                     let competitor_sku =
                         format!("CMP-{:08}", stable_integer(&[&match_key], 99_999_999));
                     let master_text = master_seed.to_string();
-                    let available = fraction(&[
+                    let availability_draw = fraction(&[
                         &master_text,
                         "competitor-availability",
                         &market.market_id,
                         &variant.sku,
                         &day_text,
-                    ]) >= 0.08;
+                    ]);
+                    let availability_state = if config.pricing_evidence().is_some() {
+                        if availability_draw < 0.06 {
+                            "Unknown"
+                        } else if availability_draw < 0.16 {
+                            "Out of Stock"
+                        } else if availability_draw < 0.28 {
+                            "Low Stock"
+                        } else {
+                            "In Stock"
+                        }
+                    } else {
+                        ""
+                    };
+                    let available = if config.pricing_evidence().is_some() {
+                        matches!(availability_state, "In Stock" | "Low Stock")
+                    } else {
+                        availability_draw >= 0.08
+                    };
                     let base = Decimal::from_str(&variant.base_price.to_string())
                         .context("variant base price")?;
                     let inflation_rate = market.price_dynamics["annualInflationRate"]
@@ -249,7 +283,7 @@ fn build_market_signals(
                     let inflation =
                         Decimal::from_f64_text((1.0 + inflation_rate).powf(f64::from(years)));
                     let competitor_price = snap_price_ending(base * inflation * &factor, market)?;
-                    result.competitor_prices.push(row([
+                    let mut price_values = row([
                         ("marketKey", market.market_id.clone()),
                         ("targetType", "store".to_owned()),
                         ("targetId", first_store.store_id.clone()),
@@ -273,11 +307,47 @@ fn build_market_signals(
                             }
                             .to_owned(),
                         ),
-                    ]));
+                    ]);
+                    if let Some(evidence) = config.pricing_evidence() {
+                        let mut attributes = BTreeMap::from([(
+                            "categoryId".to_owned(),
+                            product.category_id.clone(),
+                        )]);
+                        for option in &variant.options {
+                            attributes.insert(option.name.clone(), option.value.clone());
+                        }
+                        price_values.insert(
+                            "competitorBrand".to_owned(),
+                            format!("Benchmark {}", product.brand),
+                        );
+                        price_values
+                            .insert("competitorModel".to_owned(), product.product_code.clone());
+                        price_values.insert("competitorGtin".to_owned(), String::new());
+                        price_values.insert(
+                            "competitorAttributes".to_owned(),
+                            serde_json::to_string(&attributes)
+                                .context("serialize competitor attributes")?,
+                        );
+                        price_values.insert(
+                            "availabilityState".to_owned(),
+                            availability_state.to_owned(),
+                        );
+                        price_values.insert("evidenceClass".to_owned(), "synthetic".to_owned());
+                        price_values.insert(
+                            "derivationClass".to_owned(),
+                            "deterministic_competitor_projection".to_owned(),
+                        );
+                        price_values.insert("usePurpose".to_owned(), "synthetic_demo".to_owned());
+                        price_values.insert(
+                            "generationMethod".to_owned(),
+                            evidence.generation_method.clone(),
+                        );
+                    }
+                    result.competitor_prices.push(price_values);
                     if competitor_match_keys.insert(match_key.clone()) {
                         let confidence = dec("0.82")
                             + Decimal::from(stable_integer(&[&match_key], 1700)) / dec("10000");
-                        result.competitor_matches.push(row([
+                        let mut match_values = row([
                             ("matchKey", match_key),
                             ("marketKey", market.market_id.clone()),
                             ("competitorId", format!("competitor-{}", market.market_id)),
@@ -287,7 +357,85 @@ fn build_market_signals(
                             ("matchConfidence", confidence.to_string()),
                             ("effectiveFrom", start.to_string()),
                             ("effectiveTo", end.to_string()),
-                        ]));
+                        ]);
+                        if let Some(evidence) = config.pricing_evidence() {
+                            let match_key = match_values["matchKey"].clone();
+                            let mut components = BTreeMap::<String, bool>::from([
+                                (
+                                    "categoryId".to_owned(),
+                                    fraction(&[
+                                        &master_text,
+                                        "competitor-match",
+                                        &match_key,
+                                        "categoryId",
+                                    ]) >= 0.08,
+                                ),
+                                (
+                                    "brand".to_owned(),
+                                    fraction(&[
+                                        &master_text,
+                                        "competitor-match",
+                                        &match_key,
+                                        "brand",
+                                    ]) >= 0.85,
+                                ),
+                            ]);
+                            for option in &variant.options {
+                                components.insert(
+                                    option.name.clone(),
+                                    fraction(&[
+                                        &master_text,
+                                        "competitor-match",
+                                        &match_key,
+                                        &option.name,
+                                    ]) >= 0.20,
+                                );
+                            }
+                            let option_weight = 5_000_u64 / variant.options.len().max(1) as u64;
+                            let mut score_basis_points =
+                                if components["categoryId"] {
+                                    3_500_u64
+                                } else {
+                                    0
+                                } + if components["brand"] { 1_500 } else { 0 };
+                            score_basis_points += variant
+                                .options
+                                .iter()
+                                .filter(|option| components[&option.name])
+                                .count() as u64
+                                * option_weight;
+                            score_basis_points = (score_basis_points
+                                + stable_integer(
+                                    &[&master_text, "competitor-match-jitter", &match_key],
+                                    200,
+                                ))
+                            .min(9_999);
+                            match_values.insert(
+                                "matchMethod".to_owned(),
+                                "synthetic-attribute-match-v2".to_owned(),
+                            );
+                            match_values.insert(
+                                "matchConfidence".to_owned(),
+                                (Decimal::from(score_basis_points) / dec("10000")).to_string(),
+                            );
+                            match_values.insert(
+                                "matchedAttributes".to_owned(),
+                                serde_json::to_string(&components)
+                                    .context("serialize match components")?,
+                            );
+                            match_values.insert("evidenceClass".to_owned(), "synthetic".to_owned());
+                            match_values.insert(
+                                "derivationClass".to_owned(),
+                                "deterministic_attribute_match".to_owned(),
+                            );
+                            match_values
+                                .insert("usePurpose".to_owned(), "synthetic_demo".to_owned());
+                            match_values.insert(
+                                "generationMethod".to_owned(),
+                                evidence.generation_method.clone(),
+                            );
+                        }
+                        result.competitor_matches.push(match_values);
                     }
                 }
             }
@@ -295,6 +443,107 @@ fn build_market_signals(
         day += Duration::days(1);
     }
     Ok(result)
+}
+
+fn build_competitor_truth(
+    master_seed: u64,
+    market: &Market,
+    products: &[&Product],
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+    generation_method: &str,
+) -> Result<Vec<BTreeMap<String, String>>> {
+    let mut variants = products
+        .iter()
+        .flat_map(|product| {
+            product
+                .variants
+                .iter()
+                .map(move |variant| (*product, variant))
+        })
+        .collect::<Vec<_>>();
+    variants.sort_by(|left, right| left.1.sku.cmp(&right.1.sku));
+    let master_text = master_seed.to_string();
+    let mut rows = Vec::with_capacity(variants.len() * 2);
+    for (index, (product, variant)) in variants.into_iter().enumerate() {
+        let mut reference_attributes = BTreeMap::from([
+            ("categoryId".to_owned(), product.category_id.clone()),
+            ("brand".to_owned(), product.brand.clone()),
+            ("gtin".to_owned(), variant.barcode.clone()),
+        ]);
+        for option in &variant.options {
+            reference_attributes.insert(format!("option:{}", option.name), option.value.clone());
+        }
+        for (kind_index, truth_label) in [true, false].into_iter().enumerate() {
+            let split = if (index + kind_index) % 2 == 0 {
+                "evaluation"
+            } else {
+                "development"
+            };
+            let missing_cohort = split == "evaluation" && index % 8 == 0;
+            let mut candidate_attributes = if truth_label {
+                reference_attributes.clone()
+            } else {
+                reference_attributes
+                    .iter()
+                    .map(|(key, value)| (key.clone(), format!("different:{value}")))
+                    .collect::<BTreeMap<_, _>>()
+            };
+            if missing_cohort {
+                candidate_attributes.remove("gtin");
+            }
+            let kind = if truth_label { "positive" } else { "negative" };
+            let candidate_key = format!(
+                "truth:{}:{}:{kind}", market.market_id, variant.sku
+            );
+            let competitor_sku = format!(
+                "EVAL-CMP-{:08}",
+                stable_integer(
+                    &[
+                        &master_text,
+                        "competitor-truth-sku",
+                        &market.market_id,
+                        &variant.sku,
+                        kind,
+                    ],
+                    99_999_999,
+                )
+            );
+            rows.push(row([
+                ("matchKey", candidate_key.clone()),
+                ("marketKey", market.market_id.clone()),
+                (
+                    "competitorId",
+                    format!("truth-competitor-{}", market.market_id),
+                ),
+                ("competitorSku", competitor_sku),
+                ("ourSku", variant.sku.clone()),
+                ("matchMethod", "held-out-attribute-truth-v1".to_owned()),
+                ("matchConfidence", String::new()),
+                ("effectiveFrom", start.to_string()),
+                ("effectiveTo", end.to_string()),
+                ("candidateKey", candidate_key),
+                ("departmentId", product.department_id.clone()),
+                ("categoryId", product.category_id.clone()),
+                (
+                    "referenceAttributes",
+                    serde_json::to_string(&reference_attributes)
+                        .context("serialize reference truth attributes")?,
+                ),
+                (
+                    "candidateAttributes",
+                    serde_json::to_string(&candidate_attributes)
+                        .context("serialize candidate truth attributes")?,
+                ),
+                ("truthLabel", truth_label.to_string()),
+                ("truthSplit", split.to_owned()),
+                ("missingAttributeCohort", missing_cohort.to_string()),
+                ("truthMethod", "synthetic-held-out-identity-v1".to_owned()),
+                ("generationMethod", generation_method.to_owned()),
+            ]));
+        }
+    }
+    Ok(rows)
 }
 
 fn snap_price_ending(value: Decimal, market: &Market) -> Result<Decimal> {
@@ -447,8 +696,8 @@ mod tests {
             (
                 "competitorMatchTruth",
                 (
-                    292,
-                    "b82aa3cf44821e8912335eb036b1b042861df2e3cd28b003a214deabd98b1b71",
+                    584,
+                    "b523eb2046d8ac189332b6102f9750a34c08c92b30726943b8abae351ceff005",
                 ),
             ),
         ]);

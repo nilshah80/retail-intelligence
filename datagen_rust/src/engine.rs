@@ -482,6 +482,7 @@ fn write_projected_dataset(
         "postingDate",
         "effectiveDate",
         "effectiveFrom",
+        "knownAsOf",
         "startDate",
         "observedAt",
         "validDate",
@@ -522,7 +523,11 @@ fn write_projected_dataset(
     ];
     let file_stem = crate::contracts::snake_case(&dataset.dataset);
     let logical_path = format!("{}/{file_stem}.parquet", dataset.prefix);
-    let fields = crate::contracts::fields(&dataset.source_system, &dataset.dataset)?;
+    let fields = crate::contracts::fields_with_pricing_evidence(
+        &dataset.source_system,
+        &dataset.dataset,
+        config.pricing_evidence().is_some(),
+    )?;
     let partition_field = if UNPARTITIONED.contains(&dataset.dataset.as_str()) {
         None
     } else {
@@ -1828,6 +1833,8 @@ mod execution_profile_tests {
             "multi-market-20-year-history.yaml",
             "multi-market-2021-current-volume.yaml",
             "multi-market-showcase.yaml",
+            "pricing-evidence-sparse.yaml",
+            "pricing-response-rich.yaml",
         ] {
             assert_eq!(
                 fs::read(format!("configs/{name}")).expect("standalone Rust scenario"),
