@@ -24,10 +24,6 @@ builder:
 comparison:
   columns: [Measure, Current, Proposed, AI Optimal]
   rows: [Units, Revenue, Gross Margin, Ending Stock]
-  syntheticPanel:
-    position: immediately_after_comparison_table
-    heading: Synthetic demo margin — not client actual
-    disclaimer: Does not affect the recommendation
 resultMetrics: [Revenue, Margin, Stock-out Risk, Confidence]
 constraints:
   simulationPeriod: [Next 4 Weeks]

@@ -42,8 +42,14 @@ def run_price_simulation(
         raise SimulationError("INVALID_DEMAND_ASSUMPTION", "unsupported demand assumption")
     if inventory_objective not in {"Margin Protection", "Clearance"}:
         raise SimulationError("INVALID_INVENTORY_OBJECTIVE", "unsupported inventory objective")
-    if inventory_objective == "Margin Protection" and inventory.get("client_actual_cost_minor") is None:
-        raise SimulationError("COST_NOT_CLIENT_ACTUAL", "margin protection needs client-actual cost")
+    # PoC cost-model: Margin Protection needs a cost basis, which in this PoC is the
+    # generated weighted-average cost (no separate client cost exists). See §0.0.
+    if (
+        inventory_objective == "Margin Protection"
+        and inventory.get("client_actual_cost_minor") is None
+        and inventory.get("synthetic_cost_minor") is None
+    ):
+        raise SimulationError("COST_MISSING", "margin protection needs a cost basis")
     if inventory_objective == "Clearance" and not inventory.get("clearance_context_available", False):
         raise SimulationError("INVENTORY_CONTEXT_UNAVAILABLE", "clearance needs ageing evidence")
     if forecast.get("forecast_scenario_semantics") != FORECAST_SCENARIO_SEMANTICS:
@@ -68,6 +74,24 @@ def run_price_simulation(
             "PROPOSED_PRICE_OUTSIDE_GUARDRAIL",
             "proposed price is off-grid, unsupported, or exceeds its change cap",
         )
+    if inventory_objective == "Margin Protection":
+        # Enforce the minimum-margin floor on the weighted-average cost basis (§0.0):
+        # a proposed price below the floor is refused — that refusal is the protection.
+        floor_cost = inventory.get("client_actual_cost_minor")
+        if floor_cost is None:
+            floor_cost = inventory.get("synthetic_cost_minor")
+        floor_pct = Decimal(str(rule.get("minMarginPct", "0")))
+        if floor_cost is not None and proposed_price_minor > 0:
+            proposed_margin_pct = (
+                (Decimal(proposed_price_minor) - Decimal(str(floor_cost)))
+                / Decimal(proposed_price_minor)
+                * Decimal(100)
+            )
+            if proposed_margin_pct < floor_pct:
+                raise SimulationError(
+                    "MARGIN_BELOW_FLOOR",
+                    "proposed price margin is below the minimum-margin floor",
+                )
     demand_key = {
         "Expected": "expected_units",
         "Best Case": "best_case_units",
@@ -82,7 +106,13 @@ def run_price_simulation(
         ratio = Decimal(price) / Decimal(current)
         units = Decimal(str(float(base_units) * float(ratio) ** float(beta)))
         revenue = units * Decimal(price)
+        # PoC cost-of-record: the generated weighted-average cost IS the authoritative
+        # unit cost (there is no separate client cost in this PoC), so the primary
+        # Gross Margin is computed from it. A genuine client cost is preferred only if
+        # one is ever supplied. See the PoC cost-model note in the implementation plan.
         cost = inventory.get("client_actual_cost_minor")
+        if cost is None:
+            cost = inventory.get("synthetic_cost_minor")
         margin = None if cost is None else _integer(units * (Decimal(price) - Decimal(str(cost))))
         stock = inventory.get("atp_units")
         ending = None if stock is None else float(Decimal(str(stock)) - units)
@@ -91,7 +121,7 @@ def run_price_simulation(
             "units": float(units),
             "revenueMinor": _integer(revenue),
             "grossMarginMinor": margin,
-            "grossMarginReasonCode": None if margin is not None else "COST_NOT_CLIENT_ACTUAL",
+            "grossMarginReasonCode": None if margin is not None else "COST_MISSING",
             "endingStockUnits": ending,
         }
 
@@ -99,22 +129,14 @@ def run_price_simulation(
     current_result = scenario(current)
     proposed_result = scenario(proposed_price_minor)
     optimal_result = scenario(optimal)
-    synthetic = None
-    synthetic_cost = inventory.get("synthetic_cost_minor")
-    if synthetic_cost is not None:
-        cost = Decimal(str(synthetic_cost))
-        synthetic = {
-            "discriminator": "synthetic_margin_scenario",
-            "label": "Synthetic demo margin — not client actual",
-            "currentMinor": _integer(Decimal(str(current_result["units"])) * (Decimal(current) - cost)),
-            "proposedMinor": _integer(Decimal(str(proposed_result["units"])) * (Decimal(proposed_price_minor) - cost)),
-            "aiOptimalMinor": _integer(Decimal(str(optimal_result["units"])) * (Decimal(optimal) - cost)),
-            "currencyCode": response["currency_code"],
-            "costMethod": inventory.get("synthetic_cost_method", "computed_wac"),
-            "costAsOf": inventory.get("cost_as_of"),
-            "doesNotAffectRecommendation": True,
-        }
     revenue_change = proposed_result["revenueMinor"] - current_result["revenueMinor"]
+    current_margin = current_result["grossMarginMinor"]
+    proposed_margin = proposed_result["grossMarginMinor"]
+    margin_change = (
+        proposed_margin - current_margin
+        if current_margin is not None and proposed_margin is not None
+        else None
+    )
     return {
         "schemaVersion": "retail-price-simulation/v1",
         "scope": {key: response[key] for key in ("market_id", "sku_id", "store_id", "channel_id")},
@@ -132,8 +154,8 @@ def run_price_simulation(
         "recommendation": {
             "priceMinor": optimal,
             "revenueImpactMinor": revenue_change,
-            "marginImpactMinor": None,
-            "marginReasonCode": "COST_NOT_CLIENT_ACTUAL" if inventory.get("client_actual_cost_minor") is None else None,
+            "marginImpactMinor": margin_change,
+            "marginReasonCode": None if margin_change is not None else "COST_MISSING",
             "stockOutRisk": "High" if proposed_result["endingStockUnits"] is not None and proposed_result["endingStockUnits"] < 0 else "Low",
             "confidence": response["confidence"],
         },
@@ -141,7 +163,6 @@ def run_price_simulation(
             "included": recommendation.get("competitor_price_minor") is not None,
             "reasonCode": None if recommendation.get("competitor_price_minor") is not None else "COMPETITOR_BOUND_UNAVAILABLE",
         },
-        "syntheticMarginScenario": synthetic,
         "mutated": False,
     }
 

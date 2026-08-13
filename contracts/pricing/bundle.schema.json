@@ -15,7 +15,7 @@
     "policies": {"type": "object", "additionalProperties": {"$ref": "#/$defs/sha256"}},
     "capabilities": {
       "type": "object",
-      "required": ["priceRevenue"],
+      "required": ["priceRevenue", "priceMargin"],
       "properties": {
         "priceRevenue": {
           "type": "object",
@@ -24,6 +24,16 @@
           "properties": {
             "available": {"type": "boolean"},
             "actionableRows": {"type": "integer", "minimum": 0}
+          }
+        },
+        "priceMargin": {
+          "type": "object",
+          "description": "Margin-capability governance. minMarginPct is the configured policy floor (always carried). available/reasonCode report whether a served margin value is present. In this PoC the generated weighted-average cost is the authoritative cost, so availability governs serving and the read model derives priceMarginActive from it; a future real-data deployment would additionally require an active price_margin selection on a client cost. See the PoC Data Principle in the implementation plan §0.0.",
+          "required": ["available", "minMarginPct"],
+          "properties": {
+            "available": {"type": "boolean"},
+            "reasonCode": {"type": ["string", "null"]},
+            "minMarginPct": {"type": "string"}
           }
         }
       },
@@ -48,7 +58,7 @@
     "prospectiveResultSelections": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 1,
+      "maxItems": 2,
       "items": {"$ref": "#/$defs/resultSelectionIntent"}
     },
     "fingerprintContract": {
@@ -75,15 +85,25 @@
         "retailerId": {"type": "string", "minLength": 1},
         "tenantId": {"type": "string", "minLength": 1},
         "environment": {"enum": ["local", "dev", "staging", "prod"]},
-        "capability": {"const": "price_revenue"},
+        "capability": {"enum": ["price_revenue", "price_margin"]},
         "audience": {"enum": ["response_rich_local", "pricing_evidence_sparse_dev"]},
         "evidence": {"$ref": "#/$defs/resultSelectionEvidence"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"capability": {"const": "price_revenue"}}, "required": ["capability"]},
+          "then": {"properties": {"evidence": {"required": ["priceRevenueCapabilityFingerprint"]}}}
+        },
+        {
+          "if": {"properties": {"capability": {"const": "price_margin"}}, "required": ["capability"]},
+          "then": {"properties": {"evidence": {"required": ["priceMarginCapabilityFingerprint"]}}}
+        }
+      ]
     },
     "resultSelectionEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint", "priceRevenueCapabilityFingerprint"],
+      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint"],
       "properties": {
         "sourcePublicationFingerprint": {"$ref": "#/$defs/sha256"},
         "readinessReportFingerprint": {"$ref": "#/$defs/sha256"},
@@ -93,7 +113,8 @@
         "artifactContractSha256": {"$ref": "#/$defs/sha256"},
         "responseAssessmentsFingerprint": {"$ref": "#/$defs/sha256"},
         "recommendationsFingerprint": {"$ref": "#/$defs/sha256"},
-        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
+        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"},
+        "priceMarginCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
       }
     },
     "artifact": {

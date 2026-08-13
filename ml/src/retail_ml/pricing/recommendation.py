@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from retail_ml.pricing.cost import gross_margin_pct, resolve_client_cost
 from retail_ml.pricing.policy import enumerate_candidates, resolve_market_rule
 
 
@@ -44,6 +45,8 @@ RECOMMENDATION_COLUMNS = (
     "revenue_impact_minor",
     "margin_impact_minor",
     "margin_reason_code",
+    "current_margin_pct",
+    "expected_margin_pct",
     "confidence",
     "confidence_label",
     "priority",
@@ -121,7 +124,8 @@ def _competitor_bound(
 
 
 def _withheld(
-    row: Mapping[str, Any], reason: str, *, evidence: Mapping[str, Any]
+    row: Mapping[str, Any], reason: str, *, evidence: Mapping[str, Any],
+    margin_reason: str | None = "COST_NOT_CLIENT_ACTUAL",
 ) -> dict[str, Any]:
     base = {key: str(row[key]) for key in KEYS}
     return {
@@ -149,7 +153,9 @@ def _withheld(
         "expected_revenue_proposed_minor": None,
         "revenue_impact_minor": None,
         "margin_impact_minor": None,
-        "margin_reason_code": "COST_NOT_CLIENT_ACTUAL",
+        "margin_reason_code": margin_reason,
+        "current_margin_pct": None,
+        "expected_margin_pct": None,
         "confidence": row.get("confidence"),
         "confidence_label": _confidence_label(row.get("confidence")),
         "priority": "Manual review",
@@ -186,6 +192,7 @@ def build_recommendations(
     *,
     pricing_policy: Mapping[str, Any],
     evidence: Mapping[str, Any],
+    decision_as_of: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build recommendations in the frozen safety/guardrail ordering."""
 
@@ -239,6 +246,30 @@ def build_recommendations(
             dict(pricing_policy), str(response_row["market_id"]), currency
         )
         confidence = float(response_row["confidence"])
+        # Resolve cost and the margin floor once per key, before candidate scoring,
+        # so the guardrail can gate candidate eligibility rather than only annotate
+        # the winner after the fact.
+        inventory_row = inventory_by_key.get(
+            (identity[0], identity[1], identity[2]), {}
+        )
+        cost = resolve_client_cost(
+            inventory_row,
+            price_currency_code=currency,
+            market_id=identity[0],
+            store_id=identity[2],
+            decision_as_of=decision_as_of,
+        )
+        min_margin_pct = Decimal(str(market_rule.get("minMarginPct", "0")))
+        client_cost_minor = cost.cost_minor if cost.is_client_actual else None
+        # PoC cost-of-record: the generated weighted-average cost is the authoritative
+        # unit cost, so the minimum-margin floor is evaluated AND enforced on it. A
+        # client-actual cost is preferred only if one is ever supplied. See plan §0.0.
+        wac_minor = inventory_row.get("synthetic_cost_minor")
+        margin_cost_minor = (
+            client_cost_minor
+            if client_cost_minor is not None
+            else (int(wac_minor) if wac_minor is not None else None)
+        )
         competitor_upper, competitor_row = _competitor_bound(
             competitor_bounds, response_row
         )
@@ -253,6 +284,10 @@ def build_recommendations(
         beta = Decimal(str(response_row["shrunk_beta"]))
         baseline_units = Decimal(str(forecast_row["expected_units"]))
         scored: list[tuple[int, Decimal, Decimal]] = []
+        # Candidates blocked *only* by the margin floor (not promotion/stock), kept
+        # so a Hold forced by the floor can be withheld rather than reported as a
+        # genuine Hold recommendation.
+        margin_blocked_scored: list[tuple[int, Decimal, Decimal]] = []
         for candidate in candidates:
             ratio = Decimal(candidate) / Decimal(current)
             expected_units = Decimal(
@@ -261,11 +296,17 @@ def build_recommendations(
             revenue = expected_units * Decimal(candidate)
             protected = guard.get("guard_status") == "applicable" and candidate != current
             stock_blocked = bool(
-                inventory_by_key.get(
-                    (identity[0], identity[1], identity[2]), {}
-                ).get("stock_risk_blocked", False)
+                inventory_row.get("stock_risk_blocked", False)
             ) and expected_units > baseline_units
-            eligible = not protected and not stock_blocked
+            # Minimum-margin guard, evaluated on the weighted-average cost basis. It
+            # never blocks the current price, so the baseline stays available for
+            # comparison even when it is itself below the floor.
+            margin_blocked = (
+                margin_cost_minor is not None
+                and candidate != current
+                and gross_margin_pct(candidate, margin_cost_minor) < min_margin_pct
+            )
+            eligible = not protected and not stock_blocked and not margin_blocked
             candidate_rows.append(
                 {
                     **dict(zip(KEYS, identity, strict=True)),
@@ -277,12 +318,15 @@ def build_recommendations(
                     "eligible": eligible,
                     "rejection_reason": (
                         "ACTIVE_PROMOTION_PROTECTED" if protected
-                        else "STOCK_RISK_BLOCKED" if stock_blocked else None
+                        else "STOCK_RISK_BLOCKED" if stock_blocked
+                        else "MARGIN_BELOW_FLOOR" if margin_blocked else None
                     ),
                 }
             )
             if eligible:
                 scored.append((candidate, expected_units, revenue))
+            elif margin_blocked and not protected and not stock_blocked:
+                margin_blocked_scored.append((candidate, expected_units, revenue))
         current_score = next((item for item in scored if item[0] == current), None)
         if current_score is None:
             output.append(_withheld(response_row, "NO_BETTER_LEGAL_CANDIDATE", evidence=evidence))
@@ -297,6 +341,23 @@ def build_recommendations(
         minimum_gain = current_score[2] * Decimal("0.0005")
         if chosen[2] <= current_score[2] + minimum_gain:
             chosen = current_score
+        # A Hold forced by the margin floor is a withheld assessment, not a
+        # recommendation: if the only reason no move is chosen is that a
+        # revenue-improving candidate was blocked by the floor, withhold with
+        # MARGIN_BELOW_FLOOR rather than report a false Hold. The current price
+        # remains visible on the withheld row for comparison. Cost is client-actual
+        # here, so the margin reason is None (margin was evaluated, not unavailable).
+        if chosen[0] == current and any(
+            revenue > current_score[2] + minimum_gain
+            for _price, _units, revenue in margin_blocked_scored
+        ):
+            output.append(
+                _withheld(
+                    response_row, "MARGIN_BELOW_FLOOR",
+                    evidence=evidence, margin_reason=None,
+                )
+            )
+            continue
         proposed, proposed_units, proposed_revenue = chosen
         action = "Hold"
         if proposed > current:
@@ -305,27 +366,29 @@ def build_recommendations(
             action = "Decrease"
         change = Decimal(proposed) / Decimal(current) - Decimal(1)
         impact = proposed_revenue - current_score[2]
-        inventory_row = inventory_by_key.get(
-            (identity[0], identity[1], identity[2]), {}
-        )
-        cost_provenance = inventory_row.get("cost_provenance")
-        client_cost = inventory_row.get("client_actual_cost_minor")
+        # Reuse the weighted-average margin cost basis resolved above (plan §0.0):
+        # the same cost that the minimum-margin floor is enforced on drives display.
+        cost_minor = margin_cost_minor
         margin_impact: int | None = None
-        margin_reason: str | None = "COST_NOT_CLIENT_ACTUAL"
-        if client_cost is not None and cost_provenance == "client_actual":
-            cost = Decimal(str(client_cost))
+        margin_reason: str | None = None if cost_minor is not None else cost.reason_code
+        current_margin_pct: float | None = None
+        expected_margin_pct: float | None = None
+        if cost_minor is not None:
+            unit_cost = Decimal(cost_minor)
             margin_impact = int(
                 (
-                    proposed_units * (Decimal(proposed) - cost)
-                    - baseline_units * (Decimal(current) - cost)
+                    proposed_units * (Decimal(proposed) - unit_cost)
+                    - baseline_units * (Decimal(current) - unit_cost)
                 ).quantize(Decimal("1"), rounding=ROUND_HALF_EVEN)
             )
             margin_reason = None
+            current_margin_pct = float(gross_margin_pct(current, cost_minor))
+            expected_margin_pct = float(gross_margin_pct(proposed, cost_minor))
         driver = "Elastic demand supports a lower price" if action == "Decrease" else (
             "Inelastic demand supports a higher price" if action == "Increase"
             else "No distinct legal candidate is sufficiently better"
         )
-        base = dict(zip(KEYS, identity, strict=True))
+        base = {key: value for key, value in zip(KEYS, identity, strict=True)}
         lineage = {
             **evidence,
             "competitorMatchId": competitor_row.get("match_id") if competitor_row else None,
@@ -356,6 +419,8 @@ def build_recommendations(
                 "revenue_impact_minor": int(impact.quantize(Decimal("1"), rounding=ROUND_HALF_EVEN)),
                 "margin_impact_minor": margin_impact,
                 "margin_reason_code": margin_reason,
+                "current_margin_pct": current_margin_pct,
+                "expected_margin_pct": expected_margin_pct,
                 "confidence": confidence,
                 "confidence_label": _confidence_label(confidence),
                 "priority": "Unassigned",

@@ -1106,7 +1106,7 @@ components:
   schemas:
     PricingAuthority:
       type: object
-      required: [retailerId, tenantId, environment, activationSetId, bundleId, bundleSemanticFingerprint, sourcePublicationFingerprint, sourceRunId, inputAuthorityId, sourceAsOf, selectionIds]
+      required: [retailerId, tenantId, environment, activationSetId, bundleId, bundleSemanticFingerprint, sourcePublicationFingerprint, sourceRunId, inputAuthorityId, sourceAsOf, selectionIds, priceMargin, priceMarginActive]
       properties:
         retailerId: {type: string}
         tenantId: {type: string}
@@ -1119,6 +1119,30 @@ components:
         inputAuthorityId: {type: string}
         sourceAsOf: {type: string, format: date-time}
         selectionIds: {type: array, minItems: 1, items: {type: string}}
+        priceMargin:
+          type: object
+          required: [available, minMarginPct]
+          description: >-
+            Margin-capability governance carried from the active bundle. minMarginPct is the
+            configured minimum-margin floor. This is a PoC with no retailer integration, so the
+            generated weighted-average cost is the authoritative unit cost: available is true and
+            margin is served on every surface; reasonCode is populated only if no cost basis exists
+            at all. (The client-actual cost gate is a production-only concern and does not apply
+            here — see the PoC Data Principle in the implementation plan.) Recommendation rows carry
+            currentMarginPct / expectedMarginPct (numeric) through the open PricingPage.
+          properties:
+            available: {type: boolean}
+            reasonCode: {type: string, nullable: true}
+            minMarginPct: {type: string}
+          additionalProperties: true
+        priceMarginActive:
+          type: boolean
+          description: >-
+            Whether margin is served as the governing authority. In this PoC it follows the accepted
+            cost basis (priceMargin.available) since the generated weighted-average cost is the actual
+            cost; it gates the Margin Protection simulation objective and the minimum-margin floor.
+            (In a future real-data deployment it would instead require an active price_margin selection
+            on a client cost — production-only, not applicable to this PoC.)
     PricingPage:
       type: object
       required: [schemaVersion, dataMode, authority]
@@ -1157,7 +1181,7 @@ components:
         expectedActivationSetId: {type: string, pattern: '^pact_[0-9a-f]{16}$'}
     PriceSimulationResponse:
       type: object
-      required: [schemaVersion, scope, currencyCode, simulationPeriod, demandAssumption, demandScenarioSemantics, inventoryObjective, columns, metricOrder, recommendation, competitorEvidence, syntheticMarginScenario, mutated]
+      required: [schemaVersion, scope, currencyCode, simulationPeriod, demandAssumption, demandScenarioSemantics, inventoryObjective, columns, metricOrder, recommendation, competitorEvidence, mutated]
       properties:
         schemaVersion: {const: retail-price-simulation/v1}
         demandScenarioSemantics: {const: additive_expected_and_sum_of_weekly_planning_bounds_not_four_week_quantiles}

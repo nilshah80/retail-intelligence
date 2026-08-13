@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "retail-pricing-cost-evidence/v1",
+  "title": "Client-actual cost evidence record",
+  "description": "The external client cost-feed contract the margin capability consumes per pricing key. Only a genuine externally owned, client-attested ledger carries costProvenance = client_actual AND costEvidenceClass = client AND costAllowedUse = pricing_margin; the resolver requires all three, so a costEvidenceClass = synthetic_test record can prove parsers and negative gates but never resolves to a served margin value or an active price_margin selection. The generated pipeline stamps generated_source_native and can never satisfy this contract. These camelCase feed fields are the external wire contract; a future ingestion adapter (NOT YET IMPLEMENTED) must map them onto the internal snake_case inventory-context row the resolver reads (cost_provenance, cost_evidence_class, cost_allowed_use, client_actual_cost_minor, ...). Until that adapter exists no feed crosses this boundary, so the two field-name conventions are intentionally distinct rather than reconciled. Resolution is evaluated in the clientActualCost precedence order defined in reason-codes.json; the first failing check is the withheld reason.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "costProvenance",
+    "costEvidenceClass",
+    "costOwnershipStatus",
+    "clientActualCostMinor",
+    "costCurrencyCode",
+    "costScopeMarketId",
+    "costScopeLocationId",
+    "costMethod",
+    "costKnownAsOf",
+    "costAllowedUse"
+  ],
+  "properties": {
+    "costProvenance": {
+      "description": "Ownership marker. Only client_actual is eligible for the margin capability; every other value resolves to COST_NOT_CLIENT_ACTUAL. Ownership is an external fact and cannot be conferred by a generated profile, source instance, or policy amendment.",
+      "enum": ["client_actual", "generated_source_native", "reference", "unknown"]
+    },
+    "costEvidenceClass": {
+      "description": "Origin discipline. client denotes a genuine externally attested feed that may activate price_margin after approval; synthetic_test denotes a structurally equivalent fixture that may prove parsing and rejection paths but must never activate the live capability.",
+      "enum": ["client", "synthetic_test"]
+    },
+    "costOwnershipStatus": {
+      "description": "active admits the record; revoked resolves to COST_OWNERSHIP_REVOKED so a withdrawn client authorisation cannot keep serving margin.",
+      "enum": ["active", "revoked"],
+      "default": "active"
+    },
+    "clientActualCostMinor": {
+      "description": "Unit cost in minor currency units. Must be strictly positive; null or non-positive resolves to COST_MISSING or COST_NON_POSITIVE.",
+      "type": ["integer", "null"]
+    },
+    "costCurrencyCode": {
+      "description": "ISO 4217 currency of the cost ledger. Must equal the operating price currency; otherwise COST_CURRENCY_MISMATCH. Cost is never silently converted.",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "costScopeMarketId": {
+      "description": "Market the cost record applies to. Must match the pricing key market or COST_SCOPE_MISMATCH.",
+      "type": "string",
+      "minLength": 1
+    },
+    "costScopeLocationId": {
+      "description": "Location/store the cost record applies to. Must match the pricing key store or COST_SCOPE_MISMATCH.",
+      "type": "string",
+      "minLength": 1
+    },
+    "costMethod": {
+      "description": "Cost method. WAC is computable directly. FIFO requires costMethodVerified = true against receipt-layer depletion; an unverified FIFO label resolves to FIFO_NOT_VERIFIED. Any other method resolves to COST_METHOD_UNSUPPORTED.",
+      "enum": ["WAC", "FIFO"]
+    },
+    "costMethodVerified": {
+      "description": "Whether the stated method has been independently verified against receipt/batch depletion. Required true for FIFO.",
+      "type": "boolean",
+      "default": false
+    },
+    "costKnownAsOf": {
+      "description": "Row-level observation/effective time of the cost. Must be no later than the decision origin (else COST_AFTER_DECISION_ORIGIN) and within the frozen freshness envelope (else COST_STALE). The inventory manifest cutoff is only an upper-bound fallback, never a substitute for this row-level time.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "costAsOf": {
+      "description": "Decision-origin bound carried from the accepted inventory snapshot. Used as a temporal fallback only when an explicit decision origin is not supplied.",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "costSourceSystem": {
+      "description": "Raw source system identity of the client cost feed, retained for audit.",
+      "type": ["string", "null"]
+    },
+    "costSourceInstance": {
+      "description": "Raw source instance identity of the client cost feed, retained for audit.",
+      "type": ["string", "null"]
+    },
+    "costAllowedUse": {
+      "description": "Attested allowed-use purpose of the client cost. Must be pricing_margin for the margin capability; the resolver refuses any other or absent value as COST_NOT_CLIENT_ACTUAL.",
+      "enum": ["pricing_margin"]
+    }
+  }
+}

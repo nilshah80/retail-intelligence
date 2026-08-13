@@ -25,7 +25,9 @@ const authority = {
   sourceRunId: "run-2b0a15521a760e70",
   inputAuthorityId: "ia_0123456789abcdef",
   sourceAsOf: "2026-08-01T00:00:00Z",
-  selectionIds: ["rsel_0123456789abcdef"]
+  selectionIds: ["rsel_0123456789abcdef"],
+  priceMargin: {available: true, reasonCode: null, minMarginPct: "12"},
+  priceMarginActive: true
 };
 
 const recommendation = {
@@ -149,19 +151,8 @@ const simulationResult = {
     aiOptimal: {priceMinor: 20500, units: 389, revenueMinor: 7974500, grossMarginMinor: null, grossMarginReasonCode: "COST_NOT_CLIENT_ACTUAL", endingStockUnits: 111}
   },
   metricOrder: ["Units", "Revenue", "Gross Margin", "Ending Stock"],
-  recommendation: {priceMinor: 20500, revenueImpactMinor: -25500, marginImpactMinor: null, marginReasonCode: "COST_NOT_CLIENT_ACTUAL", stockOutRisk: "Low", confidence: 0.96},
+  recommendation: {priceMinor: 20500, revenueImpactMinor: -25500, marginImpactMinor: 106500, marginReasonCode: null, stockOutRisk: "Low", confidence: 0.96},
   competitorEvidence: {included: true, reasonCode: null},
-  syntheticMarginScenario: {
-    discriminator: "synthetic_margin_scenario",
-    label: "Synthetic demo margin — not client actual",
-    currentMinor: 3200000,
-    proposedMinor: 3306500,
-    aiOptimalMinor: 3306500,
-    currencyCode: "INR",
-    costMethod: "computed_wac",
-    costAsOf: "2026-08-01T00:00:00Z",
-    doesNotAffectRecommendation: true
-  },
   mutated: false
 };
 

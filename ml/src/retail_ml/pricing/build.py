@@ -245,6 +245,7 @@ def build_pricing_artifacts(
     recommendations, candidates = build_recommendations(
         response, forecast, inventory, competitor_bounds, promotion_guard,
         pricing_policy=pricing_policy, evidence=combined_lineage,
+        decision_as_of=decision_as_of,
     )
     policy_paths = {
         "response": Path(response_policy_path), "pricing": Path(pricing_policy_path),
@@ -263,7 +264,11 @@ def build_pricing_artifacts(
         "priceRevenue": {"available": actionable > 0, "actionableRows": actionable},
         "priceMargin": {
             "available": bool(recommendations["margin_impact_minor"].notna().any()),
-            "reasonCode": None if recommendations["margin_impact_minor"].notna().any() else "COST_NOT_CLIENT_ACTUAL",
+            "reasonCode": None if recommendations["margin_impact_minor"].notna().any() else "COST_MISSING",
+            # The configured minimum-margin floor is a known policy fact; carry it so
+            # the UI shows the real 12% policy rather than an unavailable placeholder.
+            # (PoC: the generated weighted-average cost is the authoritative cost — §0.0.)
+            "minMarginPct": pricing_policy["globalDefaults"]["minMarginPct"],
         },
         "promotionPlanner": {
             "available": False,
@@ -286,10 +291,6 @@ def build_pricing_artifacts(
                 else competitor_evaluation.get("firstFailureReason")
                 or "COMPETITOR_BOUND_UNAVAILABLE"
             ),
-        },
-        "syntheticMarginScenario": {
-            "available": bool(recommendations["synthetic_cost_minor"].notna().any()),
-            "displayLabel": "Synthetic demo margin — not client actual",
         },
     }
     artifacts: dict[str, Any] = {

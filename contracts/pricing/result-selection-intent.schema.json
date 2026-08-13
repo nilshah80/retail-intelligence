@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://retail-intelligence.local/contracts/pricing/result-selection-intent.schema.json",
   "title": "retail-pricing-result-selection-intent/v1",
-  "description": "A pre-bundle, non-lifecycle projection of a pricing result selection. Its selectionId binds the full serving scope and non-circular semantic evidence before bundle closure.",
+  "description": "A pre-bundle, non-lifecycle projection of a pricing result selection. Its selectionId binds the full serving scope and non-circular semantic evidence before bundle closure. price_revenue is the default capability; price_margin is additive and admitted only with genuine client-actual cost evidence (P5-D6/P5-D24).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "selectionId", "semanticIdentityExcludes", "retailerId", "tenantId", "environment", "capability", "audience", "evidence"],
@@ -13,10 +13,20 @@
     "retailerId": {"type": "string", "minLength": 1},
     "tenantId": {"type": "string", "minLength": 1},
     "environment": {"enum": ["local", "dev", "staging", "prod"]},
-    "capability": {"const": "price_revenue"},
+    "capability": {"enum": ["price_revenue", "price_margin"]},
     "audience": {"enum": ["response_rich_local", "pricing_evidence_sparse_dev"]},
     "evidence": {"$ref": "#/$defs/evidence"}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"capability": {"const": "price_revenue"}}, "required": ["capability"]},
+      "then": {"properties": {"evidence": {"required": ["priceRevenueCapabilityFingerprint"]}}}
+    },
+    {
+      "if": {"properties": {"capability": {"const": "price_margin"}}, "required": ["capability"]},
+      "then": {"properties": {"evidence": {"required": ["priceMarginCapabilityFingerprint"]}}}
+    }
+  ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "evidence": {
@@ -30,8 +40,7 @@
         "pricingPolicySha256",
         "artifactContractSha256",
         "responseAssessmentsFingerprint",
-        "recommendationsFingerprint",
-        "priceRevenueCapabilityFingerprint"
+        "recommendationsFingerprint"
       ],
       "properties": {
         "sourcePublicationFingerprint": {"$ref": "#/$defs/sha256"},
@@ -42,7 +51,8 @@
         "artifactContractSha256": {"$ref": "#/$defs/sha256"},
         "responseAssessmentsFingerprint": {"$ref": "#/$defs/sha256"},
         "recommendationsFingerprint": {"$ref": "#/$defs/sha256"},
-        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
+        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"},
+        "priceMarginCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
       }
     }
   }

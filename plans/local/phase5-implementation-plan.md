@@ -1,5 +1,15 @@
 # Phase 5 Implementation Plan — Pricing & Promotions
 
+> **PoC Data Principle (overrides the client-actual margin gates below for this PoC).** This is a
+> proof-of-concept with no retailer/ERP integration and **no "client-actual" data of any kind**.
+> The datagen output is the actual, authoritative data of record — cost included. The generated
+> **weighted-average cost is the actual unit cost**, so margin is a first-class value shown on every
+> surface. `P5-D6` and `P5-D24`'s client-actual cost gate, and every "keep primary margin
+> unavailable / `COST_NOT_CLIENT_ACTUAL`" clause in this document, are **production-only** concerns
+> retained for a future real-data deployment; they **must not** withhold margin in this PoC. Do not
+> re-introduce a client-actual/ownership gate or a "synthetic — not client actual" label here.
+> Authoritative statement + anti-drift rule: `ui-parity-availability-and-margin-plan.md` §0.0.
+
 _Companion to `plans/local/plan.md`, `plans/local/tasks.md`,
 `plans/local/phase4-implementation-plan.md`, `plans/local/scenario-planning-implementation-plan.md`,
 and `plans/local/post-phase3-implementation-plan.md`._

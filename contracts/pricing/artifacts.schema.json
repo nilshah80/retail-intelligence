@@ -3,7 +3,7 @@
   "$id": "https://retail-intelligence.local/contracts/pricing/artifacts.schema.json",
   "schemaVersion": "retail-pricing-artifact-contract/v1",
   "semanticIdentityExcludes": ["/contractFingerprint"],
-  "contractFingerprint": "458b3a1831d0d65ccf780995a5a9cff0d6b922a643e0e6021fd3cf3770f57d9f",
+  "contractFingerprint": "4ae8dec5485bfee245abc2d6a50a3d9d48e13c3890efb0c9215cb5120078fdb7",
   "artifacts": {
     "pricing_panel": {
       "schemaVersion": "retail-pricing-panel/v1",
@@ -22,7 +22,7 @@
     },
     "price_recommendations": {
       "schemaVersion": "retail-price-recommendations/v1",
-      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "category_label", "recommendation_id", "record_kind", "selectable", "action", "disposition", "first_failure_reason", "current_price_minor", "proposed_price_minor", "currency_code", "expected_units_current", "expected_units_proposed", "expected_revenue_current_minor", "expected_revenue_proposed_minor", "revenue_impact_minor", "margin_impact_minor", "margin_reason_code", "confidence", "priority", "risk", "drivers", "lineage"],
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "category_label", "recommendation_id", "record_kind", "selectable", "action", "disposition", "first_failure_reason", "current_price_minor", "proposed_price_minor", "currency_code", "expected_units_current", "expected_units_proposed", "expected_revenue_current_minor", "expected_revenue_proposed_minor", "revenue_impact_minor", "margin_impact_minor", "margin_reason_code", "current_margin_pct", "expected_margin_pct", "confidence", "priority", "risk", "drivers", "lineage"],
       "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
     },
     "competitor_assessments": {

@@ -309,7 +309,12 @@ def load_unit_costs(
             cost.location_id,
             cost.sku_id,
             cost.wac_cost AS unit_cost_minor,
-            cost.method AS cost_method
+            -- The value taken is the canonical quantity-weighted WAC, so the served
+            -- method is WAC. The source's own label (cost.method) is audit input
+            -- only and must never assert FIFO over WAC arithmetic (phase5 §1.5);
+            -- genuine FIFO stays unavailable until receipt-layer depletion is
+            -- implemented and independently verified.
+            'WAC' AS cost_method
         FROM inventory_cost AS cost
         JOIN locations ON locations.location_id = cost.location_id
         WHERE cost.as_of_date <= ?

@@ -32,7 +32,7 @@ from retail_ml.pricing.selection import (
 
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0030_pricing_intents"
+MIGRATION_REVISION: Final[str] = "0031_pricing_margin_pct"
 VERIFIER_CONTRACT: Final[str] = "retail-pricing-bundle-verification/v1"
 
 
@@ -390,6 +390,7 @@ def materialize_pricing_bundle(
                         "current_price_minor", "proposed_price_minor", "currency_code",
                         "expected_units_current", "expected_units_proposed",
                         "revenue_impact_minor", "margin_impact_minor", "margin_reason_code",
+                        "current_margin_pct", "expected_margin_pct",
                         "confidence", "priority", "risk", "stock_cover_days",
                         "competitor_price_minor", "details",
                     ),
@@ -409,6 +410,8 @@ def materialize_pricing_bundle(
                             _integer_field(row, "revenue_impact_minor"),
                             _integer_field(row, "margin_impact_minor"),
                             _field(row, "margin_reason_code"),
+                            _field(row, "current_margin_pct"),
+                            _field(row, "expected_margin_pct"),
                             _field(row, "confidence"), _field(row, "priority", "Unassigned"),
                             _field(row, "risk", "Unavailable"),
                             _field(row, "stock_cover_days"),

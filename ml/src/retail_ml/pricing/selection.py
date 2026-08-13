@@ -57,6 +57,9 @@ def selection_id(document: Mapping[str, Any]) -> str:
     return _short_identity("rsel_", projection)
 
 
+SELECTION_CAPABILITIES = ("price_revenue", "price_margin")
+
+
 def build_selection_intent(
     *,
     retailer_id: str,
@@ -64,9 +67,18 @@ def build_selection_intent(
     environment: str,
     audience: str,
     evidence: Mapping[str, Any],
+    capability: str = "price_revenue",
 ) -> dict[str, Any]:
-    """Build the exact non-lifecycle projection bound before bundle closure."""
+    """Build the exact non-lifecycle projection bound before bundle closure.
 
+    ``capability`` defaults to ``price_revenue`` so existing callers are
+    unchanged byte-for-byte. ``price_margin`` is additive and only ever admitted
+    with genuine client-actual cost evidence (``P5-D6``/``P5-D24``); generated
+    cost never yields a ``price_margin`` selection.
+    """
+
+    if capability not in SELECTION_CAPABILITIES:
+        raise PricingSelectionError(f"unknown selection capability {capability!r}")
     document: dict[str, Any] = {
         "schemaVersion": "retail-pricing-result-selection/v2",
         "selectionId": "pending",
@@ -74,7 +86,7 @@ def build_selection_intent(
         "retailerId": retailer_id,
         "tenantId": tenant_id,
         "environment": environment,
-        "capability": "price_revenue",
+        "capability": capability,
         "audience": audience,
         "evidence": dict(evidence),
     }
@@ -124,7 +136,10 @@ def build_selection_record(
     actor: str,
     reason: str,
     recorded_at: str | None = None,
+    capability: str = "price_revenue",
 ) -> dict[str, Any]:
+    if capability not in SELECTION_CAPABILITIES:
+        raise PricingSelectionError(f"unknown selection capability {capability!r}")
     document: dict[str, Any] = {
         "schemaVersion": "retail-pricing-result-selection/v2",
         "recordId": "pending",
@@ -133,7 +148,7 @@ def build_selection_record(
         "retailerId": retailer_id,
         "tenantId": tenant_id,
         "environment": environment,
-        "capability": "price_revenue",
+        "capability": capability,
         "audience": audience,
         "evidence": dict(evidence),
         "state": state,

@@ -20,7 +20,13 @@ const authoritySchema = z.object({
   sourcePublicationFingerprint: z.string(),
   sourceRunId: z.string(),
   sourceAsOf: z.string(),
-  selectionIds: z.array(z.string())
+  selectionIds: z.array(z.string()),
+  priceMargin: z.object({
+    available: z.boolean(),
+    reasonCode: z.string().nullish(),
+    minMarginPct: z.union([z.string(), z.number()])
+  }).passthrough(),
+  priceMarginActive: z.boolean()
 }).passthrough();
 
 const pricingEnvelope = {
@@ -248,17 +254,6 @@ export const priceSimulationSchema = z.object({
     included: z.boolean(),
     reasonCode: z.string().nullish()
   }).passthrough(),
-  syntheticMarginScenario: z.object({
-    discriminator: z.literal("synthetic_margin_scenario"),
-    label: z.literal("Synthetic demo margin — not client actual"),
-    currentMinor: z.number(),
-    proposedMinor: z.number(),
-    aiOptimalMinor: z.number(),
-    currencyCode: z.string(),
-    costMethod: z.unknown().optional(),
-    costAsOf: z.unknown().optional(),
-    doesNotAffectRecommendation: z.literal(true)
-  }).nullable(),
   mutated: z.literal(false)
 }).passthrough();
 

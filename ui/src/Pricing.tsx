@@ -536,7 +536,7 @@ function StorePricingDrilldown({
       <div className="grid-3">
         <PricingKpi label="Open Recommendations" value={formatCount(Number(item?.recommendations ?? 0))} note={period} />
         <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(Number(item?.revenueOpportunityMinor ?? 0), currencyCode)} note="Model-implied" />
-        <PricingKpi label="Margin Opportunity" value={margin === null || margin === undefined ? unavailable : formatAggregateMoneyMinor(Number(margin), currencyCode)} note="Client-actual cost only" unavailableReason={margin === null || margin === undefined ? "Client-actual cost is unavailable." : undefined} />
+        <PricingKpi label="Margin Opportunity" value={margin === null || margin === undefined ? unavailable : formatAggregateMoneyMinor(Number(margin), currencyCode)} note="Weighted-average cost basis" unavailableReason={margin === null || margin === undefined ? "Cost basis unavailable." : undefined} />
       </div>
       <div className="grid-2">
         <div className="card"><h4>Top Pricing Issues</h4><MetricList rows={[
@@ -826,7 +826,7 @@ function RecommendationOverview({
             <div className="quality-ring unavailable-ring"><strong>—</strong><span>Score unavailable</span></div>
             <MetricList rows={[
               {label: "High confidence", value: <UnavailableValue reason="The complete assessed denominator is not projected here." />},
-              {label: "Within margin guardrail", value: <UnavailableValue reason="Client-actual cost is unavailable." />},
+              {label: "Within margin guardrail", value: <UnavailableValue reason="The margin-guardrail compliance share is not projected by this endpoint." />},
               {label: "Predicted vs realized", value: <UnavailableValue reason="Realized-history evidence is unavailable." />},
               {label: "Needing override", value: <UnavailableValue reason="Workflow override evidence is unavailable." />}
             ]} />
@@ -835,7 +835,7 @@ function RecommendationOverview({
       </div>
       <div className="grid-3 pricing-decision-cards">
         {[
-          ["Margin Protection", "Requires client-actual cost; synthetic cost cannot guard a recommendation."],
+          ["Margin Protection", "Protects the margin floor against the weighted-average cost basis when choosing a price."],
           ["Markdown Optimization", "Appears only when accepted markdown or promotion evidence supports it."],
           ["Inventory Clearance", "Uses accepted ageing, seasonality, transfer and local-price guards."]
         ].map(([title, text]) => (
@@ -975,7 +975,7 @@ function PriceRecommendations({
           <div className="kpi-grid pricing-kpi-grid">
             <PricingKpi label="Open Recommendations" value={formatCount(data.summary.kpis.openRecommendations)} note="Current filtered recommendations; withheld assessments excluded" />
             <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" />
-            <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Client-actual-cost rows only" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} />
+            <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Weighted-average cost basis" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} />
             <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note={data.summary.kpis.riskReason} />
             <PricingKpi label="Recommendation Adoption" value={unavailable} note="Workflow/realized evidence required" unavailableReason={data.summary.kpis.adoptionReason} />
           </div>
@@ -990,7 +990,7 @@ function PriceRecommendations({
 
           <div className="callout pricing-callout">
             <strong>AI recommendation logic</strong>
-            <p>Accepted price response, demand forecast, local price policy, inventory context and admissible competitor evidence are combined only where the active capability record permits them. Client-actual cost and customer-response evidence are not inferred.</p>
+            <p>Accepted price response, demand forecast, local price policy, inventory context and admissible competitor evidence are combined only where the active capability record permits them. Cost is the generated weighted-average cost — this PoC has no external client data.</p>
           </div>
 
           <div className="pricing-tabs" role="tablist" aria-label="Recommendation views">
@@ -1004,7 +1004,7 @@ function PriceRecommendations({
               <div className="card">
                 <CardHeader title="Store-Level Pricing Performance" action={<PreviewButton onClick={() => setModal("store-drilldown")} disabled={!grouped.data?.items.length} reason={!grouped.data?.items.length ? "No governed store row is available to inspect." : undefined}>Open Store Drilldown</PreviewButton>} />
                 <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{storeName(dashboard, String(item.store ?? ""), String(item.storeName ?? ""))}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td><UnavailableValue reason="Approval workflow evidence is unavailable." /></td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{storeName(dashboard, String(item.store ?? ""), String(item.storeName ?? ""))}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td><UnavailableValue reason="Approval workflow evidence is unavailable." /></td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Cost basis unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
                 </PricingState>
               </div>
             )}
@@ -1012,7 +1012,7 @@ function PriceRecommendations({
               <div className="card">
                 <CardHeader title="Category Pricing Effectiveness" />
                 <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{categoryName(dashboard, String(item.category ?? ""), String(item.categoryLabel ?? ""))}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Client-actual cost is unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td><UnavailableValue reason="Coverage-weighted category elasticity is not projected by this endpoint." /></td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{categoryName(dashboard, String(item.category ?? ""), String(item.categoryLabel ?? ""))}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Cost basis unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td><UnavailableValue reason="Coverage-weighted category elasticity is not projected by this endpoint." /></td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
                 </PricingState>
                 <h4>Category Opportunity Matrix</h4>
                 <div className="opportunity-matrix">{["High demand / Low stock", "High stock / Low demand", "Competitor opportunity", "Promotion conflict"].map((label) => <div key={label}><strong>{label}</strong><UnavailableValue reason="Category opportunity-cell evidence is unavailable." /></div>)}</div>
@@ -1047,8 +1047,8 @@ function PriceRecommendations({
                 <td>{row.competitorPriceMinor === null || row.competitorPriceMinor === undefined ? <UnavailableValue reason="No fresh admissible competitor bound." /> : formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td>
                 <td>{row.stockCoverDays === null || row.stockCoverDays === undefined ? <UnavailableValue reason="Inventory cover is unavailable." /> : `${formatUnits(row.stockCoverDays)} days`}</td>
                 <td>{row.forecastDemand ?? <UnavailableValue reason="Forecast demand cohort is unavailable." />}</td>
-                <td><UnavailableValue reason="Client-actual cost is unavailable." /></td>
-                <td><UnavailableValue reason="Client-actual cost is unavailable." /></td>
+                <td>{row.currentMarginPct === null || row.currentMarginPct === undefined ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatPercent(row.currentMarginPct)}</td>
+                <td>{row.expectedMarginPct === null || row.expectedMarginPct === undefined ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatPercent(row.expectedMarginPct)}</td>
                 <td>{formatAggregateMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
                 <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
                 <td className="reason-cell">{explanationText(row.aiReason, row.firstFailureReason)}</td>
@@ -1125,7 +1125,7 @@ function SimulationResult({result, onClose}: {
   const resultMetrics = (
     <div className="grid-4 simulation-metrics">
       <PricingKpi label="Revenue" value={formatAggregateMoneyMinor(result.recommendation.revenueImpactMinor, result.currencyCode)} note="Model-implied change over Next 4 Weeks" />
-      <PricingKpi label="Margin" value={formatAggregateMoneyMinor(result.recommendation.marginImpactMinor, result.currencyCode)} note="Primary result requires client-actual cost" unavailableReason={result.recommendation.marginImpactMinor === null ? reasonText(result.recommendation.marginReasonCode) : undefined} />
+      <PricingKpi label="Margin" value={formatAggregateMoneyMinor(result.recommendation.marginImpactMinor, result.currencyCode)} note="Weighted-average cost basis" unavailableReason={result.recommendation.marginImpactMinor === null ? reasonText(result.recommendation.marginReasonCode) : undefined} />
       <PricingKpi label="Stock Risk" value={result.recommendation.stockOutRisk} note="Forecast and accepted inventory context" />
       <PricingKpi label="Confidence" value={formatPercent(result.recommendation.confidence * 100)} note="Price-response confidence" />
     </div>
@@ -1139,17 +1139,6 @@ function SimulationResult({result, onClose}: {
   const content = (
     <>
       <div className="table-scroll"><table className="table pricing-table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody>{result.metricOrder.map((metric) => <tr key={metric}><td><strong>{metric}</strong></td><td><ScenarioValue metric={metric} result={result.columns.current} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.proposed} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.aiOptimal} currency={result.currencyCode} /></td></tr>)}</tbody></table></div>
-      {result.syntheticMarginScenario && (
-        <div className="synthetic-margin-panel">
-          <h4>Synthetic demo margin — not client actual</h4>
-          <MetricList rows={[
-            {label: "Current", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.currentMinor, result.currencyCode)},
-            {label: "Proposed", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.proposedMinor, result.currencyCode)},
-            {label: "AI Optimal", value: formatAggregateMoneyMinor(result.syntheticMarginScenario.aiOptimalMinor, result.currencyCode)}
-          ]} />
-          <p>Computed-WAC provenance · cost as of {String(result.syntheticMarginScenario.costAsOf ?? unavailable)} · Does not affect the recommendation.</p>
-        </div>
-      )}
       {recommendationCallout}
       {resultMetrics}
     </>
@@ -1176,6 +1165,14 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   const [resultOpen, setResultOpen] = useState(false);
   const items = recommendations.data?.items.filter((row) => row.selectable) ?? [];
   const selected = items.find((row) => row.recommendationId === recommendationId);
+  // The minimum-margin floor is a known policy fact; in this PoC the generated
+  // weighted-average cost is the cost basis, so the floor is applied (no separate
+  // client cost exists here — generated data is the actual data).
+  const priceMargin = recommendations.data?.authority?.priceMargin;
+  const minMarginDisplay = priceMargin?.minMarginPct != null ? `${priceMargin.minMarginPct}%` : unavailable;
+  // Margin Protection is enabled only under an active price_margin selection; it
+  // stays disabled until then rather than being unconditionally blocked.
+  const priceMarginActive = recommendations.data?.authority?.priceMarginActive === true;
   const detail = useQuery({
     queryKey: ["pricing-simulation-detail", recommendationId],
     queryFn: ({signal}) => loadRecommendationDetail(recommendationId, signal),
@@ -1233,10 +1230,10 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
           <Field label="Current Price" help={`Accepted local price${selected ? ` · ${selected.currencyCode}` : ""}`}><input className="filter" readOnly value={selected ? formatMoneyMinor(selected.currentPriceMinor, selected.currencyCode) : unavailable} /></Field>
           <Field label="Proposed Price" help={!validPrice && proposed ? "Enter a positive price with at most two decimals on the governed local grid, within support and the applicable change cap." : `Local ${selected?.currencyCode ?? "currency"}`}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && !validPrice} /></Field>
           <Field label="Simulation Period"><select className="filter" disabled><option>Next 4 Weeks</option></select></Field>
-          <Field label="Minimum Margin" help="Client-actual cost is required; generated cost is isolated below the comparison."><input className="filter" readOnly disabled value="Not available" /></Field>
+          <Field label="Minimum Margin" help={priceMarginActive ? "Minimum-margin floor applied (weighted-average cost basis)." : "Not evaluated — no cost basis available."}><input className="filter" readOnly disabled value={minMarginDisplay} /></Field>
           <Field label="Competitor Response" help={competitorIncluded ? "Fresh admissible competitor evidence is included automatically." : `Not included — ${reasonText(selected?.firstFailureReason ?? "COMPETITOR_BOUND_UNAVAILABLE")}`}><select className="filter" disabled value={competitorIncluded ? "Include" : "Not included"}><option>{competitorIncluded ? "Include" : "Not included"}</option></select></Field>
           <Field label="Demand Assumption" help="Expected is additive across four weeks; Best/Worst are sums of weekly planning bounds, not four-week quantiles."><select className="filter" value={assumption} onChange={(event) => setAssumption(event.target.value as typeof assumption)}><option>Expected</option><option>Best Case</option><option>Worst Case</option></select></Field>
-          <Field label="Inventory Objective"><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled>Margin Protection — client-actual cost required</option><option>Clearance</option></select></Field>
+          <Field label="Inventory Objective"><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
         </div>
         {simulation.error && <div className="preview-banner error-banner" role="alert"><strong>Simulation was not run.</strong>{simulation.error instanceof Error ? simulation.error.message : String(simulation.error)}</div>}
       </div>
@@ -1567,7 +1564,7 @@ function PromotionPlanner() {
           <div className="kpi-grid pricing-kpi-grid">{[
             ["Active Promotions", "Current valid-time source plans"],
             ["Projected Revenue Uplift", "Accepted model-implied revenue with coverage"],
-            ["Projected Margin Impact", "Client-actual cost required"],
+            ["Projected Margin Impact", "Weighted-average cost basis"],
             ["Required Promotional Stock", "Accepted demand or source requirement required"],
             ["Promotions Needing Review", "Workflow-review authority required"]
           ].map(([label, note]) => <PricingKpi key={label} label={label} value={unavailable} note={note} unavailableReason={message} />)}</div>

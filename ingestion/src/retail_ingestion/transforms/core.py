@@ -346,11 +346,11 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
             product_name::VARCHAR AS product_name,
             brand::VARCHAR AS brand,
             NULL::INTEGER AS shelf_life_days,
-            {
-                exact_minor_sql(
-                    "reference_price_major", "currency_code"
-                )
-            } AS reference_cost,
+            -- Honest unavailable rather than a mislabelled selling price. The
+            -- source reference price must not masquerade as a cost ledger:
+            -- pricing/margin sources unit cost from accepted inventory evidence
+            -- (receipt/transfer derived), never from this product reference row.
+            NULL::BIGINT AS reference_cost,
             known_as_of,
             evidence_grade::VARCHAR AS known_as_of_evidence_grade
         FROM stage.stage_data.products

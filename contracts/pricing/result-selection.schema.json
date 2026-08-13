@@ -13,7 +13,7 @@
     "retailerId": {"type": "string", "minLength": 1},
     "tenantId": {"type": "string", "minLength": 1},
     "environment": {"enum": ["local", "dev", "staging", "prod"]},
-    "capability": {"const": "price_revenue"},
+    "capability": {"enum": ["price_revenue", "price_margin"]},
     "audience": {"enum": ["response_rich_local", "pricing_evidence_sparse_dev"]},
     "evidence": {"$ref": "#/$defs/evidence"},
     "state": {"enum": ["candidate", "approved", "active", "superseded", "refused"]},
@@ -23,12 +23,22 @@
     "recordedAt": {"type": "string", "format": "date-time"},
     "review": {"type": "object", "required": ["actor", "reason"]}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"capability": {"const": "price_revenue"}}, "required": ["capability"]},
+      "then": {"properties": {"evidence": {"required": ["priceRevenueCapabilityFingerprint"]}}}
+    },
+    {
+      "if": {"properties": {"capability": {"const": "price_margin"}}, "required": ["capability"]},
+      "then": {"properties": {"evidence": {"required": ["priceMarginCapabilityFingerprint"]}}}
+    }
+  ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint", "priceRevenueCapabilityFingerprint"],
+      "required": ["sourcePublicationFingerprint", "readinessReportFingerprint", "inputAuthorityId", "responsePolicySha256", "pricingPolicySha256", "artifactContractSha256", "responseAssessmentsFingerprint", "recommendationsFingerprint"],
       "properties": {
         "sourcePublicationFingerprint": {"$ref": "#/$defs/sha256"},
         "readinessReportFingerprint": {"$ref": "#/$defs/sha256"},
@@ -38,7 +48,8 @@
         "artifactContractSha256": {"$ref": "#/$defs/sha256"},
         "responseAssessmentsFingerprint": {"$ref": "#/$defs/sha256"},
         "recommendationsFingerprint": {"$ref": "#/$defs/sha256"},
-        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
+        "priceRevenueCapabilityFingerprint": {"$ref": "#/$defs/sha256"},
+        "priceMarginCapabilityFingerprint": {"$ref": "#/$defs/sha256"}
       }
     }
   }

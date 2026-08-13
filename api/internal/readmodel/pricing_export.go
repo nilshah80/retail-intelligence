@@ -222,7 +222,11 @@ func (s *PricingStore) ExportRecommendations(
 		  to_char(competitor_price_minor::numeric/100.0,'FM999999999999990.00') END,
 		 CASE WHEN stock_cover_days IS NULL THEN '' ELSE
 		  to_char(stock_cover_days,'FM999999990.0') || ' days' END,
-		 coalesce(details->>'forecast_demand_label',''), '', '',
+		 coalesce(details->>'forecast_demand_label',''),
+		 CASE WHEN current_margin_pct IS NULL THEN '' ELSE
+		  to_char(current_margin_pct,'FM999999990.00') || '%' END,
+		 CASE WHEN expected_margin_pct IS NULL THEN '' ELSE
+		  to_char(expected_margin_pct,'FM999999990.00') || '%' END,
 		 CASE WHEN revenue_impact_minor IS NULL THEN '' ELSE currency_code || ' ' ||
 		  to_char(revenue_impact_minor::numeric/100.0,'FM999999999999990.00') END,
 		 CASE WHEN margin_impact_minor IS NULL THEN '' ELSE currency_code || ' ' ||

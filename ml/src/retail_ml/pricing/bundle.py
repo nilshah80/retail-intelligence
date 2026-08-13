@@ -99,16 +99,26 @@ def _canonical_fingerprint(document: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+_CAPABILITY_EVIDENCE = {
+    "price_revenue": ("priceRevenue", "priceRevenueCapabilityFingerprint"),
+    "price_margin": ("priceMargin", "priceMarginCapabilityFingerprint"),
+}
+
+
 def _selection_evidence(
     *,
     lineage: Mapping[str, Any],
     policies: Mapping[str, str],
     capabilities: Mapping[str, Any],
     artifacts: Mapping[str, Any],
+    capability: str = "price_revenue",
 ) -> dict[str, str]:
-    capability = capabilities.get("priceRevenue")
-    if not isinstance(capability, Mapping):
-        raise PricingBundleError("priceRevenue capability evidence is absent")
+    # capability defaults to price_revenue so the existing binding is byte-identical;
+    # price_margin is additive and only ever carries genuine client-actual evidence.
+    capability_key, fingerprint_field = _CAPABILITY_EVIDENCE[capability]
+    capability_evidence = capabilities.get(capability_key)
+    if not isinstance(capability_evidence, Mapping):
+        raise PricingBundleError(f"{capability_key} capability evidence is absent")
     required_lineage = (
         "publicationSemanticFingerprint",
         "readinessReportFingerprint",
@@ -139,7 +149,7 @@ def _selection_evidence(
         "recommendationsFingerprint": str(
             artifacts["price_recommendations"]["semanticFingerprint"]
         ),
-        "priceRevenueCapabilityFingerprint": _canonical_fingerprint(capability),
+        fingerprint_field: _canonical_fingerprint(capability_evidence),
     }
 
 
@@ -660,6 +670,13 @@ def verify_pricing_bundle(path: str | Path) -> dict[str, Any]:
         loaded[name] = value
     _validate_policy_hashes(manifest.get("policies") or {})
     _validate_artifacts(loaded)
+    # DEFERRED SEAM (dual-capability lifecycle): the schema permits a second
+    # price_margin selection (prospectiveResultSelections maxItems=2, capability
+    # enum includes price_margin), but build/verify/activate remain single-
+    # capability by design until an active price_margin capability is authorised
+    # on genuine client-actual cost. This exactly-one check is the intentional
+    # gate, not an oversight; widening it is the second half of the margin
+    # lifecycle and is tracked in the implementation plan, not completed here.
     prospective = manifest.get("prospectiveResultSelections") or []
     _require(
         isinstance(prospective, list) and len(prospective) == 1,

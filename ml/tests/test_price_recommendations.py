@@ -60,8 +60,9 @@ def test_negative_elastic_response_can_produce_decrease_and_synthetic_cost_is_se
 
     assert row["action"] == "Decrease"
     assert row["proposed_price_minor"] < row["current_price_minor"]
-    assert row["margin_impact_minor"] is None
-    assert row["margin_reason_code"] == "COST_NOT_CLIENT_ACTUAL"
+    # Demo shows the computed-WAC margin from the generated cost.
+    assert row["margin_impact_minor"] is not None
+    assert row["margin_reason_code"] is None
     assert row["synthetic_cost_minor"] == 12_000
     assert candidates["eligible"].all()
 
@@ -92,7 +93,7 @@ def test_rejected_response_remains_visible_as_withheld_assessment() -> None:
     assert recommendations.iloc[0]["synthetic_cost_minor"] is None
 
 
-def test_stateless_simulation_preserves_primary_and_synthetic_margin_boundaries() -> None:
+def test_stateless_simulation_preserves_primary_margin_boundaries() -> None:
     recommendations, candidates = _build(
         inventory=_inventory(client_actual_cost_minor=13_000, cost_provenance="client_actual")
     )
@@ -113,7 +114,8 @@ def test_stateless_simulation_preserves_primary_and_synthetic_margin_boundaries(
     assert result["mutated"] is False
     assert result["metricOrder"] == ["Units", "Revenue", "Gross Margin", "Ending Stock"]
     assert result["columns"]["current"]["grossMarginMinor"] is not None
-    assert result["syntheticMarginScenario"]["doesNotAffectRecommendation"] is True
+    # The obsolete synthetic-margin scenario is no longer produced (plan §0.0).
+    assert "syntheticMarginScenario" not in result
 
 
 def test_simulation_refuses_off_grid_price() -> None:

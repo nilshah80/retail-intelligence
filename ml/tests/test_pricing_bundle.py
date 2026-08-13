@@ -58,7 +58,14 @@ def _capabilities(*, sparse: bool = False) -> dict[str, object]:
         "priceRevenue": {
             "available": not sparse,
             "actionableRows": 0 if sparse else 25,
-        }
+        },
+        # PoC: the generated weighted-average cost is the authoritative cost, so the
+        # margin capability is a first-class, always-present bundle capability (§0.0).
+        "priceMargin": {
+            "available": not sparse,
+            "reasonCode": None if not sparse else "COST_MISSING",
+            "minMarginPct": "12",
+        },
     }
 
 
@@ -172,6 +179,8 @@ def _artifacts(*, sparse: bool = False):
             "revenue_impact_minor": None if sparse else -5_000,
             "margin_impact_minor": None,
             "margin_reason_code": "COST_NOT_CLIENT_ACTUAL",
+            "current_margin_pct": None,
+            "expected_margin_pct": None,
             "confidence": None if sparse else 0.96,
             "priority": "Manual review" if sparse else "Low",
             "risk": "Unavailable" if sparse else "Low",

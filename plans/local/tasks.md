@@ -5,6 +5,16 @@ _All tasks below are **local**, on generated synthetic data, shadow-only._
 _Status reconciled 2026-07-30: Phases 1–3 reflect implemented evidence and explicit remaining
 manual/human/evidence gates; Phases 4–8 remain future work unless a line says otherwise._
 
+> **PoC Data Principle (read before any margin/cost work) — generated data IS the actual data.**
+> This PoC has no retailer/ERP integration and no "client-actual" data of any kind. The datagen
+> output is the authoritative data of record, cost included: the generated **weighted-average cost
+> is the actual unit cost**, so margin is a first-class value shown on every surface (Margin
+> Opportunity, Current/Expected Margin, Margin Impact, simulation Gross Margin). The `client-actual`
+> cost gate (`P5-D6`/`P5-D24`) and any "generated cost cannot show margin" withholding are
+> **production-only** concerns and must **never** gate PoC margin. Do not re-introduce a
+> client-actual/ownership gate or a "synthetic — not client actual" label. Full statement and
+> anti-drift rule: `ui-parity-availability-and-margin-plan.md` §0.0.
+
 ## Cross-phase UI and demo track `[START EARLY]`
 
 - [x] UI framework decision #17 is implemented with React + Vite + TypeScript, TanStack

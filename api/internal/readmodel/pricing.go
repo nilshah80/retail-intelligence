@@ -8,6 +8,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 const (
 	PricingUnavailableSchema = "retail-pricing-unavailable/v1"
 	PricingPageSchema        = "retail-pricing-page/v1"
-	PricingMigrationRevision = "0030_pricing_intents"
+	PricingMigrationRevision = "0031_pricing_margin_pct"
 
 	PricingReasonUnavailable = "PRICING_READ_MODEL_UNAVAILABLE"
 	PricingReasonInvalid     = "PRICING_AUTHORITY_INVALID"
@@ -69,6 +70,7 @@ type PricingStore struct {
 	decisionAsOf      time.Time
 	capabilities      map[string]any
 	selectionIDs      []string
+	priceMarginActive bool
 	presentation      *Store
 }
 
@@ -232,6 +234,30 @@ func LoadPricing(ctx context.Context, config PricingConfig) *PricingStore {
 		pool.Close()
 		return unavailablePricing(PricingReasonInvalid, "The active pricing capability document is invalid.", config.Environment)
 	}
+	// PoC cost-model: margin authority follows the accepted cost basis. This PoC has
+	// no retailer integration, so the generated weighted-average cost IS the cost of
+	// record; margin is served as authoritative whenever the bundle's priceMargin
+	// capability reports an accepted cost (available=true). There is NO "client-actual"
+	// data in this PoC — generated data is the actual data (see the PoC cost-model
+	// note in the implementation plan). The production path (an active price_margin
+	// selection on a client cost) is still honoured for a future real-data deployment.
+	if pm, ok := store.capabilities["priceMargin"].(map[string]any); ok {
+		if avail, ok := pm["available"].(bool); ok {
+			store.priceMarginActive = avail
+		}
+	}
+	if !store.priceMarginActive {
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM retail_serving.pricing_result_selection_events
+				WHERE retailer_id = $1 AND tenant_id = $2 AND environment = $3
+				  AND capability = 'price_margin' AND lifecycle_status = 'active'
+				  AND selection_id = ANY($4)
+			)
+		`, config.RetailerID, config.TenantID, config.Environment, store.selectionIDs).Scan(&store.priceMarginActive); err != nil {
+			store.priceMarginActive = false
+		}
+	}
 	return store
 }
 
@@ -272,6 +298,14 @@ func (s *PricingStore) authority() map[string]any {
 		"inputAuthorityId":             s.inputAuthorityID,
 		"sourceAsOf":                   s.decisionAsOf.UTC().Format(time.RFC3339),
 		"selectionIds":                 s.selectionIDs,
+		// The minimum-margin floor is a known policy fact carried on the margin
+		// capability. In this PoC the generated weighted-average cost is the
+		// authoritative cost, so priceMarginActive is derived from the accepted cost
+		// basis (priceMargin.available): primary margin and Margin Protection are
+		// enabled on it. (A future real-data deployment would instead require an
+		// active price_margin selection — see the PoC Data Principle, plan §0.0.)
+		"priceMargin":       s.capabilities["priceMargin"],
+		"priceMarginActive": s.priceMarginActive,
 	}
 }
 
@@ -453,8 +487,8 @@ func (s *PricingStore) recommendations(ctx context.Context, query PricingQuery) 
 		       stock_cover_days AS "stockCoverDays",
 		       details->>'forecast_demand_label' AS "forecastDemand",
 		       details->>'forecast_expected_units' AS "forecastUnits",
-		       NULL::numeric AS "currentMarginPct",
-		       NULL::numeric AS "expectedMarginPct",
+		       current_margin_pct AS "currentMarginPct",
+		       expected_margin_pct AS "expectedMarginPct",
 		       revenue_impact_minor AS "revenueImpactMinor",
 		       margin_impact_minor AS "marginImpactMinor",
 		       margin_reason_code AS "marginReasonCode",
@@ -513,7 +547,7 @@ func (s *PricingStore) recommendationSummary(ctx context.Context, query PricingQ
 	marginReason := any(nil)
 	if marginRows == 0 {
 		marginValue = nil
-		marginReason = "COST_NOT_CLIENT_ACTUAL"
+		marginReason = "COST_MISSING"
 	}
 	return map[string]any{
 		"schemaVersion": PricingPageSchema, "dataMode": "live",
@@ -601,6 +635,7 @@ func (s *PricingStore) recommendationDetail(ctx context.Context, id string) (map
 		       details->>'forecast_expected_units' AS "forecastUnits",
 		       revenue_impact_minor AS "revenueImpactMinor",
 		       margin_impact_minor AS "marginImpactMinor", margin_reason_code AS "marginReasonCode",
+		       current_margin_pct AS "currentMarginPct", expected_margin_pct AS "expectedMarginPct",
 		       details->>'drivers' AS "aiReason", confidence, priority, risk,
 		       first_failure_reason AS "firstFailureReason",
 		       NULL::text AS status, NULL::text AS owner, details,
@@ -1008,6 +1043,43 @@ func roundedMinor(value float64) int64 {
 	return int64(math.RoundToEven(value))
 }
 
+// minMarginFloorPct returns the configured minimum-margin floor (percent) from the
+// active bundle's priceMargin capability, or 0 when it is absent/unparseable.
+func (s *PricingStore) minMarginFloorPct() float64 {
+	pm, ok := s.capabilities["priceMargin"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	raw, ok := pm["minMarginPct"].(string)
+	if !ok {
+		return 0
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+// marginProtectionRefusal returns the pricing error that Margin Protection must raise
+// for a proposed price on the given cost basis, or nil when the price satisfies the
+// minimum-margin floor. Evaluated on the weighted-average cost basis (plan §0.0), this
+// is the single source of the public COST_MISSING / MARGIN_BELOW_FLOOR refusal contract
+// and is callable (and unit-testable) without a database.
+func marginProtectionRefusal(proposedPriceMinor int64, marginCost, floorPct float64, costAvailable bool) error {
+	if !costAvailable {
+		return pricingError("COST_MISSING", "Margin Protection needs a cost basis to evaluate the floor.", 422)
+	}
+	if floorPct <= 0 || proposedPriceMinor <= 0 {
+		return nil
+	}
+	marginPct := 100.0 * (float64(proposedPriceMinor) - marginCost) / float64(proposedPriceMinor)
+	if marginPct < floorPct {
+		return pricingError("MARGIN_BELOW_FLOOR", fmt.Sprintf("Proposed price margin %.2f%% is below the %.2f%% minimum-margin floor.", marginPct, floorPct), 422)
+	}
+	return nil
+}
+
 func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulationRequest) (map[string]any, error) {
 	if !s.Available() {
 		return nil, s.unavailableError()
@@ -1072,8 +1144,8 @@ func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulatio
 			422,
 		)
 	}
-	if request.InventoryObjective == "Margin Protection" {
-		return nil, pricingError("COST_NOT_CLIENT_ACTUAL", "Margin Protection requires client-actual cost evidence.", 422)
+	if request.InventoryObjective == "Margin Protection" && !s.priceMarginActive {
+		return nil, pricingError("PRICE_MARGIN_NOT_ACTIVE", "Margin Protection requires an active margin capability (an accepted cost basis).", 422)
 	}
 	if available, _ := booleanFromDetails(details, "clearance_context_available"); !available {
 		return nil, pricingError("INVENTORY_CONTEXT_UNAVAILABLE", "Clearance requires accepted ageing and inventory evidence.", 422)
@@ -1088,6 +1160,22 @@ func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulatio
 		return nil, pricingError("MISSING_ACCEPTED_RESPONSE", "The accepted response coefficient is unavailable.", 422)
 	}
 	atp, atpAvailable := numberFromDetails(details, "atp_units")
+	// PoC cost-of-record: the generated weighted-average cost IS the authoritative
+	// unit cost (no separate client cost exists in this PoC), so the primary Gross
+	// Margin is computed from it. A client-actual cost is preferred only if one is
+	// ever supplied. See the PoC cost-model note in the implementation plan.
+	marginCost, costAvailable := numberFromDetails(details, "client_actual_cost_minor")
+	if !costAvailable {
+		marginCost, costAvailable = numberFromDetails(details, "synthetic_cost_minor")
+	}
+	// Margin Protection enforces the minimum-margin floor on the proposed price,
+	// evaluated on the weighted-average cost basis (plan §0.0): a proposed price whose
+	// margin falls below the configured floor is refused — that refusal is the protection.
+	if request.InventoryObjective == "Margin Protection" {
+		if refusal := marginProtectionRefusal(request.ProposedPriceMinor, marginCost, s.minMarginFloorPct(), costAvailable); refusal != nil {
+			return nil, refusal
+		}
+	}
 	scenario := func(price int64) map[string]any {
 		units := baseUnits * math.Pow(float64(price)/float64(current), beta)
 		revenue := roundedMinor(units * float64(price))
@@ -1095,7 +1183,13 @@ func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulatio
 		if atpAvailable {
 			ending = atp - units
 		}
-		return map[string]any{"priceMinor": price, "units": units, "revenueMinor": revenue, "grossMarginMinor": nil, "grossMarginReasonCode": "COST_NOT_CLIENT_ACTUAL", "endingStockUnits": ending}
+		var grossMargin any
+		var grossMarginReason any = "COST_MISSING"
+		if costAvailable {
+			grossMargin = roundedMinor(units * (float64(price) - marginCost))
+			grossMarginReason = nil
+		}
+		return map[string]any{"priceMinor": price, "units": units, "revenueMinor": revenue, "grossMarginMinor": grossMargin, "grossMarginReasonCode": grossMarginReason, "endingStockUnits": ending}
 	}
 	currentResult := scenario(current)
 	proposedResult := scenario(request.ProposedPriceMinor)
@@ -1113,17 +1207,11 @@ func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulatio
 			)
 		}
 	}
-	var synthetic any
-	if cost, ok := numberFromDetails(details, "synthetic_cost_minor"); ok {
-		margin := func(result map[string]any) int64 {
-			return roundedMinor(result["units"].(float64) * (float64(result["priceMinor"].(int64)) - cost))
-		}
-		synthetic = map[string]any{
-			"discriminator": "synthetic_margin_scenario", "label": "Synthetic demo margin — not client actual",
-			"currentMinor": margin(currentResult), "proposedMinor": margin(proposedResult), "aiOptimalMinor": margin(optimalResult),
-			"currencyCode": currency, "costMethod": details["synthetic_cost_method"], "costAsOf": details["cost_as_of"],
-			"doesNotAffectRecommendation": true,
-		}
+	var marginImpact any
+	var marginImpactReason any = "COST_MISSING"
+	if costAvailable {
+		marginImpact = proposedResult["grossMarginMinor"].(int64) - currentResult["grossMarginMinor"].(int64)
+		marginImpactReason = nil
 	}
 	competitorIncluded := details["competitor_price_minor"] != nil
 	stockRisk := "Unavailable"
@@ -1141,14 +1229,14 @@ func (s *PricingStore) RunSimulation(ctx context.Context, request PriceSimulatio
 		"demandScenarioSemantics": PricingForecastScenarioSemantics,
 		"columns":                 map[string]any{"current": currentResult, "proposed": proposedResult, "aiOptimal": optimalResult},
 		"metricOrder":             []string{"Units", "Revenue", "Gross Margin", "Ending Stock"},
-		"recommendation":          map[string]any{"priceMinor": optimal, "revenueImpactMinor": proposedResult["revenueMinor"].(int64) - currentResult["revenueMinor"].(int64), "marginImpactMinor": nil, "marginReasonCode": "COST_NOT_CLIENT_ACTUAL", "stockOutRisk": stockRisk, "confidence": confidence},
+		"recommendation":          map[string]any{"priceMinor": optimal, "revenueImpactMinor": proposedResult["revenueMinor"].(int64) - currentResult["revenueMinor"].(int64), "marginImpactMinor": marginImpact, "marginReasonCode": marginImpactReason, "stockOutRisk": stockRisk, "confidence": confidence},
 		"competitorEvidence": map[string]any{"included": competitorIncluded, "reasonCode": func() any {
 			if competitorIncluded {
 				return nil
 			}
 			return "COMPETITOR_BOUND_UNAVAILABLE"
 		}()},
-		"syntheticMarginScenario": synthetic, "mutated": false,
+		"mutated": false,
 	}, nil
 }
 

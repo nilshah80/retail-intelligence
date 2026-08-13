@@ -4,7 +4,7 @@
   "title": "retail-price-simulation/v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "scope", "currencyCode", "simulationPeriod", "demandAssumption", "demandScenarioSemantics", "inventoryObjective", "columns", "metricOrder", "recommendation", "competitorEvidence", "syntheticMarginScenario", "mutated"],
+  "required": ["schemaVersion", "scope", "currencyCode", "simulationPeriod", "demandAssumption", "demandScenarioSemantics", "inventoryObjective", "columns", "metricOrder", "recommendation", "competitorEvidence", "mutated"],
   "properties": {
     "schemaVersion": {"const": "retail-price-simulation/v1"},
     "scope": {"$ref": "#/$defs/scope"},
@@ -26,7 +26,6 @@
     "metricOrder": {"const": ["Units", "Revenue", "Gross Margin", "Ending Stock"]},
     "recommendation": {"type": "object"},
     "competitorEvidence": {"type": "object"},
-    "syntheticMarginScenario": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/syntheticMargin"}]},
     "mutated": {"const": false}
   },
   "$defs": {
@@ -42,15 +41,6 @@
     "result": {
       "type": "object",
       "required": ["priceMinor", "units", "revenueMinor", "grossMarginMinor", "grossMarginReasonCode", "endingStockUnits"]
-    },
-    "syntheticMargin": {
-      "type": "object",
-      "required": ["discriminator", "label", "currentMinor", "proposedMinor", "aiOptimalMinor", "currencyCode", "doesNotAffectRecommendation"],
-      "properties": {
-        "discriminator": {"const": "synthetic_margin_scenario"},
-        "label": {"const": "Synthetic demo margin — not client actual"},
-        "doesNotAffectRecommendation": {"const": true}
-      }
     }
   }
 }
