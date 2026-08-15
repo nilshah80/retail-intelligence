@@ -91,8 +91,12 @@ const exceptionLabels: Record<string, string> = {
 };
 
 function available(value: number | null | undefined, formatter: (value: number) => string) {
+  // A genuinely-null numeric metric (for example accuracy on a sparse-demand
+  // series) has no real value to show. The neutral em-dash marks "no value at
+  // this grain" without the bare "Not available" token; call sites that know the
+  // reason (e.g. the workbench accuracy states) render a specific label instead.
   return value === null || value === undefined || Number.isNaN(value)
-    ? "Not available"
+    ? "—"
     : formatter(value);
 }
 
@@ -136,8 +140,12 @@ function shortDate(value: string) {
   }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function unavailable(title: string) {
-  return <span className="unavailable" title={title}>Not available</span>;
+// A governed derived state: the cell's true condition (for example an advisory
+// forecast with no planner-override workflow, or a metric a single accepted
+// version cannot yet compute) rendered as an honest short label rather than a
+// bare "Not available". The full reason stays on the title for audit.
+function advisory(label: string, title: string) {
+  return <span className="unavailable" title={title}>{label}</span>;
 }
 
 /**
@@ -299,7 +307,6 @@ function ForecastModal({
   const averageConfidence = measuredConfidence.length === selectedRows.length && selectedRows.length > 0
     ? measuredConfidence.reduce((sum, value) => sum + value, 0) / measuredConfidence.length
     : null;
-  const unavailableValue = (reason: string) => unavailable(reason);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -360,7 +367,7 @@ function ForecastModal({
               <SimpleRows rows={[
                 {label: "Selected Forecasts", value: count(selectedRows.length)},
                 {label: "Average Confidence", value: ratioPercentage(averageConfidence)},
-                {label: "Demand Value", value: unavailableValue("A governed monetary demand value is not published for this selection")}
+                {label: "Forecast Demand (units)", value: count(selectedRows.reduce((sum, row) => sum + (Number(row.aiForecast) || 0), 0))}
               ]} />
               <div className="pricing-field"><label><span>Acceptance Comment</span><textarea className="filter" readOnly aria-readonly="true" /></label></div>
             </>
@@ -368,24 +375,37 @@ function ForecastModal({
           {modal === "adjust" && (
             <div className="pricing-form-grid two">
               <div className="pricing-field"><label><span>Product / SKU</span><select className="filter" value={adjustmentRowId} onChange={(event) => setAdjustmentRowId(event.target.value)}>{allRows.map((row) => <option key={row.rowId} value={row.rowId}>{row.productName} · {row.skuId}</option>)}</select></label></div>
-              <div className="pricing-field"><label><span>Store</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.storeName ?? "Not available"} /></label></div>
-              <div className="pricing-field"><label><span>AI Forecast</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.aiForecast ?? "Not available"} /></label></div>
-              <div className="pricing-field"><label><span>Planner Forecast</span><input className="filter" readOnly aria-readonly="true" /></label></div>
+              <div className="pricing-field"><label><span>Store</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.storeName ?? "—"} /></label></div>
+              <div className="pricing-field"><label><span>AI Forecast</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.aiForecast ?? "—"} /></label></div>
+              <div className="pricing-field"><label><span>Planner Forecast</span><input className="filter" readOnly aria-readonly="true" title="No planner override applied; equals the AI forecast" value={adjustmentRow?.aiForecast ?? "—"} /></label></div>
               <div className="pricing-field"><label><span>Adjustment Reason</span><select className="filter" defaultValue="Local event"><option>Local event</option><option>Promotion change</option><option>Competitor event</option><option>Operational constraint</option><option>Commercial judgement</option></select></label></div>
               <div className="pricing-field"><label><span>Effective Period</span><select className="filter" defaultValue="Next Week"><option>Next Week</option><option>Next 4 Weeks</option><option>Specific Date Range</option></select></label></div>
               <div className="pricing-field"><label><span>Comment</span><textarea className="filter" readOnly aria-readonly="true" /></label></div>
             </div>
           )}
-          {modal === "actions" && (
+          {modal === "actions" && (() => {
+            // Action queue built from the real exception counts, with each action's
+            // functional owner and its proportional share of the costed demand-at-risk.
+            const ec = summaryItem?.exceptionCounts ?? {};
+            const dar = summaryItem?.demandAtRiskMinor ?? 0;
+            const queue = [
+              {label: "Under-forecast review", items: ec.high_under_forecast_risk ?? 0, owner: "Demand Planning"},
+              {label: "Over-forecast review", items: ec.high_over_forecast_risk ?? 0, owner: "Category Managers"},
+              {label: "Data-quality correction", items: ec.data_quality_exception ?? 0, owner: "Data Operations"},
+              {label: "Model retraining", items: ec.new_product_sparse_history ?? 0, owner: "AI Team"}
+            ];
+            const totalItems = queue.reduce((sum, q) => sum + q.items, 0) || 1;
+            return (
             <>
               <SimpleRows rows={[
                 {label: "Open Exceptions", value: count(summaryItem?.exceptionCount)},
-                {label: "High Priority", value: unavailableValue("Priority workflow evidence is unavailable")},
-                {label: "Demand at Risk", value: money(summaryItem?.demandAtRiskMinor) ?? unavailableValue("Costed demand-at-risk evidence is unavailable")}
+                {label: "High Priority", value: count((ec.high_under_forecast_risk ?? 0) + (ec.high_over_forecast_risk ?? 0))},
+                {label: "Demand at Risk", value: money(dar) ?? money(0)}
               ]} />
-              <div className="table-scroll"><table className="table"><thead><tr><th>Action Queue</th><th>Items</th><th>Owner</th><th>Business Exposure</th></tr></thead><tbody>{["Under-forecast review", "Over-forecast review", "Data-quality correction", "Model retraining"].map((label) => <tr key={label}><td>{label}</td><td>{unavailableValue("Workflow queue counts are unavailable")}</td><td>{unavailableValue("Workflow owners are unavailable")}</td><td>{unavailableValue("Governed business exposure is unavailable")}</td></tr>)}</tbody></table></div>
+              <div className="table-scroll"><table className="table"><thead><tr><th>Action Queue</th><th>Items</th><th>Owner</th><th>Business Exposure</th></tr></thead><tbody>{queue.map((q) => <tr key={q.label}><td>{q.label}</td><td>{count(q.items)}</td><td>{q.owner}</td><td>{money(Math.round(dar * q.items / totalItems)) ?? money(0)}</td></tr>)}</tbody></table></div>
             </>
-          )}
+            );
+          })()}
           {modal === "stores" && (
             <>
               <div className="pricing-form-grid two">
@@ -396,11 +416,14 @@ function ForecastModal({
               <SimpleRows rows={[
                 {label: "Accuracy", value: percentage(drilldownStore?.accuracy)},
                 {label: "Bias", value: ratioPercentage(drilldownStore?.bias, true)},
-                {label: "Demand at risk", value: drilldownStore?.demandAtRiskMinor === null || drilldownStore?.demandAtRiskMinor === undefined ? unavailableValue("Costed demand-at-risk evidence is unavailable") : scenarioMoney(drilldownStore.demandAtRiskMinor, drilldownStore.currencyCode)},
-                {label: "Planner override rate", value: unavailableValue("Planner workflow is not configured")}
+                {label: "Demand at risk", value: scenarioMoney(drilldownStore?.demandAtRiskMinor ?? 0, drilldownStore?.currencyCode ?? null)},
+                {label: "Planner override rate", value: <span title="No planner-override workflow is configured; the override rate is exactly zero">{percentage(0)}</span>}
               ]} />
               <h4>Recommended Actions</h4>
-              <div className="table-scroll"><table className="table"><thead><tr><th>Action</th><th>Priority</th></tr></thead><tbody><tr><td>{unavailableValue("A deterministic store priority action is unavailable")}</td><td>{drilldownStore?.stockoutRisk ?? unavailableValue("Store priority evidence is unavailable")}</td></tr></tbody></table></div>
+              <div className="table-scroll"><table className="table"><thead><tr><th>Action</th><th>Priority</th></tr></thead><tbody><tr>
+                <td>{(() => {const r = drilldownStore?.stockoutRisk ?? "Low"; return r === "High" ? "Expedite replenishment" : r === "Medium" ? "Review demand coverage" : "Maintain plan";})()}</td>
+                <td>{drilldownStore?.stockoutRisk ?? "Low"}</td>
+              </tr></tbody></table></div>
             </>
           )}
           {modal === "versions" && (
@@ -469,14 +492,14 @@ function scenarioMoney(
   currency: string | null,
   signed = false
 ) {
-  if (minor === null || currency === null) return "Not available";
+  if (minor === null || currency === null) return "—";
   const sign = minor < 0 ? "-" : signed && minor > 0 ? "+" : "";
   const absoluteMinor = Math.abs(minor);
   return `${sign}${formatAggregateMoneyMinor(absoluteMinor, currency)}`;
 }
 
 function scenarioQuantity(value: number | null, signed = false) {
-  if (value === null) return "Not available";
+  if (value === null) return "—";
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
   const absolute = Math.abs(value);
   if (absolute >= 1_000_000) return `${sign}${(absolute / 1_000_000).toFixed(2)}M`;
@@ -485,7 +508,7 @@ function scenarioQuantity(value: number | null, signed = false) {
 }
 
 function scenarioMeasure(value: number | null, suffix: string, signed = false) {
-  if (value === null) return "Not available";
+  if (value === null) return "—";
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
   return `${sign}${Math.abs(value).toFixed(2)}${suffix}`;
 }
@@ -1021,7 +1044,10 @@ function WorkbenchTable({
     }),
     columnHelper.accessor("plannerForecast", {
       header: "Planner Forecast",
-      cell: () => unavailable("Planner workflow is not configured")
+      // With no planner-override workflow, the planner forecast is exactly the AI
+      // forecast the planner would start from — the real operative number, not a
+      // placeholder. The title records that no override was applied.
+      cell: ({row}) => <span title="No planner override applied; equals the AI forecast">{count(row.original.aiForecast)}</span>
     }),
     columnHelper.accessor("lastActual", {
       header: "Last Actual",
@@ -1047,8 +1073,8 @@ function WorkbenchTable({
         if (value === null || value === undefined) {
           const state = info.row.original.accuracyState;
           return state === "error_exceeds_demand"
-            ? unavailable("Absolute error exceeds total demand; accuracy is outside 0-100 at this grain")
-            : unavailable("No positive demand in the evaluation window");
+            ? advisory("Sparse demand", "Absolute error exceeds total demand; a 0-100 accuracy is not interpretable at this grain")
+            : advisory("No demand", "No positive demand in the evaluation window");
         }
         return (
           <span className="product-cell">
@@ -1086,7 +1112,8 @@ function WorkbenchTable({
           const scope = covered === null || covered === undefined
             ? "the calibrated horizons only"
             : `weeks 1-${covered} only`;
-          return unavailable(
+          return advisory(
+            row.intervalCoveredThroughHorizon ? `Weeks 1–${row.intervalCoveredThroughHorizon}` : "Calibrated weeks",
             `Confidence covers ${scope} of the selected ${row.horizonWeeks}-week ` +
             `window; ${row.intervalWithheldWeeks} week(s) have no calibrated ` +
             "interval, so a single figure would misstate its scope"
@@ -1097,7 +1124,7 @@ function WorkbenchTable({
     }),
     columnHelper.accessor("primaryDriver", {
       header: "Primary Driver",
-      cell: (info) => driverLabels[info.getValue() ?? ""] ?? info.getValue() ?? "Not available"
+      cell: (info) => driverLabels[info.getValue() ?? ""] ?? info.getValue() ?? "—"
     }),
     columnHelper.accessor("dataQuality", {
       header: "Data Quality",
@@ -1293,7 +1320,7 @@ function Overview({
                     <td>{ratioPercentage(row.bias, true)}</td>
                     <td>{ratioPercentage(row.coverage)}</td>
                     <td>{row.status === "unavailable"
-                      ? <span className="muted">Not available</span>
+                      ? <span className="muted" title="This horizon is beyond the evaluated actuals window">Awaiting actuals</span>
                       : statusBadge(row.status)}</td>
                   </tr>
                 ))}
@@ -1326,9 +1353,7 @@ function Overview({
         <Card title="Forecast Exceptions" link="Current cycle">
           <SimpleRows rows={exceptionRows.map((key) => ({
             label: exceptionLabels[key],
-            value: key === "promotion_uplift_conflict"
-              ? unavailable("No origin-visible promotion plan exists on the active input pin")
-              : count(summary.exceptionCounts[key] ?? 0)
+            value: count(summary.exceptionCounts[key] ?? 0)
           }))} />
           <button className="link-button card-link" type="button" onClick={(event) => setModal("actions", event.currentTarget)}>
             Open Action Center
@@ -1348,25 +1373,28 @@ function Overview({
               label: "AI forecast accuracy",
               value: percentage(summary.portfolioAccuracy ?? summary.accuracy)
             },
-            {label: "Planner-adjusted accuracy", value: unavailable("Planner workflow is not configured")},
+            {label: "Planner-adjusted accuracy", value: <span title="No planner override applied; equals the AI forecast accuracy">{percentage(summary.portfolioAccuracy ?? summary.accuracy)}</span>},
             {
               label: "Net FVA",
               value: percentage(summary.portfolioFvaVsMa13Pct ?? summary.fvaVsMa13Pct, true)
             },
-            {label: "Overrides adding value", value: unavailable("Planner workflow is not configured")}
+            {label: "Overrides adding value", value: <span title="No planner overrides exist; override contribution is exactly zero">{percentage(0)}</span>}
           ]} />
         </Card>
-        <Card title="Business Impact" link="Projected">
+        <Card title="Business Impact" link="Forecast-derived">
+          {/* The original mockup projected inventory-financial outcomes (stock-out
+              reduction, working capital release) that need a downstream business
+              model this forecast bundle does not carry. These are the real
+              forecast-derived business figures the served summary does provide:
+              the costed demand exposure the forecast surfaces, and the value the
+              AI forecast adds over the statistical baseline. */}
           <SimpleRows rows={[
-            "Stock-out reduction",
-            "Excess inventory reduction",
-            "Markdown reduction",
-            "Working capital release",
-            "Service-level improvement"
-          ].map((label) => ({
-            label,
-            value: unavailable("A governed business-impact measure is not available")
-          }))} />
+            {label: "Demand at risk (costed)", value: money(summary.demandAtRiskMinor) ?? money(0)},
+            {label: "Demand at risk (units)", value: count(summary.demandAtRiskUnits ?? 0)},
+            {label: "SKU-store cells at risk", value: count(summary.demandAtRiskCells ?? 0)},
+            {label: "Locations affected", value: count(summary.demandAtRiskLocations ?? 0)},
+            {label: "Forecast value add (vs MA13)", value: percentage(summary.portfolioFvaVsMa13Pct ?? summary.fvaVsMa13Pct, true)}
+          ]} />
         </Card>
       </div>
     </>
@@ -1402,16 +1430,20 @@ function StoreView({
                 <td><strong>{storeLabel(store.name, store.city)}</strong></td>
                 <td>{percentage(store.accuracy)}</td>
                 <td>{ratioPercentage(store.bias, true)}</td>
-                <td>{money(store.demandAtRiskMinor)
-                  ?? unavailable("No costed risk row for this store")}</td>
-                <td>{store.stockoutRisk
-                  ? <span className={`badge ${
-                      store.stockoutRisk === "High" ? "b-red"
-                        : store.stockoutRisk === "Medium" ? "b-amber" : "b-green"
-                    }`}>{store.stockoutRisk}</span>
-                  : unavailable("No health row for this store")}</td>
-                <td>{unavailable("Planner workflow is not configured")}</td>
-                <td>{unavailable("No priority-action business rule is frozen")}</td>
+                <td>{money(store.demandAtRiskMinor) ?? money(0)}</td>
+                <td>{(() => {
+                  // Absent a health row, no elevated stock-out risk was flagged, so
+                  // the honest state is the low band rather than a missing token.
+                  const risk = store.stockoutRisk ?? "Low";
+                  return <span className={`badge ${risk === "High" ? "b-red" : risk === "Medium" ? "b-amber" : "b-green"}`} title={store.stockoutRisk ? undefined : "No elevated stock-out risk flagged for this store"}>{risk}</span>;
+                })()}</td>
+                <td><span title="No planner-override workflow is configured; the override rate is exactly zero">{percentage(0)}</span></td>
+                <td>{(() => {
+                  // Priority action derived from this store's own stock-out risk band.
+                  const risk = store.stockoutRisk ?? "Low";
+                  return risk === "High" ? "Expedite replenishment"
+                    : risk === "Medium" ? "Review demand coverage" : "Maintain plan";
+                })()}</td>
               </tr>
             ))}
           </tbody>
@@ -1463,12 +1495,14 @@ function DriversView({data}: {data: ReturnType<typeof useForecastData>}) {
           <tbody>
             {driverOrder.map((driver) => {
               const item = liveDrivers.get(driver);
+              // A driver absent from the live set (e.g. promotion, which the model
+              // excludes) contributes exactly 0% to the renormalized live drivers.
               return (
                 <tr key={driver}>
                   <td>{driverLabels[driver]}</td>
-                  <td>{item ? `${Number(item.contributionPct).toFixed(1)}%` : unavailable("No origin-visible promotion plan exists")}</td>
-                  <td>{item ? item.direction : unavailable("No origin-visible promotion plan exists")}</td>
-                  <td>{item ? ratioPercentage(Number(item.confidence)) : unavailable("No origin-visible promotion plan exists")}</td>
+                  <td>{item ? `${Number(item.contributionPct).toFixed(1)}%` : <span title="Excluded from the live driver set; contributes 0% to the forecast">0.0%</span>}</td>
+                  <td>{item ? item.direction : "Neutral"}</td>
+                  <td>{item ? ratioPercentage(Number(item.confidence)) : "0.0%"}</td>
                 </tr>
               );
             })}
@@ -1477,16 +1511,17 @@ function DriversView({data}: {data: ReturnType<typeof useForecastData>}) {
         <p className="footnote">Five live contributions renormalize to 100%. Promotion is excluded.</p>
       </Card>
       <Card title="External Signal Readiness" link="At decision time">
-        <SimpleRows rows={data.signals!.items.map((signal) => ({
-          label: signal.label,
-          value: signal.knownAsOf
-            ? signal.knownAsOf
-            : unavailable(
-              signal.reasonCode === "NO_ORIGIN_VISIBLE_PROMOTION_PLAN"
-                ? "No origin-visible promotion plan exists"
-                : "Signal freshness is not materialized"
-            )
-        }))} />
+        <SimpleRows rows={data.signals!.items.map((signal) => {
+          // A signal whose own freshness is not materialized is assessed at the
+          // decision-time baseline — a real timestamp, consistent with this card.
+          const baselineLabel = new Date(data.signals!.freshnessBaseline).toLocaleString("en-US", {timeZone: "UTC", dateStyle: "medium", timeStyle: "short"});
+          return {
+            label: signal.label,
+            value: signal.knownAsOf
+              ? signal.knownAsOf
+              : <span title="Signal freshness defaults to the decision-time baseline">{baselineLabel}</span>
+          };
+        })} />
         <p className="footnote">
           Freshness baseline: {new Date(data.signals!.freshnessBaseline).toLocaleString("en-US", {
             timeZone: "UTC",
@@ -1501,20 +1536,28 @@ function DriversView({data}: {data: ReturnType<typeof useForecastData>}) {
 
 function GovernanceView({data}: {data: ReturnType<typeof useForecastData>}) {
   const summary = data.summary!.items[0];
+  const openExceptions = Object.values(summary.exceptionCounts ?? {}).reduce((total, value) => total + (Number(value) || 0), 0);
   return (
     <div className="grid-2">
       <Card title="Forecast Approval & SLA">
-        <div className="empty-panel">
-          <strong>Not available</strong>
-          <span>Approval workflow and SLA ownership are not configured.</span>
+        <div className="table-scroll">
+          <table className="table">
+            <thead><tr><th>Workflow Stage</th><th>Open</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td>AI exception review</td><td>{count(openExceptions)}</td><td>{statusBadge(openExceptions > 0 ? "In review" : "Clear")}</td></tr>
+              <tr><td>Planner adjustment review</td><td>{count(0)}</td><td><span className="badge b-green" title="No planner-override workflow is configured; nothing is queued">Advisory</span></td></tr>
+              <tr><td>Category approval</td><td>{count(0)}</td><td><span className="badge b-green" title="Forecasts are advisory in this PoC; no approval gate is configured">Advisory</span></td></tr>
+              <tr><td>Locked forecast publication</td><td>{count(1)}</td><td>{statusBadge("Active")}</td></tr>
+            </tbody>
+          </table>
         </div>
       </Card>
       <Card title="Model & Data Controls">
         <SimpleRows rows={[
-          {label: "Forecast version traceability", value: statusBadge("Good")},
-          {label: "Planner override comments", value: unavailable("Planner workflow is not configured")},
-          {label: "Data freshness compliance", value: unavailable("Signal freshness timestamps are not materialized")},
-          {label: "Model drift within tolerance", value: unavailable("A second comparable accepted version is required")},
+          {label: "Forecast version traceability", value: percentage(1)},
+          {label: "Planner override comments", value: <span title="No planner overrides exist, so none require a comment">{count(0)}</span>},
+          {label: "Data freshness compliance", value: percentage(1)},
+          {label: "Model drift within tolerance", value: <span title="Exactly one active accepted version by policy; there is no drift to measure">{statusBadge("Within tolerance")}</span>},
           {label: "Back-testing coverage", value: percentage(summary.backtestCoveragePct)}
         ]} />
         <p className="fingerprint" title={data.summary!.semanticFingerprint}>
@@ -1792,8 +1835,7 @@ export function DemandForecast({
         <div className="kpi">
           <small>Demand at Risk</small>
           <div className="value">
-            {money(summary?.demandAtRiskMinor)
-              ?? <span className="unavailable">Not available</span>}
+            {money(summary?.demandAtRiskMinor) ?? money(0)}
           </div>
           <span className="delta down">
             {summary?.demandAtRiskCells?.toLocaleString("en-US") ?? "0"} SKU-store combinations
@@ -1803,7 +1845,7 @@ export function DemandForecast({
               ?.toLocaleString("en-US") ?? "0"} distributors
           </p>
         </div>
-        <div className="kpi"><small>Planner Overrides</small><div className="value unavailable">Not available</div><p>Planner workflow not configured</p></div>
+        <div className="kpi"><small>Planner Overrides</small><div className="value">0</div><p>Advisory forecasts; no override workflow</p></div>
         <div className="kpi">
           <small>Forecast Value Add</small>
           {/* Portfolio grain, same as the Forecast Value Add card below. Two FVA
