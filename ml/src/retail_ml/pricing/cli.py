@@ -70,6 +70,7 @@ def _build(args: argparse.Namespace) -> int:
         competitor_policy_path=root / "contracts/pricing/competitor-policy.json",
         competitor_truth_path=args.competitor_truth,
         promotion_policy_path=root / "contracts/pricing/promotion-protection-policy.json",
+        promotion_uplift_policy_path=root / "contracts/pricing/promotion-uplift-policy.json",
         forecast_run=args.forecast_run,
         inventory_run=args.inventory_run,
         bundle_kind=args.bundle_kind,

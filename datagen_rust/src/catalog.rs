@@ -476,19 +476,43 @@ fn product_from_definition(
                     )),
             market,
         )?;
-        let cost = quantize(
-            base_cost
-                * option_multiplier
-                * (Decimal::ONE
-                    + decimal_between(
-                        master_seed,
-                        "variant-cost",
-                        &variant_key,
-                        dec("-0.03"),
-                        dec("0.06"),
-                    )),
-            2,
-        );
+        // Per-variant cost override (§6.0 pricing calibration). When a
+        // VariantDefinition carries an explicit `cost`, that value is the
+        // authoritative weighted-average unit cost for the variant and
+        // bypasses the product base_cost × option multiplier × jitter chain.
+        // It is matched on option values (not list order) so it stays correct
+        // regardless of how combinations are enumerated. This lets calibration
+        // seat each SKU at a chosen margin without perturbing its price, demand
+        // or fitted elasticity (cost is orthogonal to all three).
+        let cost_override = definition
+            .and_then(|template| {
+                template.variant_definitions.iter().find(|candidate| {
+                    candidate.option_values.len() == options.len()
+                        && options.iter().all(|option| {
+                            candidate
+                                .option_values
+                                .get(&option.name)
+                                .map_or(false, |value| value == &option.value)
+                        })
+                })
+            })
+            .and_then(|candidate| candidate.cost.as_deref());
+        let cost = match cost_override {
+            Some(raw) => quantize(parse_decimal(raw)?, 2),
+            None => quantize(
+                base_cost
+                    * option_multiplier
+                    * (Decimal::ONE
+                        + decimal_between(
+                            master_seed,
+                            "variant-cost",
+                            &variant_key,
+                            dec("-0.03"),
+                            dec("0.06"),
+                        )),
+                2,
+            ),
+        };
         let elasticity = quantize(
             decimal_between(
                 master_seed,

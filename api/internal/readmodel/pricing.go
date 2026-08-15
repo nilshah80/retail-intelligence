@@ -19,7 +19,7 @@ import (
 const (
 	PricingUnavailableSchema = "retail-pricing-unavailable/v1"
 	PricingPageSchema        = "retail-pricing-page/v1"
-	PricingMigrationRevision = "0031_pricing_margin_pct"
+	PricingMigrationRevision = "0033_promotion_positive_branch"
 
 	PricingReasonUnavailable = "PRICING_READ_MODEL_UNAVAILABLE"
 	PricingReasonInvalid     = "PRICING_AUTHORITY_INVALID"
@@ -489,6 +489,12 @@ func (s *PricingStore) recommendations(ctx context.Context, query PricingQuery) 
 		       details->>'forecast_expected_units' AS "forecastUnits",
 		       current_margin_pct AS "currentMarginPct",
 		       expected_margin_pct AS "expectedMarginPct",
+		       pricing_unit_label AS "pricingUnitLabel",
+		       base_unit_quantity AS "baseUnitQuantity",
+		       pricing_pack_label AS "pricingPackLabel",
+		       CASE WHEN base_unit_quantity > 0
+		            THEN round(current_price_minor / base_unit_quantity)
+		       END AS "currentUnitPriceMinor",
 		       revenue_impact_minor AS "revenueImpactMinor",
 		       margin_impact_minor AS "marginImpactMinor",
 		       margin_reason_code AS "marginReasonCode",
@@ -636,6 +642,12 @@ func (s *PricingStore) recommendationDetail(ctx context.Context, id string) (map
 		       revenue_impact_minor AS "revenueImpactMinor",
 		       margin_impact_minor AS "marginImpactMinor", margin_reason_code AS "marginReasonCode",
 		       current_margin_pct AS "currentMarginPct", expected_margin_pct AS "expectedMarginPct",
+		       pricing_unit_label AS "pricingUnitLabel",
+		       base_unit_quantity AS "baseUnitQuantity",
+		       pricing_pack_label AS "pricingPackLabel",
+		       CASE WHEN base_unit_quantity > 0
+		            THEN round(current_price_minor / base_unit_quantity)
+		       END AS "currentUnitPriceMinor",
 		       details->>'drivers' AS "aiReason", confidence, priority, risk,
 		       first_failure_reason AS "firstFailureReason",
 		       NULL::text AS status, NULL::text AS owner, details,
@@ -967,6 +979,36 @@ func (s *PricingStore) competitorDetail(ctx context.Context, id string, query Pr
 	return nil, pricingError("COMPETITOR_MATCH_NOT_FOUND", "The competitor match is not in the active authority.", 404)
 }
 
+// promotionItems coerces the served acceptedPromotions array into portfolio row
+// maps, skipping any entry that is not a JSON object. It always returns a non-nil
+// slice so the payload carries an array even when the branch is dark.
+func promotionItems(raw any) []map[string]any {
+	list, ok := raw.([]any)
+	if !ok {
+		return []map[string]any{}
+	}
+	items := make([]map[string]any, 0, len(list))
+	for _, entry := range list {
+		if row, ok := entry.(map[string]any); ok {
+			items = append(items, row)
+		}
+	}
+	return items
+}
+
+// promotionPlannerView derives planner availability, the shaped portfolio rows, and
+// the governed reason/message for a promotion disposition. It honours the
+// disposition's own plannerAvailable flag instead of assuming the planner is dark,
+// and is pure so the branch is unit-testable without a database.
+func promotionPlannerView(disposition map[string]any) (available bool, items []map[string]any, reasonCode, message string) {
+	if planner, ok := booleanFromDetails(disposition, "plannerAvailable"); ok && planner {
+		return true, promotionItems(disposition["acceptedPromotions"]), PricingReasonPromotion,
+			"Accepted promotion uplift is available in the portfolio; write, calendar and aggregate tiles remain governed-unavailable."
+	}
+	return false, []map[string]any{}, PricingReasonPromotion,
+		"Origin-visible promotion planning evidence is not available."
+}
+
 func (s *PricingStore) promotionPayload(ctx context.Context, surface string) (map[string]any, error) {
 	var detailsRaw []byte
 	err := s.pool.QueryRow(ctx, `
@@ -979,11 +1021,12 @@ func (s *PricingStore) promotionPayload(ctx context.Context, surface string) (ma
 	if err := json.Unmarshal(detailsRaw, &disposition); err != nil {
 		return nil, pricingError(PricingReasonRead, "Promotion disposition is invalid.", 503)
 	}
+	available, items, reasonCode, message := promotionPlannerView(disposition)
 	return map[string]any{
 		"schemaVersion": PricingPageSchema, "dataMode": "live", "authority": s.authority(),
-		"surface": surface, "plannerAvailable": false, "reasonCode": PricingReasonPromotion,
-		"message":     "Origin-visible promotion planning evidence is not available.",
-		"disposition": disposition, "items": []any{},
+		"surface": surface, "plannerAvailable": available, "reasonCode": reasonCode,
+		"message":     message,
+		"disposition": disposition, "items": items,
 	}, nil
 }
 

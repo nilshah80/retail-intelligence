@@ -294,7 +294,7 @@ outputs.
 **Goal:** make the existing Demand Forecast Scenario Planning modal a stateless, read-only,
 assumption-based projection without waiting for fitted Phase 5 price response.
 
-**Scope:** Decision #96 and `plans/local/scenario-planning-implementation-plan.md` S1–S27. Build an
+**Scope:** Decision #96 (`docs/decision-96-forecast-scenario-planning-v1.md`) and the completed workstream in `plans/local/tasks.md`. Build an
 approved assumption bundle and immutable forecast/inventory scenario context; use Decision #95
 `expected_units` for additive demand/revenue potential, P50/P90 for dispersion, accepted node
 order-up-to for analytical Required Inventory, and channel ATP for a separately labelled

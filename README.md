@@ -588,7 +588,98 @@ python3 tools/dev.py closure-record --forecast-run <forecast-bundle>
 python3 tools/dev.py inventory-entry-record
 ```
 
-### 8d. Running from scratch
+### 8d. Pricing, competitor and promotion chain
+
+Pricing is a **separate manual lifecycle** — deliberately not part of `tools/dev.py pipeline`
+(whose `PIPELINE_STAGES` ends at `inventory-entry-record`). `pricing-build` reads the **built and
+accepted** forecast and inventory *bundle directories* — not the PostgreSQL serving projection — so
+building and measuring a pricing bundle needs no forecast/inventory *activation*, and no PostgreSQL
+except a reachable DSN for `inventory-build` (which does not activate anything). There is no wrapper
+script; this section is the authoritative sequence.
+
+Reference identities from the active demo bundle `pb_540c5277a3a16718579d` — copy for a rebuild,
+substituting `run-<NEWID>` for a new source run and a fresh `<LABEL>` for its artifacts (the
+immutable-output guard refuses an existing `*_<LABEL>` dir):
+
+| Item | Active value |
+|---|---|
+| Source run | `run-e30369022fa0209c` |
+| Forecast bundle | `ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902` (`fr_e638699e9b8f6598`) |
+| Inventory bundle | `ml/data/artifacts/inventory_run_gulf-oil-india-rich-e3036902` (`ir_5b195b672cfbd9a8`) |
+| Input authority | `contracts/evidence/input-authorities/gulf-oil-india-rich-local-run-e30369022fa0209c.json` (`auth_68e8d92de64aae1f`) |
+| Curated DB | `ingestion/data/curated/run-e30369022fa0209c/retail_v2.duckdb` |
+| Competitor truth | `datagen_rust/output/gulf-oil-india-pricing-response/run-e30369022fa0209c/_truth/competitor_match_truth.parquet` |
+| decision-as-of / kind / scope | `2026-07-31T18:30:00Z` / `response_rich` / `retailer-demo`, `tenant-demo`, `local` |
+
+**`decision-as-of` is a point-in-time knowledge cutoff, not the execution time.**
+`2026-07-31T18:30:00Z` = `2026-08-01 00:00 Asia/Kolkata` — the end-of-day boundary *after* the
+source period ends (`2026-07-31`; forecast origin `2026-07-27`). Scoring admits only rows with
+`source_known_as_of <= decision_as_of` (`ml/src/retail_ml/models/dataset.py:304`); 5,879 of the
+9,603 latest-origin rows become visible exactly at that instant, so an earlier cutoff silently drops
+them and a later one (or the wall-clock execution date) leaks future knowledge. The retired
+`2026-08-02` value was a *previous* Gulf run's landing-lag workaround — not this run's decision
+instant. **Known inventory misalignment:** the active pricing bundle consumed the plain inventory
+run recorded at `2026-07-31T00:00:00Z` (midnight); the `18:30`-aligned sibling (`ir_ca77…`) is the
+intended one. Pass `--decision-as-of 2026-07-31T18:30:00Z` to `inventory-build` **and confirm the
+rebuilt inventory bundle records `18:30`, not midnight**, so forecast, inventory and pricing stay on
+one instant.
+
+**Build and MEASURE a throwaway calibration bundle (no serving):**
+
+```text
+# 1. Ingest + register source authority (repin) + build+accept the forecast. DB-free; stops
+#    before serving. The `repin` stage is the fail-closed source-authority gate (§8a): it rewrites
+#    contracts/ml/expected-pin.json for the new run and writes the v2 publication-selection records.
+#    The four reviewer/reason flags are REQUIRED for a brand-new run (no source edit on the v2 ledger).
+python3 tools/dev.py pipeline --from land --to publish \
+  --source-root datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID> \
+  --label <LABEL> --retailer retailer-demo --tenant tenant-demo --environment local \
+  --decision-as-of 2026-07-31T18:30:00Z \
+  --input-authority-reviewer <you> --input-authority-reason "<why this run is acceptable>" \
+  --repin-actor <you> --repin-reason "<why the new bundle substitutes the accepted one>"
+
+# 2. Build the inventory bundle only. Needs Postgres reachable (NOT activation).
+python3 tools/dev.py services up
+python3 tools/dev.py db-upgrade
+python3 tools/dev.py pipeline --from inventory-build --to inventory-build \
+  --source-root datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID> \
+  --label <LABEL> --retailer retailer-demo --tenant tenant-demo --environment local \
+  --decision-as-of 2026-07-31T18:30:00Z
+
+# 3. Build the pricing bundle → writes price_recommendations.parquet; no PostgreSQL.
+python3 tools/dev.py pricing-build --run-id run-<NEWID> \
+  --input-authority contracts/evidence/input-authorities/gulf-oil-india-rich-local-run-<NEWID>.json \
+  --job-purpose complete_lineage_rebuild --expected-pin contracts/ml/expected-pin.json \
+  --retailer-id retailer-demo --tenant-id tenant-demo --environment local \
+  --evidence-root ingestion/data/evidence/run-<NEWID> \
+  --curated-database ingestion/data/curated/run-<NEWID>/retail_v2.duckdb \
+  --decision-as-of 2026-07-31T18:30:00Z \
+  --forecast-run ml/data/artifacts/forecast_run_<LABEL> \
+  --inventory-run ml/data/artifacts/inventory_run_<LABEL> \
+  --competitor-truth datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID>/_truth/competitor_match_truth.parquet \
+  --bundle-kind response_rich --output ml/data/artifacts/pricing_bundle_<LABEL>
+
+# 4. Measure the artifact directly (a throwaway is never verified/prepared/materialized/activated).
+ml/.venv/bin/python -c "import pandas as pd; d=pd.read_parquet('ml/data/artifacts/pricing_bundle_<LABEL>/price_recommendations.parquet'); print(d.shape); print(d['action'].value_counts())"
+```
+
+`--forecast-run`/`--inventory-run` are optional (`ml/src/retail_ml/pricing/build.py`): omit both to
+compute recommendations without that context — the numbers then differ from the served bundle. The
+forecast must be **accepted** (the `publish` stage) or `pricing-build`/`inventory-build` refuse it.
+`--competitor-truth` is byte-verified against the bundle's recorded `competitorTruthSha256`.
+
+**To actually SERVE a bundle** — only for the frozen authoritative run, never a calibration seed,
+because activation replaces the live demo — continue with the serving stages (run each with
+`--help` for its pins; all require PostgreSQL):
+
+```text
+python3 tools/dev.py pricing-verify      --bundle ml/data/artifacts/pricing_bundle_<LABEL> ...
+python3 tools/dev.py pricing-materialize --bundle ml/data/artifacts/pricing_bundle_<LABEL> ...
+python3 tools/dev.py pricing-prepare     ...   # prepare the price_revenue / margin selection(s)
+python3 tools/dev.py pricing-activate    ...   # append-only activation (exactly one active scope)
+```
+
+### 8e. Running from scratch
 
 A true first-run needs the generated data gone as well as the derived data. The generator writes
 under `datagen/output/<scenario>/`, which is easy to miss because it is not called `data`:

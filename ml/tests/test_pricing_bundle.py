@@ -15,6 +15,12 @@ from retail_ml.pricing.bundle import (
     verify_pricing_bundle,
     write_verification_record,
 )
+from retail_ml.pricing.promotion import (
+    build_promotion_disposition,
+    estimate_promotion_uplift,
+    load_promotion_policy,
+    load_promotion_uplift_policy,
+)
 
 
 CONTRACT = json.loads(ARTIFACT_CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -69,7 +75,52 @@ def _capabilities(*, sparse: bool = False) -> dict[str, object]:
     }
 
 
-def _artifacts(*, sparse: bool = False):
+def _promotion(*, positive: bool):
+    """A real uplift result frame + Planner disposition for a bundle fixture.
+
+    Built through the frozen estimator/disposition helpers (never hand-stamped) so
+    the fixture exercises the exact positive/negative branch the pipeline produces.
+    """
+
+    uplift_policy = load_promotion_uplift_policy(POLICY_PATHS["promotion_uplift"])
+    protection_policy = load_promotion_policy(POLICY_PATHS["promotion"])
+    panel_columns = [
+        "market_id", "promo_id", "promo_name", "promo_type", "role",
+        "week_start", "units", "net_sales_minor", "wac_unit_cost_minor",
+    ]
+    if positive:
+        # A well-supported, margin-positive completed promotion: 8 clean control
+        # weeks at ₹1000/unit and 4 episode weeks at ₹900/unit with a +34% lift.
+        monday = pd.Timestamp("2025-01-06")
+        rows = [
+            {
+                "market_id": "gulf-india", "promo_id": "promo-1",
+                "promo_name": "Trade scheme", "promo_type": "campaign",
+                "role": "control", "week_start": monday + pd.Timedelta(weeks=index),
+                "units": 100, "net_sales_minor": 100_000, "wac_unit_cost_minor": 700.0,
+            }
+            for index in range(8)
+        ] + [
+            {
+                "market_id": "gulf-india", "promo_id": "promo-1",
+                "promo_name": "Trade scheme", "promo_type": "campaign",
+                "role": "episode",
+                "week_start": monday + pd.Timedelta(weeks=30 + index),
+                "units": 134, "net_sales_minor": 134 * 900, "wac_unit_cost_minor": 700.0,
+            }
+            for index in range(4)
+        ]
+        weekly = pd.DataFrame(rows, columns=panel_columns)
+    else:
+        weekly = pd.DataFrame(columns=panel_columns)
+    frame = estimate_promotion_uplift(weekly, policy=uplift_policy)
+    disposition = build_promotion_disposition(
+        frame, protection_policy=protection_policy, uplift_policy=uplift_policy
+    )
+    return frame, disposition
+
+
+def _artifacts(*, sparse: bool = False, promotion_positive: bool = False):
     selection = json.dumps(
         {
             "selectionMetric": "poisson_deviance_improvement",
@@ -181,6 +232,9 @@ def _artifacts(*, sparse: bool = False):
             "margin_reason_code": "COST_NOT_CLIENT_ACTUAL",
             "current_margin_pct": None,
             "expected_margin_pct": None,
+            "pricing_unit_label": None if sparse else "L",
+            "base_unit_quantity": None if sparse else 5.0,
+            "pricing_pack_label": None if sparse else "5 L",
             "confidence": None if sparse else 0.96,
             "priority": "Manual review" if sparse else "Low",
             "risk": "Unavailable" if sparse else "Low",
@@ -198,6 +252,7 @@ def _artifacts(*, sparse: bool = False):
             for index in range(row_count)
         ]
     )
+    uplift_frame, promotion_disposition = _promotion(positive=promotion_positive)
     result = {
         "pricing_panel": _empty("pricing_panel"),
         "response_assessments": response,
@@ -237,16 +292,8 @@ def _artifacts(*, sparse: bool = False):
             "recordExceptionReasons": {},
         },
         "promotion_protection": _empty("promotion_protection"),
-        "promotion_disposition": {
-            "schemaVersion": ARTIFACT_SCHEMAS["promotion_disposition"],
-            "decisionId": 53,
-            "decisionDisposition": "not_amended",
-            "packageDisposition": "negative",
-            "plannerAvailable": False,
-            "firstFailureReason": "PROMOTION_FEATURE_POLICY_NOT_AMENDED",
-            "safetyGuardInternal": True,
-            "forbiddenClaims": ["numeric_uplift"],
-        },
+        "promotion_disposition": promotion_disposition,
+        "promotion_uplift": uplift_frame,
     }
     return result
 
@@ -355,4 +402,65 @@ def test_verifier_recomputes_prebound_selection_identity(tmp_path) -> None:
     )
 
     with pytest.raises(PricingBundleError, match="prospective result-selection"):
+        verify_pricing_bundle(bundle)
+
+
+def test_bundle_carries_positive_promotion_branch_through_verify(tmp_path) -> None:
+    bundle = publish_pricing_bundle(
+        tmp_path / "bundle",
+        bundle_kind="response_rich",
+        decision_as_of="2026-07-31T00:00:00Z",
+        artifacts=_artifacts(promotion_positive=True),
+        lineage=_lineage(),
+        policies=_policies(),
+        capabilities=_capabilities(),
+        selection_scope=_scope(),
+    )
+
+    verification = verify_pricing_bundle(bundle)
+    assert verification["passed"] is True
+
+    manifest = json.loads((bundle / "pricing-manifest.json").read_text())
+    assert (
+        manifest["artifacts"]["promotion_disposition"]["schemaVersion"]
+        == "retail-promotion-uplift-disposition/v1"
+    )
+    assert (
+        manifest["artifacts"]["promotion_uplift"]["schemaVersion"]
+        == "retail-promotion-uplift-rows/v1"
+    )
+    assert manifest["artifacts"]["promotion_uplift"]["rowCount"] == 1
+
+    # The positive Planner branch survives independent verification unaltered.
+    disposition = json.loads((bundle / "promotion_disposition.json").read_text())
+    assert disposition["packageDisposition"] == "positive"
+    assert disposition["plannerAvailable"] is True
+    assert disposition["firstFailureReason"] is None
+    assert disposition["acceptedPromotionCount"] == 1
+    assert disposition["allowedClaims"] == [
+        "numeric_uplift", "promotion_margin", "promotion_simulation",
+    ]
+    # PII/cannibalisation stay privacy-restricted even on the positive branch.
+    assert {"pii", "cannibalisation"} <= set(disposition["restrictedClaims"])
+
+
+def test_positive_disposition_without_accepted_uplift_rows_is_refused(tmp_path) -> None:
+    # A positive package must be backed by accepted rows in the uplift frame; a
+    # positive disposition paired with an all-withheld frame is independently caught.
+    artifacts = _artifacts(promotion_positive=True)
+    artifacts["promotion_uplift"] = artifacts["promotion_uplift"].assign(
+        acceptance_status="withheld"
+    )
+    bundle = publish_pricing_bundle(
+        tmp_path / "bundle",
+        bundle_kind="response_rich",
+        decision_as_of="2026-07-31T00:00:00Z",
+        artifacts=artifacts,
+        lineage=_lineage(),
+        policies=_policies(),
+        capabilities=_capabilities(),
+        selection_scope=_scope(),
+    )
+
+    with pytest.raises(PricingBundleError, match="accepted count differs|acceptance tally"):
         verify_pricing_bundle(bundle)

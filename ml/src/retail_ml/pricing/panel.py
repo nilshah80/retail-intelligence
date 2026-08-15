@@ -127,6 +127,17 @@ def build_weekly_panel(
             if "category_label" in product_columns
             else "pr.category"
         )
+        # §6.0 P4 per-unit pricing: the base selling-unit label is optional —
+        # curated published before the ingestion carry lands has no column, so
+        # fall back to NULL and let the simulation use the aggregate price.
+        measurement_unit = (
+            "pr.measurement_unit"
+            if "measurement_unit" in product_columns
+            else "NULL::VARCHAR"
+        )
+        pack_size = (
+            "pr.pack_size" if "pack_size" in product_columns else "NULL::BIGINT"
+        )
         query = f"""
             WITH weekly_sales AS (
                 SELECT
@@ -254,6 +265,8 @@ def build_weekly_panel(
                 pr.category,
                 {category_label} AS category_label,
                 pr.product_name,
+                {measurement_unit} AS measurement_unit,
+                {pack_size} AS pack_size,
                 c.type AS channel_type,
                 s.region,
                 s.currency_code AS market_currency_code

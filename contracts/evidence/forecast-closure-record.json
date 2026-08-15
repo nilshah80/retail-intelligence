@@ -13,24 +13,24 @@
     },
     "passed": true,
     "perCohortCoverage": {
-      "cold_start": 0.8946308172997862,
-      "established_history": 0.9235414263904292
+      "cold_start": 0.8963986186482487,
+      "established_history": 0.9241793344357447
     },
     "schemaVersion": "retail-forecast-acceptance/v6"
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T18:30:00Z",
-    "forecastRunId": "fr_e638699e9b8f6598",
-    "forecastVersionId": "fv_8e18ad608ae38a61",
+    "forecastRunId": "fr_88bce2fb8cbcc512",
+    "forecastVersionId": "fv_78d481cce80755c3",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "6de6d0b30309c3c5eef9e7841ed73669943b051d3701e411571261dfce57682f"
+    "runSemanticFingerprint": "72598d4ddc206692e582a343f3515cd35d4b04df77fc652ce0508aa7baca7c00"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "e05141e3cdf6cad32a5173ccd6d639ab73e48385c55c2773a01ca16d56c21ba5",
-    "forecast_acceptance.json": "77980ddeb8ce8ee70aeff1f56eb3678ea89b51a81583c5720963ee8f7c07736d"
+    "forecast-run-manifest.json": "78a4c7785483d13848d37911f43301c44d92ed94b3056558921ed790ec39299c",
+    "forecast_acceptance.json": "865fc483c799770a7e53a7f752deb851bdf53c13eaa51a838274710fc06d7f37"
   },
   "authorityLedger": {
-    "currentEventId": 7,
+    "currentEventId": 10,
     "currentPriorEventId": null,
     "events": [
       {
@@ -102,18 +102,41 @@
         "priorEventId": null,
         "recordedAt": "2026-08-12 13:16:38.681383+00",
         "versionId": "fv_8e18ad608ae38a61"
+      },
+      {
+        "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
+        "actor": "nilshah80",
+        "eventId": 9,
+        "eventType": "superseded",
+        "forecastRunId": "fr_e638699e9b8f6598",
+        "priorEventId": 7,
+        "recordedAt": "2026-08-14 20:59:43.21742+00",
+        "versionId": "fv_8e18ad608ae38a61"
+      },
+      {
+        "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
+        "actor": "nilshah80",
+        "eventId": 10,
+        "eventType": "active",
+        "forecastRunId": "fr_88bce2fb8cbcc512",
+        "priorEventId": null,
+        "recordedAt": "2026-08-14 20:59:43.21742+00",
+        "versionId": "fv_78d481cce80755c3"
       }
     ],
     "nullPredecessorEventIds": [
       1,
       3,
       5,
-      7
+      7,
+      10
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
-    "unusedEventIds": []
+    "unusedEventIds": [
+      8
+    ]
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902",
+  "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth1",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -151,7 +174,7 @@
       ],
       "coveredWeekMeanWeightedConfidence": 0.5817,
       "gatedBy": "P4-0P",
-      "planReference": "plans/local/phase4-implementation-plan.md \u00a71.3.1",
+      "planReference": "plans/local/ui-parity-availability-and-margin-plan.md \u00a72.5",
       "seriesWithIntervalTotalBelowCentralTotal": 372,
       "servedMeanWeightedConfidence": 0.0814
     },
@@ -230,10 +253,10 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "c5feb3a0b879b8567fc54dd7484b6718ba1c4b9ef07bc77a4a5ab4c86940d6a4",
-    "gateBSemanticFingerprint": "3c49aa881873e992768179605f4a59e8e8afd78fe0000bcbdd43d7eedc448de6",
-    "publicationSemanticFingerprint": "f9950a36f28c6e9849e87ac7274488ff04ae7b8f48366c36eafd91c0d69a2952",
-    "sourceSnapshotId": "62a01e3058d7215c7559c29e8b3a5c9e56dae73bb2f820b1f264ff9d6a47922b"
+    "gateASemanticFingerprint": "1d89bc5d38ccce556bb7e755ca99a6887650a8792d7088a4c40c5a3913b9c568",
+    "gateBSemanticFingerprint": "f625e797b79265d726b7b43946a1c59f6f7a455719e469aa7a1f1df362e1c9c2",
+    "publicationSemanticFingerprint": "88e882b5486d9f5a3eabf9917ac545e8ef7254f81adb01379eceaa012c07c8cc",
+    "sourceSnapshotId": "30521d0093057f2652cb1828142cddcabd2c8f8425971f8c58babb7e0957eb5c"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
@@ -251,7 +274,7 @@
     "servedRows": 249678,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0030_pricing_intents",
+      "servingMigration": "0032_pricing_unit_fields",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -259,14 +282,14 @@
     "withheldShareOfServed": "0.093577"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
-    "forecastRunId": "fr_e638699e9b8f6598",
-    "forecastVersionId": "fv_8e18ad608ae38a61"
+    "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
+    "forecastRunId": "fr_88bce2fb8cbcc512",
+    "forecastVersionId": "fv_78d481cce80755c3"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0030_pricing_intents",
+  "servingMigration": "0032_pricing_unit_fields",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": [
     {
@@ -286,6 +309,15 @@
       "forecastVersionId": "fv_880ab29dc108ad2d",
       "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
       "rollbackEligible": false
+    },
+    {
+      "activationEligible": false,
+      "bundleBytesRetained": true,
+      "bundlePath": "ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902",
+      "forecastRunId": "fr_e638699e9b8f6598",
+      "forecastVersionId": "fv_8e18ad608ae38a61",
+      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
+      "rollbackEligible": true
     },
     {
       "activationEligible": false,

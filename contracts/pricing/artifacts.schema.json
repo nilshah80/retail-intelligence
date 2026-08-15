@@ -3,7 +3,7 @@
   "$id": "https://retail-intelligence.local/contracts/pricing/artifacts.schema.json",
   "schemaVersion": "retail-pricing-artifact-contract/v1",
   "semanticIdentityExcludes": ["/contractFingerprint"],
-  "contractFingerprint": "4ae8dec5485bfee245abc2d6a50a3d9d48e13c3890efb0c9215cb5120078fdb7",
+  "contractFingerprint": "22f259c375bf8b9a02ad5bbf2dff88d4e106c14f631f47db1f373c9138e5d44e",
   "artifacts": {
     "pricing_panel": {
       "schemaVersion": "retail-pricing-panel/v1",
@@ -22,7 +22,7 @@
     },
     "price_recommendations": {
       "schemaVersion": "retail-price-recommendations/v1",
-      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "category_label", "recommendation_id", "record_kind", "selectable", "action", "disposition", "first_failure_reason", "current_price_minor", "proposed_price_minor", "currency_code", "expected_units_current", "expected_units_proposed", "expected_revenue_current_minor", "expected_revenue_proposed_minor", "revenue_impact_minor", "margin_impact_minor", "margin_reason_code", "current_margin_pct", "expected_margin_pct", "confidence", "priority", "risk", "drivers", "lineage"],
+      "requiredColumns": ["market_id", "sku_id", "store_id", "channel_id", "channel_type", "category_label", "recommendation_id", "record_kind", "selectable", "action", "disposition", "first_failure_reason", "current_price_minor", "proposed_price_minor", "currency_code", "expected_units_current", "expected_units_proposed", "expected_revenue_current_minor", "expected_revenue_proposed_minor", "revenue_impact_minor", "margin_impact_minor", "margin_reason_code", "current_margin_pct", "expected_margin_pct", "pricing_unit_label", "base_unit_quantity", "pricing_pack_label", "confidence", "priority", "risk", "drivers", "lineage"],
       "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
     },
     "competitor_assessments": {
@@ -45,8 +45,13 @@
       "primaryKey": ["market_id", "sku_id", "store_id", "channel_id"]
     },
     "promotion_disposition": {
-      "schemaVersion": "retail-promotion-package-disposition/v1",
-      "requiredProperties": ["schemaVersion", "decisionId", "decisionDisposition", "packageDisposition", "plannerAvailable", "firstFailureReason", "safetyGuardInternal", "forbiddenClaims"]
+      "schemaVersion": "retail-promotion-uplift-disposition/v1",
+      "requiredProperties": ["schemaVersion", "decisionId", "decisionDisposition", "packageDisposition", "plannerAvailable", "firstFailureReason", "acceptedPromotionCount", "evaluatedPromotionCount", "allowedClaims", "restrictedClaims", "protectionDecisionId", "protectionDecisionDisposition", "estimatorParameters"]
+    },
+    "promotion_uplift": {
+      "schemaVersion": "retail-promotion-uplift-rows/v1",
+      "requiredColumns": ["market_id", "promo_id", "promo_name", "promo_type", "episode_weeks", "control_weeks", "expected_demand_uplift", "uplift_low", "uplift_high", "revenue_uplift_minor", "margin_impact_minor", "margin_reason_code", "cannibalisation_risk", "confidence", "valid_draws", "numeric_result_rate", "acceptance_status", "first_failure_reason"],
+      "primaryKey": ["market_id", "promo_id"]
     }
   }
 }

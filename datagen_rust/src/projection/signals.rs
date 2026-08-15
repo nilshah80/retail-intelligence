@@ -85,12 +85,6 @@ fn build_market_signals(
         .iter()
         .filter(|product| product.market_id == market.market_id)
         .collect::<Vec<_>>();
-    let first_store = config
-        .scenario
-        .stores
-        .iter()
-        .find(|store| store.market_id == market.market_id)
-        .with_context(|| format!("market {} has no store", market.market_id))?;
     let mut competitor_match_keys = BTreeSet::new();
     let truth_generation_method = config
         .scenario
@@ -285,8 +279,12 @@ fn build_market_signals(
                     let competitor_price = snap_price_ending(base * inflation * &factor, market)?;
                     let mut price_values = row([
                         ("marketKey", market.market_id.clone()),
-                        ("targetType", "store".to_owned()),
-                        ("targetId", first_store.store_id.clone()),
+                        // targetType/targetId are set PER STORE below. Pinning to the
+                        // market's first store scoped every bound to one district (~11 of
+                        // 866 rows bound a competitor). Market scope binds the whole market
+                        // but the weekly competitor FEATURES join at location grain and read
+                        // it as all-null. Emitting per store (canonical location) satisfies
+                        // both the recommendation bound-join AND the feature build.
                         ("observedAt", local_iso_at(day, 8, &market.timezone)?),
                         ("validDate", day.to_string()),
                         ("competitorId", format!("competitor-{}", market.market_id)),
@@ -343,7 +341,17 @@ fn build_market_signals(
                             evidence.generation_method.clone(),
                         );
                     }
-                    result.competitor_prices.push(price_values);
+                    for store in config
+                        .scenario
+                        .stores
+                        .iter()
+                        .filter(|store| store.market_id == market.market_id)
+                    {
+                        let mut per_store = price_values.clone();
+                        per_store.insert("targetType".to_owned(), "store".to_owned());
+                        per_store.insert("targetId".to_owned(), store.store_id.clone());
+                        result.competitor_prices.push(per_store);
+                    }
                     if competitor_match_keys.insert(match_key.clone()) {
                         let confidence = dec("0.82")
                             + Decimal::from(stable_integer(&[&match_key], 1700)) / dec("10000");
@@ -671,10 +679,14 @@ mod tests {
                 ),
             ),
             (
+                // Per-store competitor evidence (§6.0 competitor-coverage fix): every
+                // market store carries the observation, so gulf-mini emits 584 x 13
+                // stores = 7592 rows. Rust (signals.rs) and Python (simulation.py:2792)
+                // both emit per store, so this digest is a genuine parity value.
                 "competitorPrices",
                 (
-                    584,
-                    "bf5b16e402cfcac0785a78012560eef563601076e9f1469878ec8db77bc532a2",
+                    7592,
+                    "1a35e20ee39c14332b60a3f51fcb02482dbdfbad22e4dd63cdbd0a76d6f50843",
                 ),
             ),
             (

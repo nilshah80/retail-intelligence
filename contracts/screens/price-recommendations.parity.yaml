@@ -1,9 +1,10 @@
 schemaVersion: retail-screen-contract/v1
 screenId: priceRecommendations
+contractVersion: 2
 status: authorized_for_implementation
 authority:
   html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
-  plan: plans/local/phase5-implementation-plan.md
+  plan: plans/local/ui-parity-availability-and-margin-plan.md
   api: contracts/api/openapi.yaml
 title: Price Recommendations
 subtitle: AI-generated SKU-level pricing actions with human approval
@@ -64,6 +65,91 @@ dispositions:
   schedulePriceChange: preview_only_no_write
   pricingActionCenter: preview_only_workflow_unavailable
   statusAndOwner: workflow_unavailable
+  marginOpportunity: business_live_positive
+  revenueOpportunity: business_live_positive
+  currentAndExpectedMargin: business_live_wac
+  competitorCoverage: business_live_complete
+  stockCoverAndForecastDemand: business_live
+  pagination: business_live_paginated_20
+  withheldAssessment: business_live_manual_review
+pagination:
+  defaultPageSize: 20
+  apiLimitParam: 20
+  reconciles: [limit, offset, total]
+  maxMountedRecommendationRows: 20
+  retired200RowEagerLoad: true
+  note: useRecommendationData requests limit=20 with normal pagination and filtering; the grid never mounts 200 recommendation rows at once and auxiliary tables are not counted as recommendation rows
+defaultPage:
+  rows: 20
+  mix: {hold: 0, actions: 20, note: page 1 is the top 20 by priority-first sort and is action-dominant (High-priority, Decrease-dominant); well-priced Holds are Low priority and first appear only after all High/Medium actions}
+  population: {totalRecommendations: 1000-1200, actionable: 140-175, increase: 8-20, decrease: 130-165, holdShareMin: 0.84}
+  invariant: exactly 20 rows per page; priority-first sort surfaces the highest-opportunity actions first; Holds (Low priority) sort after every High and Medium action; the measured active-rich run is ~1093 recommendations (937 Hold, 146 Decrease, 10 Increase) — see amendment PDP-6.0-A2
+  cellCompleteness: every default row shows product, category, store and channel names, competitor price, stock cover, forecast demand, current and expected margin, reason, status and owner with no bare missing token
+ordering:
+  rule: priority_first_actions_before_holds
+  basis: actionable Increase and Reduce rows derive High or Medium priority from positive opportunity and urgency; well-priced Hold rows derive Low priority because no price action is due
+  guarantee: every High/Medium-priority action sorts ahead of Holds without an action-label sort key or any post-result rearrangement; with the measured ~156 actions the leading pages are action-dominant and Holds follow
+  forbidden: [relabel_priority, screenshot_only_tie_break, sample_away_rows, reorder_inspected_result]
+holdSemantics:
+  wellPricedHold: a SKU priced at or near margin-optimal is a genuine Hold with zero opportunity, not a withheld row
+  marginProtectedHold: when the only revenue-improving candidate is margin-dilutive it is refused by the frozen MARGIN_DILUTION profit guard and the SKU remains a genuine Hold; it is never silently turned into an action and never counted as a positive opportunity
+  guardReasonCode: MARGIN_DILUTION
+withheldPresentation:
+  vocabulary: [Manual review, Under review]
+  rule: a reason-coded withheld assessment renders as Manual review or Under review with its accessible reason code; never a bare Not available, N/A, null, undefined or unexplained em dash
+marginAuthority:
+  costBasis: weighted-average cost
+  live: [Margin Opportunity, Revenue Opportunity, Current Margin, Expected Margin, Margin Impact]
+  sign: Margin Opportunity and Revenue Opportunity are strictly positive at the default scope, with at least one positive contributor from both the Increase and Reduce cohorts
+  minMarginFloor: enforced on the weighted-average cost basis during candidate eligibility
+  marginDilutionGuard: an actionable candidate must satisfy expectedMarginImpactMinor > 0 and expectedRevenueImpactMinor >= 0, else it becomes a withheld MARGIN_DILUTION assessment
+  poc: generated weighted-average cost is the authoritative unit cost per plan section 0.0; there is no client-actual gate and no synthetic-margin disclaimer
+amendments:
+- amendmentId: PDP-6.0-A1
+  amendedAt: '2026-08-14'
+  title: Section 6.0 Pricing demo-positive closure - Price Recommendations
+  planSection: plans/local/ui-parity-availability-and-margin-plan.md section 6.0 (P0, P3) and 2.2.1
+  decisionRefs: [P5-D15, P5-D21, P5-D17]
+  frozenBehavior:
+    defaultPageSize: 20 rows per page with limit=20 pagination
+    defaultPageMix: SUPERSEDED by PDP-6.0-A2 — the 12-14 Hold page-1 target was a pre-generation range; the owner-accepted measured run is action-dominant on page 1 under priority-first sort
+    orderingInvariant: priority-first; all High/Medium actions sort before Holds; no action-label sort key
+    marginAuthority: live on weighted-average cost; Margin and Revenue Opportunity strictly positive
+    marginProtectedHold: a well-priced or margin-dilutive-only SKU is a genuine Hold, not a withheld row
+    withheldPresentation: Manual review or Under review; no bare Not available
+    dispositionsRecordedLive: [marginOpportunity, revenueOpportunity, currentAndExpectedMargin, competitorCoverage, pagination]
+  supersedes:
+    priorMeasuredBaseline: 6 Increase, 855 Reduce, 5 Hold; negative Margin Opportunity; 200-row request
+  approval:
+    status: approved
+    actor: nilay.shah
+    approvedAt: '2026-08-14'
+    authorization: Owner-directed Section 6.0 Pricing demo-positive closure; amendment recorded before implementation review per P5-0P.
+    classification: explicit_user_authorization
+    reviewOutstanding: Per-screen human visual review at desktop and mobile remains required before client-demo sign-off.
+- amendmentId: PDP-6.0-A2
+  amendedAt: '2026-08-14'
+  title: Owner-accepted measured distribution supersedes the 6-8 action pre-generation range
+  planSection: plans/local/ui-parity-availability-and-margin-plan.md section 2.2.1
+  decisionRefs: [P5-D15, P5-D21, P5-1P]
+  rationale: The section 2.2.1 starting contract (80-120 total, 6-8 actions, page-1 12-14 Hold) was a pre-generation target. The owner reviewed the measured active-rich distribution and accepted it as demo-positive data ("156 is fine"). This amendment freezes the measured distribution as the authoritative expectation so the 6-8-vs-156 mismatch cannot recur.
+  frozenBehavior:
+    populationMeasured: ~1093 recommendations (937 Hold, 146 Decrease, 10 Increase) plus ~8510 withheld assessments
+    holdShareMin: '0.84 (measured 0.857)'
+    actionable: 140-175 combined (Increase 8-20, Decrease 130-165)
+    priorityDistribution: ~53 High, ~52 Medium, ~988 Low
+    defaultPageOrdering: priority-first; High-priority actions lead page 1 (Decrease-dominant); Holds are Low priority and follow every High/Medium action
+    profitSign: Margin Opportunity and Revenue Opportunity strictly positive (measured +INR 4.6L margin, +INR 47.4L revenue at default scope)
+    profitGuard: MARGIN_DILUTION guard and minimum-margin floor unchanged and still active on the weighted-average cost basis
+  supersedes:
+    startingContract: '80-120 total, 6-8 actionable, page-1 12-14 Hold (plan 2.2.1 pre-generation target and amendment PDP-6.0-A1 defaultPageMix)'
+  approval:
+    status: approved
+    actor: nilay.shah
+    approvedAt: '2026-08-14'
+    authorization: Owner directed that the measured 156-action distribution is acceptable demo data and instructed the contract be updated to reflect measured reality.
+    classification: explicit_user_authorization
+    reviewOutstanding: Per-screen human visual review at desktop and mobile remains required before client-demo sign-off.
 review:
   authorization: Explicit user instruction to complete the approved implementation plan.
   visualReviewOutstanding: true

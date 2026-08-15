@@ -1,7 +1,7 @@
 # Reviewed compact evidence indexes
 
 This directory holds the only generated evidence that may be committed, under the retention policy
-in `plans/local/post-phase3-implementation-plan.md` §1.7.
+recorded in `plans/local/tasks.md` and enforced by the active implementation plan.
 
 A file belongs here only when all of the following hold:
 

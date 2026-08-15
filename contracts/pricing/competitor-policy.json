@@ -1,6 +1,6 @@
 {
   "schemaVersion": "retail-competitor-assessment/v1",
-  "policyVersion": "competitor-assessment/1.0.0",
+  "policyVersion": "competitor-assessment/1.1.0",
   "marketPositionTolerancePct": "0.50",
   "evaluationGate": {
     "minimumPopulation": 200,
@@ -16,8 +16,8 @@
     "scoreProtocol": "held-out-attribute-score/1.0.0"
   },
   "matchThresholds": {
-    "matched": "0.90",
-    "needsReview": "0.80",
+    "matched": "0.84",
+    "needsReview": "0.78",
     "rejected": "0.65"
   },
   "freshness": {

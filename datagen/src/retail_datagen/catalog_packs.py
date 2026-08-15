@@ -1341,20 +1341,41 @@ def _product_from_definition(
             ),
             market,
         )
-        cost = (
-            base_cost
-            * _option_price_multiplier(options)
-            * (
-                Decimal("1")
-                + _decimal_between(
-                    master_seed,
-                    "variant-cost",
-                    variant_key,
-                    Decimal("-0.03"),
-                    Decimal("0.06"),
-                )
+        # Per-variant cost override (§6.0 pricing calibration) — parity with
+        # catalog.rs. An explicit VariantDefinition `cost` is the authoritative
+        # weighted-average unit cost and bypasses the base_cost × option
+        # multiplier × jitter chain; matched on option values, not list order.
+        cost_override = None
+        if definition:
+            current_options = {
+                option["name"]: option["value"] for option in options
+            }
+            for candidate in definition.get("variantDefinitions", []):
+                if (
+                    candidate.get("cost") is not None
+                    and candidate.get("optionValues", {}) == current_options
+                ):
+                    cost_override = candidate["cost"]
+                    break
+        if cost_override is not None:
+            cost = Decimal(str(cost_override)).quantize(
+                MONEY_QUANT, rounding=ROUND_HALF_EVEN
             )
-        ).quantize(MONEY_QUANT, rounding=ROUND_HALF_EVEN)
+        else:
+            cost = (
+                base_cost
+                * _option_price_multiplier(options)
+                * (
+                    Decimal("1")
+                    + _decimal_between(
+                        master_seed,
+                        "variant-cost",
+                        variant_key,
+                        Decimal("-0.03"),
+                        Decimal("0.06"),
+                    )
+                )
+            ).quantize(MONEY_QUANT, rounding=ROUND_HALF_EVEN)
         elasticity = _decimal_between(
             master_seed,
             "variant-elasticity",

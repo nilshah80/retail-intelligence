@@ -169,7 +169,7 @@ DECISION_92_RESIDUE = {
         },
     },
     "servedAggregateDefectMeasured": {
-        "planReference": "plans/local/phase4-implementation-plan.md §1.3.1",
+        "planReference": "plans/local/ui-parity-availability-and-margin-plan.md §2.5",
         "affectedSeries": 398,
         "seriesWithIntervalTotalBelowCentralTotal": 372,
         "servedMeanWeightedConfidence": 0.0814,

@@ -32,7 +32,7 @@ reinterpretation of v1.
 
 ## Engineering authority
 
-`plans/local/scenario-planning-implementation-plan.md` revision 3.9 freezes decisions S1–S27:
+This decision record freezes S1–S27; completion evidence is recorded in `plans/local/tasks.md`:
 authority/version identity, grains, formulas, factor provenance, partial-result populations,
 rounding/FX order, HTTP outcomes, approval lifecycle and the v1/v2 boundary.
 

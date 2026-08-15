@@ -41,7 +41,7 @@ def test_match_states_cover_all_ui_values() -> None:
     attributes = '{"brand":1,"model":1,"pack":1}'
 
     assert classify_match(0.91, attributes, attributes, policy)[0] == "Matched"
-    assert classify_match(0.85, attributes, attributes, policy)[0] == "Needs Review"
+    assert classify_match(0.80, attributes, attributes, policy)[0] == "Needs Review"
     assert classify_match(0.70, attributes, attributes, policy)[0] == "Rejected"
     assert classify_match(0.50, attributes, attributes, policy)[0] == "No Match"
     assert classify_match(0.99, "{}", attributes, policy) == (
@@ -73,7 +73,7 @@ def test_only_audited_fresh_matched_rows_enter_price_bound() -> None:
     assessed = assess_competitor_rows(
         pd.DataFrame([
             {**base, "match_confidence": 0.94},
-            {**base, "match_id": "match-2", "match_confidence": 0.84},
+            {**base, "match_id": "match-2", "match_confidence": 0.80},
             {**base, "match_id": "match-3", "match_confidence": 0.94,
              "observed_at": "2026-06-01T00:00:00Z"},
         ]),

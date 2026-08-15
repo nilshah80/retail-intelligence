@@ -1,12 +1,19 @@
 """Every client that names the required serving migration must name the same one.
 
-`P4-0` task 6. Six files independently hard-code the migration head that serving
-requires: the ML materializer, the ML publisher's manifest evidence, the Go read
-model, the database schema test, the closure-record generator and the generated
-closure record. Five of them said `0008_nullable_withheld_interval` while the
-closure generator and its record still said `0007_activation_and_coverage`, so
-`tools/dev.py verify` passed against a record that named a migration the live
-stack had already moved past.
+`P4-0` task 6. Many files independently hard-code the migration head that serving
+requires. Seven of them are runtime guards that fail closed (a serving 503) when
+the applied head differs: the three Go read models (Forecast, Inventory, Pricing)
+and the four Python materializers (serving, scenario, inventory_publish, pricing).
+Two further clients name the head without gating on it -- the ML publisher's
+manifest evidence and the database schema test -- and the closure-record generator
+derives it. An earlier version of this test enumerated only four clients (serving,
+publisher, Forecast, db test), so `scenario/postgres.py`, `inventory_publish/postgres.py`,
+`pricing/postgres.py` and the Inventory/Pricing read models could drift undetected.
+That is exactly how serving, scenario and inventory_publish came to pin
+`0030_pricing_intents` while the head advanced to `0031_pricing_margin_pct` -- three
+materializers that would each refuse a live 0031 database, caught by nothing. Every
+runtime guard is enumerated below so a partial bump fails here rather than in
+production.
 
 A string constant cannot detect its own staleness, so this does not compare the
 pins to another string. It derives the head from the Alembic graph -- the revision
@@ -29,10 +36,11 @@ MIGRATIONS = REPO_ROOT / "db" / "migrations" / "versions"
 #: Regression floor. Each of these was the required head once and is now
 #: inherited history: 0006 was v4-only, 0007 established the verifier-v5
 #: boundary, 0008 made the withheld interval storable without making
-#: availability explicit, and 0021 introduced ragged recent evaluation before
-#: Decision #95's additive expectation. Naming any of them as the *current required head* is
-#: the specific regression this test exists to catch, so it is asserted
-#: explicitly rather than left to the graph comparison.
+#: availability explicit, 0021 introduced ragged recent evaluation before
+#: Decision #95's additive expectation, and 0030 was the pricing-intents head
+#: superseded by 0031's pricing margin_pct columns. Naming any of them as the
+#: *current required head* is the specific regression this test exists to catch,
+#: so it is asserted explicitly rather than left to the graph comparison.
 RETIRED_HEADS = frozenset(
     {
         "0006_cohorted_verifier_v4",
@@ -40,6 +48,9 @@ RETIRED_HEADS = frozenset(
         "0008_nullable_withheld_interval",
         "0009_forecast_interval_contract",
         "0021_forecast_eval_recent",
+        "0030_pricing_intents",
+        "0031_pricing_margin_pct",
+        "0032_pricing_unit_fields",
     }
 )
 
@@ -82,18 +93,44 @@ def _extract(path: Path, pattern: str) -> str:
 def _client_pins() -> dict[str, str]:
     """Each entry is a file that fails closed against the wrong migration."""
 
+    py_materializer = r'MIGRATION_REVISION:\s*Final\[str\]\s*=\s*"([^"]+)"'
     return {
+        # Runtime guards -- each fails closed (serving 503) when the applied head
+        # differs. All seven must equal the Alembic head simultaneously; the single
+        # retail_intelligence_alembic_version row cannot satisfy two constants at once.
         "ml/serving/postgres.py": _extract(
             REPO_ROOT / "ml" / "src" / "retail_ml" / "serving" / "postgres.py",
-            r'MIGRATION_REVISION:\s*Final\[str\]\s*=\s*"([^"]+)"',
+            py_materializer,
         ),
-        "ml/publish/run_artifacts.py": _extract(
-            REPO_ROOT / "ml" / "src" / "retail_ml" / "publish" / "run_artifacts.py",
-            r'"servingMigration":\s*"([^"]+)"',
+        "ml/scenario/postgres.py": _extract(
+            REPO_ROOT / "ml" / "src" / "retail_ml" / "scenario" / "postgres.py",
+            py_materializer,
+        ),
+        "ml/inventory_publish/postgres.py": _extract(
+            REPO_ROOT / "ml" / "src" / "retail_ml" / "inventory_publish" / "postgres.py",
+            py_materializer,
+        ),
+        "ml/pricing/postgres.py": _extract(
+            REPO_ROOT / "ml" / "src" / "retail_ml" / "pricing" / "postgres.py",
+            py_materializer,
         ),
         "api/readmodel/forecast.go": _extract(
             REPO_ROOT / "api" / "internal" / "readmodel" / "forecast.go",
             r'ForecastMigrationRevision\s*=\s*"([^"]+)"',
+        ),
+        "api/readmodel/inventory.go": _extract(
+            REPO_ROOT / "api" / "internal" / "readmodel" / "inventory.go",
+            r'InventoryMigrationRevision\s*=\s*"([^"]+)"',
+        ),
+        "api/readmodel/pricing.go": _extract(
+            REPO_ROOT / "api" / "internal" / "readmodel" / "pricing.go",
+            r'PricingMigrationRevision\s*=\s*"([^"]+)"',
+        ),
+        # Named-but-non-gating clients: they must still name the head so evidence and
+        # the schema test do not vouch for a migration the live stack has moved past.
+        "ml/publish/run_artifacts.py": _extract(
+            REPO_ROOT / "ml" / "src" / "retail_ml" / "publish" / "run_artifacts.py",
+            r'"servingMigration":\s*"([^"]+)"',
         ),
         "db/tests/test_forecast_schema.py": _extract(
             REPO_ROOT / "db" / "tests" / "test_forecast_schema.py",

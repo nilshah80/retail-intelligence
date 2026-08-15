@@ -1,0 +1,101 @@
+{
+  "audience": "response_rich_local",
+  "authorityId": "auth_0c14c4441d918f9a",
+  "entryEvidence": {
+    "pointerByteSha256": "be468f5a39703e2f8c092f651f4fbede0974f0e5c78fe83526d72c3795681316",
+    "pointerPath": "contracts/evidence/capability-entry-current.json",
+    "records": [
+      {
+        "recordByteSha256": "b5a5dd286383c27126a7aec13d92e15e84564ce51aa1151fb6b53ac797ec377f",
+        "recordId": "623918ac3e6053fdfa0ab06765b71fb05e2a571a4b6d848b4231300a1d9af2e9",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-623918ac3e6053fdfa0ab06765b71fb05e2a571a4b6d848b4231300a1d9af2e9.json",
+        "scope": {
+          "capability": "demand_forecast_non_pit",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "66fd121b655d418ab59fb7290f76b14e70932d552b11749d9e2a00cd904359b9",
+        "recordId": "3ee56556d3c91622100106150d87c95f48658a3039921d02281bccfd2743fd60",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-3ee56556d3c91622100106150d87c95f48658a3039921d02281bccfd2743fd60.json",
+        "scope": {
+          "capability": "inventory_replenishment_current_snapshot",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      },
+      {
+        "recordByteSha256": "d3623fd84a84629060d349aab5822f068f1a10c60b934d21fb00b1891b16cdb6",
+        "recordId": "851fc6ab49ad6a3f34f348cae36985f39ddfa993ca2e9816086e18090f7c5891",
+        "recordPath": "contracts/evidence/capability-entry-records/capability-entry-record-851fc6ab49ad6a3f34f348cae36985f39ddfa993ca2e9816086e18090f7c5891.json",
+        "scope": {
+          "capability": "inventory_replenishment_replay",
+          "environment": "local",
+          "retailerId": "retailer-demo",
+          "tenantId": "tenant-demo"
+        }
+      }
+    ]
+  },
+  "evidenceRoot": "ingestion/data/evidence/run-366425d2c5c5c06b",
+  "expectedPin": {
+    "byteSha256": "603febad440f1c533c7fad36c093fe1049b6edf35d65e2838447b6fe4cc55674",
+    "path": "contracts/ml/expected-pin.json"
+  },
+  "jobPurpose": "complete_lineage_rebuild",
+  "review": {
+    "actor": "nilshah80",
+    "reason": "cost-driven Hold calibration run 1",
+    "reviewedAt": "2026-08-14T07:28:11Z"
+  },
+  "runId": "run-366425d2c5c5c06b",
+  "schemaVersion": "retail-input-authority/v1",
+  "scopes": [
+    {
+      "capability": "demand_forecast_non_pit",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_15f64551060746ba",
+      "selectionRecordByteSha256": "276629ea2a7988c4e700b8d3659b1c069629b91bdfebe7f27c4298960a515f82",
+      "selectionRecordId": "rec_b08ca09e5cb091b7",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_b08ca09e5cb091b7.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_current_snapshot",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_8224485234b434e8",
+      "selectionRecordByteSha256": "5222e9e8c2e37030519720d64873f3831c49d8ce1a33e4fc0431744ef97aa852",
+      "selectionRecordId": "rec_b06d618cd6d8c743",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_b06d618cd6d8c743.json",
+      "tenantId": "tenant-demo"
+    },
+    {
+      "capability": "inventory_replenishment_replay",
+      "environment": "local",
+      "retailerId": "retailer-demo",
+      "selectionId": "sel_74653c29d845e73a",
+      "selectionRecordByteSha256": "2e055e48fe9dabb05a2463d5eb0b6c372bcc56ad8b6d0f4c83c8761cc2f199e7",
+      "selectionRecordId": "rec_37667f1b47cfd48a",
+      "selectionRecordPath": "contracts/evidence/publication-selections/publication-selection-rec_37667f1b47cfd48a.json",
+      "tenantId": "tenant-demo"
+    }
+  ],
+  "semanticIdentityExcludes": [
+    "/authorityId",
+    "/review"
+  ],
+  "sourceEvidence": {
+    "gateASemanticFingerprint": "2b8143457a6661cf53a2363d94a0e78b8396a3a300ac0934b285a918a6de965f",
+    "gateBSemanticFingerprint": "4353e3d7976e4f91112f45566654be514038b1791d6abd59cbb519b10d905fc2",
+    "publicationManifestSha256": "72ae8f852f751333f60cd8c1b194080614f9c024172404452492534034ba9ad7",
+    "publicationSemanticFingerprint": "3e95ba319cb4cf91aa2927152aca63766c0ca54652645317766d7945a3f1eef7",
+    "readinessReportFingerprint": "364ef40641a011e53b06428023c670f0a5a1e3cb7416aa9bca7fe5e432420305",
+    "readinessReportSha256": "52997831acedb4be8d9a777ff8079eb5a96e8af7b7806921bba88ec30f7e1823",
+    "sourceSnapshotId": "e4cd27482f85479d3a04590661327756916bce9e959d5d5d6c84fb612c8df0b4"
+  }
+}

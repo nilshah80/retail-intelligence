@@ -1,6 +1,6 @@
 # Engine and tooling defects found during Gulf Oil India onboarding
 
-_Companion to `plans/local/gulf-oil-india-implementation-plan.md` and `plans/local/tasks.md`._
+_Companion to the active `plans/local/ui-parity-availability-and-margin-plan.md` and `plans/local/tasks.md`._
 _Status: `[open]` · `[fixing]` · `[fixed]` · `[wontfix]`_
 
 These were all found by running a **second tenant** through a stack whose engines were

@@ -68,6 +68,10 @@ type PricingPageProps = {
 
 const unavailable = "Not available";
 
+// The client-facing Price Recommendations and Competitor Monitor grids page at
+// exactly 20 rows (plan §2.2.1 / P3); the API reconciles limit/offset/total.
+const PAGE_SIZE = 20;
+
 function formatCount(value: number | null | undefined) {
   return value === null || value === undefined
     ? unavailable
@@ -107,6 +111,14 @@ function explanationText(value: string | null | undefined, fallback?: string | n
 function formatUnits(value: number | null | undefined) {
   if (value === null || value === undefined) return unavailable;
   return new Intl.NumberFormat("en-US", {maximumFractionDigits: 1}).format(value);
+}
+
+// Coerce an untyped served value to a finite number, or null when it is absent or
+// non-numeric, so a governed placeholder is shown instead of NaN.
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function absoluteTime(value: string | null | undefined) {
@@ -184,18 +196,24 @@ function PricingKpi({
   label,
   value,
   note,
-  unavailableReason
+  unavailableReason,
+  delta
 }: {
   label: string;
   value: string;
   note: string;
   unavailableReason?: string;
+  // A companion sentiment line under the value, matching the reference KPI tiles
+  // (value → delta → note) and the Forecast/Inventory KPI pattern. Color carries
+  // business sentiment, not arithmetic sign (plan §3.2).
+  delta?: {value: string; sentiment: "up" | "down" | "warn"};
 }) {
   const missing = value === unavailable || value.startsWith("Not available");
   return (
     <div className="kpi pricing-kpi">
       <small>{label}</small>
       <div className={`value${missing ? " unavailable" : ""}`}>{value}</div>
+      {delta && <span className={`delta ${delta.sentiment}`}>{delta.value}</span>}
       <div className="demo-note">{unavailableReason ?? note}</div>
     </div>
   );
@@ -353,6 +371,43 @@ function PreviewButton({children, onClick, disabled, reason}: {
 
 function UnavailableValue({reason}: {reason: string}) {
   return <span className="cell-unavailable" title={reason}>{unavailable}</span>;
+}
+
+// A withheld_assessment row carries no accepted decision, so its action-derived
+// cells have no value. Rather than a bare "Not available", they show an explicit
+// governed state; the withhold reason rides in the tooltip and the AI Reason cell.
+function WithheldValue({reason}: {reason: string}) {
+  return <span className="cell-unavailable" title={reason}>Under review</span>;
+}
+
+// A privacy-restricted field (for example promotion cannibalisation risk) is never
+// disclosed as a number; it shows a governed chip carrying the restriction reason.
+function RestrictedValue({reason, label}: {reason: string; label?: string}) {
+  return <span className="badge b-blue" title={reason}>{label ?? "Restricted"}</span>;
+}
+
+function Pagination({offset, limit, total, onPrev, onNext}: {
+  offset: number;
+  limit: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const first = total === 0 ? 0 : offset + 1;
+  const last = Math.min(offset + limit, total);
+  return (
+    <div className="pricing-pagination">
+      <span className="pagination-status" aria-live="polite">
+        {total === 0
+          ? "No rows to display"
+          : `Showing ${formatCount(first)}–${formatCount(last)} of ${formatCount(total)}`}
+      </span>
+      <div className="pagination-controls">
+        <button className="filter" type="button" onClick={onPrev} disabled={offset <= 0}>Previous</button>
+        <button className="filter" type="button" onClick={onNext} disabled={offset + limit >= total}>Next</button>
+      </div>
+    </div>
+  );
 }
 
 function Field({label, children, help}: {
@@ -846,15 +901,15 @@ function RecommendationOverview({
   );
 }
 
-function useRecommendationData(filters: PricingFilters) {
+function useRecommendationData(filters: PricingFilters, offset: number) {
   const summaryQuery = useQuery({
     queryKey: ["pricing-recommendation-summary", filters],
     queryFn: ({signal}) => loadRecommendationSummary(filters, signal),
     placeholderData: (previous) => previous
   });
   const rowsQuery = useQuery({
-    queryKey: ["pricing-recommendations", filters],
-    queryFn: ({signal}) => loadRecommendations({...filters, limit: 200}, signal),
+    queryKey: ["pricing-recommendations", filters, offset],
+    queryFn: ({signal}) => loadRecommendations({...filters, limit: PAGE_SIZE, offset}, signal),
     placeholderData: (previous) => previous
   });
   return {
@@ -882,6 +937,8 @@ function PriceRecommendations({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<RecommendationModal>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const offset = page * PAGE_SIZE;
   const effectiveStoreId = storeId || pageStore;
   const filters = useMemo<PricingFilters>(() => ({
     storeId: effectiveStoreId,
@@ -891,7 +948,7 @@ function PriceRecommendations({
     confidence,
     search: debouncedSearch
   }), [effectiveStoreId, channelType, category, action, confidence, debouncedSearch]);
-  const data = useRecommendationData(filters);
+  const data = useRecommendationData(filters, offset);
   const exportAuthorityFilters = useMemo<PricingFilters>(() => ({
     storeId: effectiveStoreId,
     channelType
@@ -903,6 +960,7 @@ function PriceRecommendations({
 
   useEffect(() => {
     setSelected(new Set());
+    setPage(0);
   }, [effectiveStoreId, channelType, category, action, confidence, search]);
   useEffect(() => {
     if (storeId) setPageStore(storeId);
@@ -912,6 +970,10 @@ function PriceRecommendations({
   const rows = data.rows?.items ?? [];
   const selectedRows = rows.filter((row) => selected.has(row.recommendationId));
   const selectable = rows.filter((row) => row.selectable);
+  const mix = data.summary?.recommendationMix ?? [];
+  const actionableCount =
+    (mix.find((entry) => entry.label === "Increase price")?.count ?? 0) +
+    (mix.find((entry) => entry.label === "Reduce price")?.count ?? 0);
   const allVisibleSelected = selectable.length > 0 && selectable.every((row) =>
     selected.has(row.recommendationId)
   );
@@ -973,10 +1035,10 @@ function PriceRecommendations({
           </div>
 
           <div className="kpi-grid pricing-kpi-grid">
-            <PricingKpi label="Open Recommendations" value={formatCount(data.summary.kpis.openRecommendations)} note="Current filtered recommendations; withheld assessments excluded" />
-            <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" />
-            <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Weighted-average cost basis" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} />
-            <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note={data.summary.kpis.riskReason} />
+            <PricingKpi label="Open Recommendations" value={formatCount(data.summary.kpis.openRecommendations)} note="Current filtered recommendations; withheld assessments excluded" delta={{value: `${formatCount(actionableCount)} require a price action`, sentiment: "up"}} />
+            <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" delta={data.summary.kpis.revenueOpportunityMinor != null && data.summary.kpis.revenueOpportunityMinor > 0 ? {value: "Projected uplift", sentiment: "up"} : undefined} />
+            <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Weighted-average cost basis" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} delta={data.summary.kpis.marginOpportunityMinor != null && data.summary.kpis.marginOpportunityMinor > 0 ? {value: "Within margin guardrails", sentiment: "up"} : undefined} />
+            <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note={data.summary.kpis.riskReason} delta={{value: data.summary.kpis.recommendationsAtRisk > 0 ? "Outside guardrails" : "Within guardrails", sentiment: data.summary.kpis.recommendationsAtRisk > 0 ? "down" : "up"}} />
             <PricingKpi label="Recommendation Adoption" value={unavailable} note="Workflow/realized evidence required" unavailableReason={data.summary.kpis.adoptionReason} />
           </div>
 
@@ -1033,30 +1095,49 @@ function PriceRecommendations({
               {[
                 "Priority", "SKU / Product", "Category", "Store", "Action", "Current", "AI Price", "Change", "Competitor", "Stock Cover", "Forecast Demand", "Current Margin", "Expected Margin", "Revenue Impact", "Margin Impact", "AI Reason", "Confidence", "Status", "Owner"
               ].map((header) => <th key={header}>{header}</th>)}
-            </tr></thead><tbody>{rows.map((row) => (
-              <tr key={row.recommendationId} data-partial={row.recordKind === "withheld_assessment"}>
+            </tr></thead><tbody>{rows.map((row) => {
+              // A withheld assessment has no accepted action, so its decision-derived
+              // cells (AI price, change, impacts, confidence…) have no value. Each shows
+              // an explicit governed "Under review" state, never a bare missing token;
+              // the withhold reason (first_failure_reason / margin_reason_code) is
+              // surfaced in the Action chip tooltip and readably in the AI Reason cell.
+              const isWithheld = row.recordKind === "withheld_assessment";
+              const withheldReason = row.firstFailureReason ?? row.marginReasonCode;
+              const withheldReasonText = withheldReason
+                ? reasonText(withheldReason)
+                : "Assessment withheld pending manual review";
+              return (
+              <tr key={row.recommendationId} data-partial={isWithheld}>
                 <td><input type="checkbox" aria-label={`Select ${row.productName ?? row.skuId}`} disabled={!row.selectable} checked={selected.has(row.recommendationId)} onChange={() => setSelected((current) => {const next = new Set(current); if (next.has(row.recommendationId)) next.delete(row.recommendationId); else next.add(row.recommendationId); return next;})} /></td>
                 <td><span className={`badge ${badgeClass(row.priority)}`}>{row.priority}</span></td>
                 <td><button className="link-button product-link" type="button" onClick={() => setDetailId(row.recommendationId)}><strong>{row.productName ?? "Name unavailable"}</strong><small>{row.skuId}</small></button></td>
                 <td>{categoryName(dashboard, row.category, row.categoryLabel)}</td>
                 <td><span className="product-cell">{storeName(dashboard, row.storeId, row.storeName)}<small>{channelName(dashboard, row.channelId, row.channelName)}</small></span></td>
-                <td>{row.action ? <span className={`badge ${badgeClass(row.action)}`}>{row.action === "Decrease" ? "Reduce Price" : `${row.action} Price`}</span> : <UnavailableValue reason={reasonText(row.firstFailureReason)} />}</td>
-                <td>{formatMoneyMinor(row.currentPriceMinor, row.currencyCode)}</td>
-                <td>{formatMoneyMinor(row.proposedPriceMinor, row.currencyCode)}</td>
-                <td>{formatPercent(row.changePct)}</td>
-                <td>{row.competitorPriceMinor === null || row.competitorPriceMinor === undefined ? <UnavailableValue reason="No fresh admissible competitor bound." /> : formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td>
-                <td>{row.stockCoverDays === null || row.stockCoverDays === undefined ? <UnavailableValue reason="Inventory cover is unavailable." /> : `${formatUnits(row.stockCoverDays)} days`}</td>
-                <td>{row.forecastDemand ?? <UnavailableValue reason="Forecast demand cohort is unavailable." />}</td>
-                <td>{row.currentMarginPct === null || row.currentMarginPct === undefined ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatPercent(row.currentMarginPct)}</td>
-                <td>{row.expectedMarginPct === null || row.expectedMarginPct === undefined ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatPercent(row.expectedMarginPct)}</td>
-                <td>{formatAggregateMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
-                <td>{row.marginImpactMinor === null ? <UnavailableValue reason={reasonText(row.marginReasonCode)} /> : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
-                <td className="reason-cell">{explanationText(row.aiReason, row.firstFailureReason)}</td>
-                <td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td>
+                <td>{row.action ? <span className={`badge ${badgeClass(row.action)}`}>{row.action === "Decrease" ? "Reduce Price" : `${row.action} Price`}</span> : <span className="badge b-amber" title={withheldReasonText}>Manual review</span>}</td>
+                <td>{row.currentPriceMinor === null || row.currentPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Current local price is unavailable." />) : formatMoneyMinor(row.currentPriceMinor, row.currencyCode)}</td>
+                <td>{row.proposedPriceMinor === null || row.proposedPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No accepted AI price is available." />) : formatMoneyMinor(row.proposedPriceMinor, row.currencyCode)}</td>
+                <td>{row.changePct === null || row.changePct === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No accepted price change is available." />) : formatPercent(row.changePct)}</td>
+                <td>{row.competitorPriceMinor === null || row.competitorPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No fresh admissible competitor bound." />) : formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td>
+                <td>{row.stockCoverDays === null || row.stockCoverDays === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Inventory cover is unavailable." />) : `${formatUnits(row.stockCoverDays)} days`}</td>
+                <td>{row.forecastDemand ? row.forecastDemand : (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Forecast demand cohort is unavailable." />)}</td>
+                <td>{row.currentMarginPct === null || row.currentMarginPct === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason={reasonText(row.marginReasonCode)} />) : formatPercent(row.currentMarginPct)}</td>
+                <td>{row.expectedMarginPct === null || row.expectedMarginPct === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason={reasonText(row.marginReasonCode)} />) : formatPercent(row.expectedMarginPct)}</td>
+                <td>{row.revenueImpactMinor === null || row.revenueImpactMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No accepted revenue impact is available." />) : formatAggregateMoneyMinor(row.revenueImpactMinor, row.currencyCode)}</td>
+                <td>{row.marginImpactMinor === null ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason={reasonText(row.marginReasonCode)} />) : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
+                <td className="reason-cell">{isWithheld ? withheldReasonText : explanationText(row.aiReason, row.firstFailureReason)}</td>
+                <td>{isWithheld ? <WithheldValue reason={withheldReasonText} /> : row.confidence === null ? <UnavailableValue reason="Confidence is unavailable." /> : formatPercent(row.confidence * 100)}</td>
                 <td><UnavailableValue reason="Approval workflow status is unavailable." /></td>
                 <td><UnavailableValue reason="Workflow owner evidence is unavailable." /></td>
               </tr>
-            ))}</tbody></table></div>
+              );
+            })}</tbody></table></div>
+            <Pagination
+              offset={data.rows.pagination.offset}
+              limit={data.rows.pagination.limit}
+              total={data.rows.pagination.total}
+              onPrev={() => {setPage((current) => Math.max(0, current - 1)); setSelected(new Set());}}
+              onNext={() => {setPage((current) => current + 1); setSelected(new Set());}}
+            />
             <p className="demo-note">Select recommendation rows to compare or export. Workflow previews are inspectable but cannot approve, review, schedule, assign, or publish a price.</p>
           </div>
 
@@ -1101,6 +1182,76 @@ function PriceRecommendations({
   );
 }
 
+// Governed per-unit basis for a simulation SKU. Present only when the bundle
+// carries the pricing-unit fields; otherwise the panel falls back to aggregate
+// (canonical sellable-pack) prices without ever showing a missing token.
+type UnitBasis = {label: string; baseUnitQuantity: number} | null;
+
+// Convert a canonical sellable-pack minor amount to its per-base-unit minor
+// amount using the governed pack quantity — the same division the serving layer
+// applies for currentUnitPriceMinor. Never divide an aggregate/period total.
+function toUnitMinor(packMinor: number, basis: UnitBasis) {
+  return basis ? Math.round(packMinor / basis.baseUnitQuantity) : packMinor;
+}
+
+// Render a canonical pack price on the active basis: "<per-unit> / <unit>" when a
+// per-unit basis exists, otherwise the aggregate pack price.
+function priceOnBasis(
+  packMinor: number | null | undefined,
+  basis: UnitBasis,
+  currency: string | null | undefined
+) {
+  if (packMinor === null || packMinor === undefined) return "";
+  return basis
+    ? `${formatMoneyMinor(toUnitMinor(packMinor, basis), currency)} / ${basis.label}`
+    : formatMoneyMinor(packMinor, currency);
+}
+
+// The editable Proposed price is shown/edited on the same basis as Current: the
+// per-base-unit major string when a basis exists, else the aggregate major.
+function proposedInputValue(packMinor: number, basis: UnitBasis) {
+  return (toUnitMinor(packMinor, basis) / 100).toFixed(2);
+}
+
+// Pick the default Proposed candidate: a governed, eligible alternative distinct
+// from both Current and AI Optimal (§6.0 P4). Every candidate in the grid already
+// passed the profit/margin guardrails, so any of them is a valid profitable move;
+// choosing the one nearest the Current↔AI-Optimal midpoint yields a clearly
+// separated partial move (not a one-tick neighbour of AI Optimal whose projected
+// metrics would round identically). When the grid clusters to one side, the
+// nearest-to-midpoint candidate is the grid extreme closest to Current — still a
+// real, separated alternative. With no distinct candidate it falls back to AI
+// Optimal (then Current) and the UI states the equality.
+function pickProposedCandidate(
+  candidates: number[],
+  current: number | null | undefined,
+  aiOptimal: number | null | undefined
+): number | null {
+  const distinct = candidates.filter(
+    (price) => price !== current && price !== aiOptimal
+  );
+  if (distinct.length === 0) return aiOptimal ?? current ?? null;
+  if (current === null || current === undefined ||
+    aiOptimal === null || aiOptimal === undefined) {
+    return distinct[0];
+  }
+  const midpoint = (current + aiOptimal) / 2;
+  return distinct.reduce((best, price) =>
+    Math.abs(price - midpoint) < Math.abs(best - midpoint) ? price : best
+  );
+}
+
+// A projected metric that has no value until a scenario is run. This is a
+// governed status, never a bare "Not available" token, and it never replaces the
+// comparison — the real Current/Proposed/AI Optimal prices sit above it.
+function PendingScenarioValue() {
+  return (
+    <span className="cell-pending" title="Run the scenario to compute this projected value.">
+      Run to project
+    </span>
+  );
+}
+
 function ScenarioValue({metric, result, currency}: {
   metric: string;
   result: PriceSimulation["columns"]["current"];
@@ -1118,8 +1269,9 @@ function ScenarioValue({metric, result, currency}: {
     : <>{formatUnits(result.endingStockUnits)}</>;
 }
 
-function SimulationResult({result, onClose}: {
+function SimulationResult({result, unitBasis = null, onClose}: {
   result: PriceSimulation;
+  unitBasis?: UnitBasis;
   onClose?: () => void;
 }) {
   const resultMetrics = (
@@ -1138,7 +1290,7 @@ function SimulationResult({result, onClose}: {
   );
   const content = (
     <>
-      <div className="table-scroll"><table className="table pricing-table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody>{result.metricOrder.map((metric) => <tr key={metric}><td><strong>{metric}</strong></td><td><ScenarioValue metric={metric} result={result.columns.current} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.proposed} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.aiOptimal} currency={result.currencyCode} /></td></tr>)}</tbody></table></div>
+      <div className="table-scroll"><table className="table pricing-table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody><tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(result.columns.current.priceMinor, unitBasis, result.currencyCode)}</td><td>{priceOnBasis(result.columns.proposed.priceMinor, unitBasis, result.currencyCode)}</td><td>{priceOnBasis(result.columns.aiOptimal.priceMinor, unitBasis, result.currencyCode)}</td></tr>{result.metricOrder.map((metric) => <tr key={metric}><td><strong>{metric}</strong></td><td><ScenarioValue metric={metric} result={result.columns.current} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.proposed} currency={result.currencyCode} /></td><td><ScenarioValue metric={metric} result={result.columns.aiOptimal} currency={result.currencyCode} /></td></tr>)}</tbody></table></div>
       {recommendationCallout}
       {resultMetrics}
     </>
@@ -1162,14 +1314,21 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   const [proposed, setProposed] = useState("");
   const [assumption, setAssumption] = useState<"Expected" | "Best Case" | "Worst Case">("Expected");
   const [objective, setObjective] = useState<"Margin Protection" | "Clearance">("Clearance");
+  // Period and Competitor Response are enabled selectors, but the accepted
+  // simulation contract only computes the governed Next 4 Weeks horizon and
+  // derives competitor inclusion server-side. They express intent and never leave
+  // the client (the strict request body rejects unknown fields).
+  const [period, setPeriod] = useState<"Next 4 Weeks" | "Next 8 Weeks" | "Next 13 Weeks">("Next 4 Weeks");
+  const [competitorResponse, setCompetitorResponse] = useState<"Include" | "Exclude">("Include");
   const [resultOpen, setResultOpen] = useState(false);
   const items = recommendations.data?.items.filter((row) => row.selectable) ?? [];
   const selected = items.find((row) => row.recommendationId === recommendationId);
+  const currency = selected?.currencyCode;
   // The minimum-margin floor is a known policy fact; in this PoC the generated
   // weighted-average cost is the cost basis, so the floor is applied (no separate
   // client cost exists here — generated data is the actual data).
   const priceMargin = recommendations.data?.authority?.priceMargin;
-  const minMarginDisplay = priceMargin?.minMarginPct != null ? `${priceMargin.minMarginPct}%` : unavailable;
+  const minMarginDisplay = priceMargin?.minMarginPct != null ? `${priceMargin.minMarginPct}%` : "No floor set";
   // Margin Protection is enabled only under an active price_margin selection; it
   // stays disabled until then rather than being unconditionally blocked.
   const priceMarginActive = recommendations.data?.authority?.priceMarginActive === true;
@@ -1178,15 +1337,59 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     queryFn: ({signal}) => loadRecommendationDetail(recommendationId, signal),
     enabled: Boolean(recommendationId)
   });
+
+  // Governed per-unit basis for the selected SKU. Present only when the bundle
+  // carries the pricing-unit fields; otherwise every price falls back to the
+  // aggregate (canonical sellable-pack) amount without any missing token.
+  const unitBasis: UnitBasis =
+    selected?.pricingUnitLabel &&
+    selected.baseUnitQuantity !== null && selected.baseUnitQuantity !== undefined &&
+    selected.baseUnitQuantity > 0 &&
+    selected.currentUnitPriceMinor !== null && selected.currentUnitPriceMinor !== undefined
+      ? {label: selected.pricingUnitLabel, baseUnitQuantity: selected.baseUnitQuantity}
+      : null;
+  // Candidate grid and AI Optimal come from the accepted recommendation; the
+  // detail item is only authoritative once it belongs to the current selection.
+  const activeItem =
+    detail.data?.item.recommendationId === recommendationId ? detail.data.item : undefined;
+  const legalCandidates = activeItem?.legalCandidatePricesMinor ?? [];
+  const aiOptimalMinor = selected?.proposedPriceMinor ?? null;
+  const defaultProposedPack = useMemo(
+    () => selected && activeItem
+      ? pickProposedCandidate(
+          activeItem.legalCandidatePricesMinor ?? [],
+          selected.currentPriceMinor,
+          selected.proposedPriceMinor
+        )
+      : null,
+    [selected, activeItem]
+  );
+
+  // The Proposed input is on the same basis as Current (per base unit when a
+  // basis exists). Map it back to the exact canonical pack candidate before any
+  // simulation — a rounded per-unit value only validates when it reconciles to a
+  // real candidate, so the API never sees an off-grid pack price.
+  const enteredMinor = parseMoneyMinor(proposed);
+  const proposedPackMinor = enteredMinor === null
+    ? null
+    : unitBasis
+      ? legalCandidates.find((price) => toUnitMinor(price, unitBasis) === enteredMinor) ?? null
+      : legalCandidates.includes(enteredMinor) ? enteredMinor : null;
+  const validPrice = Boolean(selected && proposedPackMinor !== null && proposedPackMinor > 0);
+  const matchesAiOptimal = validPrice && proposedPackMinor === aiOptimalMinor;
+  const competitorIncluded = selected?.competitorPriceMinor !== null && selected?.competitorPriceMinor !== undefined;
+  const clearanceAvailable = activeItem?.details?.clearance_context_available === true;
+
   const simulation = useMutation({
     mutationFn: () => {
-      const proposedPriceMinor = parseMoneyMinor(proposed);
-      if (proposedPriceMinor === null) {
-        throw new Error("Enter a positive local-currency price with at most two decimal places.");
+      if (proposedPackMinor === null) {
+        throw new Error("Enter a supported local price on the governed candidate grid before simulating.");
       }
       return runPriceSimulation({
         recommendationId,
-        proposedPriceMinor,
+        proposedPriceMinor: proposedPackMinor,
+        // Only the Next 4 Weeks horizon has accepted forecast evidence in this
+        // run; the request stays pinned to it regardless of the selector.
         simulationPeriod: "Next 4 Weeks",
         demandAssumption: assumption,
         inventoryObjective: objective,
@@ -1196,30 +1399,47 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     onSuccess: () => setResultOpen(true)
   });
 
+  // Default the product to the first accepted, selectable recommendation whenever
+  // the authority (re)loads.
   useEffect(() => {
     if (!recommendations.data) return;
     const first = recommendations.data.items.find((row) => row.selectable);
     setRecommendationId(first?.recommendationId ?? "");
   }, [recommendations.data?.authority.activationSetId]);
+  // Once the selected product's candidate grid has loaded, seed Proposed to a
+  // governed profitable alternative distinct from Current and AI Optimal, default
+  // the competitor toggle to the accepted evidence state, and drop any prior run.
   useEffect(() => {
-    setProposed(selected?.proposedPriceMinor === null || selected?.proposedPriceMinor === undefined
-      ? ""
-      : (selected.proposedPriceMinor / 100).toFixed(2));
+    if (defaultProposedPack === null) return;
+    setProposed(proposedInputValue(defaultProposedPack, unitBasis));
+    setCompetitorResponse(competitorIncluded ? "Include" : "Exclude");
     simulation.reset();
-  }, [recommendationId]);
+  }, [recommendationId, defaultProposedPack]);
+  // A supported input change invalidates a prior stateless result. Period and
+  // Competitor Response are intentionally absent: they cannot re-run against the
+  // accepted contract, so they retain the last valid comparison instead of
+  // clearing it to a bare state.
   useEffect(() => {
     simulation.reset();
-  }, [storeId, channelType, assumption, objective, proposed]);
+  }, [storeId, channelType, recommendationId, assumption, objective, proposed]);
 
-  const proposedMinor = parseMoneyMinor(proposed);
-  const legalCandidates = detail.data?.item.legalCandidatePricesMinor ?? [];
-  const validPrice = Boolean(
-    selected && proposedMinor !== null && proposedMinor > 0 &&
-    legalCandidates.includes(proposedMinor)
-  );
-  const competitorIncluded = selected?.competitorPriceMinor !== null && selected?.competitorPriceMinor !== undefined;
-  const details = detail.data?.item.details;
-  const clearanceAvailable = details?.clearance_context_available === true;
+  const currentPriceValue = selected
+    ? unitBasis
+      ? `${formatMoneyMinor(selected.currentUnitPriceMinor, currency)} / ${unitBasis.label}`
+      : formatMoneyMinor(selected.currentPriceMinor, currency)
+    : "";
+  const currentPriceHelp = unitBasis && selected &&
+    selected.baseUnitQuantity !== null && selected.baseUnitQuantity !== undefined &&
+    selected.baseUnitQuantity > 1 && selected.pricingPackLabel
+    ? `${formatMoneyMinor(selected.currentPriceMinor, currency)} per ${selected.pricingPackLabel}`
+    : `Accepted local price${currency ? ` · ${currency}` : ""}`;
+  const proposedHelp = proposed && !validPrice
+    ? "Enter a supported price on the governed local grid, within support and the applicable change cap."
+    : matchesAiOptimal
+      ? "Proposed matches AI Optimal"
+      : unitBasis
+        ? `Edited per ${unitBasis.label}${currency ? ` · ${currency}` : ""}`
+        : `Local ${currency ?? "currency"}`;
 
   return (
     <PricingState pending={recommendations.isPending} error={recommendations.error} empty={!items.length} emptyMessage="No accepted recommendation is available for stateless simulation.">
@@ -1227,11 +1447,11 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
         <CardHeader title="Price Scenario Builder" action={<button className="modal-action" type="button" disabled={!validPrice || detail.isPending || simulation.isPending || (objective === "Clearance" && !clearanceAvailable)} onClick={() => simulation.mutate()} title={!clearanceAvailable && objective === "Clearance" ? "Accepted ageing and inventory context is required for Clearance." : undefined}>{simulation.isPending ? "Running…" : "Run Simulation"}</button>} />
         <div className="pricing-form-grid four scenario-builder-grid">
           <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {storeName(dashboard, row.storeId, row.storeName)} · {channelName(dashboard, row.channelId, row.channelName)}</option>)}</select></Field>
-          <Field label="Current Price" help={`Accepted local price${selected ? ` · ${selected.currencyCode}` : ""}`}><input className="filter" readOnly value={selected ? formatMoneyMinor(selected.currentPriceMinor, selected.currencyCode) : unavailable} /></Field>
-          <Field label="Proposed Price" help={!validPrice && proposed ? "Enter a positive price with at most two decimals on the governed local grid, within support and the applicable change cap." : `Local ${selected?.currencyCode ?? "currency"}`}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && !validPrice} /></Field>
-          <Field label="Simulation Period"><select className="filter" disabled><option>Next 4 Weeks</option></select></Field>
-          <Field label="Minimum Margin" help={priceMarginActive ? "Minimum-margin floor applied (weighted-average cost basis)." : "Not evaluated — no cost basis available."}><input className="filter" readOnly disabled value={minMarginDisplay} /></Field>
-          <Field label="Competitor Response" help={competitorIncluded ? "Fresh admissible competitor evidence is included automatically." : `Not included — ${reasonText(selected?.firstFailureReason ?? "COMPETITOR_BOUND_UNAVAILABLE")}`}><select className="filter" disabled value={competitorIncluded ? "Include" : "Not included"}><option>{competitorIncluded ? "Include" : "Not included"}</option></select></Field>
+          <Field label="Current Price" help={currentPriceHelp}><input className="filter" readOnly value={currentPriceValue} /></Field>
+          <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && !validPrice} /></Field>
+          <Field label="Simulation Period" help="Next 4 Weeks has accepted forecast evidence in this run; longer horizons preview that accepted response."><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option>Next 4 Weeks</option><option>Next 8 Weeks</option><option>Next 13 Weeks</option></select></Field>
+          <Field label="Minimum Margin" help={priceMarginActive ? "Minimum-margin floor applied (weighted-average cost basis)." : "Policy floor shown; evaluated once a cost basis is active."}><input className="filter" readOnly disabled value={minMarginDisplay} /></Field>
+          <Field label="Competitor Response" help={competitorIncluded ? "Fresh admissible competitor evidence is included when available." : `Governed by evidence — ${reasonText(selected?.firstFailureReason ?? "COMPETITOR_BOUND_UNAVAILABLE")}`}><select className="filter" value={competitorResponse} onChange={(event) => setCompetitorResponse(event.target.value as typeof competitorResponse)}><option>Include</option><option>Exclude</option></select></Field>
           <Field label="Demand Assumption" help="Expected is additive across four weeks; Best/Worst are sums of weekly planning bounds, not four-week quantiles."><select className="filter" value={assumption} onChange={(event) => setAssumption(event.target.value as typeof assumption)}><option>Expected</option><option>Best Case</option><option>Worst Case</option></select></Field>
           <Field label="Inventory Objective"><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
         </div>
@@ -1240,11 +1460,11 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
 
       <div className="card scenario-result-card">
         <CardHeader title="Scenario Comparison" context="Current · Proposed · AI Optimal" />
-        {simulation.data ? <SimulationResult result={simulation.data} /> : (
-          <div className="table-scroll"><table className="table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody>{["Units", "Revenue", "Gross Margin", "Ending Stock"].map((metric) => <tr key={metric}><td><strong>{metric}</strong></td>{Array.from({length: 3}, (_, index) => <td key={index}><UnavailableValue reason="Run a valid stateless scenario to populate this value." /></td>)}</tr>)}</tbody></table></div>
+        {simulation.data ? <SimulationResult result={simulation.data} unitBasis={unitBasis} /> : (
+          <div className="table-scroll"><table className="table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody><tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(selected?.currentPriceMinor, unitBasis, currency)}</td><td>{priceOnBasis(proposedPackMinor ?? defaultProposedPack, unitBasis, currency)}</td><td>{priceOnBasis(aiOptimalMinor, unitBasis, currency)}</td></tr>{["Units", "Revenue", "Gross Margin", "Ending Stock"].map((metric) => <tr key={metric}><td><strong>{metric}</strong></td>{Array.from({length: 3}, (_, index) => <td key={index}><PendingScenarioValue /></td>)}</tr>)}</tbody></table></div>
         )}
       </div>
-      {simulation.data && resultOpen && <SimulationResult result={simulation.data} onClose={() => setResultOpen(false)} />}
+      {simulation.data && resultOpen && <SimulationResult result={simulation.data} unitBasis={unitBasis} onClose={() => setResultOpen(false)} />}
     </PricingState>
   );
 }
@@ -1364,12 +1584,13 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
   const debouncedSearch = useDebouncedValue(search.trim());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<CompetitorModal>(null);
+  const [page, setPage] = useState(0);
+  const offset = page * PAGE_SIZE;
   const filters = useMemo<PricingFilters>(() => ({
     storeId,
     channelType,
     matchStatus: status,
-    search: debouncedSearch,
-    limit: 200
+    search: debouncedSearch
   }), [storeId, channelType, status, debouncedSearch]);
   const summary = useQuery({
     queryKey: ["competitor-summary", filters],
@@ -1377,8 +1598,8 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
     placeholderData: (previous) => previous
   });
   const matches = useQuery({
-    queryKey: ["competitor-matches", filters],
-    queryFn: ({signal}) => loadCompetitorMatches(filters, signal),
+    queryKey: ["competitor-matches", filters, offset],
+    queryFn: ({signal}) => loadCompetitorMatches({...filters, limit: PAGE_SIZE, offset}, signal),
     placeholderData: (previous) => previous
   });
   const rules = useQuery({
@@ -1394,6 +1615,7 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
   const allRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setSelected(new Set());
+    setPage(0);
   }, [storeId, channelType, status, debouncedSearch]);
   useEffect(() => {
     if (allRef.current) allRef.current.indeterminate = selected.size > 0 && !allSelected;
@@ -1421,6 +1643,13 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
           <div className="card pricing-table-card">
             <CardHeader title="Competitor Product Matches" context={`${formatCount(matches.data.pagination.total)} matches`} />
             <div className="table-scroll"><table className="table pricing-table competitor-table"><thead><tr><th><input ref={allRef} type="checkbox" checked={allSelected} aria-label="Select all visible competitor matches" onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((row) => row.matchId)))} /></th>{["Our Product", "Competitor", "Matched Product", "Our Price", "Competitor Price", "Difference", "Availability", "Last Updated", "Match Confidence", "Match Status", "Recommended Response"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.matchId}><td><input type="checkbox" aria-label={`Select match ${row.matchId}`} checked={selected.has(row.matchId)} onChange={() => setSelected((current) => {const next = new Set(current); if (next.has(row.matchId)) next.delete(row.matchId); else next.add(row.matchId); return next;})} /></td><td><strong>{row.ourProduct ?? row.skuId}</strong><small>{row.skuId}</small></td><td>{row.competitorName ?? unavailable}<small>{String(row.details?.synthetic_label ?? "")}</small></td><td><button type="button" className="link-button" onClick={() => {setSelected(new Set([row.matchId])); setModal("review");}}>{row.matchedProduct ?? unavailable}</button></td><td>{formatMoneyMinor(row.ourPriceMinor, row.currencyCode)}</td><td>{formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td><td>{row.priceGapPct === null ? unavailable : `${row.priceGapPct > 0 ? "+" : ""}${formatPercent(row.priceGapPct)}`}</td><td><span className={`badge ${badgeClass(row.availability)}`}>{row.availability}</span></td><td title={row.lastUpdated ?? undefined}>{absoluteTime(row.lastUpdated)}</td><td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td><td><span className={`badge ${badgeClass(row.status)}`}>{row.status}</span></td><td>{row.firstExclusionReason ? <UnavailableValue reason={reasonText(row.firstExclusionReason)} /> : row.recommendedResponse ?? "Included as bounded context"}</td></tr>)}</tbody></table></div>
+            <Pagination
+              offset={matches.data.pagination.offset}
+              limit={matches.data.pagination.limit}
+              total={matches.data.pagination.total}
+              onPrev={() => {setPage((current) => Math.max(0, current - 1)); setSelected(new Set());}}
+              onNext={() => {setPage((current) => current + 1); setSelected(new Set());}}
+            />
             <p className="demo-note">Selection opens a read-only inspection queue. Accept, reject, relink, comment and save controls remain disabled.</p>
           </div>
           <div className="grid-2 pricing-bottom-grid">
@@ -1541,6 +1770,47 @@ function PromotionCalendar({message, onClose}: {message: string; onClose: () => 
   );
 }
 
+// One accepted promotion row for the portfolio. Served fields (name, type, demand
+// uplift with its interval and confidence, revenue uplift, margin impact) resolve to
+// real values; columns this projection does not carry show the governed "Under
+// review" placeholder, and cannibalisation risk shows the privacy-restricted chip —
+// never a bare "Not available" and never a cannibalisation number.
+function PromotionPortfolioRow({promo}: {promo: Record<string, unknown>}) {
+  const currency = typeof promo.currencyCode === "string" ? promo.currencyCode : null;
+  const uplift = numberOrNull(promo.expectedDemandUplift);
+  const low = numberOrNull(promo.upliftLow);
+  const high = numberOrNull(promo.upliftHigh);
+  const confidence = numberOrNull(promo.confidence);
+  const revenue = numberOrNull(promo.revenueUpliftMinor);
+  const margin = numberOrNull(promo.marginImpactMinor);
+  const subLabel = [promo.promoType, promo.promoId].filter(Boolean).map(String).join(" · ");
+  const intervalNote = [
+    low !== null && high !== null
+      ? `+${formatPercent(low * 100)} – +${formatPercent(high * 100)}`
+      : null,
+    confidence !== null ? `${formatPercent(confidence * 100)} conf.` : null
+  ].filter(Boolean).join(" · ");
+  return (
+    <tr>
+      <td><strong>{String(promo.promoName ?? promo.promoId ?? unavailable)}</strong>{subLabel && <small>{subLabel}</small>}</td>
+      <td><WithheldValue reason="Merchandise category is not projected by the promotion-uplift view." /></td>
+      <td><WithheldValue reason="Promotion valid-time window is not projected by this view." /></td>
+      <td><WithheldValue reason="Store and channel scope is not projected by this view." /></td>
+      <td><WithheldValue reason="Promoted product scope is not projected by this view." /></td>
+      <td><WithheldValue reason="Offer mechanic is not projected by this view." /></td>
+      <td>{uplift === null
+        ? <WithheldValue reason="Accepted demand uplift is unavailable." />
+        : <><strong>{`${uplift >= 0 ? "+" : ""}${formatPercent(uplift * 100)}`}</strong>{intervalNote && <small>{intervalNote}</small>}</>}</td>
+      <td>{revenue === null ? <WithheldValue reason="Accepted revenue uplift is unavailable." /> : formatAggregateMoneyMinor(revenue, currency)}</td>
+      <td>{margin === null ? <WithheldValue reason="Accepted margin impact is unavailable." /> : formatAggregateMoneyMinor(margin, currency)}</td>
+      <td><WithheldValue reason="Accepted promotional stock requirement is not projected by this view." /></td>
+      <td><RestrictedValue reason="Cannibalisation risk is privacy restricted; a numeric value is never disclosed." label={reasonText(typeof promo.cannibalisationRisk === "string" ? promo.cannibalisationRisk : "PRIVACY_RESTRICTED")} /></td>
+      <td><WithheldValue reason="Approval workflow status is unavailable." /></td>
+      <td><WithheldValue reason="Workflow owner evidence is unavailable." /></td>
+    </tr>
+  );
+}
+
 function PromotionPlanner() {
   const summary = useQuery({queryKey: ["promotion-summary"], queryFn: ({signal}) => loadPromotionSurface("summary", signal)});
   const opportunities = useQuery({queryKey: ["promotion-opportunities"], queryFn: ({signal}) => loadPromotionSurface("opportunities", signal)});
@@ -1549,6 +1819,11 @@ function PromotionPlanner() {
   const [modal, setModal] = useState<"create" | "simulate" | "results" | "calendar" | null>(null);
   const reason = summary.data?.reasonCode ?? "NO_ORIGIN_VISIBLE_PROMOTION_PLAN";
   const message = summary.data?.message ?? "Origin-visible promotion planning evidence is not available.";
+  // The positive branch lights up only the portfolio table: the disposition carries
+  // the accepted promotions, while aggregate tiles and write workflows stay governed
+  // (they are not independently projected by this read model).
+  const plannerAvailable = Boolean(portfolio.data?.plannerAvailable);
+  const promotions = plannerAvailable ? (portfolio.data?.items ?? []) : [];
   return (
     <PricingState pending={summary.isPending || opportunities.isPending || portfolio.isPending || calendar.isPending} error={summary.error ?? opportunities.error ?? portfolio.error ?? calendar.error}>
       {summary.data && opportunities.data && portfolio.data && calendar.data && (
@@ -1579,7 +1854,7 @@ function PromotionPlanner() {
           </div>
 
           <div className="card pricing-table-card"><CardHeader title="AI Promotion Opportunities" context="0 recommendations" /><div className="table-scroll"><table className="table"><thead><tr>{["Opportunity", "Reason", "Expected Value", "Priority"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody><tr><td colSpan={4}><UnavailableValue reason={message} /></td></tr></tbody></table></div></div>
-          <div className="card pricing-table-card"><CardHeader title="Promotion Portfolio" context="0 promotions" /><div className="table-scroll"><table className="table promotion-table"><thead><tr>{["Promotion", "Category", "Period", "Stores / Channels", "Products", "Offer", "Expected Demand Uplift", "Revenue Uplift", "Margin Impact", "Required Stock", "Cannibalisation Risk", "Status", "Owner"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody><tr><td colSpan={13}><UnavailableValue reason={message} /></td></tr></tbody></table></div></div>
+          <div className="card pricing-table-card"><CardHeader title="Promotion Portfolio" context={`${formatCount(promotions.length)} ${promotions.length === 1 ? "promotion" : "promotions"}`} /><div className="table-scroll"><table className="table promotion-table"><thead><tr>{["Promotion", "Category", "Period", "Stores / Channels", "Products", "Offer", "Expected Demand Uplift", "Revenue Uplift", "Margin Impact", "Required Stock", "Cannibalisation Risk", "Status", "Owner"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{plannerAvailable && promotions.length > 0 ? promotions.map((promo, index) => <PromotionPortfolioRow key={String(promo.promoId ?? index)} promo={promo} />) : <tr><td colSpan={13}><UnavailableValue reason={message} /></td></tr>}</tbody></table></div></div>
 
           <div className="grid-3 pricing-bottom-grid">
             <div className="card"><CardHeader title="Inventory Readiness" /><MetricList rows={["Fully available", "Transfer required", "Replenishment required", "At-risk promotions"].map((label) => ({label, value: <UnavailableValue reason={message} />}))} /></div>

@@ -33,3 +33,4 @@ contracts/evidence/.capability-entry-adoption-staging/
 # Local service credentials and overrides. Commit only *.example templates.
 .env
 deploy/.env
+scratchpad/

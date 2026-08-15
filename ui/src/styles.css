@@ -353,9 +353,19 @@ button.filter {
 }
 
 .b-red {
-  color: #a82535;
-  background: #ffe1e5;
+  color: #b83c49;
+  background: #ffe4e7;
 }
+
+/* Delta sentiment text colors — parity with the original HTML, which defines
+   .up{green}/.down{red}/.warn{amber}. These rules were absent (§3.1 #1), so every
+   `className="delta up|down"` / `td.up|down` rendered as plain text. Adding them
+   restores delta coloring app-wide; making the hardcoded-direction KPI spans
+   sign/sentiment-correct (§3.1 #5) is a separate follow-up validated against the
+   running app. */
+.up { color: var(--green); }
+.down { color: var(--red); }
+.warn { color: var(--amber); }
 
 .link-button {
   padding: 0;
@@ -1036,6 +1046,17 @@ tr[data-partial="true"] {
 .pricing-kpi .value { margin-bottom: 0; }
 .pricing-kpi .demo-note { margin-top: auto; }
 
+/* Footer for the 20-row Price Recommendations / Competitor Monitor grids. */
+.pricing-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.pricing-pagination .pagination-status { color: var(--muted); font-size: 13px; }
+.pricing-pagination .pagination-controls { display: flex; gap: 8px; }
+
 .pricing-summary-grid,
 .pricing-overview-grid,
 .pricing-decision-cards,
@@ -1328,6 +1349,15 @@ tr[data-partial="true"] {
 
 .pricing-recommendation-callout { margin-top: 14px; }
 .simulation-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+
+/* The three real Current/Proposed/AI Optimal prices always lead the scenario
+   comparison, even before a run. */
+.scenario-price-row td { color: var(--text); font-weight: 600; }
+
+/* A projected metric awaiting a scenario run. Neutral (muted), never the amber
+   "unavailable" treatment — nothing is wrong, the value simply is not computed
+   yet. */
+.cell-pending { color: var(--muted); font-style: italic; white-space: nowrap; }
 
 .competitor-toolbar { display: grid; grid-template-columns: auto auto auto minmax(150px, 1fr) minmax(220px, 1.5fr); }
 

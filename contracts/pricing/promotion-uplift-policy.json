@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "retail-promotion-uplift/v1",
+  "policyVersion": "promotion-uplift/1.0.0",
+  "decisionId": 53,
+  "decisionDisposition": "owner_directed_poc",
+  "dispositionSchemaVersion": "retail-promotion-uplift-disposition/v1",
+  "resultSchemaVersion": "retail-promotion-uplift-rows/v1",
+  "horizonWeeks": 4,
+  "estimator": {
+    "seed": 20260731,
+    "perPromotionSeedRecipe": "sha256_prefix8_be_xor_seed_mod_2p64",
+    "resampleDraws": 200,
+    "blockLengthWeeks": 2,
+    "controlLookbackDays": 210,
+    "controlBufferWeeks": 1,
+    "holdoutEpisodeWeeks": 2,
+    "intervalLowerQuantile": "0.05",
+    "intervalUpperQuantile": "0.95"
+  },
+  "acceptance": {
+    "minEpisodeWeeks": 3,
+    "minControlWeeks": 6,
+    "minimumValidDraws": 50,
+    "numericResultRateMin": "0.90",
+    "minPointUplift": "0.0",
+    "holdoutMinUplift": "0.0",
+    "requirePositiveMargin": true
+  },
+  "allowedClaims": [
+    "numeric_uplift",
+    "promotion_margin",
+    "promotion_simulation"
+  ],
+  "restrictedClaims": [
+    "customer_targeting",
+    "cannibalisation",
+    "bundle_response",
+    "pii"
+  ],
+  "reasonCodes": {
+    "insufficientEpisodes": "PROMOTION_UPLIFT_INSUFFICIENT_EPISODES",
+    "insufficientControls": "PROMOTION_UPLIFT_INSUFFICIENT_CONTROLS",
+    "nonPositiveUplift": "PROMOTION_UPLIFT_NOT_POSITIVE",
+    "insufficientValidDraws": "PROMOTION_UPLIFT_INSUFFICIENT_DRAWS",
+    "numericResultRateRejected": "PROMOTION_UPLIFT_NUMERIC_RATE_REJECTED",
+    "holdoutRejected": "PROMOTION_UPLIFT_HOLDOUT_REJECTED",
+    "marginDilution": "PROMOTION_UPLIFT_MARGIN_DILUTION",
+    "missingCostBasis": "PROMOTION_MARGIN_COST_BASIS_MISSING",
+    "plannerUnsupported": "NO_ACCEPTED_PROMOTION_UPLIFT"
+  },
+  "reasonPrecedence": [
+    "PROMOTION_UPLIFT_INSUFFICIENT_EPISODES",
+    "PROMOTION_UPLIFT_INSUFFICIENT_CONTROLS",
+    "PROMOTION_UPLIFT_NOT_POSITIVE",
+    "PROMOTION_UPLIFT_INSUFFICIENT_DRAWS",
+    "PROMOTION_UPLIFT_NUMERIC_RATE_REJECTED",
+    "PROMOTION_UPLIFT_HOLDOUT_REJECTED",
+    "PROMOTION_UPLIFT_MARGIN_DILUTION"
+  ],
+  "privacyReason": "PRIVACY_RESTRICTED",
+  "policyFingerprint": "97e7a3fcd9be0dbb7279a8b7f6e331521216eaab82eb1a3b88ac7db0dfeabde6"
+}

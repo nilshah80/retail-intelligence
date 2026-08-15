@@ -155,9 +155,9 @@ def _inventory(**cost_changes):
     }])
 
 
-def _build(inventory):
+def _build(inventory, **response_changes):
     return build_recommendations(
-        pd.DataFrame([_response()]), _forecast(), inventory,
+        pd.DataFrame([_response(**response_changes)]), _forecast(), inventory,
         pd.DataFrame(), pd.DataFrame([{**KEY, "guard_status": "no_overlap"}]),
         pricing_policy=load_pricing_policy(ROOT / "contracts/guardrails/pricing_rules.yaml"),
         evidence={"bundle": "test"}, decision_as_of=DECISION_AS_OF,
@@ -166,18 +166,22 @@ def _build(inventory):
 
 def test_generated_cost_shows_computed_wac_margin() -> None:
     # Demo choice: the generated computed-WAC cost is the cost, so recommendation
-    # rows carry real margin values (price - WAC), no client cost required. The
-    # revenue action is unchanged.
-    recommendations, _ = _build(_inventory(cost_provenance="generated_source_native"))
+    # rows carry real margin values (price - WAC), no client cost required. Inelastic
+    # demand (beta -0.3) yields a profitable Increase whose incremental margin is
+    # strictly positive under the §6.0 profit guard.
+    recommendations, _ = _build(
+        _inventory(cost_provenance="generated_source_native"), shrunk_beta=-0.3
+    )
     row = recommendations.iloc[0]
-    assert row["action"] == "Decrease"
+    assert row["action"] == "Increase"
     assert row["margin_impact_minor"] is not None
+    assert row["margin_impact_minor"] > 0
     assert row["margin_reason_code"] is None
     assert row["current_margin_pct"] == 40.0  # (20000 - 12000) / 20000
 
 
 def test_valid_client_cost_produces_margin_number_and_percentages() -> None:
-    recommendations, _ = _build(_inventory())
+    recommendations, _ = _build(_inventory(), shrunk_beta=-0.3)
     row = recommendations.iloc[0]
     assert row["margin_impact_minor"] is not None
     assert row["margin_reason_code"] is None
@@ -217,9 +221,9 @@ def test_invalid_client_cost_falls_back_to_computed_wac_margin() -> None:
     # the demo still shows the computed-WAC margin from the generated cost, and the
     # revenue recommendation is unchanged. The specific client-cost failure reason is
     # asserted at the resolver level (test_each_negative_gate...).
-    recommendations, _ = _build(_inventory(cost_currency_code="USD"))
+    recommendations, _ = _build(_inventory(cost_currency_code="USD"), shrunk_beta=-0.3)
     row = recommendations.iloc[0]
-    assert row["action"] == "Decrease"
+    assert row["action"] == "Increase"
     assert row["margin_impact_minor"] is not None  # computed-WAC fallback
     assert row["margin_reason_code"] is None
 
@@ -227,8 +231,11 @@ def test_invalid_client_cost_falls_back_to_computed_wac_margin() -> None:
 def test_wac_margin_populates_primary_gross_margin() -> None:
     # PoC (plan §0.0): the generated weighted-average cost is the authoritative cost,
     # so the primary Gross Margin carries a real value. The obsolete synthetic-margin
-    # scenario is no longer produced.
-    recommendations, candidates = _build(_inventory(cost_provenance="generated_source_native"))
+    # scenario is no longer produced. Inelastic demand (beta -0.3) gives a profitable
+    # Increase so the recommendation is a served action carrying a real margin.
+    recommendations, candidates = _build(
+        _inventory(cost_provenance="generated_source_native"), shrunk_beta=-0.3
+    )
     recommendation = recommendations.iloc[0].to_dict()
     legal = int(candidates[candidates["eligible"]]["candidate_price_minor"].iloc[0])
     result = run_price_simulation(

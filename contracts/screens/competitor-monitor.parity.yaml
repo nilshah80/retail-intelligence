@@ -1,9 +1,10 @@
 schemaVersion: retail-screen-contract/v1
 screenId: competitorMonitor
+contractVersion: 2
 status: authorized_for_implementation
 authority:
   html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
-  plan: plans/local/phase5-implementation-plan.md
+  plan: plans/local/ui-parity-availability-and-margin-plan.md
   api: contracts/api/openapi.yaml
 title: Competitor Monitor
 subtitle: Track market prices, promotions and availability
@@ -40,12 +41,52 @@ alertRules:
   heading: Active Alert Rules
   columns: [Rule, Trigger, Scope, Recipients, Status]
 matchQualityMetrics: [Auto-Accepted, Manual Review, Rejected, Average Confidence]
+coverage:
+  scope: per_store
+  emission: competitor observations are emitted for every store across the market rather than pinned to first_store, so the recommendation bound-join and the weekly competitor features join both reach every store
+  matchedThreshold: 0.84
+  matchedThresholdNote: the matched-confidence threshold admits cross-brand competitors, broadening coverage beyond the prior narrow same-brand set
+  defaultPageCompleteness: every row on the default page carries a current, currency-compatible competitor price and an approved competitor and product display name
+  pricePositions: [Above, Below, Equal, Incomparable]
+  excludedRendering: an intentionally excluded comparison renders Excluded or Not included by selection, never a bare Not available
+pagination:
+  defaultPageSize: 20
+  reconciles: [limit, offset, total]
+  note: Competitor Monitor is its own grid with its own offset and total reconciliation and is 20 rows per page
+stateCoverage:
+  matchStatus: [Matched, Needs Review, Rejected, No Match]
+  freshness: [Fresh, Near threshold, Stale]
+  availability: [In Stock, Low Stock, Out of Stock, Unknown]
+  pricePosition: [Above, Below, Equal, Incomparable]
+  recommendedResponse: [Hold, Increase context, Decrease context, Validate, Excluded]
 dispositions:
   addCompetitor: preview_only_no_write
   createAlertRule: preview_only_no_write
   reviewMatches: read_only_inspection_queue
   acceptRejectCommentSave: disabled_no_write
   linkDifferentProduct: in_place_preview_only
+  competitorCoverage: business_live_per_store_complete
+  pagination: business_live_paginated_20
+amendments:
+- amendmentId: PDP-6.0-A1
+  amendedAt: '2026-08-14'
+  title: Section 6.0 Pricing demo-positive closure - Competitor Monitor
+  planSection: plans/local/ui-parity-availability-and-margin-plan.md section 6.0 (P5) and section 4
+  decisionRefs: [P5-D8, P5-D15]
+  frozenBehavior:
+    coverageScope: per_store competitor emission across the market
+    matchedThreshold: 0.84 admits cross-brand competitors for broader coverage
+    defaultPageCompleteness: complete competitor cells on the default page with approved display names
+    pagination: 20 rows per page with offset and total reconciliation
+  supersedes:
+    priorState: competitor evidence pinned to first_store, 11 of 866 recommendation rows carrying a competitor price
+  approval:
+    status: approved
+    actor: nilay.shah
+    approvedAt: '2026-08-14'
+    authorization: Owner-directed Section 6.0 Pricing demo-positive closure; amendment recorded before implementation review per P5-0P.
+    classification: explicit_user_authorization
+    reviewOutstanding: Per-screen human visual review at desktop and mobile remains required before client-demo sign-off.
 review:
   authorization: Explicit user instruction to complete the approved implementation plan.
   visualReviewOutstanding: true

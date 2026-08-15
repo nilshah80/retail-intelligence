@@ -136,7 +136,7 @@ amendments:
     decisionAmendment: "Decision #64 Q19"
     title: Cold-start interval scope in the SKU workbench
     defectRepaired: >-
-      plans/local/phase4-implementation-plan.md §1.3.1. Two served aggregates were
+      Decision #64 Q19 (see decisionAmendment). Two served aggregates were
       written when every row carried an interval. SUM skips nulls, so after decision
       #92's withholding the confidence numerator omitted the withheld weeks while
       its denominator still counted their retained P50 weight, and SUM(yhat_p90)

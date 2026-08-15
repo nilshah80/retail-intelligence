@@ -2732,8 +2732,9 @@ def simulate(
                         competitor_available = availability_draw >= 0.08
                     price_row = {
                             "marketKey": market_id,
-                            "targetType": "store",
-                            "targetId": market_stores[0]["storeId"],
+                            # targetType/targetId are set PER STORE below (Rust parity): emit
+                            # competitor evidence for EVERY store, not first_store or market
+                            # scope (which the location-grain feature join reads as null).
                             "observedAt": _iso_at(day, 8, market["timezone"]),
                             "validDate": day.isoformat(),
                             "competitorId": f"competitor-{market_id}",
@@ -2788,7 +2789,10 @@ def simulate(
                                 ],
                             }
                         )
-                    competitor_prices[market_id].append(price_row)
+                    for _store in market_stores:
+                        competitor_prices[market_id].append(
+                            {**price_row, "targetType": "store", "targetId": _store["storeId"]}
+                        )
                     if match_key not in competitor_match_keys[market_id]:
                         competitor_match_keys[market_id].add(match_key)
                         match_row = {

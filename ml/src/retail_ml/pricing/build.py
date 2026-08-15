@@ -17,9 +17,12 @@ from retail_ml.pricing.panel import build_weekly_panel, load_response_policy
 from retail_ml.pricing.policy import load_pricing_policy
 from retail_ml.pricing.promotion import (
     build_promotion_foundation,
+    build_promotion_uplift,
     load_promotion_policy,
+    load_promotion_uplift_policy,
 )
 from retail_ml.pricing.recommendation import KEYS, build_recommendations
+from retail_ml.pricing.units import resolve_pricing_unit
 from retail_ml.pricing.response import run_response_assessment
 from retail_ml.publish.verify import verify_forecast_run
 
@@ -198,6 +201,7 @@ def build_pricing_artifacts(
     competitor_policy_path: str | Path,
     competitor_truth_path: str | Path | None,
     promotion_policy_path: str | Path,
+    promotion_uplift_policy_path: str | Path,
     forecast_run: str | Path | None,
     inventory_run: str | Path | None,
     bundle_kind: str,
@@ -207,6 +211,7 @@ def build_pricing_artifacts(
     pricing_policy = load_pricing_policy(pricing_policy_path)
     competitor_policy = load_competitor_policy(competitor_policy_path)
     promotion_policy = load_promotion_policy(promotion_policy_path)
+    promotion_uplift_policy = load_promotion_uplift_policy(promotion_uplift_policy_path)
     if bundle_kind not in {"response_rich", "evidence_sparse"}:
         raise PricingBuildError("bundle kind must be response_rich or evidence_sparse")
     panel = build_weekly_panel(
@@ -218,6 +223,21 @@ def build_pricing_artifacts(
     pricing_scopes = panel[
         [*KEYS, "department_id", "category", "category_label", "region"]
     ].drop_duplicates(list(KEYS)).reset_index(drop=True)
+    # §6.0 P4: resolve the per-base-unit basis per scope (NULL-safe if the curated
+    # publication predates the measurement carry). Keyed by KEYS for the recommender.
+    unit_basis: dict[tuple[str, ...], tuple[str, Any, str]] = {}
+    for scope_row in (
+        panel[[*KEYS, "measurement_unit", "pack_size"]]
+        .drop_duplicates(list(KEYS))
+        .to_dict("records")
+    ):
+        label, quantity, pack_label = resolve_pricing_unit(
+            scope_row.get("measurement_unit"), scope_row.get("pack_size")
+        )
+        if label is not None:
+            unit_basis[tuple(str(scope_row[key]) for key in KEYS)] = (
+                label, quantity, pack_label,
+            )
     competitor_assessments, competitor_bounds, competitor_evaluation = (
         build_competitor_foundation(
             curated_database,
@@ -226,9 +246,21 @@ def build_pricing_artifacts(
             truth_path=competitor_truth_path,
         )
     )
-    promotion_guard, promotion_disposition = build_promotion_foundation(
+    # The protection foundation yields the forward-looking price-safety guard rows
+    # consumed by the recommendation build. Its own (always-negative) safety
+    # disposition is retained inside the uplift disposition via the protection
+    # decision pointers; the bundle's promotion_disposition artifact is the
+    # observational uplift disposition, which flips positive when the estimator
+    # accepts at least one completed promotion (P5-D20/P5-D22).
+    promotion_guard, _protection_disposition = build_promotion_foundation(
         curated_database, pricing_scopes, decision_as_of=decision_as_of,
         policy=promotion_policy,
+    )
+    promotion_uplift, promotion_disposition = build_promotion_uplift(
+        curated_database,
+        decision_as_of=decision_as_of,
+        protection_policy=promotion_policy,
+        uplift_policy=promotion_uplift_policy,
     )
     forecast, forecast_lineage = load_forecast_context(forecast_run)
     inventory, inventory_lineage = load_inventory_context(inventory_run)
@@ -245,11 +277,12 @@ def build_pricing_artifacts(
     recommendations, candidates = build_recommendations(
         response, forecast, inventory, competitor_bounds, promotion_guard,
         pricing_policy=pricing_policy, evidence=combined_lineage,
-        decision_as_of=decision_as_of,
+        decision_as_of=decision_as_of, unit_basis=unit_basis,
     )
     policy_paths = {
         "response": Path(response_policy_path), "pricing": Path(pricing_policy_path),
         "competitor": Path(competitor_policy_path), "promotion": Path(promotion_policy_path),
+        "promotion_uplift": Path(promotion_uplift_policy_path),
         "artifacts": Path(response_policy_path).resolve().parent / "artifacts.schema.json",
     }
     policy_identities = {
@@ -271,7 +304,7 @@ def build_pricing_artifacts(
             "minMarginPct": pricing_policy["globalDefaults"]["minMarginPct"],
         },
         "promotionPlanner": {
-            "available": False,
+            "available": bool(promotion_disposition["plannerAvailable"]),
             "reasonCode": promotion_disposition["firstFailureReason"],
         },
         "competitorMonitor": {
@@ -303,6 +336,7 @@ def build_pricing_artifacts(
         "competitor_evaluation": competitor_evaluation,
         "promotion_protection": promotion_guard,
         "promotion_disposition": promotion_disposition,
+        "promotion_uplift": promotion_uplift,
     }
     return artifacts, combined_lineage, policy_identities, capabilities
 

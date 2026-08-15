@@ -1968,7 +1968,7 @@ production.
 ## Forecast Scenario Planning v1 — standalone pre–Phase-5 workstream
 - [x] Freeze Decision #96, S1–S27 and the `FSP-V1-A1` button-only
       `approved_pending_implementation` parity amendment without changing the frozen screen status.
-- [x] Implement `plans/local/scenario-planning-implementation-plan.md` through the fail-closed
+- [x] Implement Decision #96 (`docs/decision-96-forecast-scenario-planning-v1.md`) through the fail-closed
       pre-activation state in dependency order:
       approved assumption/context contracts; migrations and fail-closed activation; complete price
       provenance; offline materializer; version-pinned bootstrap GET; stateless Go calculation POST;
@@ -2138,11 +2138,10 @@ production.
 
 ## Gulf Oil India tenant — lubricants datagen & source onboarding `[PARALLEL TENANT TRACK, BLOCKED ON CLIENT EVIDENCE]`
 
-Plan: `plans/local/gulf-oil-india-implementation-plan.md` (revision 2). Runs Gulf through the whole
-existing stack — datagen → ingestion → ML → API → the two existing screens — on a clean slate, then
-restores the retail tenant. **One tenant at a time.** Retail *code* is never deleted; git-tracked
-retail evidence is branch-isolated, not removed; only the untracked ~38 GB of runtime state and the
-PostgreSQL schema are rebuilt.
+Implementation history is retained in this ledger; current Gulf/Pricing follow-up is governed by
+`plans/local/ui-parity-availability-and-margin-plan.md`. The completed onboarding ran Gulf through
+datagen → ingestion → ML → API → UI while preserving tenant isolation. Retail *code* is never
+deleted; runtime cleanup follows the active plan's authority/retention preflight.
 
 Source-code changes land in `datagen/` only. Also required outside it, as configuration: one
 ingestion profile YAML, and the market-scoped guardrail pairs. `ml/`, `api/`, `db/` and `ui/`

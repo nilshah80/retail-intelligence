@@ -343,6 +343,11 @@ def _create_core(connection: duckdb.DuckDBPyConnection) -> tuple[str, ...]:
                     1
                 )
             )::BIGINT AS pack_size,
+            -- §6.0 P4 per-unit pricing: carry the base selling-unit label the
+            -- adapters emit (dropped until now). pack_size is the sellable pack
+            -- content in this unit's sub-unit; the pricing read model converts a
+            -- per-base-unit price to the canonical minor amount using both.
+            nullif(measurement_unit, '')::VARCHAR AS measurement_unit,
             product_name::VARCHAR AS product_name,
             brand::VARCHAR AS brand,
             NULL::INTEGER AS shelf_life_days,

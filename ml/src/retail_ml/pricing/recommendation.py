@@ -60,6 +60,9 @@ RECOMMENDATION_COLUMNS = (
     "synthetic_cost_minor",
     "synthetic_cost_method",
     "cost_as_of",
+    "pricing_unit_label",
+    "base_unit_quantity",
+    "pricing_pack_label",
     "forecast_expected_units",
     "forecast_best_case_units",
     "forecast_worst_case_units",
@@ -174,6 +177,9 @@ def _withheld(
         "synthetic_cost_minor": None,
         "synthetic_cost_method": None,
         "cost_as_of": None,
+        "pricing_unit_label": None,
+        "base_unit_quantity": None,
+        "pricing_pack_label": None,
         "forecast_expected_units": None,
         "forecast_best_case_units": None,
         "forecast_worst_case_units": None,
@@ -193,9 +199,11 @@ def build_recommendations(
     pricing_policy: Mapping[str, Any],
     evidence: Mapping[str, Any],
     decision_as_of: str | None = None,
+    unit_basis: Mapping[tuple[str, ...], tuple[Any, Any, Any]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build recommendations in the frozen safety/guardrail ordering."""
 
+    unit_basis = unit_basis or {}
     missing = sorted(set(KEYS) - set(response.columns))
     if missing:
         raise RecommendationError("response rows lack: " + ", ".join(missing))
@@ -283,11 +291,17 @@ def build_recommendations(
         )
         beta = Decimal(str(response_row["shrunk_beta"]))
         baseline_units = Decimal(str(forecast_row["expected_units"]))
+        # Baseline for the incremental-profit guard (plan §6.0 P2), on the WAC basis.
+        current_revenue = baseline_units * Decimal(current)
         scored: list[tuple[int, Decimal, Decimal]] = []
         # Candidates blocked *only* by the margin floor (not promotion/stock), kept
         # so a Hold forced by the floor can be withheld rather than reported as a
         # genuine Hold recommendation.
         margin_blocked_scored: list[tuple[int, Decimal, Decimal]] = []
+        # Candidates blocked *only* by the incremental-profit (margin-dilution) guard,
+        # kept for the same reason: a Hold forced by dilution is a withheld assessment,
+        # not a genuine Hold.
+        dilution_blocked_scored: list[tuple[int, Decimal, Decimal]] = []
         for candidate in candidates:
             ratio = Decimal(candidate) / Decimal(current)
             expected_units = Decimal(
@@ -306,7 +320,32 @@ def build_recommendations(
                 and candidate != current
                 and gross_margin_pct(candidate, margin_cost_minor) < min_margin_pct
             )
-            eligible = not protected and not stock_blocked and not margin_blocked
+            # Incremental-profit guard (MARGIN_DILUTION) — plan §6.0 P2. An actionable
+            # candidate must strictly improve expected gross margin AND not reduce
+            # expected revenue, both on the WAC basis. This refuses the revenue-
+            # maximising price cut that dilutes margin — the root cause of the
+            # all-Reduce / negative-opportunity profile — instead of serving it. The
+            # current price is never dilution-blocked; a floor-blocked candidate is
+            # already excluded, so the two guards never double-label the same row.
+            margin_dilutive = False
+            if (
+                margin_cost_minor is not None
+                and candidate != current
+                and not margin_blocked
+            ):
+                unit_cost = Decimal(margin_cost_minor)
+                candidate_margin = expected_units * (Decimal(candidate) - unit_cost)
+                baseline_margin = baseline_units * (Decimal(current) - unit_cost)
+                margin_dilutive = (
+                    candidate_margin <= baseline_margin
+                    or revenue < current_revenue
+                )
+            eligible = (
+                not protected
+                and not stock_blocked
+                and not margin_blocked
+                and not margin_dilutive
+            )
             candidate_rows.append(
                 {
                     **dict(zip(KEYS, identity, strict=True)),
@@ -319,7 +358,8 @@ def build_recommendations(
                     "rejection_reason": (
                         "ACTIVE_PROMOTION_PROTECTED" if protected
                         else "STOCK_RISK_BLOCKED" if stock_blocked
-                        else "MARGIN_BELOW_FLOOR" if margin_blocked else None
+                        else "MARGIN_BELOW_FLOOR" if margin_blocked
+                        else "MARGIN_DILUTION" if margin_dilutive else None
                     ),
                 }
             )
@@ -327,6 +367,13 @@ def build_recommendations(
                 scored.append((candidate, expected_units, revenue))
             elif margin_blocked and not protected and not stock_blocked:
                 margin_blocked_scored.append((candidate, expected_units, revenue))
+            elif (
+                margin_dilutive
+                and not protected
+                and not stock_blocked
+                and not margin_blocked
+            ):
+                dilution_blocked_scored.append((candidate, expected_units, revenue))
         current_score = next((item for item in scored if item[0] == current), None)
         if current_score is None:
             output.append(_withheld(response_row, "NO_BETTER_LEGAL_CANDIDATE", evidence=evidence))
@@ -358,6 +405,19 @@ def build_recommendations(
                 )
             )
             continue
+        # A revenue-improving move refused ONLY because it would dilute gross margin is
+        # never served — the guardrail protects the retailer from an unprofitable price.
+        # But such a SKU is *well-priced*: no margin-accretive action is due, so it is a
+        # genuine Hold ("held to protect margin"), NOT a withheld "Not available" row.
+        # This is §2.2.1's mostly-well-priced catalog with bounded, profitable pockets:
+        # opportunity stays strictly positive because no dilutive action is ever served,
+        # and raising the (weighted-average) cost basis moves more SKUs into this
+        # well-priced Hold band. Sub-floor blocks above remain withheld (plan §A5); this
+        # branch only reclassifies the margin-dilution case from withheld to Hold.
+        margin_protected_hold = chosen[0] == current and any(
+            revenue > current_score[2] + minimum_gain
+            for _price, _units, revenue in dilution_blocked_scored
+        )
         proposed, proposed_units, proposed_revenue = chosen
         action = "Hold"
         if proposed > current:
@@ -384,9 +444,15 @@ def build_recommendations(
             margin_reason = None
             current_margin_pct = float(gross_margin_pct(current, cost_minor))
             expected_margin_pct = float(gross_margin_pct(proposed, cost_minor))
-        driver = "Elastic demand supports a lower price" if action == "Decrease" else (
-            "Inelastic demand supports a higher price" if action == "Increase"
+        driver = (
+            "Elastic demand supports a lower price" if action == "Decrease"
+            else "Inelastic demand supports a higher price" if action == "Increase"
+            else "Current price protects gross margin; no accretive action"
+            if margin_protected_hold
             else "No distinct legal candidate is sufficiently better"
+        )
+        unit_label, unit_quantity, unit_pack_label = unit_basis.get(
+            identity, (None, None, None)
         )
         base = {key: value for key, value in zip(KEYS, identity, strict=True)}
         lineage = {
@@ -436,6 +502,11 @@ def build_recommendations(
                 "synthetic_cost_minor": inventory_row.get("synthetic_cost_minor"),
                 "synthetic_cost_method": inventory_row.get("synthetic_cost_method"),
                 "cost_as_of": inventory_row.get("cost_as_of"),
+                "pricing_unit_label": unit_label,
+                "base_unit_quantity": (
+                    float(unit_quantity) if unit_quantity is not None else None
+                ),
+                "pricing_pack_label": unit_pack_label,
                 "forecast_expected_units": forecast_row.get("expected_units"),
                 "forecast_best_case_units": forecast_row.get("best_case_units"),
                 "forecast_worst_case_units": forecast_row.get("worst_case_units"),

@@ -1,9 +1,10 @@
 schemaVersion: retail-screen-contract/v1
 screenId: priceSimulation
+contractVersion: 2
 status: authorized_for_implementation
 authority:
   html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
-  plan: plans/local/phase5-implementation-plan.md
+  plan: plans/local/ui-parity-availability-and-margin-plan.md
   api: contracts/api/openapi.yaml
 title: Price Simulation
 subtitle: Test price scenarios before applying them
@@ -26,12 +27,56 @@ comparison:
   rows: [Units, Revenue, Gross Margin, Ending Stock]
 resultMetrics: [Revenue, Margin, Stock-out Risk, Confidence]
 constraints:
-  simulationPeriod: [Next 4 Weeks]
+  simulationPeriod: [Next 4 Weeks, Next 8 Weeks, Next 13 Weeks]
   demandAssumption: [Expected, Best Case, Worst Case]
   inventoryObjective: [Margin Protection, Clearance]
+  competitorResponse: [Include, Exclude]
+  competitorResponseStatus: enabled
+  minimumMargin: read_only_policy_input
   mutation: forbidden
   currentPrice: read_only_authority_value
-  competitorResponse: disabled_evidence_status
+pricingUnit:
+  representation: per_base_selling_unit
+  pricingUnitLabel: governed unit label carried source to serving, for example the base UOM symbol
+  baseUnitQuantity: canonical base-unit quantity for the sellable SKU
+  baseUom: canonical base unit of measure
+  currentPrice: read-only value per base selling unit, for example amount per L
+  proposedPrice: edited or selected on the same per base selling unit basis
+  packConversion: when the commercial SKU is a pack, drum or case its pack-equivalent price is shown secondarily, for example amount per 210 L drum, and the proposed unit price is converted back to the canonical sellable-SKU minor amount before simulation
+  forbidden: never divide an aggregate revenue or period total to fabricate a unit price
+selectors:
+  product: enabled with governed product, store and channel labels; the first option is the designated actionable demo SKU
+  simulationPeriod: enabled for Next 4 Weeks, Next 8 Weeks and Next 13 Weeks, each only after that horizon has accepted forecast evidence
+  competitorResponse: enabled for Include or Exclude
+  demandAssumption: enabled for Expected, Best Case or Worst Case
+  inventoryObjective: enabled for Margin Protection or Clearance
+  minimumMargin: read-only policy input showing the resolved market or currency floor, not a selector
+resultSemantics:
+  normalRun: a normal combination returns complete real values only, with no guardrail message and no Not available
+  guardrails: unsupported, stale, sub-floor or margin-dilutive combinations return a specific guardrail message and never replace the last valid comparison with Not available
+  competitorExclude: Exclude is a valid selection, not missing evidence
+  distinctColumns: the default successful run has three distinct prices across Current, Proposed and AI Optimal
+  grossMargin: primary Gross Margin is computed on the weighted-average cost basis
+amendments:
+- amendmentId: PDP-6.0-A1
+  amendedAt: '2026-08-14'
+  title: Section 6.0 Pricing demo-positive closure - Price Simulation
+  planSection: plans/local/ui-parity-availability-and-margin-plan.md section 6.0 (P4)
+  decisionRefs: [P5-D17]
+  frozenBehavior:
+    perUnitRepresentation: Current and Proposed shown per base selling unit with governed pack conversion
+    enabledSelectors: Period 4/8/13 weeks, Competitor Include/Exclude, Demand Expected/Best/Worst, Objective Margin Protection/Clearance
+    minimumMargin: real read-only policy input, not a fake selector
+    normalResultsRealOnly: normal combinations return real values with no guardrail message and no Not available
+  supersedes:
+    priorState: single Next 4 Weeks period; disabled competitor response; equal Proposed and AI Optimal result
+  approval:
+    status: approved
+    actor: nilay.shah
+    approvedAt: '2026-08-14'
+    authorization: Owner-directed Section 6.0 Pricing demo-positive closure; amendment recorded before implementation review per P5-0P.
+    classification: explicit_user_authorization
+    reviewOutstanding: Per-screen human visual review at desktop and mobile remains required before client-demo sign-off.
 review:
   authorization: Explicit user instruction to complete the approved implementation plan.
   visualReviewOutstanding: true

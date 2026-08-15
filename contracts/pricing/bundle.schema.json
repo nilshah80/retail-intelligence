@@ -42,7 +42,7 @@
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pricing_panel", "response_assessments", "price_candidates", "price_recommendations", "competitor_assessments", "competitor_bounds", "competitor_evaluation", "promotion_protection", "promotion_disposition"],
+      "required": ["pricing_panel", "response_assessments", "price_candidates", "price_recommendations", "competitor_assessments", "competitor_bounds", "competitor_evaluation", "promotion_protection", "promotion_disposition", "promotion_uplift"],
       "properties": {
         "pricing_panel": {"$ref": "#/$defs/artifact"},
         "response_assessments": {"$ref": "#/$defs/artifact"},
@@ -52,7 +52,8 @@
         "competitor_bounds": {"$ref": "#/$defs/artifact"},
         "competitor_evaluation": {"$ref": "#/$defs/artifact"},
         "promotion_protection": {"$ref": "#/$defs/artifact"},
-        "promotion_disposition": {"$ref": "#/$defs/artifact"}
+        "promotion_disposition": {"$ref": "#/$defs/artifact"},
+        "promotion_uplift": {"$ref": "#/$defs/artifact"}
       }
     },
     "prospectiveResultSelections": {

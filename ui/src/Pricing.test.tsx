@@ -191,7 +191,8 @@ function response(payload: unknown, status = 200) {
 }
 
 function installFetchMock(
-  exportHandler?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  exportHandler?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  promotionsPayload?: (surface: string) => unknown
 ) {
   const mock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
@@ -254,6 +255,7 @@ function installFetchMock(
     }
     if (path.includes("/api/v1/promotions/")) {
       const surface = path.split("/api/v1/promotions/")[1].split("?")[0];
+      if (promotionsPayload) return response(promotionsPayload(surface));
       return response({schemaVersion: "retail-pricing-page/v1", dataMode: "live", authority, surface, plannerAvailable: false, reasonCode: "NO_ORIGIN_VISIBLE_PROMOTION_PLAN", message: "Origin-visible promotion planning evidence is not available.", disposition: {}, items: []});
     }
     throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
@@ -586,5 +588,67 @@ describe("pricing UI parity", () => {
     expect(fetchMock.mock.calls.some(([url, init]) =>
       String(url).includes("promotions/simulations:run") && init?.method === "POST"
     )).toBe(false);
+  });
+
+  it("renders the accepted promotions in the portfolio when the planner is available", async () => {
+    const acceptedPromotions = [
+      {
+        promoId: "gulf-diwali-trade-2016",
+        promoName: "Diwali distributor trade scheme 2016",
+        promoType: "campaign",
+        expectedDemandUplift: 3.6608552346257266,
+        upliftLow: 2.1898560413065637,
+        upliftHigh: 5.898107481151053,
+        revenueUpliftMinor: 5735451880,
+        marginImpactMinor: 1874982330,
+        confidence: 1.0,
+        cannibalisationRisk: "PRIVACY_RESTRICTED",
+        currencyCode: "INR"
+      },
+      {
+        promoId: "gulf-summer-ride-2019",
+        promoName: "Summer ride bonus 2019",
+        promoType: "campaign",
+        expectedDemandUplift: 0.2372,
+        upliftLow: 0.11,
+        upliftHigh: 0.42,
+        revenueUpliftMinor: 1382468246,
+        marginImpactMinor: 406097935,
+        confidence: 0.96,
+        cannibalisationRisk: "PRIVACY_RESTRICTED",
+        currencyCode: "INR"
+      }
+    ];
+    installFetchMock(undefined, (surface) => ({
+      schemaVersion: "retail-pricing-page/v1",
+      dataMode: "live",
+      authority,
+      surface,
+      plannerAvailable: true,
+      reasonCode: "NO_ORIGIN_VISIBLE_PROMOTION_PLAN",
+      message: "Accepted promotion uplift is available in the portfolio; write, calendar and aggregate tiles remain governed-unavailable.",
+      disposition: {plannerAvailable: true, acceptedPromotionCount: acceptedPromotions.length, acceptedPromotions},
+      items: acceptedPromotions
+    }));
+    renderPricing("promotionPlanner");
+
+    await screen.findByText("Promotion Performance Forecast");
+    const portfolio = document.querySelector(".promotion-table") as HTMLTableElement;
+    // The 13 governed columns are unchanged on the positive branch.
+    expect(within(portfolio).getAllByRole("columnheader")).toHaveLength(13);
+    // The header count reflects the served promotions, not a hardcoded zero.
+    expect(screen.getByText("2 promotions")).toBeInTheDocument();
+    const body = portfolio.querySelector("tbody") as HTMLElement;
+    // Both accepted promotions render by name.
+    expect(within(body).getByText("Diwali distributor trade scheme 2016")).toBeInTheDocument();
+    expect(within(body).getByText("Summer ride bonus 2019")).toBeInTheDocument();
+    // Fractional demand uplift shows as a signed percentage.
+    expect(within(body).getByText("+366.1%")).toBeInTheDocument();
+    // Revenue uplift and margin impact format as compact INR (never a bare number).
+    expect(within(body).getAllByText(/Cr$/).length).toBeGreaterThanOrEqual(2);
+    // Cannibalisation risk is the privacy-restricted chip — one per row, never a number.
+    expect(within(body).getAllByText("Privacy restricted")).toHaveLength(2);
+    // No bare "Not available" leaks into the populated portfolio body.
+    expect(within(body).queryByText("Not available")).toBeNull();
   });
 });

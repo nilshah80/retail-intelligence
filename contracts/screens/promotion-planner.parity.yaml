@@ -1,9 +1,10 @@
 schemaVersion: retail-screen-contract/v1
 screenId: promotionPlanner
-status: governed_negative_branch
+contractVersion: 2
+status: governed_positive_branch_in_progress
 authority:
   html: docs/ai_retail_intelligence_dashboard_multicurrency_v6.html
-  plan: plans/local/phase5-implementation-plan.md
+  plan: plans/local/ui-parity-availability-and-margin-plan.md
   api: contracts/api/openapi.yaml
 title: Promotion Planner
 subtitle: Plan, simulate and optimize retail promotions
@@ -46,11 +47,49 @@ calendar:
   weekdays: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
   cells: 35
 disposition:
+  branch: positive_in_progress
+  currentRuntimeState: negative_branch_still_live
   plannerAvailable: false
   reasonCode: NO_ORIGIN_VISIBLE_PROMOTION_PLAN
   createPromotion: preview_only_no_write
   simulatePromotion: governed_unavailable_preview
   calendar: read_only_empty_governed_state
+  note: the negative branch above is the current runtime disposition; it is being superseded by the owner-directed positive branch below, which is in progress and not yet live
+positiveBranch:
+  state: in_progress
+  targetDisposition: governed_positive_branch
+  complete: false
+  authority: owner_directed_engineering
+  approvalGate: none_in_poc
+  basis: plan section 0.0 with P-entry and D2 - this PoC has no external approver, so the positive branch is owner-directed engineering rather than a P5-D23 wait-gate
+  targetKpis:
+    projectedRevenueUplift: positive_default_emergent
+    projectedMarginImpact: positive_default_emergent
+  evidenceVisibleTarget: [lifecycle, mechanic, scope, readiness, model_outcome]
+  emergenceRule: positive revenue and margin must emerge from the P5-D20 uplift estimator and the P5-D22 acceptance and conflict logic; never a hardcoded flag, a faked number or a rewritten model output
+  privacyRestricted: [PII, cannibalisation, bundle, segment_targeting]
+  privacyDecision: Decision 19 stays closed; cannibalisation, bundles, segment targeting and PII remain explicit privacy_restricted chips
+  productionOnlyDormant: the formal P5-D23 and Decision 53 amendment with a named approver is retained for a future real-data deployment and does not gate this PoC
+  completionGate: engineering built and verified with a positive default walkthrough before this Pricing phase can pass; this contract does not yet claim completion
+amendments:
+- amendmentId: PDP-6.0-A1
+  amendedAt: '2026-08-14'
+  title: Section 6.0 Pricing demo-positive closure - Promotion Planner positive branch in progress
+  planSection: plans/local/ui-parity-availability-and-margin-plan.md section 6.0 (P-entry, P5) and D2
+  decisionRefs: [P5-D20, P5-D22, P5-D23, Decision-19]
+  frozenBehavior:
+    branchChange: from governed_negative_branch to governed_positive_branch_in_progress
+    targetKpis: positive default Projected Revenue Uplift and Projected Margin Impact, emergent from the estimator and acceptance logic
+    evidenceVisibleTarget: lifecycle, mechanic, scope and readiness evidence visible
+    privacyRestricted: PII, cannibalisation and bundle remain privacy_restricted
+    completeness: not complete; the positive-branch fields are the target and the runtime still emits the negative branch
+  approval:
+    status: approved
+    actor: nilay.shah
+    approvedAt: '2026-08-14'
+    authorization: Owner-directed positive Promotion branch per plan section 0.0 and D2; engineering, not an approval wait-gate. Amendment recorded before implementation review per P5-0P.
+    classification: explicit_user_authorization
+    reviewOutstanding: Per-screen human visual review and the positive-branch engineering completion remain required before client-demo sign-off.
 review:
   authorization: Explicit user instruction to complete the approved implementation plan.
   visualReviewOutstanding: true

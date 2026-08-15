@@ -55,16 +55,44 @@ def _build(response=None, guard=None, inventory=None):
 
 
 def test_negative_elastic_response_can_produce_decrease_and_synthetic_cost_is_separate() -> None:
-    recommendations, candidates = _build()
+    # Post profit-guard (plan §6.0 P2): a Decrease is served only when it is genuinely
+    # margin-accretive. Very elastic demand (beta -3.0) makes the price cut lift total
+    # gross margin, so it is a profitable Decrease; the margin-dilutive Increase
+    # candidates are refused with MARGIN_DILUTION rather than served.
+    recommendations, candidates = _build(response=_response(shrunk_beta=-3.0))
     row = recommendations.iloc[0]
 
     assert row["action"] == "Decrease"
     assert row["proposed_price_minor"] < row["current_price_minor"]
-    # Demo shows the computed-WAC margin from the generated cost.
+    # Served action strictly improves expected gross margin on the computed-WAC basis.
     assert row["margin_impact_minor"] is not None
+    assert row["margin_impact_minor"] > 0
     assert row["margin_reason_code"] is None
     assert row["synthetic_cost_minor"] == 12_000
-    assert candidates["eligible"].all()
+    # Current price and the profitable decrease candidates stay eligible; only the
+    # margin-dilutive increase candidates are guarded out.
+    assert bool(candidates[candidates["candidate_price_minor"] <= 20_000]["eligible"].all())
+    assert "MARGIN_DILUTION" in set(candidates["rejection_reason"].dropna())
+
+
+def test_margin_dilutive_decrease_is_held_to_protect_margin() -> None:
+    # Plan §6.0 P2 + §2.2.1: with moderately elastic demand (beta -1.2) the revenue-
+    # maximising price cut raises revenue but LOWERS total gross margin. The incremental-
+    # profit guard refuses to serve it (candidate rejected MARGIN_DILUTION) — but the SKU
+    # is well-priced, so it is a genuine Hold that protects margin, NOT a served Decrease
+    # and NOT an unexplained withheld "Not available" row. Opportunity stays positive
+    # because the dilutive cut is never served.
+    recommendations, candidates = _build(response=_response(shrunk_beta=-1.2))
+    row = recommendations.iloc[0]
+    assert row["record_kind"] == "recommendation"
+    assert row["action"] == "Hold"
+    assert row["current_price_minor"] == 20_000
+    assert row["proposed_price_minor"] == 20_000
+    # No dilutive cut leaked into served opportunity.
+    assert int(row["margin_impact_minor"]) == 0
+    assert int(row["revenue_impact_minor"]) == 0
+    # The candidate that WOULD have diluted margin is still recorded as rejected.
+    assert "MARGIN_DILUTION" in set(candidates["rejection_reason"].dropna())
 
 
 def test_active_promotion_preserves_current_price_as_hold() -> None:
@@ -94,8 +122,11 @@ def test_rejected_response_remains_visible_as_withheld_assessment() -> None:
 
 
 def test_stateless_simulation_preserves_primary_margin_boundaries() -> None:
+    # Inelastic demand (beta -0.3) yields a profitable Increase, so the recommendation
+    # is a served action the simulation can consume (plan §6.0 P2).
     recommendations, candidates = _build(
-        inventory=_inventory(client_actual_cost_minor=13_000, cost_provenance="client_actual")
+        response=_response(shrunk_beta=-0.3),
+        inventory=_inventory(client_actual_cost_minor=13_000, cost_provenance="client_actual"),
     )
     recommendation = recommendations.iloc[0].to_dict()
     legal_proposed = int(candidates[candidates["eligible"]]["candidate_price_minor"].iloc[0])

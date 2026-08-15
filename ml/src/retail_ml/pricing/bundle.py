@@ -36,7 +36,8 @@ ARTIFACT_SCHEMAS: Final[dict[str, str]] = {
     "competitor_bounds": "retail-competitor-bounds/v1",
     "competitor_evaluation": "retail-competitor-evaluation/v1",
     "promotion_protection": "retail-promotion-protection-rows/v1",
-    "promotion_disposition": "retail-promotion-package-disposition/v1",
+    "promotion_disposition": "retail-promotion-uplift-disposition/v1",
+    "promotion_uplift": "retail-promotion-uplift-rows/v1",
 }
 JSON_ARTIFACTS: Final[frozenset[str]] = frozenset(
     {"competitor_evaluation", "promotion_disposition"}
@@ -69,6 +70,8 @@ POLICY_PATHS: Final[dict[str, Path]] = {
     / "contracts/pricing/competitor-policy.json",
     "promotion": Path(__file__).resolve().parents[4]
     / "contracts/pricing/promotion-protection-policy.json",
+    "promotion_uplift": Path(__file__).resolve().parents[4]
+    / "contracts/pricing/promotion-uplift-policy.json",
     "artifacts": ARTIFACT_CONTRACT_PATH,
 }
 
@@ -740,9 +743,55 @@ def verify_pricing_bundle(path: str | Path) -> dict[str, Any]:
     if kind == "evidence_sparse":
         _require(accepted.empty, "sparse bundle contains accepted response")
         _require(actionable.empty, "sparse bundle contains actionable recommendation")
+    # The Planner package disposition may now be either branch: negative (safety
+    # only, no numeric claim) or the owner-directed positive branch when the
+    # observational estimator accepts at least one completed promotion. The branch
+    # is not hard-pinned; instead it is checked for internal consistency and
+    # independently reconciled against the promotion_uplift result frame, and the
+    # PII/cannibalisation privacy claims stay restricted on both branches.
     disposition = loaded["promotion_disposition"]
-    _require(disposition.get("decisionDisposition") == "not_amended", "promotion decision branch drift")
-    _require(disposition.get("packageDisposition") == "negative", "promotion package branch drift")
+    uplift = loaded["promotion_uplift"]
+    package = disposition.get("packageDisposition")
+    _require(package in {"positive", "negative"}, "promotion package branch is not a known disposition")
+    planner_available = bool(disposition.get("plannerAvailable"))
+    _require(
+        (package == "positive") == planner_available,
+        "promotion planner availability disagrees with the package branch",
+    )
+    reason = disposition.get("firstFailureReason")
+    if package == "positive":
+        _require(reason is None, "positive promotion branch must not carry a failure reason")
+    else:
+        _require(
+            isinstance(reason, str) and bool(reason),
+            "negative promotion branch must name a failure reason",
+        )
+    restricted = disposition.get("restrictedClaims")
+    _require(
+        isinstance(restricted, list) and {"pii", "cannibalisation"} <= set(restricted),
+        "promotion privacy-restricted claims must stay restricted on both branches",
+    )
+    allowed = disposition.get("allowedClaims")
+    _require(
+        isinstance(allowed, list) and (bool(allowed) == (package == "positive")),
+        "promotion numeric claims are authorised only on the positive branch",
+    )
+    # Reconcile the disposition tallies against the uplift result frame the bundle
+    # actually carries, so a positive branch cannot be asserted without accepted rows.
+    status = uplift.get("acceptance_status", pd.Series(dtype="object"))
+    accepted_uplift = int((status == "accepted").sum())
+    _require(
+        int(disposition.get("acceptedPromotionCount", -1)) == accepted_uplift,
+        "promotion accepted count differs from the uplift result frame",
+    )
+    _require(
+        int(disposition.get("evaluatedPromotionCount", -1)) == len(uplift),
+        "promotion evaluated count differs from the uplift result frame",
+    )
+    _require(
+        (package == "positive") == (accepted_uplift >= 1),
+        "promotion package branch differs from the uplift acceptance tally",
+    )
     return {
         "schemaVersion": "retail-pricing-bundle-verification/v1",
         "bundleId": manifest["bundleId"],

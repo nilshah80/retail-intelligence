@@ -1028,7 +1028,7 @@ def withhold_uncalibrated_cold_start_intervals(
         # while the gate was already scoped to the calibrated range.
         "servingLayer": {
             "withholdingEffective": True,
-            "servingMigration": "0030_pricing_intents",
+            "servingMigration": "0033_promotion_positive_branch",
             "storage": (
                 "retail_serving.forecast_series.yhat_p90 and confidence are nullable and "
                 "paired by CHECK constraint; a withheld row must carry "

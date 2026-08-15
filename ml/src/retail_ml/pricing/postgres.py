@@ -32,7 +32,7 @@ from retail_ml.pricing.selection import (
 
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0031_pricing_margin_pct"
+MIGRATION_REVISION: Final[str] = "0033_promotion_positive_branch"
 VERIFIER_CONTRACT: Final[str] = "retail-pricing-bundle-verification/v1"
 
 
@@ -150,6 +150,63 @@ def _integer_field(row: Mapping[str, Any], name: str) -> int | None:
     if not number.is_finite() or number != number.to_integral_value():
         raise PricingServingError(f"{name} is not an integer")
     return int(number)
+
+
+def _market_currency_map(frames: Mapping[str, pd.DataFrame]) -> dict[str, str]:
+    """Resolve each market's currency from any frame that carries both columns.
+
+    The promotion_uplift artifact records monetary minor units without a currency,
+    so the served copy pairs every accepted promotion with the currency its own
+    bundle already reports for that market. The client cannot format an amount
+    without its unit, and the value is read from the bundle rather than invented.
+    """
+
+    mapping: dict[str, str] = {}
+    for frame in frames.values():
+        if not {"market_id", "currency_code"} <= set(frame.columns):
+            continue
+        pairs = frame[["market_id", "currency_code"]].dropna().drop_duplicates()
+        for market, currency in pairs.itertuples(index=False):
+            mapping.setdefault(str(market), str(currency))
+    return mapping
+
+
+def _accepted_promotions(
+    uplift: pd.DataFrame | None, currency_by_market: Mapping[str, str]
+) -> list[dict[str, Any]]:
+    """Summarise the accepted promotion-uplift rows for the served disposition.
+
+    Only rows the estimator accepted are carried; a withheld row, an empty frame,
+    or an absent artifact yields no entry. ``cannibalisation_risk`` is privacy
+    restricted, so it is forwarded as the literal string it holds and never reduced
+    to a number.
+    """
+
+    if uplift is None or uplift.empty or "acceptance_status" not in uplift.columns:
+        return []
+    accepted = uplift[uplift["acceptance_status"] == "accepted"]
+    summaries: list[dict[str, Any]] = []
+    for row in accepted.to_dict("records"):
+        market = _field(row, "market_id")
+        currency = (
+            currency_by_market.get(str(market)) if market is not None else None
+        )
+        summaries.append(
+            {
+                "promoId": _field(row, "promo_id"),
+                "promoName": _field(row, "promo_name"),
+                "promoType": _field(row, "promo_type"),
+                "expectedDemandUplift": _field(row, "expected_demand_uplift"),
+                "upliftLow": _field(row, "uplift_low"),
+                "upliftHigh": _field(row, "uplift_high"),
+                "revenueUpliftMinor": _integer_field(row, "revenue_uplift_minor"),
+                "marginImpactMinor": _integer_field(row, "margin_impact_minor"),
+                "confidence": _field(row, "confidence"),
+                "cannibalisationRisk": _field(row, "cannibalisation_risk"),
+                "currencyCode": currency,
+            }
+        )
+    return summaries
 
 
 def _require_schema(cursor: psycopg.Cursor[Any]) -> None:
@@ -391,6 +448,7 @@ def materialize_pricing_bundle(
                         "expected_units_current", "expected_units_proposed",
                         "revenue_impact_minor", "margin_impact_minor", "margin_reason_code",
                         "current_margin_pct", "expected_margin_pct",
+                        "pricing_unit_label", "base_unit_quantity", "pricing_pack_label",
                         "confidence", "priority", "risk", "stock_cover_days",
                         "competitor_price_minor", "details",
                     ),
@@ -412,6 +470,9 @@ def materialize_pricing_bundle(
                             _field(row, "margin_reason_code"),
                             _field(row, "current_margin_pct"),
                             _field(row, "expected_margin_pct"),
+                            _field(row, "pricing_unit_label"),
+                            _field(row, "base_unit_quantity"),
+                            _field(row, "pricing_pack_label"),
                             _field(row, "confidence"), _field(row, "priority", "Unassigned"),
                             _field(row, "risk", "Unavailable"),
                             _field(row, "stock_cover_days"),
@@ -476,6 +537,17 @@ def materialize_pricing_bundle(
                     (root / manifest["artifacts"]["promotion_disposition"]["path"])
                     .read_text(encoding="utf-8")
                 )
+                # Enrich only the served copy: the disposition records an accepted
+                # count but not the promotions themselves, so the planner would have
+                # nothing to show on the positive branch. The on-disk bundle is left
+                # untouched (verify reconciles the bundle, not this projection).
+                served_disposition = {
+                    **disposition,
+                    "acceptedPromotions": _accepted_promotions(
+                        frames.get("promotion_uplift"),
+                        _market_currency_map(frames),
+                    ),
+                }
                 cursor.execute(
                     f"""
                     INSERT INTO {SERVING_SCHEMA}.pricing_promotion_dispositions (
@@ -489,7 +561,7 @@ def materialize_pricing_bundle(
                         disposition["decisionDisposition"],
                         disposition["packageDisposition"],
                         disposition["plannerAvailable"],
-                        disposition["firstFailureReason"], Jsonb(disposition),
+                        disposition["firstFailureReason"], Jsonb(served_disposition),
                     ),
                 )
                 for table in (

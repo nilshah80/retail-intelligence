@@ -24,7 +24,7 @@ from retail_ml.scenario.context import (
 )
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0030_pricing_intents"
+MIGRATION_REVISION: Final[str] = "0033_promotion_positive_branch"
 
 
 class ScenarioServingError(RuntimeError):

@@ -59,6 +59,15 @@ const recommendationItemSchema = z.object({
   forecastUnits: z.union([z.string(), z.number()]).nullish(),
   currentMarginPct: nullableNumber.optional(),
   expectedMarginPct: nullableNumber.optional(),
+  // Governed per-unit pricing basis (§6.0 P4). The base selling unit label
+  // (e.g. "L"), how many of that unit a canonical sellable pack contains, the
+  // human pack label (e.g. "5 L") and the current price expressed per base unit
+  // (current_price_minor / base_unit_quantity). All are nullable — a bundle
+  // published before these fields land degrades to the aggregate price display.
+  pricingUnitLabel: z.string().nullish(),
+  baseUnitQuantity: nullableNumber.optional(),
+  pricingPackLabel: z.string().nullish(),
+  currentUnitPriceMinor: nullableNumber.optional(),
   revenueImpactMinor: nullableNumber,
   marginImpactMinor: nullableNumber,
   marginReasonCode: z.string().nullish(),

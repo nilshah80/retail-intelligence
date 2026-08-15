@@ -53,6 +53,7 @@ from retail_datagen.catalog_packs import (  # noqa: E402
     _measurement,
     _option_price_multiplier,
     _partial_combinations,
+    build_catalog,
     resolve_catalog_pack,
 )
 from retail_datagen.config import (  # noqa: E402
@@ -249,6 +250,39 @@ class ExplicitModeTests(unittest.TestCase):
         for dimension in GRADE_DIMENSIONS | FILL_DIMENSIONS:
             for value in self.pack["optionValues"][dimension]:
                 self.assertRegex(value["code"], r"^[A-Z0-9]+$", value["code"])
+
+    def test_explicit_variant_cost_override_seats_the_variant_cost(self) -> None:
+        # §6.0 pricing calibration seam: an explicit VariantDefinition `cost` is
+        # the authoritative weighted-average unit cost for exactly the matched
+        # variant, bypassing the base_cost x option multiplier x jitter chain,
+        # and must not leak to its siblings. Parity with catalog.rs.
+        import yaml
+
+        config = yaml.safe_load(
+            (ROOT / "configs" / "gulf-oil-india-ten-year.yaml").read_text()
+        )
+        template = config["catalog"]["productTemplates"][0]
+        target = dict(template["variantDefinitions"][0]["optionValues"])
+        template["variantDefinitions"][0]["cost"] = "123.45"
+
+        matched, siblings = None, []
+        for products in build_catalog(config).values():
+            for product in products:
+                if product.get("productCode") != template["productCode"]:
+                    continue
+                for variant in product["variants"]:
+                    options = {o["name"]: o["value"] for o in variant["options"]}
+                    if options == target:
+                        matched = variant
+                    else:
+                        siblings.append(Decimal(str(variant["baseCost"])))
+        self.assertIsNotNone(matched, "override variant not generated")
+        assert matched is not None
+        self.assertEqual(Decimal("123.45"), Decimal(str(matched["baseCost"])))
+        self.assertTrue(
+            all(cost != Decimal("123.45") for cost in siblings),
+            "cost override leaked to sibling variants",
+        )
 
 
 class RetailStabilityTests(unittest.TestCase):

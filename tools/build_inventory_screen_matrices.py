@@ -362,7 +362,7 @@ def build_document() -> dict[str, Any]:
         "authority": {
             "html": "docs/ai_retail_intelligence_dashboard_multicurrency_v6.html",
             "specification": "docs/demand_forecast_poc_spec.md",
-            "plan": "plans/local/phase4-implementation-plan.md",
+            "plan": "plans/local/ui-parity-availability-and-margin-plan.md",
             "api": "contracts/api/openapi.yaml",
         },
         "dataMode": "accepted_live_only",
