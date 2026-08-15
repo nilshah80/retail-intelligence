@@ -26,9 +26,18 @@ def _uplift_frame() -> pd.DataFrame:
                 "uplift_low": 2.1898560413065637, "uplift_high": 5.898107481151053,
                 "revenue_uplift_minor": 5735451880.0,
                 "margin_impact_minor": 1874982330.0, "margin_reason_code": None,
+                "baseline_revenue_minor": 1566697264.0,
+                "required_stock_units": 30706.0,
                 "cannibalisation_risk": "PRIVACY_RESTRICTED", "confidence": 1.0,
                 "valid_draws": 200, "numeric_result_rate": 1.0,
                 "acceptance_status": "accepted", "first_failure_reason": None,
+                "period_start": pd.Timestamp("2016-09-25"),
+                "period_end": pd.Timestamp("2016-11-05"),
+                "offer_value": 0.09, "objective": "demand_generation",
+                "status": "Completed",
+                "category_labels": "Motorcycle Oils, Passenger Car Motor Oils",
+                "category_count": 2, "product_count": 48,
+                "channel_count": 3, "all_stores": True,
             },
             {
                 "market_id": "gulf-india", "promo_id": "gulf-weak-2017",
@@ -38,10 +47,17 @@ def _uplift_frame() -> pd.DataFrame:
                 "uplift_high": None, "revenue_uplift_minor": None,
                 "margin_impact_minor": None,
                 "margin_reason_code": "PROMOTION_UPLIFT_UNSUPPORTED",
+                "baseline_revenue_minor": None, "required_stock_units": None,
                 "cannibalisation_risk": "PRIVACY_RESTRICTED", "confidence": 0.0,
                 "valid_draws": 0, "numeric_result_rate": 0.0,
                 "acceptance_status": "withheld",
                 "first_failure_reason": "insufficient_episode_support",
+                "period_start": pd.Timestamp("2017-01-01"),
+                "period_end": pd.Timestamp("2017-01-31"),
+                "offer_value": 0.05, "objective": "demand_generation",
+                "status": "Completed",
+                "category_labels": "Greases", "category_count": 1,
+                "product_count": 6, "channel_count": 1, "all_stores": True,
             },
         ]
     )
@@ -77,9 +93,30 @@ def test_accepted_promotions_embeds_only_accepted_rows_with_currency() -> None:
     # cannibalisation risk is forwarded as the literal restricted string.
     assert item["cannibalisationRisk"] == "PRIVACY_RESTRICTED"
     assert item["currencyCode"] == "INR"
+    # Source metadata is forwarded verbatim so the Planner grid shows real values.
+    assert item["marketId"] == "gulf-india"
+    assert item["objective"] == "demand_generation"
+    assert item["status"] == "Completed"
+    assert item["periodStart"] == "2016-09-25"
+    assert item["periodEnd"] == "2016-11-05"
+    assert item["offerValue"] == pytest.approx(0.09)
+    assert item["categoryLabels"] == "Motorcycle Oils, Passenger Car Motor Oils"
+    assert item["categoryCount"] == 2
+    assert item["productCount"] == 48
+    assert item["channelCount"] == 3
+    assert item["allStores"] is True
+    # Baseline revenue and required stock are integer minor/units, never floats.
+    assert item["baselineRevenueMinor"] == 1_566_697_264
+    assert item["requiredStockUnits"] == 30_706
+    assert isinstance(item["baselineRevenueMinor"], int)
+    assert isinstance(item["requiredStockUnits"], int)
     assert set(item) == {
-        "promoId", "promoName", "promoType", "expectedDemandUplift",
-        "upliftLow", "upliftHigh", "revenueUpliftMinor", "marginImpactMinor",
+        "promoId", "promoName", "promoType", "marketId", "objective", "status",
+        "periodStart", "periodEnd", "offerValue", "categoryLabels",
+        "categoryCount", "productCount", "channelCount", "allStores",
+        "expectedDemandUplift", "upliftLow", "upliftHigh",
+        "revenueUpliftMinor", "marginImpactMinor",
+        "baselineRevenueMinor", "requiredStockUnits",
         "confidence", "cannibalisationRisk", "currencyCode",
     }
 

@@ -1150,7 +1150,10 @@ export default function App() {
   const forecastSummary = useQuery({
     queryKey: ["forecast-summary"],
     queryFn: ({signal}) => loadForecastSummary(signal),
-    enabled: page === "demandForecast"
+    // The global footer's Forecast Coverage and Model Accuracy KPIs are portfolio
+    // metrics shown on every page, so the summary that feeds them also loads on the
+    // pricing pages rather than the Demand Forecast page alone.
+    enabled: page === "demandForecast" || isPricingPage(page)
   });
   // The tab label follows the destination. index.html hard-codes "Data
   // Management" and nothing ever updated it, so every tab claimed to be that page

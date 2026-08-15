@@ -96,9 +96,12 @@ export const recommendationSummarySchema = z.object({
     marginOpportunityMinor: nullableNumber,
     marginReasonCode: z.string().nullish(),
     recommendationsAtRisk: z.number().int().nonnegative(),
-    riskReason: z.string(),
-    recommendationAdoption: nullableNumber,
-    adoptionReason: z.string()
+    competitorCovered: z.number().int().nonnegative().nullish(),
+    recommendationAdoption: z.object({
+      adopted: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      sharePct: z.number()
+    })
   }),
   recommendationMix: z.array(z.object({
     label: z.enum([
@@ -106,11 +109,33 @@ export const recommendationSummarySchema = z.object({
     ]),
     count: z.number().int().nonnegative()
   })),
-  approvalPipeline: z.object({
-    available: z.boolean(),
-    reason: z.string(),
-    labels: z.array(z.string())
-  })
+  approvalPipeline: z.array(z.object({
+    label: z.string(),
+    count: z.number().int().nonnegative()
+  })),
+  exceptions: z.array(z.object({
+    label: z.string(),
+    count: z.number().int().nonnegative()
+  })),
+  decisionQuality: z.object({
+    highConfidencePct: z.number(),
+    withinGuardrailCount: z.number().int().nonnegative(),
+    withinGuardrailPct: z.number(),
+    realizedCycles: z.number().int().nonnegative(),
+    needingOverride: z.number().int().nonnegative()
+  }),
+  businessValueByDriver: z.array(z.object({
+    label: z.string(),
+    revenueMinor: z.number(),
+    count: z.number().int().nonnegative()
+  })),
+  portfolioScenarios: z.array(z.object({
+    scenario: z.string(),
+    avgChangePct: z.number(),
+    demandImpact: z.number(),
+    revenueImpactMinor: z.number(),
+    marginImpactMinor: z.number()
+  }))
 }).passthrough();
 
 export const recommendationsSchema = z.object({

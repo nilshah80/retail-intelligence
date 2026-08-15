@@ -259,9 +259,21 @@ UPLIFT_RESULT_COLUMNS = (
     "episode_weeks", "control_weeks",
     "expected_demand_uplift", "uplift_low", "uplift_high",
     "revenue_uplift_minor", "margin_impact_minor", "margin_reason_code",
+    "baseline_revenue_minor", "required_stock_units",
     "cannibalisation_risk", "confidence",
     "valid_draws", "numeric_result_rate",
     "acceptance_status", "first_failure_reason",
+)
+
+# Per-promotion source-metadata columns merged onto the estimator result (built in
+# ``build_promotion_uplift`` from the same curated canonical facts the estimator
+# reads). They describe *what* each promotion is — window, offer, scope, catalogue
+# coverage — so the served Planner portfolio shows real values rather than a bare
+# governed placeholder. Every value is read from the source; none is invented.
+_PROMO_METADATA_COLUMNS = (
+    "period_start", "period_end", "offer_value", "objective", "status",
+    "category_labels", "category_count", "product_count",
+    "channel_count", "all_stores",
 )
 
 _UPLIFT_PANEL_COLUMNS = (
@@ -508,6 +520,16 @@ def _evaluate_promotion(
         margin_impact_minor = None
         margin_reason_code = None
 
+    # Baseline (control) revenue over the horizon and the promoted-demand stock
+    # requirement are reported only for an accepted promotion, alongside its uplift.
+    # Both come straight from the observed control mean and the accepted point lift —
+    # the baseline the Planner charts against, and the units needed to serve the lift.
+    baseline_revenue_minor: int | None = None
+    required_stock_units: int | None = None
+    if accepted and point is not None:
+        baseline_revenue_minor = int(round(control_mean_revenue * horizon))
+        required_stock_units = int(round(control_mean_units * (1.0 + point) * horizon))
+
     return {
         "market_id": str(market_id),
         "promo_id": str(promo_id),
@@ -525,6 +547,8 @@ def _evaluate_promotion(
         "revenue_uplift_minor": revenue_uplift_minor,
         "margin_impact_minor": margin_impact_minor,
         "margin_reason_code": margin_reason_code,
+        "baseline_revenue_minor": baseline_revenue_minor,
+        "required_stock_units": required_stock_units,
         # Cannibalisation stays an explicit privacy-restricted state (Decision #19),
         # never a fabricated number and never a silent omission.
         "cannibalisation_risk": str(policy["privacyReason"]),
@@ -809,6 +833,75 @@ def _promotion_weekly(
     return weekly[list(_UPLIFT_PANEL_COLUMNS)]
 
 
+def _load_promotion_metadata(
+    connection: Any, decision_as_of: datetime | str
+) -> pd.DataFrame | None:
+    """Resolve per-promotion source metadata for the served Planner portfolio.
+
+    Returns one row per ``(market_id, promo_id)`` with the promotion window, offer,
+    catalogue coverage and channel scope, read from the same canonical facts the
+    estimator uses. SKU targets join to the product catalogue for human category
+    labels; scope rows count distinct channels and note whether the plan is
+    market-wide. A curated publication that predates any of these source columns
+    degrades to ``None`` (null cells) rather than aborting the uplift estimation.
+    """
+
+    try:
+        return connection.execute(
+            """
+            WITH tgt AS (
+                SELECT market_id, promo_id, merch_scope_id AS sku_id
+                FROM canonical_data.promotion_merchandise_targets
+                WHERE merch_scope_type = 'sku' AND known_as_of <= ?::TIMESTAMPTZ
+                GROUP BY market_id, promo_id, merch_scope_id
+            ),
+            prod AS (
+                SELECT sku_id, category_label
+                FROM canonical_data.products
+                WHERE known_as_of <= ?::TIMESTAMPTZ
+                QUALIFY row_number() OVER (
+                    PARTITION BY sku_id ORDER BY known_as_of DESC
+                ) = 1
+            ),
+            cat AS (
+                SELECT t.market_id, t.promo_id,
+                       count(DISTINCT t.sku_id) AS product_count,
+                       count(DISTINCT p.category_label) AS category_count,
+                       string_agg(DISTINCT p.category_label, ', ') AS category_labels
+                FROM tgt t LEFT JOIN prod p USING (sku_id)
+                GROUP BY t.market_id, t.promo_id
+            ),
+            sc AS (
+                SELECT market_id, promo_id,
+                       count(DISTINCT channel_id) AS channel_count,
+                       bool_and(location_id IS NULL) AS all_stores
+                FROM canonical_data.promotion_scopes
+                WHERE known_as_of <= ?::TIMESTAMPTZ
+                GROUP BY market_id, promo_id
+            )
+            SELECT pr.market_id, pr.promo_id,
+                   pr.start_date AS period_start, pr.end_date AS period_end,
+                   pr.offer_value, pr.objective, pr.status,
+                   cat.category_labels, cat.category_count, cat.product_count,
+                   sc.channel_count, sc.all_stores
+            FROM (
+                SELECT market_id, promo_id, start_date, end_date,
+                       offer_value, objective, status
+                FROM canonical_data.promotions
+                WHERE known_as_of <= ?::TIMESTAMPTZ
+                QUALIFY row_number() OVER (
+                    PARTITION BY market_id, promo_id ORDER BY known_as_of DESC
+                ) = 1
+            ) pr
+            LEFT JOIN cat USING (market_id, promo_id)
+            LEFT JOIN sc USING (market_id, promo_id)
+            """,
+            [decision_as_of, decision_as_of, decision_as_of, decision_as_of],
+        ).fetch_df()
+    except duckdb.Error:
+        return None
+
+
 def build_promotion_uplift(
     curated_database: str | Path,
     *,
@@ -831,6 +924,7 @@ def build_promotion_uplift(
     buffer_weeks = int(uplift_policy["estimator"].get("controlBufferWeeks", 0))
     as_of = pd.Timestamp(decision_as_of)
     frames: list[pd.DataFrame] = []
+    metadata: pd.DataFrame | None = None
     with duckdb.connect(str(database), read_only=True) as connection:
         try:
             promotions = connection.execute(
@@ -907,6 +1001,7 @@ def build_promotion_uplift(
                 for row in costs.to_dict("records")
                 if pd.notna(row["wac_cost"])
             }
+            metadata = _load_promotion_metadata(connection, decision_as_of)
             for promo in promotions.to_dict("records"):
                 frame = _promotion_weekly(
                     connection,
@@ -928,10 +1023,35 @@ def build_promotion_uplift(
             frames = []
     weekly = pd.concat(frames, ignore_index=True) if frames else _empty_uplift_panel()
     uplift = estimate_promotion_uplift(weekly, policy=uplift_policy)
+    uplift = _attach_promotion_metadata(uplift, metadata)
     disposition = build_promotion_disposition(
         uplift, protection_policy=protection_policy, uplift_policy=uplift_policy
     )
     return uplift, disposition
+
+
+def _attach_promotion_metadata(
+    uplift: pd.DataFrame, metadata: pd.DataFrame | None
+) -> pd.DataFrame:
+    """Merge per-promotion source metadata onto the estimator result frame.
+
+    The metadata is looked up from the curated canonical facts by
+    ``(market_id, promo_id)``. A promotion with no metadata match keeps null cells
+    rather than a fabricated value, and the metadata columns are always present so
+    the served copy has a stable shape whether or not any promotion was evaluated.
+    """
+
+    result = uplift.copy()
+    if metadata is not None and not metadata.empty:
+        keep = ["market_id", "promo_id", *_PROMO_METADATA_COLUMNS]
+        available = [column for column in keep if column in metadata.columns]
+        result = result.merge(
+            metadata[available], on=["market_id", "promo_id"], how="left"
+        )
+    for column in _PROMO_METADATA_COLUMNS:
+        if column not in result.columns:
+            result[column] = pd.Series([None] * len(result), dtype="object")
+    return result
 
 
 __all__ = [

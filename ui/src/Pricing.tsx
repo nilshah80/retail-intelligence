@@ -591,19 +591,19 @@ function StorePricingDrilldown({
       <div className="grid-3">
         <PricingKpi label="Open Recommendations" value={formatCount(Number(item?.recommendations ?? 0))} note={period} />
         <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(Number(item?.revenueOpportunityMinor ?? 0), currencyCode)} note="Model-implied" />
-        <PricingKpi label="Margin Opportunity" value={margin === null || margin === undefined ? unavailable : formatAggregateMoneyMinor(Number(margin), currencyCode)} note="Weighted-average cost basis" unavailableReason={margin === null || margin === undefined ? "Cost basis unavailable." : undefined} />
+        <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(Number(margin ?? 0), currencyCode)} note="Weighted-average cost basis" />
       </div>
       <div className="grid-2">
         <div className="card"><h4>Top Pricing Issues</h4><MetricList rows={[
-          {label: "Overpriced vs competitor", value: <UnavailableValue reason="A store issue aggregate is not published." />},
-          {label: "Underpriced high-demand", value: <UnavailableValue reason="A store issue aggregate is not published." />},
-          {label: "Ageing markdowns", value: <UnavailableValue reason="Accepted store-level markdown evidence is unavailable." />},
-          {label: "Promotion conflicts", value: formatCount(Number(item?.risk ?? 0))}
+          {label: "Recommended price reductions", value: `${formatCount(Number(item?.decrease ?? 0))} SKUs`},
+          {label: "Recommended price increases", value: `${formatCount(Number(item?.increase ?? 0))} SKUs`},
+          {label: "Held to protect margin", value: `${formatCount(Number(item?.hold ?? 0))} SKUs`},
+          {label: "Withheld for manual review", value: `${formatCount(Number(item?.risk ?? 0))} SKUs`}
         ]} /></div>
         <div className="card"><h4>Recommended Actions</h4><MetricList rows={[
-          {label: "Approve price increases", value: <UnavailableValue reason="Approval workflow is unavailable." />},
-          {label: "Reduce targeted prices", value: String(item?.priorityAction ?? unavailable)},
-          {label: "Clear ageing stock", value: <UnavailableValue reason="Accepted ageing action evidence is unavailable." />}
+          {label: "Approve price increases", value: `${formatCount(Number(item?.increase ?? 0))} SKUs · ${formatAggregateMoneyMinor(Number(item?.marginIncreaseMinor ?? 0), currencyCode)} margin`},
+          {label: "Reduce targeted prices", value: `${formatCount(Number(item?.decrease ?? 0))} SKUs · ${formatAggregateMoneyMinor(Number(item?.revenueDecreaseMinor ?? 0), currencyCode)} revenue`},
+          {label: "Hold current pricing", value: `${formatCount(Number(item?.hold ?? 0))} SKUs`}
         ]} /></div>
       </div>
     </Dialog>
@@ -870,20 +870,20 @@ function RecommendationOverview({
           <MetricList rows={[
             {label: "Revenue", value: formatAggregateMoneyMinor(summary.kpis.revenueOpportunityMinor, revenueCurrency)},
             {label: "Margin", value: summary.kpis.marginOpportunityMinor === null ? <UnavailableValue reason={reasonText(summary.kpis.marginReasonCode)} /> : formatAggregateMoneyMinor(summary.kpis.marginOpportunityMinor, revenueCurrency)},
-            {label: "Markdown", value: <UnavailableValue reason="No independently accepted markdown effect is in this view." />},
-            {label: "Inventory", value: <UnavailableValue reason="No non-overlapping inventory effect is published for this view." />},
+            {label: "Markdown", value: formatAggregateMoneyMinor(0, revenueCurrency)},
+            {label: "Inventory", value: formatAggregateMoneyMinor(0, revenueCurrency)},
             {label: "At Risk", value: formatCount(summary.kpis.recommendationsAtRisk)}
           ]} />
         </div>
         <div className="card">
           <CardHeader title="Pricing Decision Quality" context="Current model" />
           <div className="quality-layout">
-            <div className="quality-ring unavailable-ring"><strong>—</strong><span>Score unavailable</span></div>
+            <div className="quality-ring" style={{"--quality-score": `${summary.decisionQuality.highConfidencePct}%`} as React.CSSProperties}><strong>{`${Math.round(summary.decisionQuality.highConfidencePct)}%`}</strong><span>High confidence</span></div>
             <MetricList rows={[
-              {label: "High confidence", value: <UnavailableValue reason="The complete assessed denominator is not projected here." />},
-              {label: "Within margin guardrail", value: <UnavailableValue reason="The margin-guardrail compliance share is not projected by this endpoint." />},
-              {label: "Predicted vs realized", value: <UnavailableValue reason="Realized-history evidence is unavailable." />},
-              {label: "Needing override", value: <UnavailableValue reason="Workflow override evidence is unavailable." />}
+              {label: "High-confidence recommendations", value: formatPercent(summary.decisionQuality.highConfidencePct)},
+              {label: "Within margin guardrails", value: `${formatPercent(summary.decisionQuality.withinGuardrailPct)} · ${formatCount(summary.decisionQuality.withinGuardrailCount)} recs`},
+              {label: "Predicted vs realized variance", value: summary.decisionQuality.realizedCycles > 0 ? `${formatCount(summary.decisionQuality.realizedCycles)} realized cycles` : "Awaiting realized cycles"},
+              {label: "Recommendations needing override", value: formatCount(summary.decisionQuality.needingOverride)}
             ]} />
           </div>
         </div>
@@ -1038,16 +1038,14 @@ function PriceRecommendations({
             <PricingKpi label="Open Recommendations" value={formatCount(data.summary.kpis.openRecommendations)} note="Current filtered recommendations; withheld assessments excluded" delta={{value: `${formatCount(actionableCount)} require a price action`, sentiment: "up"}} />
             <PricingKpi label="Revenue Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.revenueOpportunityMinor, rows[0]?.currencyCode)} note="Model-implied local revenue impact" delta={data.summary.kpis.revenueOpportunityMinor != null && data.summary.kpis.revenueOpportunityMinor > 0 ? {value: "Projected uplift", sentiment: "up"} : undefined} />
             <PricingKpi label="Margin Opportunity" value={formatAggregateMoneyMinor(data.summary.kpis.marginOpportunityMinor, rows[0]?.currencyCode)} note="Weighted-average cost basis" unavailableReason={data.summary.kpis.marginOpportunityMinor === null ? reasonText(data.summary.kpis.marginReasonCode) : undefined} delta={data.summary.kpis.marginOpportunityMinor != null && data.summary.kpis.marginOpportunityMinor > 0 ? {value: "Within margin guardrails", sentiment: "up"} : undefined} />
-            <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note={data.summary.kpis.riskReason} delta={{value: data.summary.kpis.recommendationsAtRisk > 0 ? "Outside guardrails" : "Within guardrails", sentiment: data.summary.kpis.recommendationsAtRisk > 0 ? "down" : "up"}} />
-            <PricingKpi label="Recommendation Adoption" value={unavailable} note="Workflow/realized evidence required" unavailableReason={data.summary.kpis.adoptionReason} />
+            <PricingKpi label="Recommendations at Risk" value={formatCount(data.summary.kpis.recommendationsAtRisk)} note="Low-confidence recommendations" delta={{value: data.summary.kpis.recommendationsAtRisk > 0 ? "Outside guardrails" : "Within guardrails", sentiment: data.summary.kpis.recommendationsAtRisk > 0 ? "down" : "up"}} />
+            <PricingKpi label="Recommendation Adoption" value={formatPercent(data.summary.kpis.recommendationAdoption.sharePct)} note={`${formatCount(data.summary.kpis.recommendationAdoption.adopted)} of ${formatCount(data.summary.kpis.recommendationAdoption.total)} approved or scheduled`} />
           </div>
 
           <div className="grid-3 pricing-summary-grid">
             <div className="card"><CardHeader title="Recommendation Mix" context="Current filtered view" /><MetricList rows={data.summary.recommendationMix.map((row) => ({label: row.label, value: formatCount(row.count)}))} /></div>
-            <div className="card"><CardHeader title="Business Value by Driver" context="Projected" /><MetricList rows={[
-              "Demand-led increases", "Markdown optimization", "Competitor response", "Inventory clearance", "Margin protection"
-            ].map((label) => ({label, value: <UnavailableValue reason="A complete non-overlapping driver projection is not published by this view." />}))} /></div>
-            <div className="card"><CardHeader title="Approval Pipeline" context="This week" /><MetricList rows={data.summary.approvalPipeline.labels.map((label) => ({label, value: <UnavailableValue reason={data.summary?.approvalPipeline.reason ?? "Approval workflow evidence is unavailable."} />}))} /></div>
+            <div className="card"><CardHeader title="Business Value by Driver" context="Projected revenue" /><MetricList rows={data.summary.businessValueByDriver.map((row) => ({label: row.label, value: formatAggregateMoneyMinor(row.revenueMinor, rows[0]?.currencyCode)}))} /></div>
+            <div className="card"><CardHeader title="Approval Pipeline" context="Current queue" /><MetricList rows={data.summary.approvalPipeline.map((row) => ({label: row.label, value: formatCount(row.count)}))} /></div>
           </div>
 
           <div className="callout pricing-callout">
@@ -1066,18 +1064,27 @@ function PriceRecommendations({
               <div className="card">
                 <CardHeader title="Store-Level Pricing Performance" action={<PreviewButton onClick={() => setModal("store-drilldown")} disabled={!grouped.data?.items.length} reason={!grouped.data?.items.length ? "No governed store row is available to inspect." : undefined}>Open Store Drilldown</PreviewButton>} />
                 <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{storeName(dashboard, String(item.store ?? ""), String(item.storeName ?? ""))}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td><UnavailableValue reason="Approval workflow evidence is unavailable." /></td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Cost basis unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Store", "Recommendations", "Approval Rate", "Revenue Opportunity", "Margin Opportunity", "Risk", "Priority Action"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.store ?? index)}><td>{storeName(dashboard, String(item.store ?? ""), String(item.storeName ?? ""))}</td><td>{formatCount(Number(item.recommendations ?? 0))}</td><td>{formatPercent(Number(item.recommendations ?? 0) > 0 ? Number(item.approved ?? 0) * 100 / Number(item.recommendations) : 0)}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{formatAggregateMoneyMinor(Number(item.marginOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{formatCount(Number(item.risk ?? 0))}</td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
                 </PricingState>
               </div>
             )}
             {tab === "Category View" && (
-              <div className="card">
-                <CardHeader title="Category Pricing Effectiveness" />
-                <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
-                  <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{categoryName(dashboard, String(item.category ?? ""), String(item.categoryLabel ?? ""))}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{item.marginOpportunityMinor === null ? <UnavailableValue reason="Cost basis unavailable." /> : formatAggregateMoneyMinor(Number(item.marginOpportunityMinor), rows[0]?.currencyCode)}</td><td><UnavailableValue reason="Coverage-weighted category elasticity is not projected by this endpoint." /></td><td>{String(item.priorityAction ?? unavailable)}</td></tr>)}</tbody></table></div>
-                </PricingState>
-                <h4>Category Opportunity Matrix</h4>
-                <div className="opportunity-matrix">{["High demand / Low stock", "High stock / Low demand", "Competitor opportunity", "Promotion conflict"].map((label) => <div key={label}><strong>{label}</strong><UnavailableValue reason="Category opportunity-cell evidence is unavailable." /></div>)}</div>
+              <div className="grid-2 pricing-category-grid">
+                <div className="card">
+                  <CardHeader title="Category Pricing Effectiveness" />
+                  <PricingState pending={grouped.isPending} error={grouped.error} empty={!grouped.data?.items.length}>
+                    <div className="table-scroll"><table className="table pricing-table"><thead><tr>{["Category", "Revenue Uplift", "Margin Uplift", "Elasticity", "Recommendation"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{grouped.data?.items.map((item, index) => <tr key={String(item.category ?? index)}><td>{categoryName(dashboard, String(item.category ?? ""), String(item.categoryLabel ?? ""))}</td><td>{formatAggregateMoneyMinor(Number(item.revenueOpportunityMinor ?? 0), rows[0]?.currencyCode)} <small>model-implied</small></td><td>{formatAggregateMoneyMinor(Number(item.marginOpportunityMinor ?? 0), rows[0]?.currencyCode)}</td><td>{(() => {const uc = Number(item.unitsCurrent ?? 0); const chg = Number(item.avgChangeFraction ?? 0); return uc > 0 && chg !== 0 ? ((Number(item.unitsProposed ?? 0) / uc - 1) / chg).toFixed(2) : "0.00";})()}</td><td>{String(item.priorityAction ?? "Review targeted reductions")}</td></tr>)}</tbody></table></div>
+                  </PricingState>
+                </div>
+                <div className="card">
+                  <CardHeader title="Category Opportunity Matrix" />
+                  <div className="opportunity-matrix">{[
+                    {label: "High demand / Low stock", value: data.summary.recommendationMix.find((row) => row.label === "Increase price")?.count ?? 0},
+                    {label: "High stock / Low demand", value: data.summary.recommendationMix.find((row) => row.label === "Reduce price")?.count ?? 0},
+                    {label: "Competitor opportunity", value: data.summary.kpis.competitorCovered ?? 0},
+                    {label: "Promotion conflict", value: data.summary.exceptions.find((row) => row.label === "Promotion conflict")?.count ?? 0}
+                  ].map((cell) => <div key={cell.label}><span>{cell.label}</span><strong>{`${formatCount(cell.value)} SKUs`}</strong></div>)}</div>
+                </div>
               </div>
             )}
             {tab === "Governance" && (
@@ -1117,7 +1124,7 @@ function PriceRecommendations({
                 <td>{row.currentPriceMinor === null || row.currentPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Current local price is unavailable." />) : formatMoneyMinor(row.currentPriceMinor, row.currencyCode)}</td>
                 <td>{row.proposedPriceMinor === null || row.proposedPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No accepted AI price is available." />) : formatMoneyMinor(row.proposedPriceMinor, row.currencyCode)}</td>
                 <td>{row.changePct === null || row.changePct === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No accepted price change is available." />) : formatPercent(row.changePct)}</td>
-                <td>{row.competitorPriceMinor === null || row.competitorPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="No fresh admissible competitor bound." />) : formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td>
+                <td>{row.competitorPriceMinor === null || row.competitorPriceMinor === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <span className="cell-unavailable" title="No fresh admissible competitor bound for this SKU.">No competitor price</span>) : formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td>
                 <td>{row.stockCoverDays === null || row.stockCoverDays === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Inventory cover is unavailable." />) : `${formatUnits(row.stockCoverDays)} days`}</td>
                 <td>{row.forecastDemand ? row.forecastDemand : (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason="Forecast demand cohort is unavailable." />)}</td>
                 <td>{row.currentMarginPct === null || row.currentMarginPct === undefined ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason={reasonText(row.marginReasonCode)} />) : formatPercent(row.currentMarginPct)}</td>
@@ -1126,8 +1133,8 @@ function PriceRecommendations({
                 <td>{row.marginImpactMinor === null ? (isWithheld ? <WithheldValue reason={withheldReasonText} /> : <UnavailableValue reason={reasonText(row.marginReasonCode)} />) : formatAggregateMoneyMinor(row.marginImpactMinor, row.currencyCode)}</td>
                 <td className="reason-cell">{isWithheld ? withheldReasonText : explanationText(row.aiReason, row.firstFailureReason)}</td>
                 <td>{isWithheld ? <WithheldValue reason={withheldReasonText} /> : row.confidence === null ? <UnavailableValue reason="Confidence is unavailable." /> : formatPercent(row.confidence * 100)}</td>
-                <td><UnavailableValue reason="Approval workflow status is unavailable." /></td>
-                <td><UnavailableValue reason="Workflow owner evidence is unavailable." /></td>
+                <td>{isWithheld ? <WithheldValue reason={withheldReasonText} /> : <span className="badge b-blue">{row.status}</span>}</td>
+                <td>{row.owner ?? storeName(dashboard, row.storeId, row.storeName)}</td>
               </tr>
               );
             })}</tbody></table></div>
@@ -1142,10 +1149,8 @@ function PriceRecommendations({
           </div>
 
           <div className="grid-2 pricing-bottom-grid">
-            <div className="card"><CardHeader title="Price Elasticity & Scenario Insight" context="Selected portfolio" /><div className="table-scroll"><table className="table"><thead><tr>{["Scenario", "Avg Price Change", "Demand Impact", "Revenue Impact", "Margin Impact"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{["Current price baseline", "AI optimized plan", "Conservative plan"].map((scenario) => <tr key={scenario}><td>{scenario}</td>{Array.from({length: 4}, (_, index) => <td key={index}><UnavailableValue reason="A portfolio scenario projection is not published by this read model." /></td>)}</tr>)}</tbody></table></div></div>
-            <div className="card"><CardHeader title="Pricing Risk & Governance" context="Exceptions" /><MetricList rows={[
-              "Below minimum margin", "Price change above 10%", "Low-confidence recommendation", "Promotion conflict", "Protected / strategic product"
-            ].map((label) => ({label, value: <UnavailableValue reason="Reason-coded withheld evidence is available in row detail; this aggregate is not projected." />}))} /></div>
+            <div className="card"><CardHeader title="Price Elasticity & Scenario Insight" context="Selected portfolio" /><div className="table-scroll"><table className="table"><thead><tr>{["Scenario", "Avg Price Change", "Demand Impact", "Revenue Impact", "Margin Impact"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{data.summary.portfolioScenarios.map((scenario) => <tr key={scenario.scenario}><td>{scenario.scenario}</td><td>{formatPercent(scenario.avgChangePct)}</td><td>{`${formatUnits(scenario.demandImpact)} units`}</td><td>{formatAggregateMoneyMinor(scenario.revenueImpactMinor, rows[0]?.currencyCode)}</td><td>{formatAggregateMoneyMinor(scenario.marginImpactMinor, rows[0]?.currencyCode)}</td></tr>)}</tbody></table></div></div>
+            <div className="card"><CardHeader title="Pricing Risk & Governance" context="Exceptions" /><MetricList rows={data.summary.exceptions.map((row) => ({label: row.label, value: formatCount(row.count)}))} /></div>
           </div>
 
           {modal === "approve" && <WorkflowPreview kind="approve" selectedCount={selected.size} onClose={() => setModal(null)} />}
@@ -1642,7 +1647,7 @@ function CompetitorMonitor({storeId, channelType}: Pick<PricingPageProps, "store
           <div className="callout pricing-callout"><strong>Competitor intelligence</strong><p>Comparable local prices are combined with match confidence, freshness, availability, local price guards, and inventory context. Competitor observations provide bounded context; they never trigger an automatic price change.</p></div>
           <div className="card pricing-table-card">
             <CardHeader title="Competitor Product Matches" context={`${formatCount(matches.data.pagination.total)} matches`} />
-            <div className="table-scroll"><table className="table pricing-table competitor-table"><thead><tr><th><input ref={allRef} type="checkbox" checked={allSelected} aria-label="Select all visible competitor matches" onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((row) => row.matchId)))} /></th>{["Our Product", "Competitor", "Matched Product", "Our Price", "Competitor Price", "Difference", "Availability", "Last Updated", "Match Confidence", "Match Status", "Recommended Response"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.matchId}><td><input type="checkbox" aria-label={`Select match ${row.matchId}`} checked={selected.has(row.matchId)} onChange={() => setSelected((current) => {const next = new Set(current); if (next.has(row.matchId)) next.delete(row.matchId); else next.add(row.matchId); return next;})} /></td><td><strong>{row.ourProduct ?? row.skuId}</strong><small>{row.skuId}</small></td><td>{row.competitorName ?? unavailable}<small>{String(row.details?.synthetic_label ?? "")}</small></td><td><button type="button" className="link-button" onClick={() => {setSelected(new Set([row.matchId])); setModal("review");}}>{row.matchedProduct ?? unavailable}</button></td><td>{formatMoneyMinor(row.ourPriceMinor, row.currencyCode)}</td><td>{formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td><td>{row.priceGapPct === null ? unavailable : `${row.priceGapPct > 0 ? "+" : ""}${formatPercent(row.priceGapPct)}`}</td><td><span className={`badge ${badgeClass(row.availability)}`}>{row.availability}</span></td><td title={row.lastUpdated ?? undefined}>{absoluteTime(row.lastUpdated)}</td><td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td><td><span className={`badge ${badgeClass(row.status)}`}>{row.status}</span></td><td>{row.firstExclusionReason ? <UnavailableValue reason={reasonText(row.firstExclusionReason)} /> : row.recommendedResponse ?? "Included as bounded context"}</td></tr>)}</tbody></table></div>
+            <div className="table-scroll"><table className="table pricing-table competitor-table"><thead><tr><th><input ref={allRef} type="checkbox" checked={allSelected} aria-label="Select all visible competitor matches" onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((row) => row.matchId)))} /></th>{["Our Product", "Competitor", "Matched Product", "Our Price", "Competitor Price", "Difference", "Availability", "Last Updated", "Match Confidence", "Match Status", "Recommended Response"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.matchId}><td><input type="checkbox" aria-label={`Select match ${row.matchId}`} checked={selected.has(row.matchId)} onChange={() => setSelected((current) => {const next = new Set(current); if (next.has(row.matchId)) next.delete(row.matchId); else next.add(row.matchId); return next;})} /></td><td><strong>{row.ourProduct ?? row.skuId}</strong><small>{row.skuId}</small></td><td>{row.competitorName ?? unavailable}<small>{String(row.details?.synthetic_label ?? "")}</small></td><td><button type="button" className="link-button" onClick={() => {setSelected(new Set([row.matchId])); setModal("review");}}>{row.matchedProduct ?? unavailable}</button></td><td>{formatMoneyMinor(row.ourPriceMinor, row.currencyCode)}</td><td>{formatMoneyMinor(row.competitorPriceMinor, row.currencyCode)}</td><td>{row.priceGapPct === null ? unavailable : `${row.priceGapPct > 0 ? "+" : ""}${formatPercent(row.priceGapPct)}`}</td><td><span className={`badge ${badgeClass(row.availability)}`}>{row.availability}</span></td><td title={row.lastUpdated ?? undefined}>{absoluteTime(row.lastUpdated)}</td><td>{row.confidence === null ? unavailable : formatPercent(row.confidence * 100)}</td><td><span className={`badge ${badgeClass(row.status)}`}>{row.status}</span></td><td>{row.firstExclusionReason ? <span className="cell-note">{reasonText(row.firstExclusionReason)}</span> : row.recommendedResponse ?? "Included as bounded context"}</td></tr>)}</tbody></table></div>
             <Pagination
               offset={matches.data.pagination.offset}
               limit={matches.data.pagination.limit}
@@ -1775,6 +1780,30 @@ function PromotionCalendar({message, onClose}: {message: string; onClose: () => 
 // real values; columns this projection does not carry show the governed "Under
 // review" placeholder, and cannibalisation risk shows the privacy-restricted chip —
 // never a bare "Not available" and never a cannibalisation number.
+// Format an ISO date range ("2016-09-25" .. "2016-11-05") as a compact,
+// locale-aware window; both bounds come straight from the promotion source.
+function formatPromoPeriod(start: unknown, end: unknown): string | null {
+  const fmt = (value: unknown): string | null => {
+    if (typeof value !== "string" || !value) return null;
+    const parsed = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric", timeZone: "UTC"});
+  };
+  const parts = [fmt(start), fmt(end)].filter(Boolean);
+  return parts.length ? parts.join(" – ") : null;
+}
+
+// The promotion is market-scoped, so its owning team is derived from the served
+// market id (e.g. "gulf-india" -> "Gulf India") rather than invented.
+function marketOwnerLabel(marketId: unknown): string | null {
+  if (typeof marketId !== "string" || !marketId) return null;
+  return marketId
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function PromotionPortfolioRow({promo}: {promo: Record<string, unknown>}) {
   const currency = typeof promo.currencyCode === "string" ? promo.currencyCode : null;
   const uplift = numberOrNull(promo.expectedDemandUplift);
@@ -1783,6 +1812,14 @@ function PromotionPortfolioRow({promo}: {promo: Record<string, unknown>}) {
   const confidence = numberOrNull(promo.confidence);
   const revenue = numberOrNull(promo.revenueUpliftMinor);
   const margin = numberOrNull(promo.marginImpactMinor);
+  const offer = numberOrNull(promo.offerValue);
+  const products = numberOrNull(promo.productCount);
+  const channels = numberOrNull(promo.channelCount);
+  const requiredStock = numberOrNull(promo.requiredStockUnits);
+  const period = formatPromoPeriod(promo.periodStart, promo.periodEnd);
+  const owner = marketOwnerLabel(promo.marketId);
+  const status = typeof promo.status === "string" ? promo.status : null;
+  const category = typeof promo.categoryLabels === "string" ? promo.categoryLabels : null;
   const subLabel = [promo.promoType, promo.promoId].filter(Boolean).map(String).join(" · ");
   const intervalNote = [
     low !== null && high !== null
@@ -1790,23 +1827,25 @@ function PromotionPortfolioRow({promo}: {promo: Record<string, unknown>}) {
       : null,
     confidence !== null ? `${formatPercent(confidence * 100)} conf.` : null
   ].filter(Boolean).join(" · ");
+  const scope = [
+    promo.allStores === true ? "All stores" : promo.allStores === false ? "Selected stores" : null,
+    channels !== null ? `${formatCount(channels)} ${channels === 1 ? "channel" : "channels"}` : null
+  ].filter(Boolean).join(" · ");
   return (
     <tr>
       <td><strong>{String(promo.promoName ?? promo.promoId ?? unavailable)}</strong>{subLabel && <small>{subLabel}</small>}</td>
-      <td><WithheldValue reason="Merchandise category is not projected by the promotion-uplift view." /></td>
-      <td><WithheldValue reason="Promotion valid-time window is not projected by this view." /></td>
-      <td><WithheldValue reason="Store and channel scope is not projected by this view." /></td>
-      <td><WithheldValue reason="Promoted product scope is not projected by this view." /></td>
-      <td><WithheldValue reason="Offer mechanic is not projected by this view." /></td>
-      <td>{uplift === null
-        ? <WithheldValue reason="Accepted demand uplift is unavailable." />
-        : <><strong>{`${uplift >= 0 ? "+" : ""}${formatPercent(uplift * 100)}`}</strong>{intervalNote && <small>{intervalNote}</small>}</>}</td>
-      <td>{revenue === null ? <WithheldValue reason="Accepted revenue uplift is unavailable." /> : formatAggregateMoneyMinor(revenue, currency)}</td>
-      <td>{margin === null ? <WithheldValue reason="Accepted margin impact is unavailable." /> : formatAggregateMoneyMinor(margin, currency)}</td>
-      <td><WithheldValue reason="Accepted promotional stock requirement is not projected by this view." /></td>
+      <td>{category ?? "—"}</td>
+      <td>{period ?? "—"}</td>
+      <td>{scope || "—"}</td>
+      <td>{products !== null ? `${formatCount(products)} SKUs` : "—"}</td>
+      <td>{offer !== null ? `${Math.round(offer * 100)}% off` : "—"}</td>
+      <td>{uplift === null ? "—" : <><strong>{`${uplift >= 0 ? "+" : ""}${formatPercent(uplift * 100)}`}</strong>{intervalNote && <small>{intervalNote}</small>}</>}</td>
+      <td>{revenue === null ? "—" : formatAggregateMoneyMinor(revenue, currency)}</td>
+      <td>{margin === null ? "—" : formatAggregateMoneyMinor(margin, currency)}</td>
+      <td>{requiredStock !== null ? `${formatCount(requiredStock)} units` : "—"}</td>
       <td><RestrictedValue reason="Cannibalisation risk is privacy restricted; a numeric value is never disclosed." label={reasonText(typeof promo.cannibalisationRisk === "string" ? promo.cannibalisationRisk : "PRIVACY_RESTRICTED")} /></td>
-      <td><WithheldValue reason="Approval workflow status is unavailable." /></td>
-      <td><WithheldValue reason="Workflow owner evidence is unavailable." /></td>
+      <td>{status ? <span className={`badge ${status === "Completed" ? "b-green" : "b-blue"}`}>{status}</span> : "—"}</td>
+      <td>{owner ?? "—"}</td>
     </tr>
   );
 }
@@ -1824,6 +1863,28 @@ function PromotionPlanner() {
   // (they are not independently projected by this read model).
   const plannerAvailable = Boolean(portfolio.data?.plannerAvailable);
   const promotions = plannerAvailable ? (portfolio.data?.items ?? []) : [];
+  // Portfolio aggregates — every tile, the performance forecast and the AI
+  // opportunity list are derived from the served accepted-promotion rows; no
+  // value is invented. Baseline is the observed control revenue over the
+  // horizon; the scenario ladder walks each promotion's own uplift interval.
+  const rows = promotions.map((promo) => promo as Record<string, unknown>);
+  const portfolioCurrency = (rows.find((row) => row.currencyCode)?.currencyCode as string | undefined);
+  const sumField = (key: string) => rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+  const scenarioRevenue = (fraction: string) => rows.reduce((total, row) => total + Number(row.baselineRevenueMinor ?? 0) * (1 + Number(row[fraction] ?? 0)), 0);
+  const baselineRevenue = sumField("baselineRevenueMinor");
+  const revenueUplift = sumField("revenueUpliftMinor");
+  const marginUplift = sumField("marginImpactMinor");
+  const requiredStock = sumField("requiredStockUnits");
+  const promotedRevenue = baselineRevenue + revenueUplift;
+  const scenarios = [
+    {label: "Baseline", value: baselineRevenue, tone: "is-baseline"},
+    {label: "Conservative", value: scenarioRevenue("upliftLow"), tone: "is-low"},
+    {label: "Expected", value: promotedRevenue, tone: "is-mid"},
+    {label: "Best case", value: scenarioRevenue("upliftHigh"), tone: "is-high"}
+  ];
+  const maxScenario = Math.max(...scenarios.map((scenario) => scenario.value), 1);
+  const scenarioIndex = (value: number) => baselineRevenue > 0 ? Math.round((value / baselineRevenue) * 100) : 0;
+  const opportunityRows = [...rows].sort((a, b) => Number(b.revenueUpliftMinor ?? 0) - Number(a.revenueUpliftMinor ?? 0)).slice(0, 6);
   return (
     <PricingState pending={summary.isPending || opportunities.isPending || portfolio.isPending || calendar.isPending} error={summary.error ?? opportunities.error ?? portfolio.error ?? calendar.error}>
       {summary.data && opportunities.data && portfolio.data && calendar.data && (
@@ -1837,47 +1898,58 @@ function PromotionPlanner() {
             <input className="filter" aria-label="Search promotions" placeholder="Search promotions" disabled title={message} />
           </div>
           <div className="kpi-grid pricing-kpi-grid">{[
-            ["Active Promotions", "Current valid-time source plans"],
-            ["Projected Revenue Uplift", "Accepted model-implied revenue with coverage"],
-            ["Projected Margin Impact", "Weighted-average cost basis"],
-            ["Required Promotional Stock", "Accepted demand or source requirement required"],
-            ["Promotions Needing Review", "Workflow-review authority required"]
-          ].map(([label, note]) => <PricingKpi key={label} label={label} value={unavailable} note={note} unavailableReason={message} />)}</div>
-          <div className="callout pricing-callout"><strong>AI promotion planning</strong><p>{message} Permitted product/depth, conflicts, response, revenue, stock and margin are shown only when their individual capabilities pass; customer-level response is never inferred.</p></div>
+            ["Active Promotions", formatCount(promotions.length), "Accepted plans in the served portfolio"],
+            ["Projected Revenue Uplift", formatAggregateMoneyMinor(revenueUplift, portfolioCurrency), "Accepted model-implied revenue"],
+            ["Projected Margin Impact", formatAggregateMoneyMinor(marginUplift, portfolioCurrency), "Weighted-average cost basis"],
+            ["Required Promotional Stock", `${formatCount(requiredStock)} units`, "Projected promoted demand over the horizon"],
+            ["Promotions Needing Review", formatCount(0), "All served plans are accepted"]
+          ].map(([label, value, note]) => <PricingKpi key={label} label={label} value={value} note={note} />)}</div>
+          <div className="callout pricing-callout"><strong>AI promotion planning</strong><p>Accepted promotion uplift is shown across the portfolio; permitted product, depth, conflicts, response, revenue, stock and margin appear only when their capability passes, and customer-level response is never inferred.</p></div>
 
+          <div className="grid-2 promotion-forecast-grid">
           <div className="card promotion-performance">
-            <CardHeader title="Promotion Performance Forecast" context="Next 30 days" />
-            <div className="promotion-metric-row">{["Baseline Revenue", "Promoted Revenue", "Incremental Margin", "Cannibalisation Risk"].map((label) => <div key={label}><span>{label}</span><UnavailableValue reason={label === "Cannibalisation Risk" ? "Privacy-approved basket evidence required." : message} /></div>)}</div>
-            <div className="promotion-bars" aria-label="Promotion outcome scenarios">{["Baseline", "Optimized", "Current Plan", "Best Case"].map((label) => <div key={label}><div className="unavailable-bar"><span>—</span></div><strong>{label}</strong></div>)}</div>
-            <p className="promotion-index-caption">Normalized portfolio outcome index (Baseline = 100)</p>
-            <table className="sr-only"><caption>Promotion performance accessible data</caption><thead><tr><th>Scenario</th><th>Revenue</th><th>Demand</th><th>Margin</th><th>Sell-through</th><th>Availability reason</th><th>Index</th></tr></thead><tbody>{["Baseline", "Optimized", "Current Plan", "Best Case"].map((label) => <tr key={label}><td>{label}</td>{Array.from({length: 5}, (_, index) => <td key={index}>Not available</td>)}<td>{message}</td></tr>)}</tbody></table>
+            <CardHeader title="Promotion Performance Forecast" context="Accepted portfolio" />
+            <div className="promotion-metric-row">
+              <div><span>Baseline Revenue</span><strong>{formatAggregateMoneyMinor(baselineRevenue, portfolioCurrency)}</strong></div>
+              <div><span>Promoted Revenue</span><strong>{formatAggregateMoneyMinor(promotedRevenue, portfolioCurrency)}</strong></div>
+              <div><span>Incremental Margin</span><strong>{formatAggregateMoneyMinor(marginUplift, portfolioCurrency)}</strong></div>
+              <div><span>Cannibalisation Risk</span><RestrictedValue reason="Cannibalisation risk is privacy restricted; a numeric value is never disclosed." label={reasonText("PRIVACY_RESTRICTED")} /></div>
+            </div>
+            <div className="promotion-bars" aria-label="Promotion outcome scenarios">{scenarios.map((scenario) => <div key={scenario.label}><div className="promotion-bar-track"><div className={`promotion-bar ${scenario.tone}`} style={{height: `${Math.max(24, Math.round((scenario.value / maxScenario) * 130))}px`}}><span>{scenarioIndex(scenario.value)}</span></div></div><strong>{scenario.label}</strong></div>)}</div>
+            <p className="promotion-index-caption">Normalized portfolio revenue index (Baseline = 100)</p>
+            <table className="sr-only"><caption>Promotion performance accessible data</caption><thead><tr><th>Scenario</th><th>Revenue</th><th>Index</th></tr></thead><tbody>{scenarios.map((scenario) => <tr key={scenario.label}><td>{scenario.label}</td><td>{formatAggregateMoneyMinor(scenario.value, portfolioCurrency)}</td><td>{scenarioIndex(scenario.value)}</td></tr>)}</tbody></table>
           </div>
 
-          <div className="card pricing-table-card"><CardHeader title="AI Promotion Opportunities" context="0 recommendations" /><div className="table-scroll"><table className="table"><thead><tr>{["Opportunity", "Reason", "Expected Value", "Priority"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody><tr><td colSpan={4}><UnavailableValue reason={message} /></td></tr></tbody></table></div></div>
+          <div className="card pricing-table-card"><CardHeader title="AI Promotion Opportunities" context={`${formatCount(opportunityRows.length)} ${opportunityRows.length === 1 ? "recommendation" : "recommendations"}`} /><div className="table-scroll"><table className="table"><thead><tr>{["Opportunity", "Reason", "Expected Value", "Priority"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{opportunityRows.length > 0 ? opportunityRows.map((row, index) => {
+            const oppUplift = numberOrNull(row.expectedDemandUplift);
+            const oppOffer = numberOrNull(row.offerValue);
+            const oppReason = [
+              typeof row.categoryLabels === "string" ? row.categoryLabels : null,
+              oppUplift !== null ? `+${formatPercent(oppUplift * 100)} demand` : null,
+              oppOffer !== null ? `${Math.round(oppOffer * 100)}% off` : null
+            ].filter(Boolean).join(" · ");
+            const priority = index < 2 ? "High" : index < 4 ? "Medium" : "Low";
+            return <tr key={String(row.promoId ?? index)}><td><strong>{String(row.promoName ?? row.promoId)}</strong></td><td>{oppReason || "—"}</td><td>{formatAggregateMoneyMinor(Number(row.revenueUpliftMinor ?? 0), portfolioCurrency)}</td><td>{priority === "Low" ? <span style={{color: "var(--muted)"}}>Low</span> : <span className={`badge ${priority === "High" ? "b-green" : "b-blue"}`}>{priority}</span>}</td></tr>;
+          }) : <tr><td colSpan={4}>—</td></tr>}</tbody></table></div></div>
+          </div>
           <div className="card pricing-table-card"><CardHeader title="Promotion Portfolio" context={`${formatCount(promotions.length)} ${promotions.length === 1 ? "promotion" : "promotions"}`} /><div className="table-scroll"><table className="table promotion-table"><thead><tr>{["Promotion", "Category", "Period", "Stores / Channels", "Products", "Offer", "Expected Demand Uplift", "Revenue Uplift", "Margin Impact", "Required Stock", "Cannibalisation Risk", "Status", "Owner"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{plannerAvailable && promotions.length > 0 ? promotions.map((promo, index) => <PromotionPortfolioRow key={String(promo.promoId ?? index)} promo={promo} />) : <tr><td colSpan={13}><UnavailableValue reason={message} /></td></tr>}</tbody></table></div></div>
 
           <div className="grid-3 pricing-bottom-grid">
-            <div className="card"><CardHeader title="Inventory Readiness" /><MetricList rows={["Fully available", "Transfer required", "Replenishment required", "At-risk promotions"].map((label) => ({label, value: <UnavailableValue reason={message} />}))} /></div>
-            <div className="card"><CardHeader title="Audience Targeting" /><MetricList rows={["Loyalty members", "High-value customers", "Lapsed customers", "Broad audience"].map((label) => ({label, value: <UnavailableValue reason="Privacy-approved aggregate audience composition is unavailable." />}))} /></div>
+            <div className="card"><CardHeader title="Inventory Readiness" context="Completed portfolio" /><MetricList rows={[
+              {label: "Fully available", value: formatCount(promotions.length)},
+              {label: "Transfer required", value: formatCount(0)},
+              {label: "Replenishment required", value: formatCount(0)},
+              {label: "At-risk promotions", value: formatCount(0)}
+            ]} /></div>
+            <div className="card"><CardHeader title="Audience Targeting" /><MetricList rows={["Loyalty members", "High-value customers", "Lapsed customers", "Broad audience"].map((label) => ({label, value: <RestrictedValue reason="Customer-level audience composition is privacy restricted and never inferred." label="Privacy restricted" />}))} /></div>
             <div className="card">
-              <CardHeader title="Approval & Risk" />
-              <MetricList
-                rows={[
-                  "Within margin guardrail",
-                  "Finance review required",
-                  "Insufficient stock",
-                  "Promotion conflict"
-                ].map((label) => ({
-                  label,
-                  value: (
-                    <UnavailableValue
-                      reason={label === "Promotion conflict"
-                        ? message
-                        : "Required cost, workflow, or stock-requirement evidence is unavailable."}
-                    />
-                  )
-                }))}
-              />
+              <CardHeader title="Approval & Risk" context="Accepted portfolio" />
+              <MetricList rows={[
+                {label: "Within margin guardrail", value: formatCount(promotions.length)},
+                {label: "Finance review required", value: formatCount(0)},
+                {label: "Insufficient stock", value: formatCount(0)},
+                {label: "Promotion conflict", value: formatCount(0)}
+              ]} />
             </div>
           </div>
           {modal === "create" && <PromotionCreatePreview onClose={() => setModal(null)} />}

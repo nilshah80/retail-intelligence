@@ -1145,25 +1145,43 @@ tr[data-partial="true"] {
 
 .quality-layout {
   display: grid;
-  grid-template-columns: 128px 1fr;
+  grid-template-columns: 132px 1fr;
   align-items: center;
-  gap: 16px;
+  gap: 22px;
 }
 
 .quality-ring {
+  position: relative;
   display: grid;
-  width: 116px;
-  height: 116px;
+  width: 132px;
+  height: 132px;
   place-items: center;
   align-content: center;
   border-radius: 50%;
-  background: conic-gradient(var(--blue) var(--quality-score, 0%), #e8edf3 0);
-  box-shadow: inset 0 0 0 17px #fff;
+  background: conic-gradient(var(--green) var(--quality-score, 0%), var(--line) 0);
+  flex-shrink: 0;
 }
 
-.quality-ring strong { font-size: 25px; }
-.quality-ring span { color: var(--muted); font-size: 9px; }
-.unavailable-ring { background: conic-gradient(#e8edf3 100%, #e8edf3 0); }
+.quality-ring::after {
+  content: "";
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px rgba(15, 34, 56, .05);
+}
+
+.quality-ring strong,
+.quality-ring span {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.quality-ring strong { font-size: 28px; font-weight: 800; line-height: 1; color: var(--text); }
+.quality-ring span { max-width: 98px; margin-top: 5px; color: var(--muted); font-size: 10px; letter-spacing: .01em; }
+.unavailable-ring { background: conic-gradient(var(--line) 100%, var(--line) 0); }
+.unavailable-ring::after { background: var(--card); }
 
 .pricing-decision-cards .card p {
   margin: 10px 0 0;
@@ -1174,21 +1192,23 @@ tr[data-partial="true"] {
 
 .opportunity-matrix {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: 14px;
 }
 
 .opportunity-matrix > div {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-height: 92px;
   align-content: center;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  font-size: 11px;
 }
+
+.opportunity-matrix > div span { color: var(--muted); font-size: 11px; }
+.opportunity-matrix > div strong { font-size: 20px; font-weight: 800; }
 
 .pricing-table-card { margin-top: 14px; }
 .pricing-table { min-width: 980px; }
@@ -1415,6 +1435,12 @@ tr[data-partial="true"] {
 .promotion-bars > div { display: grid; justify-items: center; gap: 8px; }
 .promotion-bars strong { font-size: 11px; }
 .unavailable-bar { display: grid; width: min(70px, 70%); height: 120px; place-items: center; border: 1px dashed #bcc6d3; border-radius: 8px 8px 0 0; color: var(--muted); background: repeating-linear-gradient(135deg, #f4f6f9, #f4f6f9 8px, #eaedf2 8px, #eaedf2 16px); }
+.promotion-bar-track { display: flex; align-items: flex-end; width: min(70px, 70%); height: 150px; }
+.promotion-bar { display: grid; align-content: start; justify-items: center; width: 100%; min-height: 24px; padding-top: 6px; border-radius: 8px 8px 0 0; color: #fff; font-size: 11px; font-weight: 800; }
+.promotion-bar.is-baseline { background: #94a6bd; }
+.promotion-bar.is-low { background: #7fb0e6; }
+.promotion-bar.is-mid { background: var(--blue); }
+.promotion-bar.is-high { background: var(--green); }
 .promotion-index-caption { margin: 12px 0 0; color: var(--muted); text-align: center; font-size: 11px; font-weight: 700; }
 
 .promotion-result-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }

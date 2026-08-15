@@ -152,6 +152,22 @@ def _integer_field(row: Mapping[str, Any], name: str) -> int | None:
     return int(number)
 
 
+def _date_field(row: Mapping[str, Any], name: str) -> str | None:
+    """Serialise a Parquet date/timestamp cell to an ISO ``YYYY-MM-DD`` string.
+
+    Promotion window bounds are stored as dates in the uplift artifact; the served
+    disposition carries them as plain ISO strings the client renders directly.
+    """
+
+    value = _field(row, name)
+    if value is None:
+        return None
+    try:
+        return pd.Timestamp(value).date().isoformat()
+    except (ValueError, TypeError):
+        return str(value)
+
+
 def _market_currency_map(frames: Mapping[str, pd.DataFrame]) -> dict[str, str]:
     """Resolve each market's currency from any frame that carries both columns.
 
@@ -196,11 +212,24 @@ def _accepted_promotions(
                 "promoId": _field(row, "promo_id"),
                 "promoName": _field(row, "promo_name"),
                 "promoType": _field(row, "promo_type"),
+                "marketId": _field(row, "market_id"),
+                "objective": _field(row, "objective"),
+                "status": _field(row, "status"),
+                "periodStart": _date_field(row, "period_start"),
+                "periodEnd": _date_field(row, "period_end"),
+                "offerValue": _field(row, "offer_value"),
+                "categoryLabels": _field(row, "category_labels"),
+                "categoryCount": _integer_field(row, "category_count"),
+                "productCount": _integer_field(row, "product_count"),
+                "channelCount": _integer_field(row, "channel_count"),
+                "allStores": _field(row, "all_stores"),
                 "expectedDemandUplift": _field(row, "expected_demand_uplift"),
                 "upliftLow": _field(row, "uplift_low"),
                 "upliftHigh": _field(row, "uplift_high"),
                 "revenueUpliftMinor": _integer_field(row, "revenue_uplift_minor"),
                 "marginImpactMinor": _integer_field(row, "margin_impact_minor"),
+                "baselineRevenueMinor": _integer_field(row, "baseline_revenue_minor"),
+                "requiredStockUnits": _integer_field(row, "required_stock_units"),
                 "confidence": _field(row, "confidence"),
                 "cannibalisationRisk": _field(row, "cannibalisation_risk"),
                 "currencyCode": currency,
