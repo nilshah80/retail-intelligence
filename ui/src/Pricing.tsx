@@ -1231,13 +1231,13 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   const [recommendationId, setRecommendationId] = useState("");
   const [proposed, setProposed] = useState("");
   const [assumption, setAssumption] = useState<"Expected" | "Best Case" | "Worst Case">("Expected");
-  const [objective, setObjective] = useState<"Margin Protection" | "Clearance">("Clearance");
+  const [objective, setObjective] = useState<"Margin Protection" | "Clearance">("Margin Protection");
   // Period and Competitor Response are enabled selectors, but the accepted
   // simulation contract only computes the governed Next 4 Weeks horizon and
   // derives competitor inclusion server-side. They express intent and never leave
   // the client (the strict request body rejects unknown fields).
   const [period, setPeriod] = useState<"Next 4 Weeks" | "Next 8 Weeks" | "Next 13 Weeks">("Next 4 Weeks");
-  const [competitorResponse, setCompetitorResponse] = useState<"Include" | "Exclude">("Include");
+  const [competitorResponse, setCompetitorResponse] = useState<"Include" | "Exclude">("Exclude");
   // Editable minimum-margin floor (percent), seeded from the policy floor.
   const [minMargin, setMinMargin] = useState("");
   const items = recommendations.data?.items.filter((row) => row.selectable) ?? [];
@@ -1293,11 +1293,21 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
       ? Math.round(currentPackMinor * (1 - selected.currentMarginPct / 100))
       : null);
   const atpUnits = num("atp_units");
-  const anchorUnits = ({
-    "Expected": num("forecast_expected_units"),
+  // Anchor the projection on the accepted current-price units so that, at the
+  // default levers, simulate(current price) == the Current column and
+  // simulate(AI price) == the AI Optimal column — a coherent comparison and a
+  // Reset that lands the Proposed column exactly on AI Optimal. The demand
+  // assumption then scales that anchor by the forecast band ratio.
+  const forecastExpectedUnits = num("forecast_expected_units");
+  const assumptionBandUnits = ({
+    "Expected": forecastExpectedUnits,
     "Best Case": num("forecast_best_case_units"),
     "Worst Case": num("forecast_worst_case_units")
-  } as Record<string, number | null>)[assumption] ?? unitsCurrent;
+  } as Record<string, number | null>)[assumption];
+  const assumptionFactor = forecastExpectedUnits && forecastExpectedUnits > 0 && assumptionBandUnits
+    ? assumptionBandUnits / forecastExpectedUnits
+    : 1;
+  const anchorUnits = unitsCurrent;
   // Log-log price elasticity fitted from the two accepted points. Falls back to a
   // typical elasticity only when the accepted pair coincides (a Hold), so the tool
   // still projects rather than blanking out.
@@ -1319,7 +1329,7 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     if (packMinor === null || packMinor <= 0 || anchorUnits === null || currentPackMinor === null) {
       return null;
     }
-    const units = anchorUnits * objectiveFactor * periodFactor * Math.pow(packMinor / currentPackMinor, effectiveBeta);
+    const units = anchorUnits * assumptionFactor * objectiveFactor * periodFactor * Math.pow(packMinor / currentPackMinor, effectiveBeta);
     const revenueMinor = Math.round(packMinor * units);
     const marginMinor = costPackMinor !== null ? Math.round((packMinor - costPackMinor) * units) : null;
     const marginPct = costPackMinor !== null && packMinor > 0 ? ((packMinor - costPackMinor) / packMinor) * 100 : null;
@@ -1327,21 +1337,31 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     return {priceMinor: packMinor, units, revenueMinor, marginMinor, marginPct, endingStock};
   };
 
+  // Current and AI Optimal are fixed reference columns: the accepted current and
+  // recommended outcomes exactly as served (Expected demand, four-week horizon).
+  // The scenario levers and the margin floor never move them — only the Proposed
+  // what-if responds, so the two anchors the user compares against stay put.
+  const fixedSim = (packMinor: number | null, units: number | null) => {
+    if (packMinor === null || packMinor <= 0 || units === null) return null;
+    const revenueMinor = Math.round(packMinor * units);
+    const marginMinor = costPackMinor !== null ? Math.round((packMinor - costPackMinor) * units) : null;
+    const marginPct = costPackMinor !== null && packMinor > 0 ? ((packMinor - costPackMinor) / packMinor) * 100 : null;
+    const endingStock = atpUnits !== null ? Math.max(0, Math.round(atpUnits - units)) : null;
+    return {priceMinor: packMinor, units, revenueMinor, marginMinor, marginPct, endingStock};
+  };
+  const currentSim = fixedSim(currentPackMinor, unitsCurrent);
+  const aiSim = fixedSim(aiPackMinor, unitsAi);
+
   // The entered price is on the displayed basis (per base unit when a basis
   // exists); map it back to the canonical pack for the projection.
   const enteredMinor = parseMoneyMinor(proposed);
-  const proposedPackMinor = enteredMinor === null
+  const enteredPackMinor = enteredMinor === null
     ? null
     : unitBasis ? Math.round(enteredMinor * unitBasis.baseUnitQuantity) : enteredMinor;
-  const priceReasonable = proposedPackMinor !== null && currentPackMinor !== null
-    && proposedPackMinor >= Math.round(currentPackMinor * 0.4)
-    && proposedPackMinor <= Math.round(currentPackMinor * 1.6);
   // Editable minimum-margin floor (defaults to the policy floor). It is a real
-  // constraint on the AI recommendation, not just a warning: the recommended
-  // price is lifted to the lowest price that meets the floor whenever the
-  // unconstrained optimum would breach it, so raising the floor visibly moves the
-  // AI Optimal column. The proposed what-if is never clamped (any price can be
-  // explored) but is flagged below when it breaches the floor.
+  // constraint on the Proposed what-if, not just a warning: the proposed price is
+  // raised to the lowest price that meets the floor whenever the entered price
+  // would breach it, so tightening the floor visibly moves the Proposed column.
   const floorPct = minMargin.trim() !== ""
     ? Number(minMargin.replace(/[^0-9.]/g, ""))
     : (priceMargin?.minMarginPct != null ? Number(priceMargin.minMarginPct) : null);
@@ -1349,21 +1369,18 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   const floorPriceMinor = floorValid && costPackMinor !== null
     ? Math.ceil(costPackMinor / (1 - (floorPct as number) / 100))
     : null;
-  const aiPriceEffective = aiPackMinor === null
+  const proposedPackMinor = enteredPackMinor === null
     ? null
-    : floorPriceMinor !== null ? Math.max(aiPackMinor, floorPriceMinor) : aiPackMinor;
-  const matchesAiOptimal = proposedPackMinor !== null && proposedPackMinor === aiPriceEffective;
-
-  const currentSim = simulate(currentPackMinor);
+    : floorPriceMinor !== null ? Math.max(enteredPackMinor, floorPriceMinor) : enteredPackMinor;
+  const floorLiftedProposed = proposedPackMinor !== null && enteredPackMinor !== null
+    && proposedPackMinor > enteredPackMinor;
+  const priceReasonable = proposedPackMinor !== null && currentPackMinor !== null
+    && proposedPackMinor >= Math.round(currentPackMinor * 0.4)
+    && proposedPackMinor <= Math.round(currentPackMinor * 1.6);
+  const matchesAiOptimal = proposedPackMinor !== null && proposedPackMinor === aiPackMinor;
   const proposedSim = priceReasonable ? simulate(proposedPackMinor) : null;
-  const aiSim = simulate(aiPriceEffective);
-  const belowFloor = proposedSim?.marginPct != null && floorValid
-    && proposedSim.marginPct < (floorPct as number);
-  // Whether the margin floor lifted the recommendation above the unconstrained
-  // optimum, and the effective change the recommendation now represents.
-  const floorBinding = aiPriceEffective !== null && aiPackMinor !== null && aiPriceEffective > aiPackMinor;
-  const effectiveChangePct = currentPackMinor && aiPriceEffective
-    ? ((aiPriceEffective - currentPackMinor) / currentPackMinor) * 100
+  const aiChangePct = currentPackMinor && aiPackMinor
+    ? ((aiPackMinor - currentPackMinor) / currentPackMinor) * 100
     : null;
 
   // Default the product to the first accepted, selectable recommendation whenever
@@ -1394,8 +1411,8 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     : `Accepted local price${currency ? ` · ${currency}` : ""}`;
   const proposedHelp = proposed && proposedPackMinor !== null && !priceReasonable
     ? "Projection is reliable within about ±60% of the current price."
-    : belowFloor
-      ? `Below the ${floorPct}% minimum-margin floor`
+    : floorLiftedProposed
+      ? `Raised to the ${floorPct}% minimum-margin floor`
       : matchesAiOptimal
         ? "Proposed matches AI Optimal"
         : `Enter any local price${unitBasis ? ` per ${unitBasis.label}` : ""}${currency ? ` · ${currency}` : ""} — the projection updates live`;
@@ -1414,38 +1431,44 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   return (
     <PricingState pending={recommendations.isPending} error={recommendations.error} empty={!items.length} emptyMessage="No accepted recommendation is available for simulation.">
       <div className="card scenario-builder">
-        <CardHeader title="Price Scenario Builder" context="Live what-if projection" action={<button className="modal-action" type="button" disabled={aiPriceEffective === null} onClick={() => {if (aiPriceEffective !== null) setProposed(proposedInputValue(aiPriceEffective, unitBasis));}}>Reset to AI Optimal</button>} />
+        <CardHeader title="Price Scenario Builder" context="Live what-if projection" action={<button className="modal-action" type="button" disabled={aiPackMinor === null} onClick={() => {
+          if (aiPackMinor === null) return;
+          setProposed(proposedInputValue(aiPackMinor, unitBasis));
+          setPeriod("Next 4 Weeks");
+          setAssumption("Expected");
+          setCompetitorResponse("Exclude");
+          setObjective("Margin Protection");
+          setMinMargin(priceMargin?.minMarginPct != null ? String(priceMargin.minMarginPct) : "");
+        }}>Reset to AI Optimal</button>} />
         <div className="pricing-form-grid four scenario-builder-grid">
           <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {storeName(dashboard, row.storeId, row.storeName)} · {channelName(dashboard, row.channelId, row.channelName)}</option>)}</select></Field>
           <Field label="Current Price" help={currentPriceHelp}><input className="filter" readOnly value={currentPriceValue} /></Field>
-          <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && proposedPackMinor !== null && (!priceReasonable || belowFloor)} /></Field>
+          <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && enteredPackMinor !== null && !priceReasonable} /></Field>
           <Field label="Simulation Period" help="Scales the accepted four-week forecast across the horizon."><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option>Next 4 Weeks</option><option>Next 8 Weeks</option><option>Next 13 Weeks</option></select></Field>
-          <Field label="Minimum Margin" help={priceMarginActive ? "Editable floor on the weighted-average-cost basis; the proposed scenario is flagged if it falls below." : "Editable floor; evaluated once a cost basis is active."}><input className="filter" inputMode="decimal" value={minMargin} onChange={(event) => setMinMargin(event.target.value)} placeholder="e.g. 12" /></Field>
+          <Field label="Minimum Margin" help={floorPriceMinor !== null ? `Floor price at ${floorPct}%: ${priceOnBasis(floorPriceMinor, unitBasis, currency)}. A proposed price below this is raised to the floor.` : (priceMarginActive ? "Editable floor on the weighted-average-cost basis; the proposed price is raised to it if it would fall below." : "Editable floor; evaluated once a cost basis is active.")}><input className="filter" inputMode="decimal" value={minMargin} onChange={(event) => setMinMargin(event.target.value)} placeholder="e.g. 12" /></Field>
           <Field label="Competitor Response" help="Scenario assumption: Include dampens the own-price response as competitors match; Exclude applies the full fitted elasticity."><select className="filter" value={competitorResponse} onChange={(event) => setCompetitorResponse(event.target.value as typeof competitorResponse)}><option>Include</option><option>Exclude</option></select></Field>
           <Field label="Demand Assumption" help="Expected uses the accepted four-week forecast; Best/Worst use the weekly planning bounds."><select className="filter" value={assumption} onChange={(event) => setAssumption(event.target.value as typeof assumption)}><option>Expected</option><option>Best Case</option><option>Worst Case</option></select></Field>
           <Field label="Inventory Objective" help="Scenario assumption: Clearance adds a volume push; Margin Protection holds steady demand."><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
         </div>
-        {belowFloor && <div className="preview-banner error-banner" role="alert"><strong>Below minimum margin.</strong> The proposed price projects a {formatPercent(proposedSim!.marginPct!)} gross margin, under the {floorPct}% floor.</div>}
+        {floorLiftedProposed && <div className="preview-banner" role="status"><strong>Raised to the margin floor.</strong> Your entered price fell below the {floorPct}% minimum-margin floor, so the Proposed scenario uses {priceOnBasis(proposedPackMinor, unitBasis, currency)} — the lowest price that meets it.</div>}
       </div>
 
       <div className="grid-2 scenario-outcome-grid">
         <div className="card scenario-result-card">
           <CardHeader title="Scenario Comparison" context="Current · Proposed · AI Optimal" />
           <div className="table-scroll"><table className="table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody>
-            <tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(currentPackMinor, unitBasis, currency)}</td><td>{proposedSim ? priceOnBasis(proposedSim.priceMinor, unitBasis, currency) : <span className="cell-pending">—</span>}</td><td>{priceOnBasis(aiPriceEffective, unitBasis, currency)}</td></tr>
+            <tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(currentPackMinor, unitBasis, currency)}</td><td>{proposedSim ? <>{priceOnBasis(proposedSim.priceMinor, unitBasis, currency)}{floorLiftedProposed && <span className="cell-note"> · at floor</span>}</> : <span className="cell-pending">—</span>}</td><td>{priceOnBasis(aiPackMinor, unitBasis, currency)}</td></tr>
             {(["Units", "Revenue", "Gross Margin", "Ending Stock"] as const).map((metric) => <tr key={metric}><td><strong>{metric}</strong></td><td>{scenarioCell(currentSim, metric)}</td><td>{scenarioCell(proposedSim, metric)}</td><td>{scenarioCell(aiSim, metric)}</td></tr>)}
           </tbody></table></div>
-          <p className="demo-note">Period, demand, competitor, objective and the margin floor apply to all three columns; the proposed price is your what-if, so it moves only the Proposed column. The margin floor also lifts AI Optimal to the lowest price that meets it.</p>
+          <p className="demo-note">Current and AI Optimal are fixed references — the accepted current and recommended outcomes. Only the Proposed column responds to your inputs: the proposed price, the period, demand, competitor and objective levers, and the margin floor (which raises a below-floor proposed price to the lowest price that meets it).</p>
         </div>
         <div className="card">
           <CardHeader title="AI Recommendation" context="Accepted" />
           <div className="callout pricing-recommendation-callout">
-            <strong>Recommended local price: {priceOnBasis(aiPriceEffective, unitBasis, currency)}</strong>
-            <p>{floorBinding
-              ? `Lifted to the lowest price that meets your ${floorPct}% minimum-margin floor, projected to move four-week revenue by ${pctDelta(aiSim?.revenueMinor, currentSim?.revenueMinor)} and gross margin by ${pctDelta(aiSim?.marginMinor, currentSim?.marginMinor)} versus current.`
-              : selected?.action === "Hold"
-                ? "Holding the current price protects margin against the weighted-average cost; no revenue-improving change clears the floor."
-                : `A ${effectiveChangePct != null ? formatPercent(effectiveChangePct) : ""} change from current, projected to move four-week revenue by ${pctDelta(aiSim?.revenueMinor, currentSim?.revenueMinor)} and gross margin by ${pctDelta(aiSim?.marginMinor, currentSim?.marginMinor)} on the weighted-average-cost basis.`}
+            <strong>Recommended local price: {priceOnBasis(aiPackMinor, unitBasis, currency)}</strong>
+            <p>{selected?.action === "Hold"
+              ? "Holding the current price protects margin against the weighted-average cost; no revenue-improving change clears the floor."
+              : `A ${aiChangePct != null ? formatPercent(aiChangePct) : ""} change from current, projected to move four-week revenue by ${pctDelta(aiSim?.revenueMinor, currentSim?.revenueMinor)} and gross margin by ${pctDelta(aiSim?.marginMinor, currentSim?.marginMinor)} on the weighted-average-cost basis.`}
               {competitorIncluded ? " A fresh competitor bound was applied." : " The recommendation is elasticity-driven; no fresh competitor bound exists for this SKU."}</p>
           </div>
           <div className="grid-4 simulation-metrics">

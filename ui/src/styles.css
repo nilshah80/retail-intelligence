@@ -1385,6 +1385,7 @@ tr[data-partial="true"] {
    "unavailable" treatment — nothing is wrong, the value simply is not computed
    yet. */
 .cell-pending { color: var(--muted); font-style: italic; white-space: nowrap; }
+.cell-note { color: var(--muted); font-size: 0.78em; font-weight: 500; white-space: nowrap; }
 
 .competitor-toolbar { display: grid; grid-template-columns: auto auto auto minmax(150px, 1fr) minmax(220px, 1.5fr); }
 
