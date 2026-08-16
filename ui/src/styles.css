@@ -225,6 +225,13 @@ button.filter {
   cursor: pointer;
 }
 
+/* A <select> grows past min-height for its intrinsic option/arrow box, so it read
+   taller than the 40px text inputs beside it. Pin it to the same fixed height so
+   comboboxes and text boxes align on one row. */
+select.filter {
+  height: 40px;
+}
+
 .date-filter {
   width: 205px;
 }

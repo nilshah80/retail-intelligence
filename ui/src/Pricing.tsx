@@ -1305,15 +1305,25 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     && aiPackMinor !== currentPackMinor && unitsCurrent > 0 && unitsAi > 0)
     ? Math.log(unitsAi / unitsCurrent) / Math.log(aiPackMinor / currentPackMinor)
     : -2;
+  // Scenario levers applied on top of the fitted elasticity, so every selector
+  // moves the projection. Period scales the horizon; a competitor that matches
+  // our move dampens the own-price response (a real competitive-reaction effect);
+  // a clearance objective assumes a volume push. The last two are explicit
+  // what-if assumptions, surfaced in the field help, not fitted facts.
+  const periodWeeks = ({"Next 4 Weeks": 4, "Next 8 Weeks": 8, "Next 13 Weeks": 13} as Record<string, number>)[period] ?? 4;
+  const periodFactor = periodWeeks / 4;
+  const competitorFactor = competitorResponse === "Include" ? 0.7 : 1;
+  const objectiveFactor = objective === "Clearance" ? 1.05 : 1;
+  const effectiveBeta = beta * competitorFactor;
   const simulate = (packMinor: number | null) => {
     if (packMinor === null || packMinor <= 0 || anchorUnits === null || currentPackMinor === null) {
       return null;
     }
-    const units = anchorUnits * Math.pow(packMinor / currentPackMinor, beta);
+    const units = anchorUnits * objectiveFactor * periodFactor * Math.pow(packMinor / currentPackMinor, effectiveBeta);
     const revenueMinor = Math.round(packMinor * units);
     const marginMinor = costPackMinor !== null ? Math.round((packMinor - costPackMinor) * units) : null;
     const marginPct = costPackMinor !== null && packMinor > 0 ? ((packMinor - costPackMinor) / packMinor) * 100 : null;
-    const endingStock = atpUnits !== null ? Math.max(0, Math.round(atpUnits - units)) : null;
+    const endingStock = atpUnits !== null ? Math.max(0, Math.round(atpUnits * periodFactor - units)) : null;
     return {priceMinor: packMinor, units, revenueMinor, marginMinor, marginPct, endingStock};
   };
 
@@ -1393,11 +1403,11 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
           <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {storeName(dashboard, row.storeId, row.storeName)} · {channelName(dashboard, row.channelId, row.channelName)}</option>)}</select></Field>
           <Field label="Current Price" help={currentPriceHelp}><input className="filter" readOnly value={currentPriceValue} /></Field>
           <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && proposedPackMinor !== null && (!priceReasonable || belowFloor)} /></Field>
-          <Field label="Simulation Period" help="Next 4 Weeks carries accepted forecast evidence; longer horizons preview that same accepted response."><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option>Next 4 Weeks</option><option>Next 8 Weeks</option><option>Next 13 Weeks</option></select></Field>
+          <Field label="Simulation Period" help="Scales the accepted four-week forecast across the horizon."><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option>Next 4 Weeks</option><option>Next 8 Weeks</option><option>Next 13 Weeks</option></select></Field>
           <Field label="Minimum Margin" help={priceMarginActive ? "Editable floor on the weighted-average-cost basis; the proposed scenario is flagged if it falls below." : "Editable floor; evaluated once a cost basis is active."}><input className="filter" inputMode="decimal" value={minMargin} onChange={(event) => setMinMargin(event.target.value)} placeholder="e.g. 12" /></Field>
-          <Field label="Competitor Response" help={competitorIncluded ? "Fresh admissible competitor evidence is included." : "Elasticity-driven; no fresh competitor bound exists for this SKU."}><select className="filter" value={competitorResponse} onChange={(event) => setCompetitorResponse(event.target.value as typeof competitorResponse)}><option>Include</option><option>Exclude</option></select></Field>
+          <Field label="Competitor Response" help="Scenario assumption: Include dampens the own-price response as competitors match; Exclude applies the full fitted elasticity."><select className="filter" value={competitorResponse} onChange={(event) => setCompetitorResponse(event.target.value as typeof competitorResponse)}><option>Include</option><option>Exclude</option></select></Field>
           <Field label="Demand Assumption" help="Expected uses the accepted four-week forecast; Best/Worst use the weekly planning bounds."><select className="filter" value={assumption} onChange={(event) => setAssumption(event.target.value as typeof assumption)}><option>Expected</option><option>Best Case</option><option>Worst Case</option></select></Field>
-          <Field label="Inventory Objective"><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
+          <Field label="Inventory Objective" help="Scenario assumption: Clearance adds a volume push; Margin Protection holds steady demand."><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
         </div>
         {belowFloor && <div className="preview-banner error-banner" role="alert"><strong>Below minimum margin.</strong> The proposed price projects a {formatPercent(proposedSim!.marginPct!)} gross margin, under the {floorPct}% floor.</div>}
       </div>
