@@ -1377,11 +1377,11 @@ tr[data-partial="true"] {
 .scenario-comparison { min-width: 440px; }
 /* Give the comparison table the larger share of the outcome row, and stack the
    two cards on narrow viewports so the table always has room to fit. */
-.scenario-outcome-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
-@media (max-width: 900px) { .scenario-outcome-grid { grid-template-columns: 1fr; } }
+.scenario-outcome-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 1000px) { .scenario-outcome-grid { grid-template-columns: 1fr; } }
 
 .pricing-recommendation-callout { margin-top: 14px; }
-.simulation-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.simulation-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
 
 /* The three real Current/Proposed/AI Optimal prices always lead the scenario
    comparison, even before a run. */

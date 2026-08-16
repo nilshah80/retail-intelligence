@@ -1239,14 +1239,13 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   const [period, setPeriod] = useState<"Next 4 Weeks" | "Next 8 Weeks" | "Next 13 Weeks">("Next 4 Weeks");
   const [competitorResponse, setCompetitorResponse] = useState<"Include" | "Exclude">("Exclude");
   // Editable minimum-margin floor (percent), seeded from the policy floor.
-  const [minMargin, setMinMargin] = useState("");
+  const [targetMargin, setTargetMargin] = useState("");
   const items = recommendations.data?.items.filter((row) => row.selectable) ?? [];
   const selected = items.find((row) => row.recommendationId === recommendationId);
   const currency = selected?.currencyCode;
   // The minimum-margin floor is a known policy fact; in this PoC the generated
   // weighted-average cost is the cost basis, so the floor is applied (no separate
   // client cost exists here — generated data is the actual data).
-  const priceMargin = recommendations.data?.authority?.priceMargin;
   // Margin Protection is enabled only under an active price_margin selection; it
   // stays disabled until then rather than being unconditionally blocked.
   const priceMarginActive = recommendations.data?.authority?.priceMarginActive === true;
@@ -1355,25 +1354,18 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   // The entered price is on the displayed basis (per base unit when a basis
   // exists); map it back to the canonical pack for the projection.
   const enteredMinor = parseMoneyMinor(proposed);
-  const enteredPackMinor = enteredMinor === null
+  const proposedPackMinor = enteredMinor === null
     ? null
     : unitBasis ? Math.round(enteredMinor * unitBasis.baseUnitQuantity) : enteredMinor;
-  // Editable minimum-margin floor (defaults to the policy floor). It is a real
-  // constraint on the Proposed what-if, not just a warning: the proposed price is
-  // raised to the lowest price that meets the floor whenever the entered price
-  // would breach it, so tightening the floor visibly moves the Proposed column.
-  const floorPct = minMargin.trim() !== ""
-    ? Number(minMargin.replace(/[^0-9.]/g, ""))
-    : (priceMargin?.minMarginPct != null ? Number(priceMargin.minMarginPct) : null);
-  const floorValid = floorPct !== null && Number.isFinite(floorPct) && floorPct >= 0 && floorPct < 100;
-  const floorPriceMinor = floorValid && costPackMinor !== null
-    ? Math.ceil(costPackMinor / (1 - (floorPct as number) / 100))
+  // Target margin: the proposed price is set to the price that yields exactly
+  // this gross margin on the weighted-average cost, so changing it always moves
+  // the Proposed column. It stays in two-way sync with the proposed price (the
+  // input handlers below), so both fields always describe the same scenario.
+  const targetMarginPct = targetMargin.trim() !== "" ? Number(targetMargin.replace(/[^0-9.]/g, "")) : null;
+  const targetMarginValid = targetMarginPct !== null && Number.isFinite(targetMarginPct) && targetMarginPct >= 0 && targetMarginPct < 100;
+  const targetPriceMinor = targetMarginValid && costPackMinor !== null
+    ? Math.ceil(costPackMinor / (1 - (targetMarginPct as number) / 100))
     : null;
-  const proposedPackMinor = enteredPackMinor === null
-    ? null
-    : floorPriceMinor !== null ? Math.max(enteredPackMinor, floorPriceMinor) : enteredPackMinor;
-  const floorLiftedProposed = proposedPackMinor !== null && enteredPackMinor !== null
-    && proposedPackMinor > enteredPackMinor;
   const priceReasonable = proposedPackMinor !== null && currentPackMinor !== null
     && proposedPackMinor >= Math.round(currentPackMinor * 0.4)
     && proposedPackMinor <= Math.round(currentPackMinor * 1.6);
@@ -1390,13 +1382,15 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     const first = recommendations.data.items.find((row) => row.selectable);
     setRecommendationId(first?.recommendationId ?? "");
   }, [recommendations.data?.authority.activationSetId]);
-  // Seed Proposed to the AI-optimal price and the margin floor to the policy floor
-  // whenever the product changes; the user edits freely from there.
+  // Seed Proposed to the AI-optimal price and the target margin to that price's
+  // margin whenever the product changes; the user edits freely from there.
   useEffect(() => {
     if (aiPackMinor === null) return;
     setProposed(proposedInputValue(aiPackMinor, unitBasis));
     setCompetitorResponse(competitorIncluded ? "Include" : "Exclude");
-    setMinMargin(priceMargin?.minMarginPct != null ? String(priceMargin.minMarginPct) : "");
+    setTargetMargin(costPackMinor !== null && aiPackMinor > 0
+      ? String(Math.round(((aiPackMinor - costPackMinor) / aiPackMinor) * 100))
+      : "");
   }, [recommendationId, aiPackMinor]);
 
   const currentPriceValue = selected
@@ -1411,11 +1405,28 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
     : `Accepted local price${currency ? ` · ${currency}` : ""}`;
   const proposedHelp = proposed && proposedPackMinor !== null && !priceReasonable
     ? "Projection is reliable within about ±60% of the current price."
-    : floorLiftedProposed
-      ? `Raised to the ${floorPct}% minimum-margin floor`
-      : matchesAiOptimal
-        ? "Proposed matches AI Optimal"
-        : `Enter any local price${unitBasis ? ` per ${unitBasis.label}` : ""}${currency ? ` · ${currency}` : ""} — the projection updates live`;
+    : matchesAiOptimal
+      ? "Proposed matches AI Optimal"
+      : `Enter any local price${unitBasis ? ` per ${unitBasis.label}` : ""}${currency ? ` · ${currency}` : ""} — the projection updates live`;
+
+  // Two-way binding between the target margin and the proposed price: editing the
+  // margin sets the price that yields it; editing the price back-fills the margin.
+  const handleTargetMarginChange = (value: string) => {
+    setTargetMargin(value);
+    const pct = Number(value.replace(/[^0-9.]/g, ""));
+    if (value.trim() !== "" && Number.isFinite(pct) && pct >= 0 && pct < 100 && costPackMinor !== null) {
+      setProposed(proposedInputValue(Math.ceil(costPackMinor / (1 - pct / 100)), unitBasis));
+    }
+  };
+  const handleProposedChange = (value: string) => {
+    setProposed(value);
+    const minor = parseMoneyMinor(value);
+    const packMinor = minor === null ? null : unitBasis ? Math.round(minor * unitBasis.baseUnitQuantity) : minor;
+    if (packMinor !== null && packMinor > 0 && costPackMinor !== null) {
+      const margin = ((packMinor - costPackMinor) / packMinor) * 100;
+      if (Number.isFinite(margin) && margin >= 0 && margin < 100) setTargetMargin(String(Math.round(margin)));
+    }
+  };
 
   const pctDelta = (next: number | null | undefined, base: number | null | undefined) =>
     next != null && base != null && base !== 0 ? `${next - base >= 0 ? "+" : ""}${formatPercent(((next - base) / Math.abs(base)) * 100)}` : "—";
@@ -1438,35 +1449,32 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
           setAssumption("Expected");
           setCompetitorResponse("Exclude");
           setObjective("Margin Protection");
-          setMinMargin(priceMargin?.minMarginPct != null ? String(priceMargin.minMarginPct) : "");
+          setTargetMargin(costPackMinor !== null && aiPackMinor > 0
+            ? String(Math.round(((aiPackMinor - costPackMinor) / aiPackMinor) * 100))
+            : "");
         }}>Reset to AI Optimal</button>} />
         <div className="pricing-form-grid four scenario-builder-grid">
           <Field label="Product"><select className="filter" value={recommendationId} onChange={(event) => setRecommendationId(event.target.value)}>{items.map((row) => <option key={row.recommendationId} value={row.recommendationId}>{row.productName ?? row.skuId} · {storeName(dashboard, row.storeId, row.storeName)} · {channelName(dashboard, row.channelId, row.channelName)}</option>)}</select></Field>
           <Field label="Current Price" help={currentPriceHelp}><input className="filter" readOnly value={currentPriceValue} /></Field>
-          <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => setProposed(event.target.value)} aria-invalid={Boolean(proposed) && enteredPackMinor !== null && !priceReasonable} /></Field>
+          <Field label="Proposed Price" help={proposedHelp}><input className="filter" inputMode="decimal" value={proposed} onChange={(event) => handleProposedChange(event.target.value)} aria-invalid={Boolean(proposed) && proposedPackMinor !== null && !priceReasonable} /></Field>
           <Field label="Simulation Period" help="Scales the accepted four-week forecast across the horizon."><select className="filter" value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option>Next 4 Weeks</option><option>Next 8 Weeks</option><option>Next 13 Weeks</option></select></Field>
-          <Field label="Minimum Margin" help={floorPriceMinor === null
-            ? (priceMarginActive ? "Editable floor on the weighted-average-cost basis; the proposed price is raised to it if it would fall below." : "Editable floor; evaluated once a cost basis is active.")
-            : enteredPackMinor === null
-              ? `Floor at ${floorPct}%: ${priceOnBasis(floorPriceMinor, unitBasis, currency)}. A lower proposed price is raised to it.`
-              : floorLiftedProposed
-                ? `Floor at ${floorPct}%: ${priceOnBasis(floorPriceMinor, unitBasis, currency)} — proposed was below it, so it was raised to meet it.`
-                : `Floor at ${floorPct}%: ${priceOnBasis(floorPriceMinor, unitBasis, currency)} — proposed already clears it, so it is unchanged. It lifts the price only when set above the proposed's ${proposedSim?.marginPct != null ? formatPercent(proposedSim.marginPct) : "current"} margin.`}><input className="filter" inputMode="decimal" value={minMargin} onChange={(event) => setMinMargin(event.target.value)} placeholder="e.g. 12" /></Field>
+          <Field label="Target Margin" help={targetPriceMinor !== null
+            ? `Sets the proposed price to ${priceOnBasis(targetPriceMinor, unitBasis, currency)} — the price that yields a ${targetMarginPct}% gross margin on the weighted-average cost.`
+            : (priceMarginActive ? "Sets the proposed price to the price that yields this gross margin on the weighted-average cost." : "Enter a target margin once a cost basis is active.")}><input className="filter" inputMode="decimal" value={targetMargin} onChange={(event) => handleTargetMarginChange(event.target.value)} placeholder="e.g. 30" /></Field>
           <Field label="Competitor Response" help="Scenario assumption: Include dampens the own-price response as competitors match; Exclude applies the full fitted elasticity."><select className="filter" value={competitorResponse} onChange={(event) => setCompetitorResponse(event.target.value as typeof competitorResponse)}><option>Include</option><option>Exclude</option></select></Field>
           <Field label="Demand Assumption" help="Expected uses the accepted four-week forecast; Best/Worst use the weekly planning bounds."><select className="filter" value={assumption} onChange={(event) => setAssumption(event.target.value as typeof assumption)}><option>Expected</option><option>Best Case</option><option>Worst Case</option></select></Field>
           <Field label="Inventory Objective" help="Scenario assumption: Clearance adds a volume push; Margin Protection holds steady demand."><select className="filter" value={objective} onChange={(event) => setObjective(event.target.value as typeof objective)}><option value="Margin Protection" disabled={!priceMarginActive}>{priceMarginActive ? "Margin Protection" : "Margin Protection — cost basis unavailable"}</option><option>Clearance</option></select></Field>
         </div>
-        {floorLiftedProposed && <div className="preview-banner" role="status"><strong>Raised to the margin floor.</strong> Your entered price fell below the {floorPct}% minimum-margin floor, so the Proposed scenario uses {priceOnBasis(proposedPackMinor, unitBasis, currency)} — the lowest price that meets it.</div>}
       </div>
 
       <div className="grid-2 scenario-outcome-grid">
         <div className="card scenario-result-card">
           <CardHeader title="Scenario Comparison" context="Current · Proposed · AI Optimal" />
           <div className="table-scroll"><table className="table scenario-comparison"><thead><tr><th>Measure</th><th>Current</th><th>Proposed</th><th>AI Optimal</th></tr></thead><tbody>
-            <tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(currentPackMinor, unitBasis, currency)}</td><td>{proposedSim ? <>{priceOnBasis(proposedSim.priceMinor, unitBasis, currency)}{floorLiftedProposed && <span className="cell-note"> · at floor</span>}</> : <span className="cell-pending">—</span>}</td><td>{priceOnBasis(aiPackMinor, unitBasis, currency)}</td></tr>
+            <tr className="scenario-price-row"><td><strong>Price</strong></td><td>{priceOnBasis(currentPackMinor, unitBasis, currency)}</td><td>{proposedSim ? priceOnBasis(proposedSim.priceMinor, unitBasis, currency) : <span className="cell-pending">—</span>}</td><td>{priceOnBasis(aiPackMinor, unitBasis, currency)}</td></tr>
             {(["Units", "Revenue", "Gross Margin", "Ending Stock"] as const).map((metric) => <tr key={metric}><td><strong>{metric}</strong></td><td>{scenarioCell(currentSim, metric)}</td><td>{scenarioCell(proposedSim, metric)}</td><td>{scenarioCell(aiSim, metric)}</td></tr>)}
           </tbody></table></div>
-          <p className="demo-note">Current and AI Optimal are fixed references — the accepted current and recommended outcomes. Only the Proposed column responds to your inputs: the proposed price, the period, demand, competitor and objective levers, and the margin floor (which raises a below-floor proposed price to the lowest price that meets it).</p>
+          <p className="demo-note">Current and AI Optimal are fixed references — the accepted current and recommended outcomes. Only the Proposed column responds to your inputs: the proposed price (or a target margin, which sets the price that yields it) and the period, demand, competitor and objective levers.</p>
         </div>
         <div className="card">
           <CardHeader title="AI Recommendation" context="Accepted" />
@@ -1705,7 +1713,7 @@ function PromotionCreatePreview({onClose}: {onClose: () => void}) {
         <Field label="End Date"><input className="filter" type="date" readOnly /></Field>
         <Field label="Stores / Channels"><select className="filter"><option>All Stores</option><option>Selected Stores</option><option>Online Only</option><option>West Region + Online</option></select></Field>
         <Field label="Customer Segment" help="Customer targeting is privacy unavailable."><select className="filter" disabled><option>All Customers</option><option>Loyalty Members</option><option>High-Value Customers</option><option>Lapsed Customers</option></select></Field>
-        <Field label="Minimum Margin"><input className="filter" inputMode="decimal" readOnly /></Field>
+        <Field label="Target Margin"><input className="filter" inputMode="decimal" readOnly /></Field>
         <Field label="Approval Route" help="Workflow identities and routing are unavailable."><select className="filter" disabled><option>Category Manager</option><option>Pricing Manager</option><option>Finance + Business Head</option></select></Field>
         <Field label="Business Rationale"><textarea className="filter" readOnly /></Field>
       </div>
