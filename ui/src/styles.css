@@ -1372,7 +1372,13 @@ tr[data-partial="true"] {
 .scenario-builder { margin-bottom: 14px; }
 .scenario-builder-grid { margin-top: 0; }
 .scenario-result-card { margin-top: 14px; }
-.scenario-comparison { min-width: 680px; }
+/* Four short numeric columns; a tight min-width keeps every column (including
+   AI Optimal) inside the card so it never scrolls off the right edge. */
+.scenario-comparison { min-width: 440px; }
+/* Give the comparison table the larger share of the outcome row, and stack the
+   two cards on narrow viewports so the table always has room to fit. */
+.scenario-outcome-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 900px) { .scenario-outcome-grid { grid-template-columns: 1fr; } }
 
 .pricing-recommendation-callout { margin-top: 14px; }
 .simulation-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
