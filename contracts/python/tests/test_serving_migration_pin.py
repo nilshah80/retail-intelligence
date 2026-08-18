@@ -51,6 +51,7 @@ RETIRED_HEADS = frozenset(
         "0030_pricing_intents",
         "0031_pricing_margin_pct",
         "0032_pricing_unit_fields",
+        "0033_promotion_positive_branch",
     }
 )
 

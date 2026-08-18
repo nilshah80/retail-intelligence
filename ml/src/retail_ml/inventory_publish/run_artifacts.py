@@ -188,6 +188,12 @@ ARTIFACT_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
         "waste_units",
         "exposure_minor",
         "currency_code",
+        # The 91-day window immediately before `waste_units`', so the read model
+        # can serve Waste Reduction = (prior - current) / prior. Nullable: a cell
+        # with no prior-window event carries no baseline and the tile stays a
+        # governed absence for it rather than dividing by zero.
+        "prior_waste_units",
+        "prior_waste_minor",
     ),
     # The dimension the fourteen screens read category and money through. Not a
     # fact table: one row per market x location x SKU, joined by the read model

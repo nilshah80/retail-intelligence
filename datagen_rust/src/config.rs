@@ -49,6 +49,8 @@ pub struct Scenario {
     pub pandemics: Vec<Value>,
     #[serde(default)]
     pub pricing_evidence: Option<PricingEvidence>,
+    #[serde(default)]
+    pub competitors: Option<CompetitorConfig>,
     pub operations: Operations,
     pub output: Output,
 }
@@ -61,6 +63,62 @@ pub struct PricingEvidence {
     pub promotion_planning_lead_days: u32,
     pub response_step_scale: u32,
     pub generation_method: String,
+}
+
+/// Opt-in named-rival competitor model. When present, the competitor signal
+/// generator replaces the single "Benchmark {brand}" shadow with real rival
+/// brands (Castrol, Shell, Servo, ...) priced in a tight band that straddles our
+/// price — some rivals above us, some below — with a stable per-SKU position
+/// rather than a random weekly draw. Absent (e.g. the parity oracle config) it
+/// falls back to the legacy benchmark path, so shared digests stay intact.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompetitorConfig {
+    #[serde(default)]
+    pub band: CompetitorBand,
+    pub brands: Vec<CompetitorBrand>,
+}
+
+/// Tight-band controls, all expressed as string decimals for config parity.
+/// `min`/`max` clamp the final multiplier so a competitor price never strays far
+/// from ours; `pair_offset_pct` is the deterministic per-(brand, SKU) spread that
+/// lands some products above and some below; `weekly_noise_pct` is a small,
+/// stable weekly drift (not the legacy ±10% redraw).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompetitorBand {
+    pub min_multiplier: String,
+    pub max_multiplier: String,
+    pub pair_offset_pct: String,
+    pub weekly_noise_pct: String,
+}
+
+impl Default for CompetitorBand {
+    fn default() -> Self {
+        Self {
+            min_multiplier: "0.94".to_owned(),
+            max_multiplier: "1.06".to_owned(),
+            pair_offset_pct: "0.02".to_owned(),
+            weekly_noise_pct: "0.01".to_owned(),
+        }
+    }
+}
+
+/// A rival brand and where it sits relative to us. `price_center` is the brand's
+/// stable central multiplier vs our price (>1 = premium incumbent, <1 = value
+/// PSU). `categories` are the category ids this brand is the primary competitor
+/// in; a brand with an empty list acts as the catch-all for any unclaimed
+/// category, so every SKU resolves to exactly one competitor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompetitorBrand {
+    pub id: String,
+    pub name: String,
+    pub price_center: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub product_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,6 +526,31 @@ impl LoadedConfig {
             .pricing_evidence
             .as_ref()
             .filter(|evidence| evidence.enabled)
+    }
+
+    /// The named-rival competitor model, if this scenario opts into it (and lists
+    /// at least one brand). `None` selects the legacy "Benchmark {brand}" path.
+    #[must_use]
+    pub fn competitors(&self) -> Option<&CompetitorConfig> {
+        self.scenario
+            .competitors
+            .as_ref()
+            .filter(|config| !config.brands.is_empty())
+    }
+}
+
+impl CompetitorConfig {
+    /// Resolve the single primary competitor for a category: the first brand (in
+    /// config order = priority) that lists the category, else the first catch-all
+    /// brand (empty `categories`), else the first brand. Guaranteed `Some` because
+    /// `competitors()` only returns configs with a non-empty brand list.
+    #[must_use]
+    pub fn primary_for_category(&self, category_id: &str) -> Option<&CompetitorBrand> {
+        self.brands
+            .iter()
+            .find(|brand| brand.categories.iter().any(|id| id == category_id))
+            .or_else(|| self.brands.iter().find(|brand| brand.categories.is_empty()))
+            .or_else(|| self.brands.first())
     }
 }
 

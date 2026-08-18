@@ -9,6 +9,7 @@ package readmodel
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,7 +27,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0033_promotion_positive_branch"
+	InventoryMigrationRevision = "0034_expiry_waste_prior_window"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -143,6 +145,31 @@ func (s *InventoryStore) fxMoneySum(amount, currency, filter string) string {
 	return fmt.Sprintf(
 		"COALESCE(SUM(CASE %s END)%s, 0)", strings.Join(branches, " "), filter,
 	)
+}
+
+// asFloat coerces an aggregate money value (pgx returns SUMs as int64 or, once
+// FX-converted, float64/numeric) to a float64 so cross-aggregate arithmetic like
+// NRV = gross - provisions can be done in Go without asserting one exact type.
+func asFloat(value any) float64 {
+	switch n := value.(type) {
+	case float64:
+		return n
+	case int64:
+		return float64(n)
+	case int32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case pgtype.Numeric:
+		if f, err := n.Float64Value(); err == nil && f.Valid {
+			return f.Float64
+		}
+	case *pgtype.Numeric:
+		if f, err := n.Float64Value(); err == nil && f.Valid {
+			return f.Float64
+		}
+	}
+	return 0
 }
 
 // rowFXVariance values a unit count at the category-rollup cost. Distinct from
@@ -538,7 +565,18 @@ func (s *InventoryStore) Read(
 			// carries a reason_code too. Unqualified, pgx rejects the statement and
 			// the page fails closed -- correct, but invisible until it is opened.
 			"market_id, location_id, sku_id, health_class, cover_days, "+
-				"inventory_stock_health.reason_code",
+				"inventory_stock_health.reason_code, "+
+				// Ageing band for this position: the age bucket holding the most
+				// on-hand units for the SKU at this location, from the same
+				// inventory_ageing projection the Ageing card reports. receiptDate
+				// is present upstream (item_batches), so this is a real band, not a
+				// governed absence.
+				"(SELECT a.age_bucket FROM retail_serving.inventory_ageing a "+
+				"WHERE a.inventory_version_id = inventory_stock_health.inventory_version_id "+
+				"AND a.market_id = inventory_stock_health.market_id "+
+				"AND a.location_id = inventory_stock_health.location_id "+
+				"AND a.sku_id = inventory_stock_health.sku_id "+
+				"ORDER BY a.on_hand_units DESC NULLS LAST LIMIT 1) AS ageing_band",
 			rankByHealth)
 	case "/api/v1/replenishment/planner", "/api/v1/replenishment/orders":
 		return s.tableSlice(ctx, query, "replenishment_recommendations",
@@ -575,7 +613,14 @@ func (s *InventoryStore) Read(
 		return s.tableSlice(ctx, query, "replenishment_exceptions",
 			"replenishment_exceptions.market_id, location_id, "+
 				"replenishment_exceptions.sku_id, channel_id, exception_class, "+
-				"severity, reason_code, evidence",
+				"severity, reason_code, evidence, "+
+				// Governed owner routing: the accountable planning function per
+				// exception class. A forecast-absent node is Demand Planning's to
+				// resolve; an interval/lead-time basis gap is Supply Planning's.
+				"CASE exception_class "+
+				"WHEN 'node_forecast_absent' THEN 'Demand Planning' "+
+				"WHEN 'node_interval_basis_unavailable' THEN 'Supply Planning' "+
+				"ELSE 'Supply Planning' END AS owner",
 			rankBySeverity)
 	}
 	return nil, inventoryReadError(
@@ -812,6 +857,45 @@ func (s *InventoryStore) tableSlice(
 				summary[related.prefix+strings.ToUpper(name[:1])+name[1:]] = value
 			}
 		}
+		// NRV = gross valuation less the markdown and obsolescence provisions merged
+		// from the ageing companion above. Derived here because it spans two
+		// projections (valuation gross at category grain + ageing-grain provisions),
+		// so no single aggregate can express it.
+		if table == "inventory_valuation" {
+			summary["nrvMinor"] = asFloat(summary["grossValueMinor"]) -
+				asFloat(summary["provisionMarkdownMinor"]) -
+				asFloat(summary["provisionObsolescenceMinor"])
+		}
+		// The planner/orders benefit tiles and the safety-stock service level come
+		// from the weekly replay, not the recommendation rows: a
+		// candidate-versus-incumbent claim that resolves to real figures only when
+		// the replay accepted the candidate.
+		if table == "replenishment_recommendations" ||
+			table == "replenishment_safety_stock" {
+			impact, err := s.replayImpact(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for name, value := range impact {
+				summary[name] = value
+			}
+		}
+		// Waste Reduction spans BOTH trailing windows, so it must sum over the
+		// whole active version -- NOT the route's clauses, which filter to rows
+		// with CURRENT expiry/waste and so drop cells that wasted in the prior
+		// window but not now. Computed unfiltered here; governed-absent when the
+		// prior baseline is zero.
+		if table == "inventory_expiry_waste" {
+			wr, err := s.wasteReduction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if wr != nil {
+				summary["wasteReductionPct"] = wr
+			} else {
+				delete(summary, "wasteReductionPct")
+			}
+		}
 		payload["summary"] = summary
 	}
 	// The grouped cards, at the grains the reference draws them. One request per
@@ -829,6 +913,113 @@ func (s *InventoryStore) tableSlice(
 		payload["cards"] = rendered
 	}
 	return payload, nil
+}
+
+// replayImpact surfaces the P4-7 weekly replay's candidate-versus-incumbent
+// benefit, gated PER METRIC on the replay's own acceptance verdict. Each benefit
+// is shown only when the metric behind it CLEARED acceptance (bool_and(passed)
+// across cohorts) -- so the acceptance framework, not this read model, decides
+// what counts as a validated improvement. The current forecast reorder-point
+// candidate clears meanInventoryUnits (a large, validated working-capital
+// reduction) but not the no-regression service gates, so working capital and
+// inventory turns resolve to real figures while the service and lost-sales tiles
+// stay a governed absence rather than quoting a metric acceptance rejected.
+// Values are read from the out-of-sample holdout cohort.
+func (s *InventoryStore) replayImpact(ctx context.Context) (map[string]any, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT metric,
+		       AVG(candidate_value::numeric) FILTER (WHERE cohort = 'holdout')
+		         AS candidate,
+		       AVG(incumbent_value::numeric) FILTER (WHERE cohort = 'holdout')
+		         AS incumbent,
+		       bool_and(passed) AS passed
+		FROM retail_serving.inventory_replay_metrics
+		WHERE inventory_version_id = $1
+		GROUP BY metric`, s.inventoryVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type verdict struct {
+		candidate, incumbent sql.NullFloat64
+		passed               bool
+	}
+	metrics := map[string]verdict{}
+	for rows.Next() {
+		var metric string
+		var v verdict
+		if err := rows.Scan(&metric, &v.candidate, &v.incumbent, &v.passed); err != nil {
+			return nil, err
+		}
+		metrics[metric] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	impact := map[string]any{}
+	// Projected service level is the candidate's own fill rate (a fraction the UI
+	// renders *100). Shown only when the fill-rate gate passed -- a level the
+	// replay rejected is not a level to project.
+	if fill, ok := metrics["fillRate"]; ok && fill.passed && fill.candidate.Valid {
+		impact["projectedServiceLevelPct"] = fill.candidate.Float64
+	}
+	// Reductions are incumbent-minus-candidate, shown only when the metric passed
+	// AND the delta is positive: a candidate that lost MORE has no reduction.
+	if lost, ok := metrics["lostUnits"]; ok && lost.passed &&
+		lost.candidate.Valid && lost.incumbent.Valid {
+		if red := lost.incumbent.Float64 - lost.candidate.Float64; red > 0 {
+			impact["lostSalesReductionUnits"] = red
+		}
+	}
+	if so, ok := metrics["stockoutPeriods"]; ok && so.passed &&
+		so.candidate.Valid && so.incumbent.Valid {
+		if red := so.incumbent.Float64 - so.candidate.Float64; red > 0 {
+			impact["stockoutReductionCount"] = red
+		}
+	}
+	if mean, ok := metrics["meanInventoryUnits"]; ok && mean.passed &&
+		mean.candidate.Valid && mean.incumbent.Valid &&
+		mean.candidate.Float64 > 0 && mean.incumbent.Float64 > mean.candidate.Float64 {
+		// Turns rise as average inventory falls at the same throughput.
+		impact["inventoryTurnImprovementPct"] = mean.incumbent.Float64/mean.candidate.Float64 - 1
+		// Value the held-unit reduction at the active version's blended unit cost.
+		var blended float64
+		if err := s.pool.QueryRow(ctx, `
+			SELECT COALESCE(AVG(unit_cost_minor), 0)
+			FROM retail_serving.inventory_sku_dimension
+			WHERE inventory_version_id = $1 AND unit_cost_minor IS NOT NULL`,
+			s.inventoryVersionID).Scan(&blended); err != nil {
+			return nil, err
+		}
+		if blended > 0 {
+			impact["workingCapitalImpactMinor"] =
+				(mean.incumbent.Float64 - mean.candidate.Float64) * blended
+		}
+	}
+	return impact, nil
+}
+
+// wasteReduction is the Waste Reduction tile's value: (prior - current) / prior
+// summed over the ENTIRE active version, so a cell that wasted in the prior window
+// but not the current one still counts. The route's own clauses filter to rows
+// with current expiry/waste and would drop those prior-only cells, so this reads
+// unfiltered. Returns nil (governed absence) when there is no prior-window baseline.
+func (s *InventoryStore) wasteReduction(ctx context.Context) (any, error) {
+	var prior, current sql.NullFloat64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT SUM(prior_waste_units), SUM(waste_units)
+		FROM retail_serving.inventory_expiry_waste
+		WHERE inventory_version_id = $1`, s.inventoryVersionID).Scan(&prior, &current); err != nil {
+		return nil, err
+	}
+	if !prior.Valid || prior.Float64 <= 0 {
+		return nil, nil
+	}
+	cur := 0.0
+	if current.Valid {
+		cur = current.Float64
+	}
+	return (prior.Float64 - cur) / prior.Float64, nil
 }
 
 // filterOptions are values from the active authorities, never the illustrative
@@ -1458,7 +1649,29 @@ var groupedCards = map[string][]groupedCard{
 					GROUP BY inventory_version_id, category
 				) AS labels
 				ON labels.label_version = inventory_valuation.inventory_version_id
-				AND labels.label_category = inventory_valuation.category` +
+				AND labels.label_category = inventory_valuation.category
+				LEFT JOIN (
+					-- Provisions per category, aggregated at the SAME market x location x
+					-- category grain the valuation projection carries, so the category
+					-- rollup below sums each location's provision once rather than
+					-- multiplying it by the location count.
+					SELECT a.inventory_version_id AS prov_version,
+					       a.market_id AS prov_market, a.location_id AS prov_location,
+					       d.category AS prov_category,
+					       SUM(a.on_hand_units * d.unit_cost_minor * a.markdown_pct
+					           + a.on_hand_units * d.unit_cost_minor
+					             * (CASE WHEN a.residual_only THEN 1 ELSE 0 END))
+					         AS provision_minor,
+					       MAX(d.currency_code) AS prov_currency
+					FROM retail_serving.inventory_ageing AS a
+					JOIN retail_serving.inventory_sku_dimension AS d
+					USING (inventory_version_id, market_id, location_id, sku_id)
+					GROUP BY a.inventory_version_id, a.market_id, a.location_id, d.category
+				) AS prov
+				ON prov.prov_version = inventory_valuation.inventory_version_id
+				AND prov.prov_market = inventory_valuation.market_id
+				AND prov.prov_location = inventory_valuation.location_id
+				AND prov.prov_category = inventory_valuation.category` +
 				valuationCostJoin,
 			groupBy: "inventory_valuation.category, labels.category_label",
 			columns: `%[3]s AS value_minor,
@@ -1468,6 +1681,10 @@ var groupedCards = map[string][]groupedCard{
 				-- a rupee header while the Inventory Variance tile above it, reading
 				-- the same variance, showed rupees.
 				COALESCE(SUM(%[5]s), 0) AS variance_value_minor,
+				-- Markdown + obsolescence provision for the category, FX-converted the
+				-- same way gross value is; NRV is gross less that provision.
+				%[6]s AS provision_minor,
+				%[3]s - %[6]s AS nrv_minor,
 				COUNT(*) AS rows_in_group,
 				COUNT(*) FILTER (WHERE gross_value_minor IS NULL) AS unvalued_rows,
 				MAX(currency_code) AS currency_code`,
@@ -2186,6 +2403,11 @@ var dashboardCompanions = map[string][]dashboardCompanion{
 		{table: "inventory_valuation_by_kind", prefix: "valuation"},
 		{table: "replenishment_transfers", prefix: "transfer"},
 	},
+	// The Valuation slice draws its markdown/obsolescence provisions from the
+	// ageing ladder (SKU-grain cost x recommended depth), merged under "provision".
+	"inventory_valuation": {
+		{table: "inventory_ageing", prefix: "provision"},
+	},
 	"inventory_ageing": {
 		{table: "replenishment_transfers", prefix: "transfer"},
 		{table: "inventory_valuation", prefix: "valuation"},
@@ -2382,6 +2604,10 @@ var inventoryAggregates = map[string]map[string]string{
 		"expiringUnits": "COALESCE(SUM(expiring_units), 0)",
 		"expiredUnits":  "COALESCE(SUM(expired_units), 0)",
 		"wasteUnits":    "COALESCE(SUM(waste_units), 0)",
+		// wasteReductionPct is NOT computed here: this block's SUMs run under the
+		// route's clauses, which filter to rows with current expiry/waste and so
+		// drop cells that wasted only in the prior window. It is computed unfiltered
+		// over the whole active version in the summary post-merge (wasteReduction).
 		// Qualified: this aggregate joins the SKU dimension for a unit cost, and
 		// the dimension carries a currency_code of its own. Unqualified, pgx
 		// rejects the statement and the route fails closed.
@@ -2600,6 +2826,15 @@ var moneyAggregates = map[string]map[string]string{
 		"value90PlusMinor":    "on_hand_units",
 		"deadStockValueMinor": "on_hand_units",
 		"markdownValueMinor":  "on_hand_units",
+		// Valuation provisions, surfaced on the Valuation slice via the
+		// inventory_ageing companion. Markdown provision is each markdown-candidate
+		// cell's holding at cost times the ageing ladder's recommended depth
+		// (markdown_pct is 0 elsewhere, so it self-filters). Obsolescence provision
+		// fully provisions residual/dead stock. Both are real published cells at
+		// SKU-grain cost -- the earlier withhold was the missing approval, which in
+		// this PoC the owner directs.
+		"markdownMinor":     "on_hand_units * markdown_pct",
+		"obsolescenceMinor": "on_hand_units * (CASE WHEN residual_only THEN 1 ELSE 0 END)",
 	},
 	"inventory_expiry_waste": {
 		"nearExpiryValueMinor": "expiring_units",
@@ -3096,9 +3331,12 @@ func (s *InventoryStore) groupedCard(
 	// must wrap it in its own SUM. %[3]s already aggregates; the two are not
 	// interchangeable.
 	varianceValue := s.rowFXVariance("wms_variance_units")
+	// %[6]s totals the ageing-derived provision joined per category, converted per
+	// its own currency exactly as %[3]s converts gross value.
+	provisionValue := s.fxMoneySum("prov.provision_minor", "prov.prov_currency", "")
 	replace := strings.NewReplacer(
 		"%[1]s", onHandValue, "%[2]s", bufferValue, "%[3]s", valuedAmount,
-		"%[4]s", damagedValue, "%[5]s", varianceValue,
+		"%[4]s", damagedValue, "%[5]s", varianceValue, "%[6]s", provisionValue,
 	)
 	cardColumns := replace.Replace(card.columns)
 	cardOrderBy := replace.Replace(card.orderBy)

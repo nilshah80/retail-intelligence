@@ -1,10 +1,11 @@
 {
   "authorityLedger": {
-    "currentEventId": 10,
+    "currentEventId": 13,
     "currentPriorEventId": null,
     "identitiesWithoutRetainedBytes": [
       "fr_7d34e90850b5a85c",
       "fr_14b111912fb8458c",
+      "fr_e638699e9b8f6598",
       "fr_546a32b4b120fd7a"
     ],
     "nullPredecessorEventIds": [
@@ -12,9 +13,10 @@
       3,
       5,
       7,
-      10
+      10,
+      13
     ],
-    "supersededIdentityCount": 4
+    "supersededIdentityCount": 5
   },
   "decision92Residue": {
     "handedTo": "P4-1",
@@ -109,15 +111,15 @@
   },
   "entryAuthorized": true,
   "forecastAuthority": {
-    "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
+    "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
     "activeAuthorityCount": 1,
-    "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth1",
-    "featureSemanticFingerprint": "a01a7bd9693803adfb4d9e74c597d7ea55be299ea66ce0cb7c5af998dd29c1ba",
-    "forecastRunId": "fr_88bce2fb8cbcc512",
+    "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth3",
+    "featureSemanticFingerprint": "c1dca283ab6401be25684789e466281df7e67d147d4dd719148bb217944bba8d",
+    "forecastRunId": "fr_d0c0ebafa8cb1db9",
     "lifecycleStatus": "accepted",
-    "publicationSemanticFingerprint": "88e882b5486d9f5a3eabf9917ac545e8ef7254f81adb01379eceaa012c07c8cc",
-    "runSemanticFingerprint": "72598d4ddc206692e582a343f3515cd35d4b04df77fc652ce0508aa7baca7c00",
-    "versionId": "fv_78d481cce80755c3"
+    "publicationSemanticFingerprint": "f14b9b4a49abaabeb8c9f6ecb2d50368f245eac51845c12b5333b37d15d738a9",
+    "runSemanticFingerprint": "3552a24900f7de033281002b74cf6b0b87516bec5d4533e266600d66964b10f9",
+    "versionId": "fv_f5a62cd4a0e41d5a"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",
   "intervalConsumerGate": "No Phase 4 engine, replay, policy score, API value or UI value may consume yhat_p90 until the final-pin P4-1 pass completes.",
@@ -233,9 +235,9 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0032_pricing_unit_fields",
+  "servingMigration": "0034_expiry_waste_prior_window",
   "sourceSelection": {
-    "activeRecordId": "rec_441910923b74c658",
+    "activeRecordId": "rec_50504c3a9b7183e1",
     "capabilityReadiness": "ready",
     "capabilitySufficiency": "sufficient",
     "lifecycleRecords": [
@@ -243,7 +245,9 @@
       "publication-selection-rec_0c733310b9e33e4f.json",
       "publication-selection-rec_0c9af5e4d419ca2d.json",
       "publication-selection-rec_13a4b0f55f749b5a.json",
+      "publication-selection-rec_14baf7bcb6aee3ac.json",
       "publication-selection-rec_1f5a8108523f31b0.json",
+      "publication-selection-rec_24e871928560a759.json",
       "publication-selection-rec_25090be7fea9a3e5.json",
       "publication-selection-rec_261993e3d76a08e3.json",
       "publication-selection-rec_27137c844742463a.json",
@@ -253,16 +257,20 @@
       "publication-selection-rec_2bd2edee528f7d4e.json",
       "publication-selection-rec_2c02e27cc7d2d770.json",
       "publication-selection-rec_2db9b36ecce90df2.json",
+      "publication-selection-rec_3063f3edf693977b.json",
+      "publication-selection-rec_3377eb376b074712.json",
       "publication-selection-rec_37667f1b47cfd48a.json",
       "publication-selection-rec_3926550ba9bfc379.json",
       "publication-selection-rec_3ab2ca226bd16634.json",
       "publication-selection-rec_3ab57504d16fe511.json",
+      "publication-selection-rec_425325079357f75d.json",
       "publication-selection-rec_441910923b74c658.json",
       "publication-selection-rec_45a3f437f7aa44db.json",
       "publication-selection-rec_46571f40c14a3fcb.json",
       "publication-selection-rec_4ca809a71ac74efe.json",
       "publication-selection-rec_4ceac4d151291dee.json",
       "publication-selection-rec_4ff5fb4d52b0232a.json",
+      "publication-selection-rec_50504c3a9b7183e1.json",
       "publication-selection-rec_5063f406b8813529.json",
       "publication-selection-rec_5642401e0a1fe877.json",
       "publication-selection-rec_5d7f8cc7a4737fd9.json",
@@ -288,6 +296,7 @@
       "publication-selection-rec_9fa8ff64c54f1a33.json",
       "publication-selection-rec_a4c74329c940b130.json",
       "publication-selection-rec_a68b535606859c37.json",
+      "publication-selection-rec_a8965d19f5b016f4.json",
       "publication-selection-rec_aa62e98a83d801f7.json",
       "publication-selection-rec_abc9e5b4709ed71b.json",
       "publication-selection-rec_b06d618cd6d8c743.json",
@@ -309,7 +318,9 @@
       "publication-selection-rec_e8d4239f90d6c891.json",
       "publication-selection-rec_eb72ec5f92cd45ba.json",
       "publication-selection-rec_ee7454cc23b9030f.json",
+      "publication-selection-rec_eeb6c20feee1f8b9.json",
       "publication-selection-rec_f6210f8605cc9198.json",
+      "publication-selection-rec_fc89d279246e65d2.json",
       "publication-selection-rec_fcec83e7929a39ba.json",
       "retailer-demo-demand-forecast-local-active.json",
       "retailer-demo-demand-forecast-local-approved.json",
@@ -458,15 +469,15 @@
       "retailer-demo-inventory-replay-ten-year-local-r9-superseded.json",
       "retailer-demo-inventory-replay-ten-year-local-superseded.json"
     ],
-    "objectCount": 2285,
-    "publicationSemanticFingerprint": "88e882b5486d9f5a3eabf9917ac545e8ef7254f81adb01379eceaa012c07c8cc",
+    "objectCount": 2292,
+    "publicationSemanticFingerprint": "f14b9b4a49abaabeb8c9f6ecb2d50368f245eac51845c12b5333b37d15d738a9",
     "scope": {
       "capability": "demand_forecast_non_pit",
       "environment": "local",
       "retailerId": "retailer-demo",
       "tenantId": "tenant-demo"
     },
-    "selectionId": "sel_6dd4ef540a0e11ad",
-    "sourceSnapshotId": "30521d0093057f2652cb1828142cddcabd2c8f8425971f8c58babb7e0957eb5c"
+    "selectionId": "sel_6341a864b91d1f4b",
+    "sourceSnapshotId": "eee0e56255843afc10f98783849ff560df9f452ee7954bc6efc98f2a4aac4c00"
   }
 }

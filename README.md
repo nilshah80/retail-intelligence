@@ -597,18 +597,20 @@ building and measuring a pricing bundle needs no forecast/inventory *activation*
 except a reachable DSN for `inventory-build` (which does not activate anything). There is no wrapper
 script; this section is the authoritative sequence.
 
-Reference identities from the active demo bundle `pb_540c5277a3a16718579d` — copy for a rebuild,
-substituting `run-<NEWID>` for a new source run and a fresh `<LABEL>` for its artifacts (the
-immutable-output guard refuses an existing `*_<LABEL>` dir):
+Reference identities from the active demo bundle `pb_8d1659aaf034c0349557` (label `gulf-auth3`,
+activation set `pact_d8ded49e5a21f088`, the **cost** chain — scenario `gulf-oil-india-cost`, served
+since the 2026-08-17 authoritative run) — copy for a rebuild, substituting `run-<NEWID>` for a new
+source run and a fresh `<LABEL>` for its artifacts (the immutable-output guard refuses an existing
+`*_<LABEL>` dir):
 
 | Item | Active value |
 |---|---|
-| Source run | `run-e30369022fa0209c` |
-| Forecast bundle | `ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902` (`fr_e638699e9b8f6598`) |
-| Inventory bundle | `ml/data/artifacts/inventory_run_gulf-oil-india-rich-e3036902` (`ir_5b195b672cfbd9a8`) |
-| Input authority | `contracts/evidence/input-authorities/gulf-oil-india-rich-local-run-e30369022fa0209c.json` (`auth_68e8d92de64aae1f`) |
-| Curated DB | `ingestion/data/curated/run-e30369022fa0209c/retail_v2.duckdb` |
-| Competitor truth | `datagen_rust/output/gulf-oil-india-pricing-response/run-e30369022fa0209c/_truth/competitor_match_truth.parquet` |
+| Source run | `run-73ba460b02d63c40` (scenario `gulf-oil-india-cost`) |
+| Forecast bundle | `ml/data/artifacts/forecast_run_gulf-auth3` (`fr_d0c0ebafa8cb1db9` / `fv_f5a62cd4a0e41d5a`) |
+| Inventory bundle | `ml/data/artifacts/inventory_run_gulf-auth3` (`ir_d7cbb24e99b0c89f` / `iv_d7cbb24e99b0c89f`) |
+| Input authority | `contracts/evidence/input-authorities/gulf-oil-india-rich-local-run-73ba460b02d63c40.json` |
+| Curated DB | `ingestion/data/curated/run-73ba460b02d63c40/retail_v2.duckdb` |
+| Competitor truth | `datagen_rust/output/gulf-oil-india-cost/run-73ba460b02d63c40/_truth/competitor_match_truth.parquet` |
 | decision-as-of / kind / scope | `2026-07-31T18:30:00Z` / `response_rich` / `retailer-demo`, `tenant-demo`, `local` |
 
 **`decision-as-of` is a point-in-time knowledge cutoff, not the execution time.**
@@ -632,7 +634,7 @@ one instant.
 #    contracts/ml/expected-pin.json for the new run and writes the v2 publication-selection records.
 #    The four reviewer/reason flags are REQUIRED for a brand-new run (no source edit on the v2 ledger).
 python3 tools/dev.py pipeline --from land --to publish \
-  --source-root datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID> \
+  --source-root datagen_rust/output/gulf-oil-india-cost/run-<NEWID> \
   --label <LABEL> --retailer retailer-demo --tenant tenant-demo --environment local \
   --decision-as-of 2026-07-31T18:30:00Z \
   --input-authority-reviewer <you> --input-authority-reason "<why this run is acceptable>" \
@@ -642,7 +644,7 @@ python3 tools/dev.py pipeline --from land --to publish \
 python3 tools/dev.py services up
 python3 tools/dev.py db-upgrade
 python3 tools/dev.py pipeline --from inventory-build --to inventory-build \
-  --source-root datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID> \
+  --source-root datagen_rust/output/gulf-oil-india-cost/run-<NEWID> \
   --label <LABEL> --retailer retailer-demo --tenant tenant-demo --environment local \
   --decision-as-of 2026-07-31T18:30:00Z
 
@@ -656,7 +658,7 @@ python3 tools/dev.py pricing-build --run-id run-<NEWID> \
   --decision-as-of 2026-07-31T18:30:00Z \
   --forecast-run ml/data/artifacts/forecast_run_<LABEL> \
   --inventory-run ml/data/artifacts/inventory_run_<LABEL> \
-  --competitor-truth datagen_rust/output/gulf-oil-india-pricing-response/run-<NEWID>/_truth/competitor_match_truth.parquet \
+  --competitor-truth datagen_rust/output/gulf-oil-india-cost/run-<NEWID>/_truth/competitor_match_truth.parquet \
   --bundle-kind response_rich --output ml/data/artifacts/pricing_bundle_<LABEL>
 
 # 4. Measure the artifact directly (a throwaway is never verified/prepared/materialized/activated).
@@ -667,6 +669,19 @@ ml/.venv/bin/python -c "import pandas as pd; d=pd.read_parquet('ml/data/artifact
 compute recommendations without that context — the numbers then differ from the served bundle. The
 forecast must be **accepted** (the `publish` stage) or `pricing-build`/`inventory-build` refuse it.
 `--competitor-truth` is byte-verified against the bundle's recorded `competitorTruthSha256`.
+
+**Competitor model — named rivals (cross-brand).** Gulf competes with rival lubricant *brands*
+(Castrol, Shell, Mobil, Servo, HP, …), not the same SKU at another store, so competitors are matched
+cross-brand by *specification* (category + viscosity + pack), never by brand. Enabled by an
+**opt-in `competitors:` block** in the datagen config (`datagen_rust/configs/pricing-response-cost.yaml`):
+each brand carries a `priceCenter` multiplier vs our price and the `categories` it is the primary
+competitor in; `competitors.band` holds every competitor price in a tight band that **straddles**
+ours — MNC premium above (Castrol/Shell/Mobil), PSU/value below (Servo/HP) — with a stable per-SKU
+position rather than a random weekly draw. The generator (`datagen_rust/src/projection/signals.rs`,
+`straddle_multiplier`) emits one primary competitor per SKU with the real brand name and a
+`cross-brand-spec-match-v1` match; scenarios without the block keep the legacy `Benchmark {brand}`
+path, so the Python parity oracle is unaffected. No migration — it reuses the existing
+`competitorPrices`/`competitorMatches`/`competitorMatchTruth` datasets and serving fields.
 
 **To actually SERVE a bundle** — only for the frozen authoritative run, never a calibration seed,
 because activation replaces the live demo — continue with the serving stages (run each with

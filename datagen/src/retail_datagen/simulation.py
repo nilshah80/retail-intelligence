@@ -82,6 +82,50 @@ def _fraction(*parts: Any) -> float:
     return stable_integer(*parts, modulo=1_000_000) / 1_000_000
 
 
+def _primary_competitor_for_category(
+    competitors: dict[str, Any], category_id: str
+) -> dict[str, Any] | None:
+    """First brand claiming the category, else the catch-all (empty categories),
+    else the first brand — mirrors Rust ``CompetitorConfig::primary_for_category``."""
+
+    brands = competitors.get("brands") or []
+    for brand in brands:
+        if category_id in (brand.get("categories") or []):
+            return brand
+    for brand in brands:
+        if not (brand.get("categories") or []):
+            return brand
+    return brands[0] if brands else None
+
+
+def _straddle_multiplier(
+    master_seed: int,
+    brand: dict[str, Any],
+    band: dict[str, Any],
+    sku: str,
+    day: date,
+) -> Decimal:
+    """Tight-band multiplier for a named rival's price vs ours, mirrored byte-for
+    -byte from Rust ``straddle_multiplier``: the same f64 arithmetic then
+    ``Decimal(str(x))`` (which equals Rust ``Decimal::from_f64_text``, proven by
+    the legacy uniform-factor oracle). A stable per-(brand, SKU) offset lands some
+    products above us and some below; a small stable weekly drift keeps it alive;
+    the result is clamped so a competitor price never strays far from ours."""
+
+    center = float(brand["priceCenter"])
+    pair_pct = float(band["pairOffsetPct"])
+    noise_pct = float(band["weeklyNoisePct"])
+    min_mult = float(band["minMultiplier"])
+    max_mult = float(band["maxMultiplier"])
+    pair = 2.0 * _fraction(master_seed, "competitor-pair", brand["id"], sku) - 1.0
+    weekly = (
+        2.0 * _fraction(master_seed, "competitor-week", brand["id"], sku, day) - 1.0
+    )
+    multiplier = center * (1.0 + pair * pair_pct) * (1.0 + weekly * noise_pct)
+    multiplier = min(max_mult, max(min_mult, multiplier))
+    return Decimal(str(multiplier))
+
+
 def _competitor_match_truth(
     *,
     master_seed: int,
@@ -2689,20 +2733,85 @@ def simulate(
                         or date.fromisoformat(variant["_discontinueDate"]) >= day
                     )
                 ]
+                competitors_cfg = config.get("competitors")
+                category_names = {
+                    category["categoryId"]: category["name"]
+                    for department in config["catalog"]["departments"]
+                    for category in department["categories"]
+                }
                 for variant in active_competitor_variants:
                     match_key = f"match:{market_id}:{variant['sku']}"
-                    factor = Decimal(
-                        str(
-                            rng(
-                                master_seed,
-                                "competitor",
-                                market_id,
+                    # Named-rival model (opt-in), mirrored from signals.rs: resolve
+                    # this SKU's primary competitor by category and price it in a
+                    # tight band straddling our list price. Absent, the legacy
+                    # Benchmark {brand} draw runs so shared configs stay byte-equal.
+                    comp_brand = (
+                        _primary_competitor_for_category(
+                            competitors_cfg, variant["_categoryId"]
+                        )
+                        if competitors_cfg
+                        else None
+                    )
+                    if comp_brand is not None:
+                        factor = _straddle_multiplier(
+                            master_seed,
+                            comp_brand,
+                            competitors_cfg["band"],
+                            variant["sku"],
+                            day,
+                        )
+                    else:
+                        factor = Decimal(
+                            str(
+                                rng(
+                                    master_seed,
+                                    "competitor",
+                                    market_id,
+                                    variant["sku"],
+                                    day,
+                                ).uniform(0.90, 1.10)
+                            )
+                        )
+                    competitor_sku = f"CMP-{stable_integer(match_key, modulo=99_999_999):08d}"
+                    competitor_id = (
+                        f"competitor-{comp_brand['id']}"
+                        if comp_brand
+                        else f"competitor-{market_id}"
+                    )
+                    competitor_brand_name = (
+                        comp_brand["name"]
+                        if comp_brand
+                        else f"Benchmark {variant['_brand']}"
+                    )
+                    competitor_title = (
+                        f"{comp_brand.get('productPrefix') or comp_brand['name']} "
+                        f"{category_names.get(variant['_categoryId'], variant['_categoryId'])}"
+                        if comp_brand
+                        else f"Comparable {variant['_productTitle']}"
+                    )
+                    launch_anchor = date.fromisoformat(variant["_launchDate"])
+                    if comp_brand is not None:
+                        competitor_price_value = _snap_price_ending(
+                            _price_for_day(
+                                variant["_basePrice"],
+                                market,
                                 variant["sku"],
                                 day,
-                            ).uniform(0.90, 1.10)
+                                start,
+                                end,
+                                inflation_anchor=launch_anchor,
+                            )
+                            * factor,
+                            market,
                         )
-                    )
-                    competitor_sku = f"CMP-{stable_integer(match_key, modulo=99_999_999):08d}"
+                    else:
+                        competitor_price_value = _snap_price_ending(
+                            _inflated_base_price(
+                                variant["_basePrice"], market, day, launch_anchor
+                            )
+                            * factor,
+                            market,
+                        )
                     evidence_enabled = (config.get("pricingEvidence") or {}).get(
                         "enabled", False
                     )
@@ -2737,23 +2846,10 @@ def simulate(
                             # scope (which the location-grain feature join reads as null).
                             "observedAt": _iso_at(day, 8, market["timezone"]),
                             "validDate": day.isoformat(),
-                            "competitorId": f"competitor-{market_id}",
+                            "competitorId": competitor_id,
                             "competitorSku": competitor_sku,
-                            "competitorProductTitle": f"Comparable {variant['_productTitle']}",
-                            "price": _money(
-                                _snap_price_ending(
-                                    _inflated_base_price(
-                                        variant["_basePrice"],
-                                        market,
-                                        day,
-                                        date.fromisoformat(
-                                            variant["_launchDate"]
-                                        ),
-                                    )
-                                    * factor,
-                                    market,
-                                )
-                            ),
+                            "competitorProductTitle": competitor_title,
+                            "price": _money(competitor_price_value),
                             "currencyCode": market["currencyCode"],
                             "available": str(competitor_available).lower(),
                             "promotionText": "weekly-price-check" if factor < 1 else "",
@@ -2772,7 +2868,7 @@ def simulate(
                         }
                         price_row.update(
                             {
-                                "competitorBrand": f"Benchmark {variant['_brand']}",
+                                "competitorBrand": competitor_brand_name,
                                 "competitorModel": variant["_productCode"],
                                 "competitorGtin": "",
                                 "competitorAttributes": json.dumps(
@@ -2798,7 +2894,7 @@ def simulate(
                         match_row = {
                                 "matchKey": match_key,
                                 "marketKey": market_id,
-                                "competitorId": f"competitor-{market_id}",
+                                "competitorId": competitor_id,
                                 "competitorSku": competitor_sku,
                                 "ourSku": variant["sku"],
                                 "matchMethod": "synthetic-attribute-match",
@@ -2818,56 +2914,78 @@ def simulate(
                                 for index in range(1, 4)
                                 if variant.get(f"option{index}Name")
                             ]
-                            component_matches = {
-                                "categoryId": _fraction(
-                                    master_seed,
-                                    "competitor-match",
-                                    match_key,
-                                    "categoryId",
+                            if comp_brand is not None:
+                                # Genuine cross-brand spec match by construction:
+                                # category and every option match; brand is
+                                # deliberately not a match factor (a rival is a
+                                # different brand). Mirrors signals.rs.
+                                component_matches = {
+                                    "categoryId": True,
+                                    **{name: True for name in component_names},
+                                }
+                                score_basis_points = min(
+                                    9_999,
+                                    8_600
+                                    + stable_integer(
+                                        master_seed,
+                                        "competitor-conf",
+                                        match_key,
+                                        modulo=1_100,
+                                    ),
                                 )
-                                >= 0.08,
-                                "brand": _fraction(
-                                    master_seed,
-                                    "competitor-match",
-                                    match_key,
-                                    "brand",
-                                )
-                                >= 0.85,
-                                **{
-                                    name: _fraction(
+                                match_method = "cross-brand-spec-match-v1"
+                            else:
+                                component_matches = {
+                                    "categoryId": _fraction(
                                         master_seed,
                                         "competitor-match",
                                         match_key,
-                                        name,
+                                        "categoryId",
                                     )
-                                    >= 0.20
+                                    >= 0.08,
+                                    "brand": _fraction(
+                                        master_seed,
+                                        "competitor-match",
+                                        match_key,
+                                        "brand",
+                                    )
+                                    >= 0.85,
+                                    **{
+                                        name: _fraction(
+                                            master_seed,
+                                            "competitor-match",
+                                            match_key,
+                                            name,
+                                        )
+                                        >= 0.20
+                                        for name in component_names
+                                    },
+                                }
+                                option_weight = 5_000 // max(1, len(component_names))
+                                score_basis_points = (
+                                    3_500
+                                    if component_matches["categoryId"]
+                                    else 0
+                                ) + (1_500 if component_matches["brand"] else 0)
+                                score_basis_points += sum(
+                                    option_weight
                                     for name in component_names
-                                },
-                            }
-                            option_weight = 5_000 // max(1, len(component_names))
-                            score_basis_points = (
-                                3_500
-                                if component_matches["categoryId"]
-                                else 0
-                            ) + (1_500 if component_matches["brand"] else 0)
-                            score_basis_points += sum(
-                                option_weight
-                                for name in component_names
-                                if component_matches[name]
-                            )
-                            score_basis_points = min(
-                                9_999,
-                                score_basis_points
-                                + stable_integer(
-                                    master_seed,
-                                    "competitor-match-jitter",
-                                    match_key,
-                                    modulo=200,
-                                ),
-                            )
+                                    if component_matches[name]
+                                )
+                                score_basis_points = min(
+                                    9_999,
+                                    score_basis_points
+                                    + stable_integer(
+                                        master_seed,
+                                        "competitor-match-jitter",
+                                        match_key,
+                                        modulo=200,
+                                    ),
+                                )
+                                match_method = "synthetic-attribute-match-v2"
                             match_row.update(
                                 {
-                                    "matchMethod": "synthetic-attribute-match-v2",
+                                    "matchMethod": match_method,
                                     "matchConfidence": str(
                                         Decimal(score_basis_points) / Decimal(10_000)
                                     ),

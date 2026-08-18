@@ -180,6 +180,9 @@ class InventoryInputs:
     batches: pd.DataFrame
     #: market_id, location_id, sku_id, waste_units, expired_units
     waste: pd.DataFrame
+    #: market_id, location_id, sku_id, prior_waste_units -- the 91-day window
+    #: immediately preceding `waste`'s, for the Waste Reduction comparison
+    prior_waste: pd.DataFrame
     #: market_id, location_id, sku_id, unit_cost_minor, cost_method
     unit_costs: pd.DataFrame
     #: market_id, location_id, sku_id, variance_units
@@ -960,6 +963,8 @@ def _build_expiry_waste(
     *,
     batches: pd.DataFrame,
     waste: pd.DataFrame,
+    prior_waste: pd.DataFrame,
+    unit_costs: Mapping[tuple[str, str, str], tuple[int | None, str | None]],
     policy: Mapping[str, Mapping[str, Any]],
     currency_by_market: Mapping[str, str],
     as_of: date,
@@ -971,6 +976,12 @@ def _build_expiry_waste(
     `expired_units` and `waste_units` are stock that already did and was written
     off. Collapsing them would make a screen unable to tell whether its own
     intervention worked.
+
+    `prior_waste_units`/`prior_waste_minor` carry the same realized loss for the
+    91-day window immediately before, so the read model can serve Waste Reduction
+    = (prior - current) / prior. The prior value is the prior units valued at the
+    cell's accepted unit cost -- the same WAC every other money column uses -- so
+    it is left NULL when that cost is unknown rather than valuing waste at zero.
     """
 
     keys = {
@@ -983,6 +994,12 @@ def _build_expiry_waste(
             int(row.expired_units),
         )
         for row in waste.itertuples(index=False)
+    }
+    prior_by_key = {
+        (str(row.market_id), str(row.location_id), str(row.sku_id)): int(
+            row.prior_waste_units
+        )
+        for row in prior_waste.itertuples(index=False)
     }
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in batches.itertuples(index=False):
@@ -999,7 +1016,13 @@ def _build_expiry_waste(
             }
         )
     rows: list[dict[str, Any]] = []
-    for key in sorted((keys & set(grouped)) | (keys & set(waste_by_key))):
+    # A cell wasting in the prior window but not now is a genuine reduction, so it
+    # is emitted (when still an active position) even with no current exposure or
+    # waste -- otherwise the eliminated baseline would silently drop out of the
+    # aggregate and understate the reduction.
+    for key in sorted(
+        (keys & set(grouped)) | (keys & set(waste_by_key)) | (keys & set(prior_by_key))
+    ):
         market, location, sku = key
         exposure = expiry_exposure(
             grouped.get(key, []),
@@ -1007,7 +1030,11 @@ def _build_expiry_waste(
             window_days=int(policy[market]["expiryWindowDays"]),
         )
         waste_units, expired_units = waste_by_key.get(key, (0, 0))
-        currency = exposure["currency_code"]
+        prior_units = prior_by_key.get(key, 0)
+        cost, _ = unit_costs.get(key, (None, None))
+        # Exposure carries a currency only when every expiring batch was costed;
+        # a prior-only row has no batch, so fall back to the market's currency.
+        currency = exposure["currency_code"] or currency_by_market.get(market)
         rows.append(
             {
                 "market_id": market,
@@ -1019,14 +1046,23 @@ def _build_expiry_waste(
                 # Exposure has no meaning without a currency, and the engine
                 # returns one only when every expiring batch carried a cost.
                 "exposure_minor": (
-                    int(exposure["exposure_minor"]) if currency else None
+                    int(exposure["exposure_minor"])
+                    if exposure["currency_code"]
+                    else None
                 ),
                 "currency_code": currency,
+                "prior_waste_units": int(prior_units),
+                # Valued at the accepted unit cost, same as every money column;
+                # NULL when that cost is unknown rather than valuing at zero.
+                "prior_waste_minor": (
+                    int(prior_units * cost) if cost is not None else None
+                ),
             }
         )
     frame = pd.DataFrame(rows, columns=list(ARTIFACT_COLUMNS["inventory_expiry_waste"]))
     if not frame.empty:
         frame["exposure_minor"] = frame["exposure_minor"].astype("Int64")
+        frame["prior_waste_minor"] = frame["prior_waste_minor"].astype("Int64")
     return frame
 
 
@@ -2133,6 +2169,8 @@ def build_artifacts(
         emitted,
         batches=inputs.batches,
         waste=inputs.waste,
+        prior_waste=inputs.prior_waste,
+        unit_costs=unit_costs,
         policy=inputs.policy,
         currency_by_market=inputs.currency_by_market,
         as_of=inputs.as_of,

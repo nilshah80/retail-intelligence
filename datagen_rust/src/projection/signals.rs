@@ -6,12 +6,13 @@ use bigdecimal::RoundingMode;
 use chrono::{Datelike, Duration};
 
 use crate::catalog::{Product, active_on};
-use crate::config::{LoadedConfig, Market};
+use crate::config::{CompetitorBand, CompetitorBrand, LoadedConfig, Market};
 use crate::deterministic::{PythonRandom, stable_integer};
 use crate::projection::LogicalDataset;
 use crate::projection::catalog::local_iso_at;
 use crate::simulation::causal_effects::pandemic_effect;
 use crate::simulation::decimal::PyDecimal as Decimal;
+use crate::simulation::pricing::PriceEngine;
 use crate::simulation::signals::temperature;
 
 /// Build the contextual market feeds that are independent of inventory and
@@ -102,6 +103,7 @@ fn build_market_signals(
         truth_generation_method,
     )?;
 
+    let mut price_engine = PriceEngine::new();
     let mut day = start;
     while day <= end {
         let (actual_temperature, actual_precipitation) = temperature(master_seed, market, day)?;
@@ -233,16 +235,48 @@ fn build_market_signals(
                     }
                     let match_key = format!("match:{}:{}", market.market_id, variant.sku);
                     let day_text = day.to_string();
-                    let factor = Decimal::from_f64_text(
-                        PythonRandom::new(
-                            master_seed,
-                            &["competitor", &market.market_id, &variant.sku, &day_text],
-                        )
-                        .uniform(0.90, 1.10),
-                    );
+                    let master_text = master_seed.to_string();
+                    // Named-rival model (opt-in): resolve this SKU's primary
+                    // competitor by category and price it in a tight band that
+                    // straddles our price. Absent, fall back to the legacy ±10%
+                    // weekly benchmark draw so the parity oracle is unaffected.
+                    let competitor = config.competitors().and_then(|cfg| {
+                        cfg.primary_for_category(&product.category_id)
+                            .map(|brand| (cfg, brand))
+                    });
+                    let factor = match &competitor {
+                        Some((cfg, brand)) => straddle_multiplier(
+                            brand,
+                            &cfg.band,
+                            &master_text,
+                            &variant.sku,
+                            &day_text,
+                        )?,
+                        None => Decimal::from_f64_text(
+                            PythonRandom::new(
+                                master_seed,
+                                &["competitor", &market.market_id, &variant.sku, &day_text],
+                            )
+                            .uniform(0.90, 1.10),
+                        ),
+                    };
+                    let (competitor_id, competitor_brand_name, competitor_title) = match &competitor {
+                        Some((_, brand)) => (
+                            format!("competitor-{}", brand.id),
+                            brand.name.clone(),
+                            brand.product_prefix.clone().map_or_else(
+                                || format!("{} {}", brand.name, product.category_name),
+                                |prefix| format!("{prefix} {}", product.category_name),
+                            ),
+                        ),
+                        None => (
+                            format!("competitor-{}", market.market_id),
+                            format!("Benchmark {}", product.brand),
+                            format!("Comparable {}", product.title),
+                        ),
+                    };
                     let competitor_sku =
                         format!("CMP-{:08}", stable_integer(&[&match_key], 99_999_999));
-                    let master_text = master_seed.to_string();
                     let availability_draw = fraction(&[
                         &master_text,
                         "competitor-availability",
@@ -268,15 +302,39 @@ fn build_market_signals(
                     } else {
                         availability_draw >= 0.08
                     };
-                    let base = Decimal::from_str(&variant.base_price.to_string())
-                        .context("variant base price")?;
-                    let inflation_rate = market.price_dynamics["annualInflationRate"]
-                        .as_f64()
-                        .context("priceDynamics.annualInflationRate")?;
-                    let years = (day.year() - variant.launch_date.year()).max(0);
-                    let inflation =
-                        Decimal::from_f64_text((1.0 + inflation_rate).powf(f64::from(years)));
-                    let competitor_price = snap_price_ending(base * inflation * &factor, market)?;
+                    let competitor_price = if competitor.is_some() {
+                        // Straddle our list price at this date — the walked price
+                        // the recommendation compares against — not the static
+                        // launch base. Pinning to base let a decade of price-change
+                        // events drift current away, so the band read wide and
+                        // skewed below. `price_for_day` is the pure regime list
+                        // walk shared with the Python datagen (proven byte-equal by
+                        // the commerce oracle), so the named-rival path stays in
+                        // Rust/Python parity. The legacy branch keeps base x
+                        // inflation so the signals oracle is byte-stable.
+                        let list = price_engine.price_for_day(
+                            variant.base_price,
+                            market,
+                            &variant.sku,
+                            day,
+                            start,
+                            end,
+                            variant.launch_date,
+                        )?;
+                        let list = Decimal::from_str(&list.to_string())
+                            .context("competitor reference list price")?;
+                        snap_price_ending(list * &factor, market)?
+                    } else {
+                        let base = Decimal::from_str(&variant.base_price.to_string())
+                            .context("variant base price")?;
+                        let inflation_rate = market.price_dynamics["annualInflationRate"]
+                            .as_f64()
+                            .context("priceDynamics.annualInflationRate")?;
+                        let years = (day.year() - variant.launch_date.year()).max(0);
+                        let inflation =
+                            Decimal::from_f64_text((1.0 + inflation_rate).powf(f64::from(years)));
+                        snap_price_ending(base * inflation * &factor, market)?
+                    };
                     let mut price_values = row([
                         ("marketKey", market.market_id.clone()),
                         // targetType/targetId are set PER STORE below. Pinning to the
@@ -287,12 +345,9 @@ fn build_market_signals(
                         // both the recommendation bound-join AND the feature build.
                         ("observedAt", local_iso_at(day, 8, &market.timezone)?),
                         ("validDate", day.to_string()),
-                        ("competitorId", format!("competitor-{}", market.market_id)),
+                        ("competitorId", competitor_id.clone()),
                         ("competitorSku", competitor_sku.clone()),
-                        (
-                            "competitorProductTitle",
-                            format!("Comparable {}", product.title),
-                        ),
+                        ("competitorProductTitle", competitor_title.clone()),
                         ("price", competitor_price.to_string()),
                         ("currencyCode", market.currency_code.clone()),
                         ("available", available.to_string()),
@@ -316,7 +371,7 @@ fn build_market_signals(
                         }
                         price_values.insert(
                             "competitorBrand".to_owned(),
-                            format!("Benchmark {}", product.brand),
+                            competitor_brand_name.clone(),
                         );
                         price_values
                             .insert("competitorModel".to_owned(), product.product_code.clone());
@@ -358,7 +413,7 @@ fn build_market_signals(
                         let mut match_values = row([
                             ("matchKey", match_key),
                             ("marketKey", market.market_id.clone()),
-                            ("competitorId", format!("competitor-{}", market.market_id)),
+                            ("competitorId", competitor_id.clone()),
                             ("competitorSku", competitor_sku),
                             ("ourSku", variant.sku.clone()),
                             ("matchMethod", "synthetic-attribute-match".to_owned()),
@@ -368,59 +423,88 @@ fn build_market_signals(
                         ]);
                         if let Some(evidence) = config.pricing_evidence() {
                             let match_key = match_values["matchKey"].clone();
-                            let mut components = BTreeMap::<String, bool>::from([
-                                (
-                                    "categoryId".to_owned(),
-                                    fraction(&[
-                                        &master_text,
-                                        "competitor-match",
-                                        &match_key,
-                                        "categoryId",
-                                    ]) >= 0.08,
-                                ),
-                                (
-                                    "brand".to_owned(),
-                                    fraction(&[
-                                        &master_text,
-                                        "competitor-match",
-                                        &match_key,
-                                        "brand",
-                                    ]) >= 0.85,
-                                ),
-                            ]);
-                            for option in &variant.options {
-                                components.insert(
-                                    option.name.clone(),
-                                    fraction(&[
-                                        &master_text,
-                                        "competitor-match",
-                                        &match_key,
-                                        &option.name,
-                                    ]) >= 0.20,
-                                );
-                            }
-                            let option_weight = 5_000_u64 / variant.options.len().max(1) as u64;
-                            let mut score_basis_points =
-                                if components["categoryId"] {
+                            // A named rival is a genuine cross-brand spec match by
+                            // construction: category and every option match, and
+                            // brand is deliberately NOT a match factor (a real
+                            // competitor is a different brand). The legacy path
+                            // keeps its probabilistic category/brand/option scoring.
+                            let (components, score_basis_points) = if competitor.is_some() {
+                                let mut components =
+                                    BTreeMap::<String, bool>::from([("categoryId".to_owned(), true)]);
+                                for option in &variant.options {
+                                    components.insert(option.name.clone(), true);
+                                }
+                                let score = (8_600
+                                    + stable_integer(
+                                        &[&master_text, "competitor-conf", &match_key],
+                                        1_100,
+                                    ))
+                                .min(9_999);
+                                (components, score)
+                            } else {
+                                let mut components = BTreeMap::<String, bool>::from([
+                                    (
+                                        "categoryId".to_owned(),
+                                        fraction(&[
+                                            &master_text,
+                                            "competitor-match",
+                                            &match_key,
+                                            "categoryId",
+                                        ]) >= 0.08,
+                                    ),
+                                    (
+                                        "brand".to_owned(),
+                                        fraction(&[
+                                            &master_text,
+                                            "competitor-match",
+                                            &match_key,
+                                            "brand",
+                                        ]) >= 0.85,
+                                    ),
+                                ]);
+                                for option in &variant.options {
+                                    components.insert(
+                                        option.name.clone(),
+                                        fraction(&[
+                                            &master_text,
+                                            "competitor-match",
+                                            &match_key,
+                                            &option.name,
+                                        ]) >= 0.20,
+                                    );
+                                }
+                                let option_weight =
+                                    5_000_u64 / variant.options.len().max(1) as u64;
+                                let mut score = if components["categoryId"] {
                                     3_500_u64
                                 } else {
                                     0
-                                } + if components["brand"] { 1_500 } else { 0 };
-                            score_basis_points += variant
-                                .options
-                                .iter()
-                                .filter(|option| components[&option.name])
-                                .count() as u64
-                                * option_weight;
-                            score_basis_points = (score_basis_points
-                                + stable_integer(
-                                    &[&master_text, "competitor-match-jitter", &match_key],
-                                    200,
-                                ))
-                            .min(9_999);
+                                } + if components["brand"] {
+                                    1_500
+                                } else {
+                                    0
+                                };
+                                score += variant
+                                    .options
+                                    .iter()
+                                    .filter(|option| components[&option.name])
+                                    .count() as u64
+                                    * option_weight;
+                                score = (score
+                                    + stable_integer(
+                                        &[&master_text, "competitor-match-jitter", &match_key],
+                                        200,
+                                    ))
+                                .min(9_999);
+                                (components, score)
+                            };
                             match_values.insert(
                                 "matchMethod".to_owned(),
-                                "synthetic-attribute-match-v2".to_owned(),
+                                if competitor.is_some() {
+                                    "cross-brand-spec-match-v1".to_owned()
+                                } else {
+                                    "synthetic-attribute-match-v2".to_owned()
+                                },
                             );
                             match_values.insert(
                                 "matchConfidence".to_owned(),
@@ -590,6 +674,46 @@ fn fraction(parts: &[&str]) -> f64 {
     stable_integer(parts, 1_000_000) as f64 / 1_000_000.0
 }
 
+/// Deterministic tight-band multiplier for a named rival's price vs ours.
+/// `center` is the brand's stable position (premium >1 / value <1); a stable
+/// per-(brand, SKU) offset puts some products above us and some below; a small
+/// stable weekly drift keeps the series alive without the legacy ±10% redraw.
+/// The result is clamped so a competitor price never strays far from ours.
+fn straddle_multiplier(
+    brand: &CompetitorBrand,
+    band: &CompetitorBand,
+    master_text: &str,
+    sku: &str,
+    day_text: &str,
+) -> Result<Decimal> {
+    let center = brand
+        .price_center
+        .parse::<f64>()
+        .with_context(|| format!("competitor priceCenter for {}", brand.id))?;
+    let pair_pct = band
+        .pair_offset_pct
+        .parse::<f64>()
+        .context("competitor pairOffsetPct")?;
+    let noise_pct = band
+        .weekly_noise_pct
+        .parse::<f64>()
+        .context("competitor weeklyNoisePct")?;
+    let min_mult = band
+        .min_multiplier
+        .parse::<f64>()
+        .context("competitor minMultiplier")?;
+    let max_mult = band
+        .max_multiplier
+        .parse::<f64>()
+        .context("competitor maxMultiplier")?;
+    let pair = 2.0 * fraction(&[master_text, "competitor-pair", brand.id.as_str(), sku]) - 1.0;
+    let weekly =
+        2.0 * fraction(&[master_text, "competitor-week", brand.id.as_str(), sku, day_text]) - 1.0;
+    let multiplier =
+        (center * (1.0 + pair * pair_pct) * (1.0 + weekly * noise_pct)).clamp(min_mult, max_mult);
+    Ok(Decimal::from_f64_text(multiplier))
+}
+
 fn dec(value: &str) -> Decimal {
     Decimal::from_str(value).expect("constant decimal")
 }
@@ -722,5 +846,115 @@ mod tests {
                 dataset.rows.first()
             );
         }
+    }
+
+    #[test]
+    fn competitor_straddle_multiplier_is_tight_stable_and_positioned() {
+        use crate::config::{CompetitorBand, CompetitorBrand};
+        let band = CompetitorBand::default(); // ±6% clamp, ±2% pair, ±1% weekly
+        let brand = |id: &str, center: &str| CompetitorBrand {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            price_center: center.to_owned(),
+            categories: Vec::new(),
+            product_prefix: None,
+        };
+        let castrol = brand("castrol", "1.05");
+        let servo = brand("servo", "0.95");
+        let value = |b: &CompetitorBrand, sku: &str, day: &str| -> f64 {
+            super::straddle_multiplier(b, &band, "42", sku, day)
+                .unwrap()
+                .to_string()
+                .parse()
+                .unwrap()
+        };
+        // Stays inside the tight band, and each brand stays on its side of parity
+        // (premium above us, value below us) across many SKUs and weeks — a real
+        // straddle, never a blanket discount, never a wild weekly swing.
+        for i in 0..250 {
+            let sku = format!("SKU-{i:05}");
+            for day in ["2026-01-05", "2026-04-06", "2026-07-27"] {
+                let premium = value(&castrol, &sku, day);
+                let discount = value(&servo, &sku, day);
+                assert!((0.94..=1.06).contains(&premium), "{sku} {day} -> {premium}");
+                assert!((0.94..=1.06).contains(&discount), "{sku} {day} -> {discount}");
+                assert!(premium > 1.0, "premium above us: {sku} {day} -> {premium}");
+                assert!(discount < 1.0, "value below us: {sku} {day} -> {discount}");
+            }
+        }
+        // Deterministic (same inputs → same multiplier).
+        assert_eq!(
+            value(&castrol, "SKU-1", "2026-07-27"),
+            value(&castrol, "SKU-1", "2026-07-27")
+        );
+    }
+
+    #[test]
+    fn gulf_mini_competitor_signals_match_python_oracle() {
+        // Rust/Python parity for the opt-in named-rival competitor path. The
+        // digests were captured from the Python datagen (retail_datagen) on this
+        // fixture; a byte-for-byte comparison confirmed both generators emit
+        // identical competitorPrices/competitorMatches, so this freezes that
+        // agreement the same way the legacy oracle does for the shared path.
+        let config =
+            LoadedConfig::load("contracts/gulf-mini-competitors-v13.json").expect("config");
+        let catalog = build_catalog(&config).expect("catalog");
+        let datasets = build_signal_datasets(&config, &catalog).expect("signals");
+        let expected = BTreeMap::from([
+            (
+                "competitorPrices",
+                (
+                    7592_usize,
+                    "625cbdb286e5fe25edabd21c3e794eaa5555edc39025f60e5961612a6bb833c7",
+                ),
+            ),
+            (
+                "competitorMatches",
+                (
+                    292_usize,
+                    "7a8d3a0b1e57439fd7227e58718265e3883184237891f684224f4f3e87dfbb89",
+                ),
+            ),
+        ]);
+        for dataset in datasets {
+            if let Some((count, digest)) = expected.get(dataset.dataset.as_str()) {
+                assert_eq!(dataset.rows.len(), *count, "{} rows", dataset.dataset);
+                assert_eq!(
+                    &sorted_digest(&dataset),
+                    digest,
+                    "{} digest; first row {:?}",
+                    dataset.dataset,
+                    dataset.rows.first()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn gulf_cost_config_maps_named_competitors_by_category() {
+        let config = LoadedConfig::load("configs/pricing-response-cost.yaml").expect("load");
+        let competitors = config.competitors().expect("competitors present");
+        assert_eq!(competitors.brands.len(), 9);
+        assert_eq!(
+            competitors.primary_for_category("gulf-mco").unwrap().name,
+            "Castrol"
+        );
+        assert_eq!(
+            competitors.primary_for_category("gulf-deo").unwrap().name,
+            "Servo"
+        );
+        assert_eq!(
+            competitors.primary_for_category("gulf-atf").unwrap().name,
+            "Mobil"
+        );
+        // Any unmapped category resolves to the catch-all, so every SKU has a
+        // competitor.
+        assert_eq!(
+            competitors
+                .primary_for_category("gulf-brand-new")
+                .unwrap()
+                .name,
+            "Veedol"
+        );
     }
 }

@@ -732,15 +732,12 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
     kpis: [
       {caption: "Gross Inventory Value", field: "grossValueMinor", format: "money",
        note: "Accepted unit cost times on hand, market-local"},
-      {caption: "Net Realizable Value", field: null, format: "money",
-       unavailableReason: "NRV_UNAVAILABLE",
-       note: "Needs an approved markdown policy"},
-      {caption: "Markdown Provision", field: null, format: "money",
-       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY",
-       note: "2,128 cells are marked for markdown; costing them needs SKU-grain value"},
-      {caption: "Obsolescence Provision", field: null, format: "money",
-       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY",
-       note: "Residual-only cells are identified; costing them needs SKU-grain value"},
+      {caption: "Net Realizable Value", field: "nrvMinor", format: "money",
+       note: "Gross value less markdown and obsolescence provisions"},
+      {caption: "Markdown Provision", field: "provisionMarkdownMinor", format: "money",
+       note: "Markdown-candidate cells at SKU cost times the recommended depth"},
+      {caption: "Obsolescence Provision", field: "provisionObsolescenceMinor", format: "money",
+       note: "Residual/dead-stock cells fully provisioned at SKU cost"},
       {caption: "Inventory Variance", field: "varianceValueMinor", format: "money",
        note: "Absolute ERP-versus-WMS discrepancy"}
     ],
@@ -749,8 +746,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       // Money, as the reference's badge shows it -- Rs 0.18 Cr. The unit count is
       // the same variance unpriced, and a finance control reads in currency.
       {label: "ERP vs WMS variance", field: "varianceValueMinor", format: "money"},
-      {label: "Unposted markdown provision", field: null, format: "money",
-       unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY"},
+      {label: "Unposted markdown provision", field: "provisionMarkdownMinor", format: "money"},
       {label: "Negative inventory value", field: "negativeValueRows",
        format: "count", of: "rows"},
       {label: "Cost missing", field: "unvaluedRows", format: "count", of: "rows"}
@@ -765,9 +761,8 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {heading: "Valuation by Category", card: "categories", columns: [
         {header: "Category", field: "categoryLabel"},
         {header: "Gross Value", field: "valueMinor", format: "money"},
-        {header: "NRV", field: null, unavailableReason: "NRV_UNAVAILABLE"},
-        {header: "Provision", field: null,
-         unavailableReason: "PROVISION_PENDING_MARKDOWN_POLICY"},
+        {header: "NRV", field: "nrvMinor", format: "money"},
+        {header: "Provision", field: "provisionMinor", format: "money"},
         {header: "Variance", field: "varianceValueMinor", format: "money"}
       ]}
     ]
@@ -781,9 +776,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Units expiring inside the policy window"},
       {caption: "Waste · Last 91 Days", field: "wasteValueMinor", format: "money",
        note: "Realised write-offs from the exact 91-day trailing window"},
-      {caption: "Waste Reduction", field: null, format: "percent",
+      {caption: "Waste Reduction", field: "wasteReductionPct", format: "percent",
        unavailableReason: "PRIOR_PERIOD_NOT_COMPARED",
-       note: "Needs a prior-period comparison"},
+       note: "Versus the prior 91-day window"},
       {caption: "Products at Risk", field: "cells", format: "count",
        note: "Cells with expiry or waste evidence"},
       // exposure_minor is published NULL on every row of this artifact, so a summed
@@ -844,15 +839,21 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        format: "money",
        delta: {field: "cellsToOrder", format: "count", suffix: "recommendations"},
        note: "Recommended units at the destination's cost"},
+      // Revenue Protected needs a selling price the replay does not publish (it
+      // measures units, not money), so it stays a governed absence even when the
+      // replay is accepted -- unlike Working Capital, which values a held-unit
+      // reduction at cost the dimension does carry.
       {caption: "Revenue Protected", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE",
        note: "Needs a reproducing weekly replay"},
-      {caption: "Working Capital Impact", field: null, format: "money",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"},
-      {caption: "Projected Service Level", field: null, format: "percent",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"},
+      // Real figures once the weekly replay accepts the candidate policy; a
+      // governed absence while it does not (the field resolves to null).
+      {caption: "Working Capital Impact", field: "workingCapitalImpactMinor",
+       format: "money", unavailableReason: "REPLAY_UNAVAILABLE",
+       note: "Held-unit reduction valued at cost, vs the incumbent policy"},
+      {caption: "Projected Service Level", field: "projectedServiceLevelPct",
+       format: "percent", unavailableReason: "REPLAY_UNAVAILABLE",
+       note: "Candidate policy fill rate on the holdout cohort"},
       // The reference's delta here is "Rs 1.4 Cr at risk", and that figure is NOT
       // available: demand-at-risk withholds its VALUE on exactly the cells whose
       // interval was withheld, so the exposure on an exception order is null by
@@ -872,13 +873,17 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        of: "cellsToOrder"},
       {label: "Expedited orders", field: null, format: "count",
        unavailableReason: "ACCEPTANCE_NOT_INSTRUMENTED"},
-      // Benefit. Every one of these is a candidate-versus-incumbent claim.
-      {label: "Lost-sales reduction", field: null, format: "units",
-       unavailableReason: "REPLAY_UNAVAILABLE"},
-      {label: "Stock-out reduction", field: null, format: "count",
-       unavailableReason: "REPLAY_UNAVAILABLE"},
-      {label: "Inventory turn improvement", field: null, format: "percent",
-       unavailableReason: "REPLAY_UNAVAILABLE"},
+      // Benefit. Every one of these is a candidate-versus-incumbent claim, so
+      // each resolves to a real figure only when the replay accepted the
+      // candidate AND that specific benefit is positive; otherwise governed.
+      {label: "Lost-sales reduction", field: "lostSalesReductionUnits",
+       format: "units", unavailableReason: "REPLAY_UNAVAILABLE"},
+      {label: "Stock-out reduction", field: "stockoutReductionCount",
+       format: "count", unavailableReason: "REPLAY_UNAVAILABLE"},
+      {label: "Inventory turn improvement", field: "inventoryTurnImprovementPct",
+       format: "percent", unavailableReason: "REPLAY_UNAVAILABLE"},
+      // Transfer savings is not a replay output (no transfer-cost model), so it
+      // stays governed regardless of acceptance.
       {label: "Transfer savings", field: null, format: "money",
        unavailableReason: "REPLAY_UNAVAILABLE"},
       // Approval queue. Read-only release, so nothing is pending anything.
@@ -965,9 +970,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
        note: "Ordering into a destination that is stocked out"},
       {caption: "Within Budget", field: "withinBudgetCells", format: "count",
        of: "cellsToOrder", note: "Against the market's weekly ceiling"},
-      {caption: "Expected Fill Rate", field: null, format: "percent",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"}
+      {caption: "Expected Fill Rate", field: "projectedServiceLevelPct",
+       format: "percent", unavailableReason: "REPLAY_UNAVAILABLE",
+       note: "Candidate policy fill rate on the holdout cohort"}
     ],
     tables: [
       {heading: null, columns: [
@@ -1044,9 +1049,9 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
       {caption: "Excess Safety Stock", field: "excessSafetyCells", format: "count",
        of: "comparedCells",
        note: "Compared on Replenishment Planner"},
-      {caption: "Projected Service Level", field: null, format: "percent",
-       unavailableReason: "REPLAY_UNAVAILABLE",
-       note: "Needs a reproducing weekly replay"}
+      {caption: "Projected Service Level", field: "projectedServiceLevelPct",
+       format: "percent", unavailableReason: "REPLAY_UNAVAILABLE",
+       note: "Candidate policy fill rate on the holdout cohort"}
     ],
     breakdown: [
       // "Safety Stock Drivers", now with a source. Policy v2's formula names two
@@ -1174,7 +1179,7 @@ const SCREENS: Record<InventoryPageId, ScreenSpec> = {
         {header: "Exception", field: "exceptionLabel"},
         {header: "Order / SKU", field: "productName"},
         {header: "Business Impact", field: "evidence"},
-        {header: "Owner", field: null,
+        {header: "Owner", field: "owner",
          unavailableReason: "EXCEPTION_OWNER_NOT_PUBLISHED"},
         {header: "Age", field: null,
          unavailableReason: "EXCEPTION_OWNER_NOT_PUBLISHED"},
@@ -1292,11 +1297,22 @@ function Kpi({spec, slice}: {spec: KpiSpec; slice: InventorySlice}) {
   const raw = summary?.[spec.field];
   const numeric = asNumber(raw);
   if (numeric === null) {
+    // A measured field can still resolve to nothing for a given bundle (e.g. no
+    // prior window to compare against). When it carries a governed reason, state
+    // WHY and WHEN with the reason code -- same treatment as a field that nothing
+    // measures -- rather than a bare "Not available".
+    const note = availabilityNote(spec.unavailableReason) ?? spec.note;
     return (
-      <div className="kpi" data-kpi={spec.caption} data-unavailable="true">
+      <div
+        className="kpi"
+        data-kpi={spec.caption}
+        data-unavailable="true"
+        data-reason-code={spec.unavailableReason}
+        title={note ?? undefined}
+      >
         <small>{spec.caption}</small>
         <div className="value unavailable">{UNAVAILABLE}</div>
-        {spec.note && <div className="demo-note">{spec.note}</div>}
+        {note && <div className="demo-note">{note}</div>}
       </div>
     );
   }

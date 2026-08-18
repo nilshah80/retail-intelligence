@@ -9,3 +9,52 @@ pricingEvidence:
   promotionPlanningLeadDays: 28
   responseStepScale: 2
   generationMethod: deterministic-response-profile-v1
+# Named-rival competitor model. Gulf sits between the MNC premium incumbents
+# (Castrol/Shell/Mobil — above us) and the PSU/value brands (Servo/HP — below
+# us): a genuine straddle, never a blanket discount. Prices are held in a tight
+# ±6% band with a stable per-SKU position, so a competitor never swings wildly
+# week to week. Category ordering is priority; a brand's `categories` claims the
+# categories where it is our primary competitor; Veedol is the catch-all.
+competitors:
+  band:
+    minMultiplier: "0.94"
+    maxMultiplier: "1.06"
+    pairOffsetPct: "0.02"
+    weeklyNoisePct: "0.01"
+  brands:
+    - id: castrol
+      name: Castrol
+      priceCenter: "1.05"
+      categories: [gulf-mco, gulf-coolant-brake, gulf-metalworking]
+    - id: shell
+      name: Shell
+      priceCenter: "1.03"
+      categories: [gulf-pcmo, gulf-compressor-turbine, gulf-ev-fluids]
+    - id: mobil
+      name: Mobil
+      priceCenter: "1.03"
+      categories: [gulf-atf, gulf-industrial-gear]
+    - id: servo
+      name: Servo
+      priceCenter: "0.95"
+      categories: [gulf-deo, gulf-tractor, gulf-grease, gulf-hydraulic]
+    - id: hp
+      name: HP Lubricants
+      priceCenter: "0.96"
+      categories: [gulf-gear]
+    - id: amaron
+      name: Amaron
+      priceCenter: "0.98"
+      categories: [gulf-battery]
+    - id: totalenergies
+      name: TotalEnergies
+      priceCenter: "1.00"
+      categories: [gulf-adblue]
+    - id: threem
+      name: 3M
+      priceCenter: "1.02"
+      categories: [gulf-car-care]
+    - id: veedol
+      name: Veedol
+      priceCenter: "0.99"
+      categories: []

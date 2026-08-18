@@ -209,6 +209,88 @@ def _validate_pricing_evidence(config: dict[str, Any], errors: list[str]) -> Non
         )
 
 
+#: Tight-band defaults for the named-rival competitor model, kept byte-for-byte
+#: with the Rust ``CompetitorBand::default`` so an omitted band resolves the same
+#: way in both generators.
+_COMPETITOR_BAND_DEFAULTS: dict[str, str] = {
+    "minMultiplier": "0.94",
+    "maxMultiplier": "1.06",
+    "pairOffsetPct": "0.02",
+    "weeklyNoisePct": "0.01",
+}
+
+
+def _decimal_string(value: Any) -> bool:
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(value, str)
+
+
+def _validate_competitors(config: dict[str, Any], errors: list[str]) -> None:
+    """Optional named-rival competitor model, mirrored from the Rust datagen
+    (``config.rs`` ``CompetitorConfig``). Absent, the legacy ``Benchmark {brand}``
+    path runs unchanged, so scenarios without it keep byte-identical output."""
+
+    configured = config.get("competitors")
+    if configured is None:
+        return
+    if not isinstance(configured, dict):
+        errors.append("competitors must be an object")
+        return
+    extra = set(configured).difference({"band", "brands"})
+    if extra:
+        errors.append(f"competitors contains unsupported values {sorted(extra)}")
+    band = configured.setdefault("band", {})
+    if not isinstance(band, dict):
+        errors.append("competitors.band must be an object")
+    else:
+        band_extra = set(band).difference(_COMPETITOR_BAND_DEFAULTS)
+        if band_extra:
+            errors.append(
+                f"competitors.band contains unsupported values {sorted(band_extra)}"
+            )
+        for field, default in _COMPETITOR_BAND_DEFAULTS.items():
+            band.setdefault(field, default)
+            if not _decimal_string(band[field]):
+                errors.append(f"competitors.band.{field} must be a decimal string")
+    brands = configured.get("brands")
+    if not isinstance(brands, list) or not brands:
+        errors.append("competitors.brands must be a non-empty list")
+        return
+    for index, brand in enumerate(brands):
+        if not isinstance(brand, dict):
+            errors.append(f"competitors.brands[{index}] must be an object")
+            continue
+        b_extra = set(brand).difference(
+            {"id", "name", "priceCenter", "categories", "productPrefix"}
+        )
+        if b_extra:
+            errors.append(
+                f"competitors.brands[{index}] contains unsupported values {sorted(b_extra)}"
+            )
+        if not isinstance(brand.get("id"), str) or not ID_PATTERN.fullmatch(
+            str(brand.get("id"))
+        ):
+            errors.append(
+                f"competitors.brands[{index}].id must match {ID_PATTERN.pattern}"
+            )
+        if not isinstance(brand.get("name"), str) or not brand.get("name"):
+            errors.append(f"competitors.brands[{index}].name is required")
+        if not _decimal_string(brand.get("priceCenter")):
+            errors.append(
+                f"competitors.brands[{index}].priceCenter must be a decimal string"
+            )
+        categories = brand.setdefault("categories", [])
+        if not isinstance(categories, list) or not all(
+            isinstance(item, str) for item in categories
+        ):
+            errors.append(
+                f"competitors.brands[{index}].categories must be a list of strings"
+            )
+
+
 def _validate_store_inventory(operations: dict[str, Any], errors: list[str]) -> None:
     """Validate the v13 store-inventory policy block.
 
@@ -356,6 +438,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
 
     _validate_pricing_evidence(config, errors)
+    _validate_competitors(config, errors)
 
     if config.get("specVersion") != SOURCE_SPEC_VERSION:
         errors.append(f"specVersion must equal {SOURCE_SPEC_VERSION!r}")

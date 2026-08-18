@@ -184,6 +184,8 @@ def _frames() -> dict[str, pd.DataFrame]:
                     "waste_units": 0,
                     "exposure_minor": 4500,
                     "currency_code": "INR",
+                    "prior_waste_units": 4,
+                    "prior_waste_minor": 6000,
                 }
             ]
         ),

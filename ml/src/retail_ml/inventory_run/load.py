@@ -274,6 +274,40 @@ def load_waste(connection: duckdb.DuckDBPyConnection, *, as_of: date) -> pd.Data
     )
 
 
+def load_prior_waste(
+    connection: duckdb.DuckDBPyConnection, *, as_of: date
+) -> pd.DataFrame:
+    """Total waste in the 91 days immediately *before* the trailing window.
+
+    The Waste Reduction tile compares the current trailing window against the one
+    that precedes it, so this reads exactly ``[as_of-181, as_of-91]`` -- the 91
+    days ending the day before ``load_waste``'s window opens, with no overlap. The
+    total across all causes is returned, not the expiry split, because the tile's
+    percentage is unit-based. The same ``known_as_of`` origin guard applies, so a
+    correction to a prior-window event that arrived after the origin is not
+    counted before it was knowable.
+    """
+
+    window_end = as_of - timedelta(days=TRAILING_DAYS)
+    window_start = window_end - timedelta(days=TRAILING_DAYS - 1)
+    return _frame(
+        connection,
+        """
+        SELECT
+            locations.market_id,
+            waste.location_id,
+            waste.sku_id,
+            SUM(waste.units) AS prior_waste_units
+        FROM waste_events AS waste
+        JOIN locations ON locations.location_id = waste.location_id
+        WHERE waste.event_date BETWEEN ? AND ?
+          AND waste.known_as_of < ? + INTERVAL 1 DAY
+        GROUP BY 1, 2, 3
+        """,
+        [window_start, window_end, as_of],
+    )
+
+
 def load_unit_costs(
     connection: duckdb.DuckDBPyConnection, *, as_of: date
 ) -> pd.DataFrame:
@@ -1072,6 +1106,7 @@ def load_inventory_inputs(
             ),
             batches=load_batches(connection, as_of=as_of),
             waste=load_waste(connection, as_of=as_of),
+            prior_waste=load_prior_waste(connection, as_of=as_of),
             unit_costs=load_unit_costs(connection, as_of=as_of),
             wms_variance=load_wms_variance(connection, as_of=as_of),
             lanes=lanes,
@@ -1150,6 +1185,7 @@ __all__ = [
     "load_inventory_inputs",
     "load_lanes",
     "load_positions",
+    "load_prior_waste",
     "load_suppliers",
     "load_supply_terms",
     "load_trailing_demand",

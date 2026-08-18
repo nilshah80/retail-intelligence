@@ -13,24 +13,24 @@
     },
     "passed": true,
     "perCohortCoverage": {
-      "cold_start": 0.8963986186482487,
-      "established_history": 0.9241793344357447
+      "cold_start": 0.8892863015951323,
+      "established_history": 0.9243438844578445
     },
     "schemaVersion": "retail-forecast-acceptance/v6"
   },
   "acceptedRun": {
     "decisionAsOf": "2026-07-31T18:30:00Z",
-    "forecastRunId": "fr_88bce2fb8cbcc512",
-    "forecastVersionId": "fv_78d481cce80755c3",
+    "forecastRunId": "fr_d0c0ebafa8cb1db9",
+    "forecastVersionId": "fv_f5a62cd4a0e41d5a",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "72598d4ddc206692e582a343f3515cd35d4b04df77fc652ce0508aa7baca7c00"
+    "runSemanticFingerprint": "3552a24900f7de033281002b74cf6b0b87516bec5d4533e266600d66964b10f9"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "78a4c7785483d13848d37911f43301c44d92ed94b3056558921ed790ec39299c",
-    "forecast_acceptance.json": "865fc483c799770a7e53a7f752deb851bdf53c13eaa51a838274710fc06d7f37"
+    "forecast-run-manifest.json": "774f45bf901633a00a64ac48dc446df687313bd59b75a64d129e45070950485c",
+    "forecast_acceptance.json": "64acc660717abebd48c38f30d574fc4e781f39c07fffc9d98ebfbe1da93e8bcc"
   },
   "authorityLedger": {
-    "currentEventId": 10,
+    "currentEventId": 13,
     "currentPriorEventId": null,
     "events": [
       {
@@ -122,6 +122,26 @@
         "priorEventId": null,
         "recordedAt": "2026-08-14 20:59:43.21742+00",
         "versionId": "fv_78d481cce80755c3"
+      },
+      {
+        "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
+        "actor": "nilshah80",
+        "eventId": 12,
+        "eventType": "superseded",
+        "forecastRunId": "fr_88bce2fb8cbcc512",
+        "priorEventId": 10,
+        "recordedAt": "2026-08-17 16:49:13.250289+00",
+        "versionId": "fv_78d481cce80755c3"
+      },
+      {
+        "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
+        "actor": "nilshah80",
+        "eventId": 13,
+        "eventType": "active",
+        "forecastRunId": "fr_d0c0ebafa8cb1db9",
+        "priorEventId": null,
+        "recordedAt": "2026-08-17 16:49:13.250289+00",
+        "versionId": "fv_f5a62cd4a0e41d5a"
       }
     ],
     "nullPredecessorEventIds": [
@@ -129,14 +149,16 @@
       3,
       5,
       7,
-      10
+      10,
+      13
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
     "unusedEventIds": [
-      8
+      8,
+      11
     ]
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth1",
+  "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth3",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -253,10 +275,10 @@
     ]
   },
   "inputBundle": {
-    "gateASemanticFingerprint": "1d89bc5d38ccce556bb7e755ca99a6887650a8792d7088a4c40c5a3913b9c568",
-    "gateBSemanticFingerprint": "f625e797b79265d726b7b43946a1c59f6f7a455719e469aa7a1f1df362e1c9c2",
-    "publicationSemanticFingerprint": "88e882b5486d9f5a3eabf9917ac545e8ef7254f81adb01379eceaa012c07c8cc",
-    "sourceSnapshotId": "30521d0093057f2652cb1828142cddcabd2c8f8425971f8c58babb7e0957eb5c"
+    "gateASemanticFingerprint": "96e466ff30316fc81d8d8aee1278898b20511cb4b0d49d60bd9f512343107c14",
+    "gateBSemanticFingerprint": "90ebe319fa329fe40b4f387922dcfdcae31839eab4f1fe6e065595e60718baf8",
+    "publicationSemanticFingerprint": "f14b9b4a49abaabeb8c9f6ecb2d50368f245eac51845c12b5333b37d15d738a9",
+    "sourceSnapshotId": "eee0e56255843afc10f98783849ff560df9f452ee7954bc6efc98f2a4aac4c00"
   },
   "intervalAvailability": {
     "calibratedMaxHorizon": 4,
@@ -274,7 +296,7 @@
     "servedRows": 249678,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0032_pricing_unit_fields",
+      "servingMigration": "0034_expiry_waste_prior_window",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -282,14 +304,14 @@
     "withheldShareOfServed": "0.093577"
   },
   "liveActivation": {
-    "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
-    "forecastRunId": "fr_88bce2fb8cbcc512",
-    "forecastVersionId": "fv_78d481cce80755c3"
+    "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
+    "forecastRunId": "fr_d0c0ebafa8cb1db9",
+    "forecastVersionId": "fv_f5a62cd4a0e41d5a"
   },
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0032_pricing_unit_fields",
+  "servingMigration": "0034_expiry_waste_prior_window",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": [
     {
@@ -303,6 +325,15 @@
     },
     {
       "activationEligible": false,
+      "bundleBytesRetained": true,
+      "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth1",
+      "forecastRunId": "fr_88bce2fb8cbcc512",
+      "forecastVersionId": "fv_78d481cce80755c3",
+      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
+      "rollbackEligible": true
+    },
+    {
+      "activationEligible": false,
       "bundleBytesRetained": false,
       "bundlePath": null,
       "forecastRunId": "fr_14b111912fb8458c",
@@ -312,12 +343,12 @@
     },
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_gulf-oil-india-rich-e3036902",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_e638699e9b8f6598",
       "forecastVersionId": "fv_8e18ad608ae38a61",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,

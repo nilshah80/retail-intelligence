@@ -260,6 +260,12 @@ def _inputs(**overrides: Any) -> InventoryInputs:
              "waste_units": 3, "expired_units": 2},
         ]
     )
+    prior_waste = pd.DataFrame(
+        [
+            {"market_id": MARKET, "location_id": STORE, "sku_id": "sku-1",
+             "prior_waste_units": 5},
+        ]
+    )
     unit_costs = pd.DataFrame(
         [
             {"market_id": m, "location_id": loc, "sku_id": s,
@@ -343,6 +349,7 @@ def _inputs(**overrides: Any) -> InventoryInputs:
         "forecast": forecast,
         "batches": batches,
         "waste": waste,
+        "prior_waste": prior_waste,
         "unit_costs": unit_costs,
         "wms_variance": wms,
         "lanes": [dict(lane) for lane in LANES],
@@ -800,6 +807,10 @@ def test_forward_expiry_exposure_and_realized_waste_stay_separate(
     # Realized loss comes from waste events, not from the same batch rows.
     assert int(row["waste_units"]) == 3
     assert int(row["expired_units"]) == 2
+    # Prior window carried 5 units; valued at the same accepted unit cost the read
+    # model serves Waste Reduction = (5 - 3) / 5 from.
+    assert int(row["prior_waste_units"]) == 5
+    assert int(row["prior_waste_minor"]) == 5 * 1500
 
 
 def test_a_batch_with_no_expiry_contributes_no_exposure(artifacts) -> None:

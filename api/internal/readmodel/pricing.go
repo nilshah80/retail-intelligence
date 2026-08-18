@@ -19,7 +19,7 @@ import (
 const (
 	PricingUnavailableSchema = "retail-pricing-unavailable/v1"
 	PricingPageSchema        = "retail-pricing-page/v1"
-	PricingMigrationRevision = "0033_promotion_positive_branch"
+	PricingMigrationRevision = "0034_expiry_waste_prior_window"
 
 	PricingReasonUnavailable = "PRICING_READ_MODEL_UNAVAILABLE"
 	PricingReasonInvalid     = "PRICING_AUTHORITY_INVALID"

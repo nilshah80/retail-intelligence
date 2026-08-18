@@ -86,7 +86,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0033_promotion_positive_branch",)
+            assert cursor.fetchone() == ("0034_expiry_waste_prior_window",)
             cursor.execute(
                 """
                 SELECT table_name
