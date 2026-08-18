@@ -35,7 +35,7 @@ SERVING_SCHEMA: Final[str] = "retail_serving"
 #: gate, so materialising against 0006 would load evidence the schema no longer accepts.
 #: 0008 makes forecast_series.yhat_p90/confidence nullable so decision #92's withheld
 #: interval can be stored, and pairs them with an attributable reason.
-MIGRATION_REVISION: Final[str] = "0034_expiry_waste_prior_window"
+MIGRATION_REVISION: Final[str] = "0035_executive_sales"
 #: v2 removes modelPolicy and classificationPolicies from the authority scope.
 #:
 #: Decision #90. v1 hashed them, so refitting a model policy over the SAME input bundle,
@@ -70,6 +70,22 @@ ACTIVATION_SCOPE_SCHEMA: Final[str] = "retail-forecast-activation-scope/v2"
 FORECAST_VERIFICATION_CONTRACT: Final[str] = "retail-forecast-verifier/v7"
 
 TABLE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
+    "executive_sales": (
+        "forecast_run_id",
+        "period_key",
+        "period_start",
+        "period_end",
+        "market_id",
+        "sku_id",
+        "store_id",
+        "channel_id",
+        "channel_type",
+        "region",
+        "category",
+        "currency_code",
+        "net_units",
+        "net_sales_minor",
+    ),
     "forecast_versions": (
         "version_id",
         "forecast_run_id",
@@ -285,6 +301,25 @@ def _read_frame(run: VerifiedForecastRun, name: str) -> pd.DataFrame:
         raise ForecastServingError(f"cannot read verified artifact {name}: {exc}") from exc
 
 
+def _publication_database(input_bundle: VerifiedInputBundle) -> Path:
+    """Resolve the already-verified curated database without widening authority."""
+
+    logical_path = input_bundle.publication_manifest.get("duckdb", {}).get("path")
+    _require(
+        isinstance(logical_path, str)
+        and bool(logical_path)
+        and Path(logical_path).name == logical_path,
+        "publication DuckDB path is invalid",
+    )
+    database_path = (input_bundle.paths.curated_root / logical_path).resolve()
+    _require(
+        database_path.parent == input_bundle.paths.curated_root.resolve()
+        and database_path.is_file(),
+        "verified publication DuckDB is unavailable",
+    )
+    return database_path
+
+
 def _historical_series_dimensions(evaluation: pd.DataFrame) -> pd.DataFrame:
     keys = ["sku_id", "store_id", "channel_id"]
     columns = [*keys, "market_id", "dept_id", "category"]
@@ -301,19 +336,7 @@ def _canonical_series_dimensions(
     input_bundle: VerifiedInputBundle,
     series_keys: pd.DataFrame,
 ) -> pd.DataFrame:
-    logical_path = input_bundle.publication_manifest.get("duckdb", {}).get("path")
-    _require(
-        isinstance(logical_path, str)
-        and bool(logical_path)
-        and Path(logical_path).name == logical_path,
-        "publication DuckDB path is invalid",
-    )
-    database_path = (input_bundle.paths.curated_root / logical_path).resolve()
-    _require(
-        database_path.parent == input_bundle.paths.curated_root.resolve()
-        and database_path.is_file(),
-        "verified publication DuckDB is unavailable",
-    )
+    database_path = _publication_database(input_bundle)
     try:
         connection = duckdb.connect(str(database_path), read_only=True)
         try:
@@ -445,6 +468,163 @@ def _store_frame(
         "publication stores contain duplicate store_id values",
     )
     return stores
+
+
+def _executive_sales_frame(
+    input_bundle: VerifiedInputBundle,
+    *,
+    run_id: str,
+    decision_as_of: str,
+    markets: tuple[str, ...],
+) -> pd.DataFrame:
+    """Reduce governed sales/returns to the six executive comparison windows.
+
+    The canonical sales authority contains more than twenty million daily rows.
+    The API boundary must stay PostgreSQL-only, so this verified materializer
+    publishes only the additive SKU/store/channel facts needed for LTM, month
+    and quarter comparisons. Refund money and physical-return units remain
+    independent typed adjustments, matching the retail_v2 contract.
+    """
+
+    decision_at = pd.Timestamp(decision_as_of)
+    decision_date = decision_at.date()
+    prior_year_date = (decision_at - pd.DateOffset(years=1)).date()
+    ltm_start = prior_year_date + timedelta(days=1)
+    prior_ltm_end = prior_year_date
+    prior_ltm_start = (
+        pd.Timestamp(prior_ltm_end) - pd.DateOffset(years=1) + pd.Timedelta(days=1)
+    ).date()
+    month_start = decision_date.replace(day=1)
+    prior_month_start = prior_year_date.replace(day=1)
+    quarter_month = ((decision_date.month - 1) // 3) * 3 + 1
+    quarter_start = decision_date.replace(month=quarter_month, day=1)
+    prior_quarter_start = quarter_start.replace(year=quarter_start.year - 1)
+    periods = (
+        ("ltm", ltm_start, decision_date),
+        ("prior_ltm", prior_ltm_start, prior_ltm_end),
+        ("month_to_date", month_start, decision_date),
+        ("prior_year_month_to_date", prior_month_start, prior_year_date),
+        ("quarter_to_date", quarter_start, decision_date),
+        ("prior_year_quarter_to_date", prior_quarter_start, prior_year_date),
+    )
+    placeholders = ", ".join("(?, ?, ?)" for _ in periods)
+    market_placeholders = ", ".join("?" for _ in markets)
+    parameters: list[Any] = [value for period in periods for value in period]
+    parameters.extend(
+        [
+            min(period[1] for period in periods),
+            max(period[2] for period in periods),
+            decision_at.to_pydatetime(),
+            min(period[1] for period in periods),
+            max(period[2] for period in periods),
+            decision_at.to_pydatetime(),
+            *markets,
+        ]
+    )
+    query = f"""
+        WITH periods(period_key, period_start, period_end) AS (
+            VALUES {placeholders}
+        ), visible_sales AS (
+            SELECT
+                sku_id, store_id, channel_id, date, units,
+                net_sales_amount, currency_code
+            FROM canonical_data.sales
+            WHERE date BETWEEN ?::DATE AND ?::DATE
+              AND known_as_of <= ?::TIMESTAMPTZ
+            QUALIFY row_number() OVER (
+                PARTITION BY sku_id, store_id, channel_id, date
+                ORDER BY sales_version DESC, known_as_of DESC
+            ) = 1
+        ), visible_adjustments AS (
+            SELECT
+                adjustment_id, sku_id, store_id, channel_id, sale_date,
+                event_type, units, amount
+            FROM canonical_data.sales_adjustments
+            WHERE sale_date BETWEEN ?::DATE AND ?::DATE
+              AND known_as_of <= ?::TIMESTAMPTZ
+            QUALIFY row_number() OVER (
+                PARTITION BY adjustment_id
+                ORDER BY adjustment_version DESC, known_as_of DESC
+            ) = 1
+        ), adjustments AS (
+            SELECT
+                sku_id, store_id, channel_id, sale_date,
+                coalesce(sum(units) FILTER (
+                    WHERE event_type = 'physical_return'
+                ), 0) AS return_units,
+                coalesce(sum(amount) FILTER (
+                    WHERE event_type = 'financial_refund'
+                ), 0) AS refund_minor
+            FROM visible_adjustments
+            GROUP BY 1, 2, 3, 4
+        ), net_sales AS (
+            SELECT
+                sales.sku_id, sales.store_id, sales.channel_id, sales.date,
+                sales.units - coalesce(adjustments.return_units, 0) AS net_units,
+                sales.net_sales_amount - coalesce(adjustments.refund_minor, 0)
+                    AS net_sales_minor,
+                sales.currency_code
+            FROM visible_sales AS sales
+            LEFT JOIN adjustments
+              ON adjustments.sku_id = sales.sku_id
+             AND adjustments.store_id = sales.store_id
+             AND adjustments.channel_id = sales.channel_id
+             AND adjustments.sale_date = sales.date
+        )
+        SELECT
+            periods.period_key,
+            periods.period_start::DATE AS period_start,
+            periods.period_end::DATE AS period_end,
+            stores.market_id,
+            net_sales.sku_id,
+            net_sales.store_id,
+            net_sales.channel_id,
+            channels.type AS channel_type,
+            stores.region,
+            products.category,
+            net_sales.currency_code,
+            sum(net_sales.net_units)::BIGINT AS net_units,
+            sum(net_sales.net_sales_minor)::BIGINT AS net_sales_minor
+        FROM net_sales
+        JOIN periods ON net_sales.date BETWEEN periods.period_start AND periods.period_end
+        JOIN canonical_data.stores AS stores USING (store_id)
+        JOIN canonical_data.products AS products USING (sku_id)
+        JOIN canonical_data.channels AS channels
+          ON channels.market_id = stores.market_id
+         AND channels.channel_id = net_sales.channel_id
+        WHERE stores.market_id IN ({market_placeholders})
+        GROUP BY ALL
+        ORDER BY
+            periods.period_key, stores.market_id, net_sales.sku_id,
+            net_sales.store_id, net_sales.channel_id
+    """
+    try:
+        with duckdb.connect(
+            str(_publication_database(input_bundle)), read_only=True
+        ) as connection:
+            frame = connection.execute(query, parameters).fetchdf()
+    except duckdb.Error as exc:
+        raise ForecastServingError(
+            f"cannot build executive sales projection: {exc}"
+        ) from exc
+    _require(not frame.empty, "canonical sales do not cover executive periods")
+    _require(
+        not frame.isna().any(axis=None),
+        "executive sales dimensions or values are incomplete",
+    )
+    frame.insert(0, "forecast_run_id", run_id)
+    key = [
+        "forecast_run_id",
+        "period_key",
+        "sku_id",
+        "store_id",
+        "channel_id",
+    ]
+    _require(
+        not frame.duplicated(key).any(),
+        "executive sales projection violates its declared grain",
+    )
+    return frame[list(TABLE_COLUMNS["executive_sales"])]
 
 
 def _activation_scope(
@@ -689,6 +869,12 @@ def prepare_serving_projection(
         "forecast_series_dimensions": serving_dimensions[
             list(TABLE_COLUMNS["forecast_series_dimensions"])
         ],
+        "executive_sales": _executive_sales_frame(
+            input_bundle,
+            run_id=run_id,
+            decision_as_of=str(run.manifest["decisionAsOf"]),
+            markets=markets,
+        ),
     }
     for name, frame in frames.items():
         _require(
@@ -808,34 +994,32 @@ def _existing_materialization(
     )
 
 
-def _ensure_series_dimensions(
+def _ensure_backfill_frames(
     cursor: psycopg.Cursor[Any],
     *,
     run: VerifiedForecastRun,
     projection: PreparedServingProjection,
 ) -> None:
-    frame = projection.frames["forecast_series_dimensions"]
-    cursor.execute(
-        f"""
-        SELECT COUNT(*)
-        FROM {SERVING_SCHEMA}.forecast_series_dimensions
-        WHERE forecast_run_id = %s
-        """,
-        (run.forecast_run_id,),
-    )
-    row = cursor.fetchone()
-    existing_count = int(row[0]) if row is not None else 0
-    if existing_count == 0:
-        _copy_frame(
-            cursor,
-            table="forecast_series_dimensions",
-            frame=frame,
+    # Both tables were added after accepted forecasts already existed. Re-running
+    # the verified materializer fills only an entirely absent companion frame;
+    # a partial frame remains an immutable-materialization disagreement.
+    for table in ("forecast_series_dimensions", "executive_sales"):
+        frame = projection.frames[table]
+        cursor.execute(
+            sql.SQL("SELECT COUNT(*) FROM {}.{} WHERE forecast_run_id = %s").format(
+                sql.Identifier(SERVING_SCHEMA), sql.Identifier(table)
+            ),
+            (run.forecast_run_id,),
         )
-    else:
-        _require(
-            existing_count == len(frame),
-            "existing forecast series dimensions are incomplete",
-        )
+        row = cursor.fetchone()
+        existing_count = int(row[0]) if row is not None else 0
+        if existing_count == 0:
+            _copy_frame(cursor, table=table, frame=frame)
+        else:
+            _require(
+                existing_count == len(frame),
+                f"existing {table} projection is incomplete",
+            )
     cursor.execute(
         f"""
         UPDATE {SERVING_SCHEMA}.forecast_materializations
@@ -872,7 +1056,7 @@ def materialize_forecast_run(
                     projection=projection,
                 )
                 if existing is not None:
-                    _ensure_series_dimensions(
+                    _ensure_backfill_frames(
                         cursor,
                         run=run,
                         projection=projection,

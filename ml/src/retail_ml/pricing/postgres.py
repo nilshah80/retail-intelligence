@@ -32,7 +32,7 @@ from retail_ml.pricing.selection import (
 
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0034_expiry_waste_prior_window"
+MIGRATION_REVISION: Final[str] = "0035_executive_sales"
 VERIFIER_CONTRACT: Final[str] = "retail-pricing-bundle-verification/v1"
 
 

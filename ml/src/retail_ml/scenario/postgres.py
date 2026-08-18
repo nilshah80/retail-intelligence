@@ -24,7 +24,7 @@ from retail_ml.scenario.context import (
 )
 
 SERVING_SCHEMA: Final[str] = "retail_serving"
-MIGRATION_REVISION: Final[str] = "0034_expiry_waste_prior_window"
+MIGRATION_REVISION: Final[str] = "0035_executive_sales"
 
 
 class ScenarioServingError(RuntimeError):

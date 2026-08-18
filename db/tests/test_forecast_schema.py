@@ -23,6 +23,8 @@ def test_forecast_serving_schema_integration() -> None:
         "forecast_series_dimensions",
         "forecast_stores",
         "forecast_versions",
+        # Migration 0035: bounded governed sales facts for Executive Overview.
+        "executive_sales",
         # Migration 0010: the inventory/replenishment serving surface. Same
         # exhaustive posture as the forecast set -- a table appearing without a
         # deliberate migration is drift.
@@ -86,7 +88,7 @@ def test_forecast_serving_schema_integration() -> None:
                 FROM retail_intelligence_alembic_version
                 """
             )
-            assert cursor.fetchone() == ("0034_expiry_waste_prior_window",)
+            assert cursor.fetchone() == ("0035_executive_sales",)
             cursor.execute(
                 """
                 SELECT table_name

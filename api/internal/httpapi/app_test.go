@@ -129,7 +129,7 @@ func TestDataManagementSummaryRoute(t *testing.T) {
 }
 
 // TestInventoryRoutesFailClosedWithoutActivation is the P4-8 governed NO-GO
-// half: no accepted inventory bundle exists yet, so every one of the fifteen
+// half: no accepted inventory bundle exists yet, so every inventory-backed
 // routes must return the governed 503 envelope -- never an empty 200, and never
 // an identity it cannot back with an activation.
 func TestInventoryRoutesFailClosedWithoutActivation(t *testing.T) {
@@ -149,7 +149,7 @@ func TestInventoryRoutesFailClosedWithoutActivation(t *testing.T) {
 		payload["inventoryVersionId"] != nil {
 		t.Fatalf("fail-closed payload must not expose an identity: %v", payload)
 	}
-	if len(inventoryPaths) != 15 {
+	if len(inventoryPaths) != 16 {
 		t.Fatalf("the route inventory drifted: %d paths", len(inventoryPaths))
 	}
 }

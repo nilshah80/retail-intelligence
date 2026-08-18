@@ -27,7 +27,7 @@ const (
 	// The serving schema this read model was written against. Pinned like the
 	// forecast pin and covered by the same cross-file regression: the pins move
 	// together or the gate stops.
-	InventoryMigrationRevision = "0034_expiry_waste_prior_window"
+	InventoryMigrationRevision = "0035_executive_sales"
 
 	InventoryReasonUnmaterialized = "INVENTORY_READ_MODEL_UNAVAILABLE"
 	InventoryReasonInvalid        = "INVENTORY_ARTIFACT_INVALID"
@@ -428,12 +428,14 @@ func (s *InventoryStore) Unavailable() map[string]any {
 }
 
 type InventoryQuery struct {
-	MarketID string
-	StoreID  string
-	Category string
-	Search   string
-	Offset   int
-	Limit    int
+	MarketID    string
+	Region      string
+	StoreID     string
+	ChannelType string
+	Category    string
+	Search      string
+	Offset      int
+	Limit       int
 }
 
 //nolint:gocyclo // one switch over fifteen routes reads better than a registry.
@@ -486,6 +488,8 @@ func (s *InventoryStore) Read(
 		query.Offset = 0
 	}
 	switch path {
+	case "/api/v1/executive/overview":
+		return s.executiveOverview(ctx, query)
 	case "/api/v1/inventory/versions":
 		return s.versions(), nil
 	case "/api/v1/inventory/overview":

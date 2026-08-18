@@ -199,6 +199,12 @@ input:focus-visible {
   font-size: 23px;
 }
 
+/* Page changes focus this non-interactive heading for assistive technology.
+   Suppress the browser's editable-control outline while retaining that focus. */
+.title h2[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .title p {
   margin: 5px 0 0;
   color: var(--muted);
@@ -1789,5 +1795,376 @@ tr[data-partial="true"] {
   .scenario-form-grid,
   .scenario-summary-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Executive Overview.
+
+   The section order and vocabulary mirror the approved original HTML. These
+   rules only add the composition-specific toolbar, metric blocks, chart and
+   print treatment; the shared KPI, card, table, badge and grid primitives stay
+   the same as every source page represented here.
+   --------------------------------------------------------------------------- */
+
+.executive-overview {
+  min-width: 0;
+}
+
+.executive-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.executive-toolbar .filter {
+  min-width: 150px;
+}
+
+.executive-notice {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #d8e8ff;
+  border-radius: 12px;
+  color: var(--muted);
+  background: #eef5ff;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.executive-notice-warning {
+  border-color: #ffe1a6;
+  color: #805400;
+  background: #fff8e8;
+}
+
+.executive-kpi-grid {
+  margin-bottom: 0;
+}
+
+.executive-kpi {
+  display: flex;
+  flex-direction: column;
+}
+
+.executive-kpi .value {
+  margin-bottom: 6px;
+}
+
+.executive-kpi .demo-note {
+  margin-top: auto;
+  padding-top: 7px;
+}
+
+.executive-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.executive-metric {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft, #f7f9fc);
+}
+
+.executive-metric span,
+.executive-metric strong,
+.executive-metric small {
+  display: block;
+}
+
+.executive-metric span,
+.executive-metric small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.executive-metric strong {
+  min-height: 22px;
+  margin: 7px 0 5px;
+  font-size: 17px;
+}
+
+.executive-callout {
+  margin-bottom: 0;
+}
+
+.executive-wide-table-card {
+  min-width: 0;
+}
+
+.executive-store-table {
+  min-width: 910px;
+}
+
+.executive-region-table {
+  min-width: 700px;
+}
+
+.executive-cell-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.executive-empty-cell {
+  padding: 26px 12px !important;
+  color: var(--muted);
+  text-align: center;
+}
+
+.executive-card-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.executive-chart {
+  display: flex;
+  min-height: 270px;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 16px 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background:
+    linear-gradient(to top, transparent 24%, var(--line) 25%, transparent 25.5%),
+    linear-gradient(to top, transparent 49%, var(--line) 50%, transparent 50.5%),
+    linear-gradient(to top, transparent 74%, var(--line) 75%, transparent 75.5%),
+    #fff;
+}
+
+.executive-bars {
+  display: grid;
+  height: 205px;
+  grid-template-columns: repeat(8, minmax(42px, 1fr));
+  align-items: end;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.executive-bar-group {
+  display: grid;
+  height: 100%;
+  min-width: 42px;
+  grid-template-rows: minmax(0, 1fr) 20px;
+  align-items: end;
+  text-align: center;
+}
+
+.executive-bar-pair {
+  display: flex;
+  height: 100%;
+  align-items: end;
+  justify-content: center;
+  gap: 3px;
+}
+
+.executive-bar {
+  position: relative;
+  width: min(17px, 42%);
+  min-height: 4px;
+  border-radius: 4px 4px 0 0;
+  transition: height .2s ease;
+}
+
+.executive-bar.forecast,
+.executive-chart-legend i.forecast {
+  background: var(--blue);
+}
+
+.executive-bar.actual,
+.executive-chart-legend i.actual {
+  background: var(--green);
+}
+
+.executive-bar span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  color: var(--muted);
+  font-size: 8px;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.executive-bar-group:hover .executive-bar span {
+  opacity: 1;
+}
+
+.executive-bar-group small {
+  padding-top: 6px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.executive-chart-legend {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 10px 0 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.executive-chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.executive-chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.executive-chart-state {
+  display: grid;
+  min-height: 235px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.executive-modal {
+  width: min(860px, 96vw);
+}
+
+.executive-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.executive-summary-grid > div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.executive-summary-grid span,
+.executive-summary-grid strong {
+  display: block;
+}
+
+.executive-summary-grid span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.executive-summary-grid strong {
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+.executive-modal-table {
+  min-width: 620px;
+}
+
+.executive-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.executive-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.executive-form-grid .filter {
+  width: 100%;
+}
+
+.executive-modal-grid .card {
+  box-shadow: none;
+}
+
+.executive-modal-grid .card > h3 {
+  margin: 0 0 10px;
+  color: var(--navy);
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .executive-toolbar .btn,
+  .executive-toolbar .filter {
+    width: 100%;
+  }
+
+  .executive-metric-grid,
+  .executive-summary-grid,
+  .executive-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+
+  .sidebar,
+  .topbar,
+  .currency-rate-strip,
+  .executive-toolbar,
+  .executive-notice,
+  .footer-kpis,
+  .page-footer,
+  .modal-backdrop {
+    display: none !important;
+  }
+
+  body,
+  .app,
+  .main,
+  .content,
+  .executive-overview {
+    min-width: 0;
+    background: #fff;
+  }
+
+  .app {
+    display: block;
+  }
+
+  .content {
+    padding: 0;
+  }
+
+  .executive-overview .kpi,
+  .executive-overview .card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .executive-overview .table-scroll {
+    overflow: visible;
+  }
+
+  .executive-store-table,
+  .executive-region-table {
+    min-width: 0;
+  }
+
+  .executive-overview .link-button {
+    color: var(--text);
   }
 }

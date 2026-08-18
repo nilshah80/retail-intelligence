@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Retail Intelligence API
-  version: 0.6.0
+  version: 0.7.0
   description: >-
     Governed data-management, forecast, inventory, pricing, competitor and
     promotion-planning API. Read routes serve explicitly activated PostgreSQL
@@ -297,6 +297,27 @@ paths:
           $ref: "#/components/responses/ScenarioStale"
         "503":
           $ref: "#/components/responses/ScenarioUnavailable"
+  /api/v1/executive/overview:
+    get:
+      operationId: executiveOverview
+      description: >-
+        Bounded LTM, month-to-date and quarter-to-date net-sales comparisons,
+        current-WAC margin, exact additive forecast accuracy and current
+        inventory-health rollups for the original Executive Overview. Plan and
+        realized-attribution values are never inferred.
+      parameters:
+        - {$ref: "#/components/parameters/ForecastMarket"}
+        - {$ref: "#/components/parameters/ForecastRegion"}
+        - {$ref: "#/components/parameters/ForecastStore"}
+        - {$ref: "#/components/parameters/ForecastChannelType"}
+        - {$ref: "#/components/parameters/ForecastCategory"}
+      responses:
+        "200":
+          $ref: "#/components/responses/ExecutiveLive"
+        "409":
+          $ref: "#/components/responses/InventoryStale"
+        "503":
+          $ref: "#/components/responses/InventoryUnavailable"
   /api/v1/inventory/versions:
     get:
       operationId: inventoryVersions
@@ -1050,6 +1071,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/InventoryLive"
+    ExecutiveLive:
+      description: >-
+        Live Executive Overview assembled from the lineage-matching forecast,
+        inventory, pricing-adjacent and bounded canonical-sales projections.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ExecutiveLive"
     InventoryUnavailable:
       description: >-
         Inventory data is unavailable because no fully verified
@@ -1796,6 +1825,79 @@ components:
         intervalUnavailableReason:
           type: [string, "null"]
           enum: [COLD_START_INTERVAL_UNCALIBRATED, null]
+    ExecutiveLive:
+      type: object
+      required:
+        - schemaVersion
+        - dataMode
+        - inventoryRunId
+        - inventoryVersionId
+        - semanticFingerprint
+        - forecastAuthority
+        - policyVersion
+        - markets
+        - reportingCurrency
+        - decisionAsOf
+        - periods
+        - summary
+        - stores
+        - regions
+        - categories
+        - basis
+        - scopeNotes
+      properties:
+        schemaVersion: {const: retail-executive-overview/v1}
+        dataMode: {const: live}
+        inventoryRunId:
+          type: string
+          pattern: ^ir_[0-9a-f]{16}$
+        inventoryVersionId:
+          type: string
+          pattern: ^iv_[0-9a-f]{16}$
+        semanticFingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        forecastAuthority:
+          type: object
+          required: [forecastRunId, forecastVersionId]
+          properties:
+            forecastRunId:
+              type: string
+              pattern: ^fr_[0-9a-f]{16}$
+            forecastVersionId:
+              type: string
+              pattern: ^fv_[0-9a-f]{16}$
+        policyVersion: {const: inventory-policy/2.0.0}
+        markets:
+          type: array
+          minItems: 1
+          items: {type: string}
+        reportingCurrency:
+          type: string
+          pattern: ^[A-Z]{3}$
+        decisionAsOf:
+          type: string
+          format: date-time
+        periods:
+          type: object
+          additionalProperties:
+            type: object
+            required: [start, end]
+            properties:
+              start: {type: string, format: date}
+              end: {type: string, format: date}
+        summary: {type: object}
+        stores:
+          type: array
+          items: {type: object}
+        regions:
+          type: array
+          items: {type: object}
+        categories:
+          type: array
+          items: {type: object}
+        basis: {type: object}
+        scopeNotes: {type: object}
     InventoryLive:
       type: object
       required:

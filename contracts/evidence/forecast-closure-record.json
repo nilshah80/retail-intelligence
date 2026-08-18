@@ -311,7 +311,7 @@
   "note": "Generated, never hand-edited. The v1 record was maintained by hand and accumulated several generations of evidence at once while no validator checked it, so the developer gate passed on a record that contradicted the run it described. Regenerate with: tools/dev.py closure-record --forecast-run <bundle>",
   "recordType": "generated_closure_record",
   "schemaVersion": "retail-forecast-closure-record/v2",
-  "servingMigration": "0034_expiry_waste_prior_window",
+  "servingMigration": "0035_executive_sales",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
   "supersededIdentities": [
     {
@@ -325,12 +325,12 @@
     },
     {
       "activationEligible": false,
-      "bundleBytesRetained": true,
-      "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth1",
+      "bundleBytesRetained": false,
+      "bundlePath": null,
       "forecastRunId": "fr_88bce2fb8cbcc512",
       "forecastVersionId": "fv_78d481cce80755c3",
-      "reason": "Superseded under decision #90 authority-generation-2; retained as historical evidence.",
-      "rollbackEligible": true
+      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
+      "rollbackEligible": false
     },
     {
       "activationEligible": false,

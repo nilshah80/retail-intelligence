@@ -294,6 +294,7 @@ def validate_openapi(path: Path) -> None:
     # route per screen destination. Enumerated exactly, like everything else in
     # this inventory: an endpoint appearing without a contract change is drift.
     inventory_paths = {
+        "/api/v1/executive/overview",
         "/api/v1/inventory/versions",
         "/api/v1/inventory/overview",
         "/api/v1/inventory/stores",

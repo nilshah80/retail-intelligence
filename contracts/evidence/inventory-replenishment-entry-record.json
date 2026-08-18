@@ -4,6 +4,7 @@
     "currentPriorEventId": null,
     "identitiesWithoutRetainedBytes": [
       "fr_7d34e90850b5a85c",
+      "fr_88bce2fb8cbcc512",
       "fr_14b111912fb8458c",
       "fr_e638699e9b8f6598",
       "fr_546a32b4b120fd7a"
@@ -235,7 +236,7 @@
   },
   "recordType": "generated_capability_entry_record",
   "schemaVersion": "retail-inventory-replenishment-entry-record/v1",
-  "servingMigration": "0034_expiry_waste_prior_window",
+  "servingMigration": "0035_executive_sales",
   "sourceSelection": {
     "activeRecordId": "rec_50504c3a9b7183e1",
     "capabilityReadiness": "ready",

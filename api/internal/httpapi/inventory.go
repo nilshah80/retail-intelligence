@@ -8,6 +8,7 @@ import (
 )
 
 var inventoryPaths = []string{
+	"/api/v1/executive/overview",
 	"/api/v1/inventory/versions",
 	"/api/v1/inventory/overview",
 	"/api/v1/inventory/stores",
@@ -47,11 +48,13 @@ func mountInventoryRoutes(app *aarv.App, store *readmodel.InventoryStore) {
 				)
 			}
 			payload, err := store.Read(c.Context(), path, readmodel.InventoryQuery{
-				MarketID: c.Query("marketId"),
-				StoreID:  c.Query("storeId"),
-				Category: c.Query("category"),
-				Search:   c.Query("search"),
-				Offset:   c.QueryInt("offset", 0),
+				MarketID:    c.Query("marketId"),
+				Region:      c.Query("region"),
+				StoreID:     c.Query("storeId"),
+				ChannelType: c.Query("channelType"),
+				Category:    c.Query("category"),
+				Search:      c.Query("search"),
+				Offset:      c.QueryInt("offset", 0),
 				// One default, in the read model. Repeating a literal here meant
 				// the transport quietly overrode the page size the projections
 				// declare, so raising it there changed nothing.

@@ -344,6 +344,14 @@ describe("browser tab identity", () => {
       expect(document.title).toBe("Retail Intelligence · Data Management");
     });
 
+    const executiveOverview = screen.getByRole("button", {name: /Executive Overview/});
+    expect(executiveOverview).toBeEnabled();
+    fireEvent.click(executiveOverview);
+    await waitFor(() => {
+      expect(document.title).toBe("Retail Intelligence · Executive Overview");
+    });
+    expect(executiveOverview).toHaveAttribute("aria-current", "page");
+
     fireEvent.click(screen.getByRole("button", {name: /Stock Health/}));
     await waitFor(() => {
       expect(document.title).toBe("Retail Intelligence · Stock Health");

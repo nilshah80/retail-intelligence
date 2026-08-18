@@ -8,6 +8,7 @@ import {
   type FxRates
 } from "./api";
 import {DemandForecast} from "./Forecast";
+import {ExecutiveOverview} from "./ExecutiveOverview";
 import {InventoryPage, inventoryScreens, type InventoryPageId} from "./Inventory";
 import {
   PricingPage,
@@ -38,9 +39,7 @@ const currencyOrder = ["INR", "USD", "EUR", "GBP", "AED"] as const;
 const primaryNavigation = [
   {
     icon: "⌂",
-    label: "Executive Overview",
-    disabled: true,
-    reason: "A governed Executive Overview route is not available."
+    label: "Executive Overview"
   }
 ];
 
@@ -57,6 +56,7 @@ const pricingNavigation = [
  * maps below are derived from it rather than duplicated.
  */
 export type PageId =
+  | "overview"
   | "demandForecast"
   | "dataManagement"
   | InventoryPageId
@@ -75,7 +75,7 @@ const inventoryPageIds: InventoryPageId[] = [
 ];
 
 export function isPageId(value: string | null): value is PageId {
-  if (value === "demandForecast" || value === "dataManagement") return true;
+  if (value === "overview" || value === "demandForecast" || value === "dataManagement") return true;
   if (pricingPageIds.includes(value as PricingPageId)) return true;
   return inventoryPageIds.includes(value as InventoryPageId);
 }
@@ -85,6 +85,7 @@ function isPricingPage(page: PageId): page is PricingPageId {
 }
 
 export function pageTitle(page: PageId): string {
+  if (page === "overview") return "Executive Overview";
   if (page === "demandForecast") return "Demand Forecast";
   if (page === "dataManagement") return "Data Management";
   if (isPricingPage(page)) return pricingScreens[page].title;
@@ -92,6 +93,9 @@ export function pageTitle(page: PageId): string {
 }
 
 export function pageSubtitle(page: PageId): string {
+  if (page === "overview") {
+    return "Real-time snapshot of pricing, demand and inventory performance";
+  }
   if (page === "demandForecast") {
     return "Forecast demand by SKU, store, channel and time";
   }
@@ -274,7 +278,14 @@ function Sidebar({
           <p>Dynamic Pricing &amp;<br />Demand Forecasting</p>
         </div>
       </div>
-      {primaryNavigation.map((item) => <NavItem key={item.label} {...item} />)}
+      {primaryNavigation.map((item) => (
+        <NavItem
+          key={item.label}
+          {...item}
+          active={page === "overview"}
+          onClick={() => onPage("overview")}
+        />
+      ))}
       <NavigationSection
         title="PRICING"
         items={pricingNavigation}
@@ -1033,7 +1044,9 @@ function Shell({
               {displayRateText(activeCurrency, fx)}
             </span>
             <span>
-              {page === "demandForecast"
+              {page === "overview"
+                ? "Executive monetary values use the accepted reporting currency; source coverage and calculation bases are disclosed with each measure."
+                : page === "demandForecast"
                 ? "Demand Forecast currently presents units and percentages; no live monetary measure is converted."
                 : isPricingPage(page)
                   ? "Operating prices and aggregates remain in the governed display currency; currencies without retained FX evidence stay disabled."
@@ -1135,7 +1148,7 @@ function DataManagement({dashboard}: {dashboard: Dashboard}) {
 export default function App() {
   const initialPage = new URLSearchParams(window.location.search).get("page");
   const [page, setPage] = useState<PageId>(
-    isPageId(initialPage) ? initialPage : "demandForecast"
+    isPageId(initialPage) ? initialPage : "overview"
   );
   const [storeId, setStoreId] = useState("");
   const [channelType, setChannelType] = useState("");
@@ -1168,13 +1181,13 @@ export default function App() {
   useEffect(() => {
     if (!isPageId(initialPage)) {
       const normalized = new URL(window.location.href);
-      normalized.searchParams.set("page", "demandForecast");
+      normalized.searchParams.set("page", "overview");
       normalized.hash = "";
-      window.history.replaceState({page: "demandForecast"}, "", normalized);
+      window.history.replaceState({page: "overview"}, "", normalized);
     }
     const restorePage = () => {
       const requested = new URLSearchParams(window.location.search).get("page");
-      const restored: PageId = isPageId(requested) ? requested : "demandForecast";
+      const restored: PageId = isPageId(requested) ? requested : "overview";
       if (!isPageId(requested)) {
         const normalized = new URL(window.location.href);
         normalized.searchParams.set("page", restored);
@@ -1238,7 +1251,17 @@ export default function App() {
       {...shellProps}
       dashboard={dashboard.data}
     >
-      {isPricingPage(page) ? (
+      {page === "overview" ? (
+        <ExecutiveOverview
+          dashboard={dashboard.data!}
+          storeId={storeId}
+          channelType={channelType}
+          forecastSummary={forecastSummary.data}
+          forecastSummaryPending={forecastSummary.isPending}
+          forecastSummaryError={forecastSummary.error}
+          onNavigate={(target) => changePage(target)}
+        />
+      ) : isPricingPage(page) ? (
         <PricingPage
           pageId={page}
           dashboard={dashboard.data}

@@ -792,10 +792,136 @@ export const inventorySliceSchema = z.object({
 
 export type InventorySlice = z.infer<typeof inventorySliceSchema>;
 
-export const loadInventorySlice = (endpoint: string, marketId?: string) =>
-  get(
-    marketId
-      ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}marketId=${encodeURIComponent(marketId)}`
-      : endpoint,
-    inventorySliceSchema
+const executiveInventoryFields = {
+  inventoryValueMinor: z.number(),
+  overstockValueMinor: z.number(),
+  inventoryDays: nullableNumber,
+  sellThroughPct: nullableNumber,
+  stockoutRatePct: nullableNumber,
+  stockoutCells: z.number().int().nonnegative(),
+  inventoryCells: z.number().int().nonnegative()
+};
+
+const executiveMonthFields = {
+  monthRevenueMinor: z.number(),
+  monthPriorRevenueMinor: z.number(),
+  monthGrowthPct: nullableNumber,
+  monthGrossMarginPct: nullableNumber,
+  monthPriorGrossMarginPct: nullableNumber,
+  monthNetUnits: z.number().int(),
+  monthCostCoveragePct: z.number()
+};
+
+const executiveQuarterFields = {
+  quarterRevenueMinor: z.number(),
+  quarterPriorRevenueMinor: z.number(),
+  quarterGrowthPct: nullableNumber,
+  quarterGrossMarginPct: nullableNumber,
+  quarterPriorGrossMarginPct: nullableNumber,
+  quarterNetUnits: z.number().int(),
+  quarterCostCoveragePct: z.number()
+};
+
+export const executiveOverviewSchema = z.object({
+  schemaVersion: z.literal("retail-executive-overview/v1"),
+  dataMode: z.literal("live"),
+  inventoryRunId: z.string(),
+  inventoryVersionId: z.string(),
+  semanticFingerprint: z.string(),
+  forecastAuthority: z.object({
+    forecastRunId: z.string(),
+    forecastVersionId: z.string()
+  }),
+  policyVersion: z.string(),
+  markets: z.array(z.string()),
+  reportingCurrency: z.string(),
+  decisionAsOf: z.string(),
+  periods: z.record(z.string(), z.object({start: z.string(), end: z.string()})),
+  summary: z.object({
+    ltmRevenueMinor: z.number(),
+    ltmPriorRevenueMinor: z.number(),
+    ltmGrowthPct: nullableNumber,
+    ltmGrossMarginPct: nullableNumber,
+    ltmPriorGrossMarginPct: nullableNumber,
+    ltmNetUnits: z.number().int(),
+    ltmCostCoveragePct: z.number(),
+    grossMarginDeltaPts: z.number().optional(),
+    ...executiveMonthFields,
+    ...executiveInventoryFields,
+    forecastAccuracyPct: nullableNumber
+  }),
+  stores: z.array(z.object({
+    storeId: z.string(),
+    ...executiveMonthFields,
+    ...executiveInventoryFields
+  })),
+  regions: z.array(z.object({
+    region: z.string(),
+    ...executiveQuarterFields,
+    ...executiveInventoryFields,
+    forecastAccuracyPct: nullableNumber
+  })),
+  categories: z.array(z.object({
+    category: z.string(),
+    ...executiveQuarterFields,
+    ...executiveInventoryFields
+  })),
+  basis: z.object({
+    revenue: z.string(),
+    grossMargin: z.string(),
+    comparison: z.string(),
+    inventory: z.string(),
+    forecastAccuracy: z.string()
+  }),
+  scopeNotes: z.object({
+    inventoryChannelScope: z.boolean(),
+    inventoryChannelScopeReason: z.string()
+  })
+});
+
+export type ExecutiveOverviewData = z.infer<typeof executiveOverviewSchema>;
+
+export type InventoryFilters = {
+  marketId?: string;
+  storeId?: string;
+  category?: string;
+  search?: string;
+  offset?: number;
+  limit?: number;
+};
+
+export const loadExecutiveOverview = (
+  filters: ForecastFilters,
+  signal?: AbortSignal
+) => get(
+  `/api/v1/executive/overview${forecastQuery(filters)}`,
+  executiveOverviewSchema,
+  signal
+);
+
+/**
+ * Read an inventory or replenishment projection under an optional executive
+ * scope. The string overload is retained for existing callers that pass only a
+ * market id; new composition pages can pass the same store/category scope used
+ * by forecast and pricing without building URLs themselves.
+ */
+export const loadInventorySlice = (
+  endpoint: string,
+  filters: string | InventoryFilters = {},
+  signal?: AbortSignal
+) => {
+  const normalized = typeof filters === "string"
+    ? {marketId: filters}
+    : filters;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(normalized)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const query = params.toString();
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return get(
+    query ? `${endpoint}${separator}${query}` : endpoint,
+    inventorySliceSchema,
+    signal
   );
+};

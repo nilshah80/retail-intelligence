@@ -131,3 +131,42 @@ func TestEveryRouteOrderingExecutesAgainstTheLiveSchema(t *testing.T) {
 		})
 	}
 }
+
+// Executive Overview composes sales, cost, inventory and forecast aggregates
+// in one request. Exercise both the ordinary path and the channel-dimension
+// join because a stray bound argument there otherwise turns the whole page
+// into the generic inventory-unavailable envelope.
+func TestExecutiveOverviewExecutesAgainstTheLiveSchema(t *testing.T) {
+	dsn := os.Getenv("RETAIL_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("PostgreSQL integration environment is not configured")
+	}
+	ctx := context.Background()
+	store := LoadInventory(ctx, InventoryConfig{PostgresDSN: dsn})
+	if !store.Available() {
+		t.Skipf("no active inventory projection: %s", store.UnavailableReason())
+	}
+	defer store.Close()
+
+	queries := map[string]InventoryQuery{
+		"portfolio": {},
+		"channel":   {ChannelType: "store"},
+		"category":  {Category: "grocery"},
+	}
+	for name, query := range queries {
+		t.Run(name, func(t *testing.T) {
+			payload, err := store.Read(
+				ctx, "/api/v1/executive/overview", query,
+			)
+			if err != nil {
+				t.Fatalf("executive overview failed: %v", err)
+			}
+			if got := payload["schemaVersion"]; got != ExecutiveOverviewSchema {
+				t.Fatalf("schemaVersion = %v, want %s", got, ExecutiveOverviewSchema)
+			}
+			if got := payload["dataMode"]; got != "live" {
+				t.Fatalf("dataMode = %v, want live", got)
+			}
+		})
+	}
+}
