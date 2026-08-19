@@ -1387,7 +1387,12 @@ function PriceSimulationPage({dashboard, storeId, channelType}: Pick<PricingPage
   useEffect(() => {
     if (aiPackMinor === null) return;
     setProposed(proposedInputValue(aiPackMinor, unitBasis));
-    setCompetitorResponse(competitorIncluded ? "Include" : "Exclude");
+    // Neutral competitor what-if so the loaded Proposed reproduces the AI Optimal
+    // column exactly: the accepted units already priced in the competitor bound
+    // server-side, and beta was fitted from those points, so "Include" would damp
+    // the response a second time (double-count) -- leaving Proposed != AI Optimal
+    // and making Reset (which restores "Exclude") shift the projected KPIs.
+    setCompetitorResponse("Exclude");
     setTargetMargin(costPackMinor !== null && aiPackMinor > 0
       ? String(Math.round(((aiPackMinor - costPackMinor) / aiPackMinor) * 100))
       : "");
