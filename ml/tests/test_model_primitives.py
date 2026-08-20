@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import date, timedelta
 
 import numpy as np
@@ -10,7 +12,12 @@ from retail_ml.models.backtest import (
     rolling_origin_schedule,
     slow_mover_diagnostics,
 )
-from retail_ml.models.baselines import additive_metrics, attach_baselines
+from retail_ml.models.baselines import (
+    additive_metrics,
+    attach_baselines,
+    metric_for_column,
+)
+from retail_ml.models.cohorts import key_fingerprint
 from retail_ml.models.confidence import aggregate_confidence, forecast_confidence
 from retail_ml.models.intermittent import (
     croston_sba,
@@ -252,6 +259,145 @@ def _disable_bootstrap(monkeypatch: object) -> None:
         "_clustered_interval",
         lambda frame, **kwargs: (-0.5, -0.1),
     )
+
+
+def _legacy_clustered_interval(
+    frame: pd.DataFrame,
+    *,
+    comparator_column: str = "seasonal_naive_baseline",
+    samples: int = 500,
+    seed: int = 20260730,
+) -> tuple[float | None, float | None]:
+    key_columns = ["sku_id", "store_id", "channel_id"]
+    keys = frame[key_columns].drop_duplicates().reset_index(drop=True)
+    if keys.empty:
+        return (None, None)
+    grouped = {
+        tuple(key): group
+        for key, group in frame.groupby(key_columns, sort=False, observed=True)
+    }
+    generator = np.random.default_rng(seed)
+    differences = []
+    for _ in range(samples):
+        selected = generator.integers(0, len(keys), size=len(keys))
+        sampled = pd.concat(
+            [grouped[tuple(keys.iloc[index])].copy() for index in selected],
+            ignore_index=True,
+        )
+        champion = metric_for_column(sampled, "yhat_p50")
+        comparator = metric_for_column(sampled, comparator_column)
+        if champion.wape is not None and comparator.wape is not None:
+            differences.append(champion.wape - comparator.wape)
+    if not differences:
+        return (None, None)
+    lower, upper = np.quantile(differences, [0.025, 0.975])
+    return (round(float(lower), 8), round(float(upper), 8))
+
+
+def test_clustered_interval_matches_frozen_row_resampling() -> None:
+    rows = []
+    actual_groups = (
+        (0.0, 0.0, 0.0),
+        (2.0, 3.0, 5.0),
+        (5.0, 8.0, 13.0),
+        (13.0, 21.0, 34.0),
+        (3.0, 0.0, 7.0),
+        (11.0, 17.0, 23.0),
+    )
+    for series in (3, 0, 5, 1, 4, 2):
+        actuals = actual_groups[series]
+        for horizon, actual in enumerate(actuals, start=1):
+            rows.append(
+                {
+                    "sku_id": f"sku-{series}",
+                    "store_id": "store",
+                    "channel_id": "channel",
+                    "horizon": horizon,
+                    "actual_units": actual,
+                    "yhat_p50": actual * (0.7 + series * 0.1),
+                    "seasonal_naive_baseline": actual * (1.3 - series * 0.05),
+                }
+            )
+    frame = pd.DataFrame(rows)
+    frame.loc[frame.index[4], "yhat_p50"] = np.nan
+    frame.loc[frame.index[8], "seasonal_naive_baseline"] = np.nan
+    first_appearance = frame["sku_id"].drop_duplicates().tolist()
+    assert first_appearance != sorted(first_appearance)
+
+    assert backtest._clustered_interval(frame, samples=311, seed=90210) == (
+        _legacy_clustered_interval(frame, samples=311, seed=90210)
+    )
+
+    zero_actual = frame.assign(actual_units=0.0)
+    assert backtest._clustered_interval(zero_actual) == (None, None)
+    assert backtest._clustered_interval(frame.iloc[0:0]) == (None, None)
+
+
+def test_key_fingerprint_streaming_preserves_canonical_digest() -> None:
+    frame = pd.DataFrame(
+        {
+            "forecast_origin": [date(2026, 1, 12), date(2026, 1, 5)],
+            "sku_id": ["sku-é", "sku-1"],
+            "store_id": ["store-2", "store-1"],
+        }
+    )
+    columns = ["forecast_origin", "sku_id", "store_id"]
+    rows = [
+        [str(value) for value in row]
+        for row in frame[columns]
+        .sort_values(columns, kind="mergesort")
+        .itertuples(index=False, name=None)
+    ]
+    expected = hashlib.sha256(
+        json.dumps(rows, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    assert key_fingerprint(frame, columns) == expected
+    assert backtest._key_fingerprint(frame, columns) == expected
+
+
+def test_one_market_reuses_global_acceptance_scope(monkeypatch) -> None:
+    _disable_bootstrap(monkeypatch)
+    original = backtest._scope_gates
+    calls = []
+
+    def counted(frame: pd.DataFrame) -> dict[str, object]:
+        calls.append(len(frame))
+        return original(frame)
+
+    monkeypatch.setattr(backtest, "_scope_gates", counted)
+    frame = _passing_acceptance_frame().query("market_id == 'india-west'")
+
+    result = evaluate_acceptance(frame)
+
+    assert calls == [len(frame)]
+    assert result["markets"]["india-west"] == result["global"]
+
+
+def test_one_market_global_and_group_scopes_are_equivalent_with_live_bootstrap() -> None:
+    frame = _passing_acceptance_frame().query("market_id == 'india-west'")
+    cohorted = backtest.assign_cohorts(frame)
+    _, market_frame = next(
+        iter(cohorted.groupby("market_id", sort=True, observed=True))
+    )
+
+    assert backtest._scope_gates(cohorted) == backtest._scope_gates(market_frame)
+
+
+def test_paired_key_diagnostics_fail_closed_on_duplicate_keys() -> None:
+    frame = _passing_acceptance_frame().iloc[:2].copy()
+    unique = backtest._paired_key_diagnostics(frame)
+
+    assert unique["duplicateFree"] is True
+    assert unique["pairedRowsIdentical"] is True
+    assert len(set(unique["rowCounts"].values())) == 1
+    assert len(set(unique["keySha256"].values())) == 1
+
+    duplicated = backtest._paired_key_diagnostics(
+        pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    )
+    assert duplicated["duplicateFree"] is False
+    assert duplicated["pairedRowsIdentical"] is False
 
 
 def test_all_acceptance_gates_accept_a_legitimate_run(monkeypatch) -> None:

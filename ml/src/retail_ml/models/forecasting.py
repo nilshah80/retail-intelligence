@@ -272,6 +272,8 @@ def _score_recent_schedule(
                     training,
                     horizon=horizon,
                     threads_per_model=runtime_profile.threads_per_model,
+                    telemetry=telemetry,
+                    telemetry_prefix="recent_lightgbm",
                 )
             with telemetry.measure("recent_score"):
                 return score_horizon_model(evaluation, model)
@@ -394,6 +396,7 @@ def run_backtest(
                             training,
                             horizon=horizon,
                             threads_per_model=runtime_profile.threads_per_model,
+                            telemetry=telemetry,
                         )
                     with telemetry.measure("score_and_tree_shap"):
                         scored = score_horizon_model(evaluation, model)

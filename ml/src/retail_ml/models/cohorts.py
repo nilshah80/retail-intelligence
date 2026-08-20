@@ -250,15 +250,21 @@ def key_fingerprint(frame: pd.DataFrame, key_columns: list[str]) -> str:
     """Return the canonical sorted row-key SHA-256 for a cohort population."""
 
     present = [column for column in key_columns if column in frame.columns]
-    rows = [
-        [str(value) for value in row]
-        for row in frame[present]
-        .sort_values(present, kind="mergesort")
-        .itertuples(index=False, name=None)
-    ]
-    return hashlib.sha256(
-        json.dumps(rows, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
+    ordered = frame[present].sort_values(present, kind="mergesort")
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    for index, row in enumerate(ordered.itertuples(index=False, name=None)):
+        if index:
+            digest.update(b",")
+        digest.update(
+            json.dumps(
+                [str(value) for value in row],
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 def cohort_population(

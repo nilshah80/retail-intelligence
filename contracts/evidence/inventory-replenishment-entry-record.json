@@ -1,23 +1,12 @@
 {
   "authorityLedger": {
-    "currentEventId": 13,
+    "currentEventId": 1,
     "currentPriorEventId": null,
-    "identitiesWithoutRetainedBytes": [
-      "fr_7d34e90850b5a85c",
-      "fr_88bce2fb8cbcc512",
-      "fr_14b111912fb8458c",
-      "fr_e638699e9b8f6598",
-      "fr_546a32b4b120fd7a"
-    ],
+    "identitiesWithoutRetainedBytes": [],
     "nullPredecessorEventIds": [
-      1,
-      3,
-      5,
-      7,
-      10,
-      13
+      1
     ],
-    "supersededIdentityCount": 5
+    "supersededIdentityCount": 0
   },
   "decision92Residue": {
     "handedTo": "P4-1",
@@ -114,12 +103,12 @@
   "forecastAuthority": {
     "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
     "activeAuthorityCount": 1,
-    "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth3",
+    "bundlePath": "ml/data/artifacts/forecast_run_gulf-rust-perf1",
     "featureSemanticFingerprint": "c1dca283ab6401be25684789e466281df7e67d147d4dd719148bb217944bba8d",
     "forecastRunId": "fr_d0c0ebafa8cb1db9",
     "lifecycleStatus": "accepted",
     "publicationSemanticFingerprint": "f14b9b4a49abaabeb8c9f6ecb2d50368f245eac51845c12b5333b37d15d738a9",
-    "runSemanticFingerprint": "3552a24900f7de033281002b74cf6b0b87516bec5d4533e266600d66964b10f9",
+    "runSemanticFingerprint": "b9f64e5eab95f6b8b95b7d1115a93864b8e8d44a7e181938e303495fb755c6a3",
     "versionId": "fv_f5a62cd4a0e41d5a"
   },
   "generatedBy": "tools/build_inventory_entry_record.py",

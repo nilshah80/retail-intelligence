@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from retail_ml.runtime.profile import model_worker_budget, resolve_ml_runtime_profile
 from retail_ml.runtime.telemetry import MLStageTelemetry
 
@@ -37,12 +39,26 @@ def test_nested_model_workers_are_bounded_by_cpu_and_memory() -> None:
     assert model_worker_budget(profile, logical_cpu_count=8) == 2
 
 
-def test_stage_telemetry_labels_sampled_rss_honestly() -> None:
+def test_stage_telemetry_labels_sampled_rss_honestly(monkeypatch) -> None:
     telemetry = MLStageTelemetry()
     with telemetry.measure("fixture"):
         values = [index for index in range(100)]
+    telemetry.record_value("best_iteration", 120)
+    telemetry.record_value("best_iteration", 180)
+    rss_calls = 0
+
+    def sampled_rss() -> int:
+        nonlocal rss_calls
+        rss_calls += 1
+        return 1
+
+    monkeypatch.setattr(telemetry, "_sample_rss", sampled_rss)
+    with telemetry.measure("nested_fit", sample_rss=False):
+        pass
+    assert rss_calls == 0
     snapshot = telemetry.snapshot()
 
+    assert snapshot["schemaVersion"] == "retail-ml-stage-telemetry/v2"
     assert len(values) == 100
     assert snapshot["rssMeasurement"] in {
         "sampled_at_stage_boundaries_process_tree",
@@ -50,3 +66,37 @@ def test_stage_telemetry_labels_sampled_rss_honestly() -> None:
     }
     assert snapshot["maxSampledRssBytes"] > 0
     assert snapshot["stages"]["fixture"]["calls"] == 1
+    assert snapshot["stages"]["fixture"]["rssSamples"] == 2
+    assert snapshot["stages"]["nested_fit"]["rssSamples"] == 0
+    assert snapshot["stages"]["nested_fit"]["maxSampledRssBytes"] == 0
+    assert snapshot["values"]["best_iteration"] == {
+        "calls": 2,
+        "minimum": 120.0,
+        "maximum": 180.0,
+        "mean": 150.0,
+        "p50": 150.0,
+        "p90": 174.0,
+        "p95": 177.0,
+    }
+
+
+def test_stage_telemetry_records_worker_values_thread_safely() -> None:
+    telemetry = MLStageTelemetry()
+
+    def record(_: int) -> None:
+        for value in range(5):
+            telemetry.record_value("best_iteration", value)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(record, range(20)))
+
+    observed = telemetry.snapshot()["values"]["best_iteration"]
+    assert observed == {
+        "calls": 100,
+        "minimum": 0.0,
+        "maximum": 4.0,
+        "mean": 2.0,
+        "p50": 2.0,
+        "p90": 4.0,
+        "p95": 4.0,
+    }

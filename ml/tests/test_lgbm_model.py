@@ -7,6 +7,7 @@ import pandas as pd
 from retail_ml.models.train_lgbm import fit_horizon_model, score_horizon_model
 from retail_ml.models import train_lgbm
 from retail_ml.models.drivers import LIVE_DRIVER_GROUPS
+from retail_ml.runtime.telemetry import MLStageTelemetry
 
 
 def _training_frame() -> pd.DataFrame:
@@ -72,8 +73,15 @@ def _training_frame() -> pd.DataFrame:
 
 def test_horizon_model_is_deterministic_monotonic_and_channel_aware() -> None:
     frame = _training_frame()
-    model = fit_horizon_model(frame, horizon=1, threads_per_model=1)
+    telemetry = MLStageTelemetry()
+    model = fit_horizon_model(
+        frame,
+        horizon=1,
+        threads_per_model=1,
+        telemetry=telemetry,
+    )
     scored = score_horizon_model(frame.tail(200), model)
+    snapshot = telemetry.snapshot()
 
     assert (scored["yhat_p90"] >= scored["yhat_p50"]).all()
     assert scored["confidence"].between(0, 1).all()
@@ -83,6 +91,18 @@ def test_horizon_model_is_deterministic_monotonic_and_channel_aware() -> None:
         "india-west:store",
         "us-new-york:store",
     }
+    assert snapshot["stages"]["lightgbm_p50_fit"]["calls"] == 1
+    assert snapshot["stages"]["lightgbm_p90_fit"]["calls"] == 1
+    assert snapshot["values"]["lightgbm_p50_best_iteration"]["calls"] == 1
+    assert snapshot["values"]["lightgbm_p90_best_iteration"]["calls"] == 1
+    assert snapshot["values"]["lightgbm_p50_early_stopping_armed"][
+        "mean"
+    ] == 1.0
+    assert snapshot["values"]["lightgbm_p90_early_stopping_armed"][
+        "mean"
+    ] == 1.0
+    assert snapshot["stages"]["lightgbm_p50_fit"]["rssSamples"] == 0
+    assert snapshot["stages"]["lightgbm_p90_fit"]["rssSamples"] == 0
 
 
 def test_model_outputs_are_invariant_to_threads_per_model() -> None:
@@ -129,12 +149,31 @@ def test_cold_start_rows_receive_a_dedicated_conditional_mean_head(
     frame = _training_frame()
     frame["units_lag_52"] = np.nan
     monkeypatch.setattr(train_lgbm, "MIN_COLD_START_TRAINING_ROWS", 10)
+    telemetry = MLStageTelemetry()
 
-    model = fit_horizon_model(frame, horizon=1, threads_per_model=1)
+    model = fit_horizon_model(
+        frame,
+        horizon=1,
+        threads_per_model=1,
+        telemetry=telemetry,
+    )
     scored = score_horizon_model(frame.tail(200), model)
+    snapshot = telemetry.snapshot()
 
     assert model.expected_cold_model is not None
     assert model.expected_cold_head_rows >= 10
     assert scored["lightgbm_cold_expected"].notna().all()
     assert (scored["lightgbm_cold_expected"] >= 0).all()
     assert not scored["expected_cold_head_fallback"].any()
+    assert snapshot["stages"]["lightgbm_p90_cold_fit"]["calls"] == 1
+    assert snapshot["stages"]["lightgbm_expected_cold_fit"]["calls"] == 1
+    assert snapshot["values"]["lightgbm_p90_cold_best_iteration"]["calls"] == 1
+    assert snapshot["values"]["lightgbm_expected_cold_best_iteration"][
+        "calls"
+    ] == 1
+    assert snapshot["values"]["lightgbm_p90_cold_early_stopping_armed"][
+        "mean"
+    ] == 1.0
+    assert snapshot["values"][
+        "lightgbm_expected_cold_early_stopping_armed"
+    ]["mean"] == 1.0

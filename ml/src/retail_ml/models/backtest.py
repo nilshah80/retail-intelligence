@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
+from copy import deepcopy
 from datetime import date
 from typing import Any, Final
 
@@ -26,6 +25,7 @@ from retail_ml.models.cohorts import (
     MAX_INELIGIBLE_ROW_SHARE,
     assign_cohorts,
     cohort_population,
+    key_fingerprint,
 )
 from retail_ml.models.expected_volume import EXPECTED_COLUMN, FALLBACK_COLUMN
 
@@ -128,26 +128,70 @@ def _clustered_interval(
     samples: int = 500,
     seed: int = 20260730,
 ) -> tuple[float | None, float | None]:
+    """Bootstrap SeriesKeys from additive sufficient statistics.
+
+    WAPE is additive before division, so retaining four sums per SeriesKey is
+    equivalent to rebuilding every sampled row frame. This keeps the frozen
+    key-level resampling and RNG sequence while avoiding 500 large concat/copy
+    cycles. The changed floating-point reduction order can differ from the row
+    path by a few ULPs; the governed contract is the existing eight-decimal
+    interval returned below, not bitwise identity of intermediate draws.
+    """
+
     key_columns = ["sku_id", "store_id", "channel_id"]
-    keys = frame[key_columns].drop_duplicates().reset_index(drop=True)
-    if keys.empty:
+    if frame.empty:
         return (None, None)
-    grouped = {
-        tuple(key): group
-        for key, group in frame.groupby(key_columns, sort=False, observed=True)
-    }
+    key_index = pd.MultiIndex.from_frame(frame[key_columns])
+    codes, keys = pd.factorize(key_index, sort=False)
+    group_count = len(keys)
+    if group_count == 0:
+        return (None, None)
+
+    actual = pd.to_numeric(frame["actual_units"], errors="coerce").to_numpy(
+        dtype=float,
+    )
+    champion = pd.to_numeric(frame["yhat_p50"], errors="coerce").to_numpy(
+        dtype=float,
+    )
+    comparator = pd.to_numeric(frame[comparator_column], errors="coerce").to_numpy(
+        dtype=float,
+    )
+    champion_valid = ~np.isnan(actual) & ~np.isnan(champion)
+    comparator_valid = ~np.isnan(actual) & ~np.isnan(comparator)
+
+    def group_sums(values: np.ndarray) -> np.ndarray:
+        return np.bincount(codes, weights=values, minlength=group_count)
+
+    sufficient_statistics = np.column_stack(
+        (
+            group_sums(
+                np.where(champion_valid, np.abs(champion - actual), 0.0)
+            ),
+            group_sums(np.where(champion_valid, actual, 0.0)),
+            group_sums(
+                np.where(comparator_valid, np.abs(comparator - actual), 0.0)
+            ),
+            group_sums(np.where(comparator_valid, actual, 0.0)),
+        )
+    )
     generator = np.random.default_rng(seed)
     differences: list[float] = []
     for _ in range(samples):
-        selected = generator.integers(0, len(keys), size=len(keys))
-        sampled = pd.concat(
-            [grouped[tuple(keys.iloc[index])].copy() for index in selected],
-            ignore_index=True,
+        selected = generator.integers(0, group_count, size=group_count)
+        (
+            champion_abs_error,
+            champion_actual,
+            comparator_abs_error,
+            comparator_actual,
+        ) = sufficient_statistics[selected].sum(axis=0)
+        champion_wape = (
+            champion_abs_error / champion_actual if champion_actual > 0 else None
         )
-        champion = metric_for_column(sampled, "yhat_p50")
-        seasonal = metric_for_column(sampled, comparator_column)
-        if champion.wape is not None and seasonal.wape is not None:
-            differences.append(champion.wape - seasonal.wape)
+        comparator_wape = (
+            comparator_abs_error / comparator_actual if comparator_actual > 0 else None
+        )
+        if champion_wape is not None and comparator_wape is not None:
+            differences.append(champion_wape - comparator_wape)
     if not differences:
         return (None, None)
     lower, upper = np.quantile(differences, [0.025, 0.975])
@@ -203,15 +247,7 @@ def _pairing_key_columns(frame: pd.DataFrame) -> list[str]:
 
 
 def _key_fingerprint(frame: pd.DataFrame, key_columns: list[str]) -> str:
-    rows = [
-        [str(value) for value in row]
-        for row in frame[key_columns]
-        .sort_values(key_columns)
-        .itertuples(index=False, name=None)
-    ]
-    return hashlib.sha256(
-        json.dumps(rows, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
+    return key_fingerprint(frame, key_columns)
 
 
 def _paired_key_diagnostics(
@@ -231,19 +267,15 @@ def _paired_key_diagnostics(
         comparator_label: comparator.notna() & np.isfinite(comparator),
     }
     paired_mask = masks["actual"] & masks["champion"] & masks[comparator_label]
-    fingerprints: dict[str, str] = {}
-    duplicate_free = True
-    counts: dict[str, int] = {}
-    for label, mask in masks.items():
-        rows = frame.loc[paired_mask & mask, key_columns]
-        counts[label] = len(rows)
-        duplicate_free = duplicate_free and not rows.duplicated(key_columns).any()
-        fingerprints[label] = _key_fingerprint(rows, key_columns)
-    identical = (
-        duplicate_free
-        and len(set(counts.values())) == 1
-        and len(set(fingerprints.values())) == 1
-    )
+    # Every individual mask is already present in ``paired_mask``. The three
+    # prior scans therefore hashed the exact same rows three times.
+    rows = frame.loc[paired_mask, key_columns]
+    count = len(rows)
+    fingerprint = _key_fingerprint(rows, key_columns)
+    duplicate_free = not rows.duplicated(key_columns).any()
+    counts = {label: count for label in masks}
+    fingerprints = {label: fingerprint for label in masks}
+    identical = duplicate_free
     return {
         "keyColumns": key_columns,
         "keySha256": fingerprints,
@@ -262,7 +294,7 @@ def slow_mover_diagnostics(frame: pd.DataFrame) -> dict[str, Any]:
 
     scoped = frame
     if "cohort" in frame.columns:
-        scoped = frame[frame["cohort"].astype(str).eq(ESTABLISHED)]
+        scoped = frame[frame["cohort"].eq(ESTABLISHED)]
     eligible_slow = scoped[
         pd.to_numeric(scoped["zero_share_52w"], errors="coerce").fillna(0.0)
         > SLOW_MOVER_THRESHOLD
@@ -428,11 +460,11 @@ def _cold_start_gate(cohort: pd.DataFrame) -> dict[str, Any]:
 def _scope_gates(frame: pd.DataFrame) -> dict[str, Any]:
     champion = metric_for_column(frame, "yhat_p50", upper_column="yhat_p90")
     eligible = _eligible_rows(frame)
-    established = eligible[eligible["cohort"].astype(str).eq(ESTABLISHED)].copy()
-    cold_start = eligible[eligible["cohort"].astype(str).eq(COLD_START)].copy()
+    established = eligible[eligible["cohort"].eq(ESTABLISHED)].copy()
+    cold_start = eligible[eligible["cohort"].eq(COLD_START)].copy()
     # Decision #83: rows with no prior observation of any kind are
     # evaluation-ineligible. They are counted and capped, never dropped silently.
-    ineligible = eligible[eligible["cohort"].astype(str).eq(INELIGIBLE)].copy()
+    ineligible = eligible[eligible["cohort"].eq(INELIGIBLE)].copy()
     if len(established) + len(cold_start) + len(ineligible) != len(eligible):
         raise ValueError("decision-#82 cohorts do not partition the eligible rows")
     total_actual = float(
@@ -702,9 +734,7 @@ def expected_volume_diagnostics(frame: pd.DataFrame) -> dict[str, Any]:
             if expected.wape is not None and ma13.wape not in (None, 0)
             else None
         )
-        cold = population[
-            population["cohort"].astype(str).eq(COLD_START)
-        ]
+        cold = population[population["cohort"].eq(COLD_START)]
         cold_actual = float(
             pd.to_numeric(cold.get("actual_units"), errors="coerce").sum()
         )
@@ -782,10 +812,22 @@ def evaluate_acceptance(
         raise ValueError(f"acceptance frame is missing: {', '.join(missing)}")
     cohorted = assign_cohorts(frame)
     global_result = _scope_gates(cohorted)
-    markets = {
-        str(market): _scope_gates(group)
-        for market, group in cohorted.groupby("market_id", sort=True, observed=True)
-    }
+    if (
+        not cohorted.empty
+        and cohorted["market_id"].notna().all()
+        and cohorted["market_id"].nunique(dropna=False) == 1
+    ):
+        # The market scope is byte-for-byte the global scope for a one-market
+        # run. Avoid repeating all metrics, fingerprints and both bootstraps.
+        market = str(cohorted["market_id"].iloc[0])
+        markets = {market: deepcopy(global_result)}
+    else:
+        markets = {
+            str(market): _scope_gates(group)
+            for market, group in cohorted.groupby(
+                "market_id", sort=True, observed=True
+            )
+        }
     market_gate = bool(markets) and all(result["passed"] for result in markets.values())
     return {
         "schemaVersion": ACCEPTANCE_SCHEMA_VERSION,

@@ -293,6 +293,7 @@ def run_current_cycle(
                     training,
                     horizon=horizon,
                     threads_per_model=runtime_profile.threads_per_model,
+                    telemetry=telemetry,
                 )
             with telemetry.measure("score_and_tree_shap"):
                 scored = score_horizon_model(current, model)

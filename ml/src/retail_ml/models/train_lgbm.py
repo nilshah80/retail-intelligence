@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from typing import Any, Final
 
@@ -12,6 +13,7 @@ from lightgbm import LGBMRegressor, early_stopping
 from retail_ml.keys import SeriesKey
 from retail_ml.models.confidence import forecast_confidence
 from retail_ml.models.intermittent import croston_sba
+from retail_ml.runtime.telemetry import MLStageTelemetry
 
 NUMERIC_FEATURES: Final[tuple[str, ...]] = (
     "horizon",
@@ -327,6 +329,8 @@ def _fit_pair(
     categories: dict[str, tuple[str, ...]],
     threads_per_model: int,
     seed: int,
+    telemetry: MLStageTelemetry | None,
+    telemetry_prefix: str,
 ) -> tuple[
     LGBMRegressor,
     LGBMRegressor,
@@ -364,8 +368,35 @@ def _fit_pair(
         fit_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
     train_x = prepare_model_frame(train, categories=categories)
     train_y = pd.to_numeric(train["target_units"], errors="coerce").fillna(0.0)
-    p50.fit(train_x, train_y, **fit_kwargs)
-    p90.fit(train_x, train_y, **fit_kwargs)
+    with (
+        telemetry.measure(
+            f"{telemetry_prefix}_p50_fit",
+            sample_rss=False,
+        )
+        if telemetry is not None
+        else nullcontext()
+    ):
+        p50.fit(train_x, train_y, **fit_kwargs)
+    with (
+        telemetry.measure(
+            f"{telemetry_prefix}_p90_fit",
+            sample_rss=False,
+        )
+        if telemetry is not None
+        else nullcontext()
+    ):
+        p90.fit(train_x, train_y, **fit_kwargs)
+    if telemetry is not None:
+        early_stopping_armed = int(not calibration.empty)
+        for head, model in (("p50", p50), ("p90", p90)):
+            telemetry.record_value(
+                f"{telemetry_prefix}_{head}_best_iteration",
+                int(model.best_iteration_ or common["n_estimators"]),
+            )
+            telemetry.record_value(
+                f"{telemetry_prefix}_{head}_early_stopping_armed",
+                early_stopping_armed,
+            )
 
     # Decision #91: a dedicated cold-start P90 head.
     #
@@ -397,7 +428,28 @@ def _fit_pair(
             ).fillna(0.0)
             cold_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
         p90_cold = LGBMRegressor(objective="quantile", alpha=0.90, **common)
-        p90_cold.fit(train_x[cold_mask.to_numpy()], train_y[cold_mask], **cold_kwargs)
+        with (
+            telemetry.measure(
+                f"{telemetry_prefix}_p90_cold_fit",
+                sample_rss=False,
+            )
+            if telemetry is not None
+            else nullcontext()
+        ):
+            p90_cold.fit(
+                train_x[cold_mask.to_numpy()],
+                train_y[cold_mask],
+                **cold_kwargs,
+            )
+        if telemetry is not None:
+            telemetry.record_value(
+                f"{telemetry_prefix}_p90_cold_best_iteration",
+                int(p90_cold.best_iteration_ or common["n_estimators"]),
+            )
+            telemetry.record_value(
+                f"{telemetry_prefix}_p90_cold_early_stopping_armed",
+                int(not cold_calibration.empty),
+            )
 
     # Decision #95: expected volume is not a corrected P50. Fit an actual
     # conditional-mean objective on the cold-start population, using the same
@@ -420,11 +472,28 @@ def _fit_pair(
             ).fillna(0.0)
             expected_kwargs["callbacks"] = [early_stopping(30, verbose=False)]
         expected_cold = LGBMRegressor(objective="regression", **common)
-        expected_cold.fit(
-            train_x[cold_mask.to_numpy()],
-            train_y[cold_mask],
-            **expected_kwargs,
-        )
+        with (
+            telemetry.measure(
+                f"{telemetry_prefix}_expected_cold_fit",
+                sample_rss=False,
+            )
+            if telemetry is not None
+            else nullcontext()
+        ):
+            expected_cold.fit(
+                train_x[cold_mask.to_numpy()],
+                train_y[cold_mask],
+                **expected_kwargs,
+            )
+        if telemetry is not None:
+            telemetry.record_value(
+                f"{telemetry_prefix}_expected_cold_best_iteration",
+                int(expected_cold.best_iteration_ or common["n_estimators"]),
+            )
+            telemetry.record_value(
+                f"{telemetry_prefix}_expected_cold_early_stopping_armed",
+                int(not cold_calibration.empty),
+            )
     return p50, p90, p90_cold, expected_cold
 
 
@@ -554,6 +623,8 @@ def fit_horizon_model(
     horizon: int,
     threads_per_model: int,
     seed: int = 20260730,
+    telemetry: MLStageTelemetry | None = None,
+    telemetry_prefix: str = "lightgbm",
 ) -> HorizonModel:
     if frame.empty:
         raise ValueError(f"no training rows for horizon {horizon}")
@@ -571,6 +642,8 @@ def fit_horizon_model(
         categories=categories,
         threads_per_model=threads_per_model,
         seed=seed + horizon,
+        telemetry=telemetry,
+        telemetry_prefix=telemetry_prefix,
     )
     calibration_x = prepare_model_frame(calibration, categories=categories)
     raw_p50 = np.clip(p50.predict(calibration_x), 0.0, None)

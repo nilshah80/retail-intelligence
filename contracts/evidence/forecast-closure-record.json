@@ -23,142 +23,34 @@
     "forecastRunId": "fr_d0c0ebafa8cb1db9",
     "forecastVersionId": "fv_f5a62cd4a0e41d5a",
     "lifecycleStatus": "accepted",
-    "runSemanticFingerprint": "3552a24900f7de033281002b74cf6b0b87516bec5d4533e266600d66964b10f9"
+    "runSemanticFingerprint": "b9f64e5eab95f6b8b95b7d1115a93864b8e8d44a7e181938e303495fb755c6a3"
   },
   "artifactHashes": {
-    "forecast-run-manifest.json": "774f45bf901633a00a64ac48dc446df687313bd59b75a64d129e45070950485c",
+    "forecast-run-manifest.json": "ea6a82a50c1584ad90237128db5e1e1621934d94a433a63c46e66fcb410aa83c",
     "forecast_acceptance.json": "64acc660717abebd48c38f30d574fc4e781f39c07fffc9d98ebfbe1da93e8bcc"
   },
   "authorityLedger": {
-    "currentEventId": 13,
+    "currentEventId": 1,
     "currentPriorEventId": null,
     "events": [
       {
-        "activationScopeFingerprint": "93db02a11fdcad295a192b32a0e3cfc5bbe94f2c13a733ba1c4e2d3f51ae3273",
+        "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
         "actor": "nilayshah",
         "eventId": 1,
         "eventType": "active",
-        "forecastRunId": "fr_546a32b4b120fd7a",
-        "priorEventId": null,
-        "recordedAt": "2026-08-09 16:35:48.766324+00",
-        "versionId": "fv_fe8e951c1f54b89e"
-      },
-      {
-        "activationScopeFingerprint": "93db02a11fdcad295a192b32a0e3cfc5bbe94f2c13a733ba1c4e2d3f51ae3273",
-        "actor": "nilay.shah",
-        "eventId": 2,
-        "eventType": "superseded",
-        "forecastRunId": "fr_546a32b4b120fd7a",
-        "priorEventId": 1,
-        "recordedAt": "2026-08-11 23:35:52.902813+00",
-        "versionId": "fv_fe8e951c1f54b89e"
-      },
-      {
-        "activationScopeFingerprint": "b3da439a52aee086a148d19744e697f0fe1e1dd40126814baba92e851a0624aa",
-        "actor": "nilay.shah",
-        "eventId": 3,
-        "eventType": "active",
-        "forecastRunId": "fr_14b111912fb8458c",
-        "priorEventId": null,
-        "recordedAt": "2026-08-11 23:35:52.902813+00",
-        "versionId": "fv_880ab29dc108ad2d"
-      },
-      {
-        "activationScopeFingerprint": "b3da439a52aee086a148d19744e697f0fe1e1dd40126814baba92e851a0624aa",
-        "actor": "nilayshah",
-        "eventId": 4,
-        "eventType": "superseded",
-        "forecastRunId": "fr_14b111912fb8458c",
-        "priorEventId": 3,
-        "recordedAt": "2026-08-12 04:59:58.153807+00",
-        "versionId": "fv_880ab29dc108ad2d"
-      },
-      {
-        "activationScopeFingerprint": "be3bc41aebdb8aa679b6efe3e26cee84367090b66db50672253f4c4601ae9a08",
-        "actor": "nilayshah",
-        "eventId": 5,
-        "eventType": "active",
-        "forecastRunId": "fr_7d34e90850b5a85c",
-        "priorEventId": null,
-        "recordedAt": "2026-08-12 04:59:58.153807+00",
-        "versionId": "fv_166c0a4f8db47c0a"
-      },
-      {
-        "activationScopeFingerprint": "be3bc41aebdb8aa679b6efe3e26cee84367090b66db50672253f4c4601ae9a08",
-        "actor": "nilay.shah",
-        "eventId": 6,
-        "eventType": "superseded",
-        "forecastRunId": "fr_7d34e90850b5a85c",
-        "priorEventId": 5,
-        "recordedAt": "2026-08-12 13:16:38.681383+00",
-        "versionId": "fv_166c0a4f8db47c0a"
-      },
-      {
-        "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
-        "actor": "nilay.shah",
-        "eventId": 7,
-        "eventType": "active",
-        "forecastRunId": "fr_e638699e9b8f6598",
-        "priorEventId": null,
-        "recordedAt": "2026-08-12 13:16:38.681383+00",
-        "versionId": "fv_8e18ad608ae38a61"
-      },
-      {
-        "activationScopeFingerprint": "fe4a97c4b4735e3d5f45e88d8a9b757ca072651295f6e83b04361b2993ee1a32",
-        "actor": "nilshah80",
-        "eventId": 9,
-        "eventType": "superseded",
-        "forecastRunId": "fr_e638699e9b8f6598",
-        "priorEventId": 7,
-        "recordedAt": "2026-08-14 20:59:43.21742+00",
-        "versionId": "fv_8e18ad608ae38a61"
-      },
-      {
-        "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
-        "actor": "nilshah80",
-        "eventId": 10,
-        "eventType": "active",
-        "forecastRunId": "fr_88bce2fb8cbcc512",
-        "priorEventId": null,
-        "recordedAt": "2026-08-14 20:59:43.21742+00",
-        "versionId": "fv_78d481cce80755c3"
-      },
-      {
-        "activationScopeFingerprint": "b532d7c17487ed2b25a75240cf2cb5a0f7dd8bc219a4e791ae0ff5448663ff3b",
-        "actor": "nilshah80",
-        "eventId": 12,
-        "eventType": "superseded",
-        "forecastRunId": "fr_88bce2fb8cbcc512",
-        "priorEventId": 10,
-        "recordedAt": "2026-08-17 16:49:13.250289+00",
-        "versionId": "fv_78d481cce80755c3"
-      },
-      {
-        "activationScopeFingerprint": "b7b0b1e88b485e8315b9acc683c0b3db0392d03a788ec1c01c72a4bbdf2d5e08",
-        "actor": "nilshah80",
-        "eventId": 13,
-        "eventType": "active",
         "forecastRunId": "fr_d0c0ebafa8cb1db9",
         "priorEventId": null,
-        "recordedAt": "2026-08-17 16:49:13.250289+00",
+        "recordedAt": "2026-08-20 11:27:57.200802+00",
         "versionId": "fv_f5a62cd4a0e41d5a"
       }
     ],
     "nullPredecessorEventIds": [
-      1,
-      3,
-      5,
-      7,
-      10,
-      13
+      1
     ],
     "unusedEventIdNote": "Identity-sequence values consumed by rolled-back transactions. Recorded as observed; never renumbered.",
-    "unusedEventIds": [
-      8,
-      11
-    ]
+    "unusedEventIds": []
   },
-  "bundlePath": "ml/data/artifacts/forecast_run_gulf-auth3",
+  "bundlePath": "ml/data/artifacts/forecast_run_gulf-rust-perf1",
   "decision86StructuralChecks": {
     "displayGrainsEvaluated": [
       "market_portfolio",
@@ -296,7 +188,7 @@
     "servedRows": 249678,
     "servingLayer": {
       "representation": "Null, deliberately not a sentinel. Safety stock is quantile spread x service level, so any placeholder is consumed arithmetically and a zero would return zero safety stock on the least predictable products.",
-      "servingMigration": "0034_expiry_waste_prior_window",
+      "servingMigration": "0035_executive_sales",
       "storage": "retail_serving.forecast_series.yhat_p90 and confidence are nullable and paired by CHECK constraint; a withheld row must carry interval_unavailable_reason. yhat_p50 stays NOT NULL, so this withdraws a distribution claim and never a forecast.",
       "withholdingEffective": true
     },
@@ -313,51 +205,5 @@
   "schemaVersion": "retail-forecast-closure-record/v2",
   "servingMigration": "0035_executive_sales",
   "servingMigrationSource": "derived from the Alembic revision graph and confirmed against the applied database head; never hard-coded",
-  "supersededIdentities": [
-    {
-      "activationEligible": false,
-      "bundleBytesRetained": false,
-      "bundlePath": null,
-      "forecastRunId": "fr_7d34e90850b5a85c",
-      "forecastVersionId": "fv_166c0a4f8db47c0a",
-      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
-      "rollbackEligible": false
-    },
-    {
-      "activationEligible": false,
-      "bundleBytesRetained": false,
-      "bundlePath": null,
-      "forecastRunId": "fr_88bce2fb8cbcc512",
-      "forecastVersionId": "fv_78d481cce80755c3",
-      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
-      "rollbackEligible": false
-    },
-    {
-      "activationEligible": false,
-      "bundleBytesRetained": false,
-      "bundlePath": null,
-      "forecastRunId": "fr_14b111912fb8458c",
-      "forecastVersionId": "fv_880ab29dc108ad2d",
-      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
-      "rollbackEligible": false
-    },
-    {
-      "activationEligible": false,
-      "bundleBytesRetained": false,
-      "bundlePath": null,
-      "forecastRunId": "fr_e638699e9b8f6598",
-      "forecastVersionId": "fv_8e18ad608ae38a61",
-      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
-      "rollbackEligible": false
-    },
-    {
-      "activationEligible": false,
-      "bundleBytesRetained": false,
-      "bundlePath": null,
-      "forecastRunId": "fr_546a32b4b120fd7a",
-      "forecastVersionId": "fv_fe8e951c1f54b89e",
-      "reason": "Superseded and bundle bytes are gone; it cannot be re-verified, activated, or used as a rollback target. Never reconstructed.",
-      "rollbackEligible": false
-    }
-  ]
+  "supersededIdentities": []
 }
