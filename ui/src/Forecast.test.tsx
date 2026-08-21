@@ -264,6 +264,33 @@ const responses: Record<string, unknown> = {
   }
 };
 
+/**
+ * Resolve each endpoint independently, so a test can hold ONE query pending (or
+ * fail it) while the rest land. Immediately-resolved mocks cannot express the
+ * states that matter here -- they were why a page-level gate looked harmless.
+ */
+function deferredFetch(options: {
+  hold?: string[];
+  reject?: string[];
+} = {}) {
+  const holds = new Map<string, () => void>();
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const key = Object.keys(responses).find((candidate) =>
+      url.includes(`/forecast/${candidate}`)
+    ) ?? "summary";
+    const held = options.hold?.find((name) => url.includes(`/forecast/${name}`));
+    if (held) {
+      await new Promise<void>((resolve) => holds.set(held, resolve));
+    }
+    if (options.reject?.some((name) => url.includes(`/forecast/${name}`))) {
+      throw new Error(`${key} is unavailable`);
+    }
+    return {ok: true, json: async () => responses[key]};
+  }));
+  return {release: (name: string) => holds.get(name)?.()};
+}
+
 function renderForecast(channelType = "") {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   return render(
@@ -299,7 +326,11 @@ describe("Demand Forecast parity contract", () => {
     expect(screen.getByText(
       "Last 8 comparable weeks · freshest forecast within h1–h4 · 95.7% P90 coverage across 76,824 series-weeks"
     )).toBeInTheDocument();
-    expect(screen.getByText("₹175.86 Cr")).toBeInTheDocument();
+    // Scoped to the KPI: this figure also appears in a metric row, so a bare
+    // getByText is ambiguous and asserts nothing about which element carries it.
+    expect(
+      screen.getByText("Demand at Risk").closest(".kpi")?.querySelector(".value")?.textContent
+    ).toBe("₹175.86 Cr");
     expect(screen.getByText("Potential unserved sales exposure across 13 distributors"))
       .toBeInTheDocument();
     const actionLabels = within(screen.getByLabelText("Forecast actions"))
@@ -320,7 +351,7 @@ describe("Demand Forecast parity contract", () => {
     fireEvent.click(acceptTrigger);
     let dialog = screen.getByRole("dialog", {name: "Accept Forecast"});
     expect(within(dialog).getByRole("heading", {name: "Accept Forecast"})).toHaveFocus();
-    expect(Array.from(dialog.querySelectorAll(".metric-row > span")).map((node) => node.textContent)).toEqual(["Selected Forecasts", "Average Confidence", "Demand Value"]);
+    expect(Array.from(dialog.querySelectorAll(".metric-row > span")).map((node) => node.textContent)).toEqual(["Selected Forecasts", "Average Confidence", "Forecast Demand (units)"]);
     expect(within(dialog).getByRole("button", {name: "Confirm Acceptance"})).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
     expect(acceptTrigger).toHaveFocus();
@@ -331,11 +362,18 @@ describe("Demand Forecast parity contract", () => {
     expect(Array.from((within(dialog).getByRole("combobox", {name: "Effective Period"}) as HTMLSelectElement).options).map((option) => option.text)).toEqual(["Next Week", "Next 4 Weeks", "Specific Date Range"]);
     expect(within(dialog).getByRole("button", {name: "Save Adjustment"})).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", {name: "Cancel"}));
-    // Both FVA figures read portfolio grain, so both show the same value.
-    expect(screen.getAllByText("+25.3%")).toHaveLength(2);
+    // Every FVA surface reads portfolio grain, so all of them must show the same
+    // value: the "Forecast Value Add" KPI, the "Net FVA" row inside that card,
+    // and "Forecast value add (vs MA13)" in Business Impact. Pinning the count is
+    // the consistency check -- a surface that disagreed would drop out of it.
+    expect(screen.getAllByText("+25.3%")).toHaveLength(3);
     expect(screen.getByText("Slow / intermittent: -25.0% · 10.0% of actual volume"))
       .toBeInTheDocument();
-    expect(screen.getAllByText("Not available").length).toBeGreaterThan(4);
+    // This used to require MORE than four bare "Not available" tokens, which is
+    // the opposite of the contract the page now holds: a governed absence renders
+    // an honest short label with the reason on the title (see `advisory` in
+    // Forecast.tsx), and the bare token appears nowhere.
+    expect(screen.queryAllByText("Not available", {exact: true})).toHaveLength(0);
 
     const tabLabels = screen.getAllByRole("tab").map((tab) => tab.textContent);
     expect(tabLabels).toEqual([
@@ -678,7 +716,14 @@ describe("Demand Forecast parity contract", () => {
 
     const cells = within(table).getAllByRole("cell");
     const confidenceCell = cells[confidenceIndex];
-    expect(confidenceCell).toHaveTextContent("Not available");
+    // Parity amendment P4-0P-A1: the approved unavailable state NAMES the window
+    // it would have covered rather than emitting the bare "Not available" token
+    // (see `advisory` in Forecast.tsx, which exists precisely to avoid it). So
+    // the cell must read the covered window, carry the .unavailable marker for
+    // styling and audit, and must NOT show the bare token.
+    expect(confidenceCell).toHaveTextContent("Weeks 1–4");
+    expect(confidenceCell).not.toHaveTextContent("Not available");
+    expect(confidenceCell.querySelector(".unavailable")).not.toBeNull();
     // The corrected value must not leak into the cell under an unqualified
     // heading. 58.2% is the honest covered-window figure and still the wrong
     // thing to show here.
@@ -686,5 +731,74 @@ describe("Demand Forecast parity contract", () => {
     // The absence has to be explicable, so the covered window is named.
     expect(confidenceCell.querySelector(".unavailable")?.getAttribute("title"))
       .toContain("weeks 1-4");
+  });
+
+  it("keeps a loaded Overview when an inactive tab's query fails", async () => {
+    // The workbench request feeds SKU View and the modals only. When pending was
+    // tab-scoped but errors were still aggregated across all eight queries, this
+    // failure replaced a fully-rendered Overview with the fatal card.
+    deferredFetch({reject: ["series"]});
+    renderForecast();
+
+    expect(await screen.findByText("Forecast vs Actual")).toBeInTheDocument();
+    expect(screen.queryByText("Live forecast data is unavailable.")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", {name: "Overview"})).toBeInTheDocument();
+
+    // The failure is reported on the tab that actually reads it, not swallowed.
+    fireEvent.click(screen.getByRole("tab", {name: "SKU View"}));
+    expect(await screen.findByText("This view is unavailable.")).toBeInTheDocument();
+    // ...and the shell survives it, so the user can navigate back.
+    expect(screen.getByRole("tab", {name: "Overview"})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", {name: "Overview"}));
+    expect(screen.getByText("Forecast vs Actual")).toBeInTheDocument();
+  });
+
+  it("tells the user why a modal is empty when its source failed", async () => {
+    // Reachable only because a failed query no longer kills the page: the
+    // Compare Versions dialog reads `versions`, which no tab renders.
+    deferredFetch({reject: ["versions"]});
+    renderForecast();
+
+    expect(await screen.findByText("Forecast vs Actual")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name: /^Compare Versions/}));
+    const dialog = await screen.findByRole("dialog", {name: "Compare Forecast Versions"});
+    expect(within(dialog).getByText("This view is unavailable.")).toBeInTheDocument();
+    expect(within(dialog).getByText(/versions is unavailable/)).toBeInTheDocument();
+    // EXCLUSIVE: the normal body must not render underneath the explanation, or
+    // the dialog says "no fallback values are displayed" directly above a table
+    // of blanks.
+    expect(within(dialog).queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("replaces the modal body with the explanation rather than layering it", async () => {
+    // The Adjustment dialog reads workbench, so a workbench failure is the case
+    // where a non-exclusive error leaves blank Product/Store/forecast fields
+    // sitting under the message.
+    deferredFetch({reject: ["series"]});
+    renderForecast();
+
+    expect(await screen.findByText("Forecast vs Actual")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name: /^Add Planner Adjustment/}));
+    const dialog = await screen.findByRole("dialog", {name: "Add Planner Adjustment"});
+    expect(within(dialog).getByText("This view is unavailable.")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Product / SKU")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Workflow unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps the shell mounted while a newly selected tab is still loading", async () => {
+    const {release} = deferredFetch({hold: ["series"]});
+    renderForecast();
+
+    expect(await screen.findByText("Forecast vs Actual")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", {name: "SKU View"}));
+    // The panel shows the loading state; the toolbar, KPI row and tab strip stay.
+    expect(screen.getByText("Loading the accepted forecast…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Forecast actions")).toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getByText("Forecast Accuracy")).toBeInTheDocument();
+
+    release("series");
+    expect(await screen.findByRole("table")).toBeInTheDocument();
   });
 });

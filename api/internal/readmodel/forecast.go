@@ -1506,7 +1506,14 @@ func (s *ForecastStore) weeklyActuals(
 		ctx,
 		fmt.Sprintf(
 			`
-			WITH scoped AS (
+			-- NOT MATERIALIZED: scoped is read twice (freshest, then the join
+			-- below), which makes PostgreSQL materialise it. At one materialised
+			-- run that is 3.38M rows spooled to a tuplestore -- measured 161 MB
+			-- written and 329 MB read back against work_mem 4MB -- to return eight
+			-- rows. Inlining scans the two source tables twice instead, which is
+			-- more shared reads but no temp I/O: 1755ms -> 1233ms, and the result
+			-- is bit-identical because neither aggregate's input order changes.
+			WITH scoped AS NOT MATERIALIZED (
 				SELECT
 					evaluation.target_week_start,
 					evaluation.horizon,
@@ -1843,52 +1850,60 @@ func (s *ForecastStore) horizons(
 	// P90 coverage is measured at leaf grain in the same statement and reported
 	// separately, because a sum of P90s is not the P90 of a sum. Quantiles do not
 	// aggregate, so coverage has exactly one honest grain and it is labelled.
-	cellGrouping := append([]string{}, grainColumns...)
+	// Qualified with the `evaluation` alias, unlike the previous version. These
+	// used to be bare names because they were grouped inside the `scoped` CTE,
+	// which projected them away from the joins; `cells` now groups directly off
+	// the joined base relation, where `store_id` is ambiguous against both
+	// forecast_stores and forecast_series_dimensions.
+	cellGrouping := make([]string, 0, len(grainColumns)+3)
+	for _, column := range grainColumns {
+		cellGrouping = append(cellGrouping, "evaluation."+column)
+	}
 	cellGrouping = append(
 		cellGrouping,
-		"horizon",
-		"forecast_origin",
-		"target_week_start",
+		"evaluation.horizon",
+		"evaluation.forecast_origin",
+		"evaluation.target_week_start",
 	)
 	statement := fmt.Sprintf(
 		`
-		WITH scoped AS (
+		-- One pass over the evaluation rows, not four.
+		--
+		-- This used to build a scoped CTE and read it three times (cells,
+		-- slow_cells, leaf). Three references make PostgreSQL materialise it, so
+		-- every request spooled the whole run -- 2.88M rows -- into a tuplestore
+		-- and read it back twice: measured 313 MB written and 940 MB read on top
+		-- of the 980 MB base scan, to produce a 16 KB response. Collapsing the
+		-- three aggregates into one with FILTER takes the statement from 2273ms to
+		-- 341ms and removes the temp I/O entirely.
+		--
+		-- The slow-mover figures are the same population as before: FILTER selects
+		-- exactly the rows slow_cells selected, per cell, so the addends and
+		-- their order within a cell are unchanged. What DOES change is the order
+		-- in which metrics sums the per-cell results, because the cells now come
+		-- out of a differently-shaped hash aggregate. That moves the two float
+		-- sums by ~1e-13 relative (max 7.8e-13 percentage points on the accuracy
+		-- the page displays to one decimal, verified across all 26 horizons); the
+		-- integer and exact columns -- actual_sum, hits, rows_counted, grain_cells
+		-- -- are bit-identical. Note the previous value was itself a property of
+		-- the HashAggregate plan rather than of the data: forcing GroupAggregate
+		-- moves it too.
+		WITH cells AS (
 			SELECT
-				evaluation.horizon,
-				evaluation.forecast_origin,
-				evaluation.target_week_start,
-				evaluation.market_id,
-				evaluation.store_id,
-				evaluation.category,
-				evaluation.actual_units,
-				evaluation.expected_units,
-				evaluation.zero_share_52w,
-				evaluation.coverage_hits,
-				evaluation.n
-			FROM retail_serving.forecast_eval_predictions AS evaluation%s
-				WHERE %s
-		),
-		cells AS (
-			SELECT
-				horizon,
-				SUM(actual_units) AS actual,
-				SUM(expected_units) AS predicted
-			FROM scoped
-			GROUP BY %s
-		),
-		slow_cells AS (
-			SELECT
-				horizon,
-				SUM(actual_units) AS actual,
-				SUM(expected_units) AS predicted
-			FROM scoped
-			WHERE zero_share_52w > $%d
-			GROUP BY %s
-		),
-		leaf AS (
-			SELECT horizon, SUM(coverage_hits) AS hits, SUM(n) AS rows_counted
-			FROM scoped
-			GROUP BY horizon
+				evaluation.horizon AS horizon,
+				SUM(evaluation.actual_units) AS actual,
+				SUM(evaluation.expected_units) AS predicted,
+				SUM(evaluation.actual_units)
+					FILTER (WHERE evaluation.zero_share_52w > $%[3]d) AS slow_actual,
+				SUM(evaluation.expected_units)
+					FILTER (WHERE evaluation.zero_share_52w > $%[3]d) AS slow_predicted,
+				COUNT(*)
+					FILTER (WHERE evaluation.zero_share_52w > $%[3]d) AS slow_rows,
+				SUM(evaluation.coverage_hits) AS hits,
+				SUM(evaluation.n) AS rows_counted
+			FROM retail_serving.forecast_eval_predictions AS evaluation%[1]s
+				WHERE %[2]s
+			GROUP BY %[4]s
 		),
 		metrics AS (
 			SELECT
@@ -1896,40 +1911,40 @@ func (s *ForecastStore) horizons(
 				SUM(ABS(predicted - actual)) AS abs_error_sum,
 				SUM(predicted - actual) AS signed_error_sum,
 				SUM(actual) AS actual_sum,
-				COUNT(*) AS grain_cells
+				COUNT(*) AS grain_cells,
+				SUM(hits) AS hits,
+				SUM(rows_counted) AS rows_counted,
+				SUM(ABS(slow_predicted - slow_actual))
+					FILTER (WHERE slow_rows > 0) AS slow_abs_error_sum,
+				SUM(slow_predicted - slow_actual)
+					FILTER (WHERE slow_rows > 0) AS slow_signed_error_sum,
+				SUM(slow_actual)
+					FILTER (WHERE slow_rows > 0) AS slow_actual_sum,
+				-- NULLIF reproduces the LEFT JOIN this replaced: a horizon with no
+				-- slow-mover cell had no slow_metrics row at all, so its cell count
+				-- arrived as NULL rather than 0, and the scan below requires all
+				-- four slow columns to be non-NULL before it renders the block.
+				NULLIF(COUNT(*) FILTER (WHERE slow_rows > 0), 0) AS slow_grain_cells
 			FROM cells
-			GROUP BY horizon
-		),
-		slow_metrics AS (
-			SELECT
-				horizon,
-				SUM(ABS(predicted - actual)) AS abs_error_sum,
-				SUM(predicted - actual) AS signed_error_sum,
-				SUM(actual) AS actual_sum,
-				COUNT(*) AS grain_cells
-			FROM slow_cells
 			GROUP BY horizon
 		)
 		SELECT
-			metrics.horizon,
-			metrics.abs_error_sum,
-			metrics.signed_error_sum,
-			metrics.actual_sum,
-			COALESCE(leaf.hits, 0),
-			COALESCE(leaf.rows_counted, 0),
-			metrics.grain_cells,
-			slow_metrics.abs_error_sum,
-			slow_metrics.signed_error_sum,
-			slow_metrics.actual_sum,
-			slow_metrics.grain_cells
+			horizon,
+			abs_error_sum,
+			signed_error_sum,
+			actual_sum,
+			COALESCE(hits, 0),
+			COALESCE(rows_counted, 0),
+			grain_cells,
+			slow_abs_error_sum,
+			slow_signed_error_sum,
+			slow_actual_sum,
+			slow_grain_cells
 		FROM metrics
-		LEFT JOIN leaf ON leaf.horizon = metrics.horizon
-		LEFT JOIN slow_metrics ON slow_metrics.horizon = metrics.horizon
-		ORDER BY metrics.horizon
+		ORDER BY horizon
 		`,
 		horizonJoins,
 		horizonScoped,
-		strings.Join(cellGrouping, ", "),
 		slowMoverThresholdIndex,
 		strings.Join(cellGrouping, ", "),
 	)

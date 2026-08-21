@@ -276,10 +276,12 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
     why: "the weekly replay has not published an accepted policy comparison for this bundle: either the reconstruction did not reproduce observed stock inside its frozen tolerance, or it did and no candidate strictly beat the incumbent, which the acceptance rule frozen before scoring treats as a failure",
     when: "when the reconstruction reproduces observed stock and a candidate strictly improves on the incumbent"
   },
-  NRV_UNAVAILABLE: {
-    why: "the resolved inventory policy declares valuation.nrvAndProvisions as unavailable_pending_markdown_policy, so net realizable value has no approved basis on this bundle -- and the platform holds acquisition cost rather than the expected recovery price NRV is measured against",
-    when: "when a markdown and NRV policy is approved and resolved into the policy bundle; a ledger figure is not estimated ahead of the approval that governs it"
-  },
+  // NRV_UNAVAILABLE was removed: NRV and provisions are now derived and served
+  // (Bucket A #15/#20), so nothing withholds on this code any more. A declared
+  // availability entry no element reaches is a claim about the platform that no
+  // screen makes -- which is what the parity test enforces. The REASON_TEXT
+  // fallback for the code is deliberately kept: that map is a defensive lookup
+  // with a default, not a governed claim.
   // Two distinct absences, not one. The waste artifact's `exposure_minor` is
   // NULL on every row -- so there is no published figure to show -- AND what
   // could be recovered from near-expiry stock needs a recovery price the
@@ -296,10 +298,6 @@ export const AVAILABILITY: Record<string, {why: string; when: string}> = {
   // applied", which inverted the one fact that governs this tile: markdownPct is
   // the ageing ladder's recommended depth, not an approved provisioning rate,
   // and the resolved policy withholds provisions explicitly.
-  PROVISION_PENDING_MARKDOWN_POLICY: {
-    why: "the resolved inventory policy declares valuation.nrvAndProvisions as unavailable_pending_markdown_policy -- the ageing ladder's 10 per cent is a recommended markdown depth, not an approved provisioning rate, and a provision posted against an unapproved rate is a ledger figure nobody signed off",
-    when: "when a markdown provisioning rate is approved and resolved into the policy bundle; the underlying cells and their SKU-grain cost are already published, so only the approval is outstanding"
-  },
   DOCK_TO_STOCK_NOT_INSTRUMENTED: {
     why: "the source records receipts but not putaway completion",
     when: "when warehouse operations emit a putaway timestamp"

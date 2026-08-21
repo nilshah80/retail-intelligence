@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 import json
 import math
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Final
 
 import duckdb
@@ -994,6 +995,42 @@ def _existing_materialization(
     )
 
 
+def _analyze_frames(
+    cursor: psycopg.Cursor[Any],
+    *,
+    tables: Iterable[str],
+) -> None:
+    """Refresh planner statistics for the projected tables after a bulk load.
+
+    The inventory publisher already does this, and for the reason recorded there:
+    after a bulk COPY the planner works from whatever statistics predate the load,
+    and autovacuum only catches up later. Small dimension tables are the worst
+    case because they never reach the autoanalyze threshold at all --
+    forecast_stores holds 13 rows and had never been analysed, so its primary key
+    estimated 1 row against 13, the executive accuracy join estimated 919 rows
+    against 147,812, and the planner chose Sort + GroupAggregate over a
+    HashAggregate that needed 105 kB. That one missing analyse cost 68ms of a
+    218ms query, and the same stale estimates pushed the executive inventory
+    queries onto nested loops.
+
+    Called on BOTH materialization paths. The already-materialized path matters
+    as much as the fresh one: it is the path every existing deployment takes, so
+    skipping it there would leave exactly the runs that predate this analyse
+    without statistics, and it is also the path that backfills
+    forecast_series_dimensions and executive_sales, whose freshly-copied rows
+    would otherwise never be sampled. ANALYZE samples rather than scans, so
+    repeating it on an unchanged projection is cheap relative to a materialize.
+    """
+
+    for table in tables:
+        cursor.execute(
+            sql.SQL("ANALYZE {}.{}").format(
+                sql.Identifier(SERVING_SCHEMA),
+                sql.Identifier(table),
+            )
+        )
+
+
 def _ensure_backfill_frames(
     cursor: psycopg.Cursor[Any],
     *,
@@ -1061,6 +1098,7 @@ def materialize_forecast_run(
                         run=run,
                         projection=projection,
                     )
+                    _analyze_frames(cursor, tables=projection.frames)
                     return ForecastMaterialization(
                         forecast_run_id=existing.forecast_run_id,
                         version_id=existing.version_id,
@@ -1118,6 +1156,7 @@ def materialize_forecast_run(
                 )
                 for table, frame in projection.frames.items():
                     _copy_frame(cursor, table=table, frame=frame)
+                _analyze_frames(cursor, tables=projection.frames)
     except ForecastServingError:
         raise
     except psycopg.Error as exc:

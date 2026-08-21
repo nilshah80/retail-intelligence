@@ -438,17 +438,32 @@ function installMocks() {
   });
 }
 
-function renderOverview(onNavigate = vi.fn()) {
+/**
+ * Hold the executive/inventory/pricing sources pending, so the tests can observe
+ * what the page states BEFORE any evidence has arrived. Immediately-resolved
+ * mocks cannot see this window, which is why removing the page-level gate looked
+ * free.
+ */
+function installPendingMocks() {
+  const never = () => new Promise(() => undefined);
+  vi.mocked(loadExecutiveOverview).mockImplementation(never as never);
+  vi.mocked(loadForecastStores).mockImplementation(never as never);
+  vi.mocked(loadInventorySlice).mockImplementation(never as never);
+  vi.mocked(loadRecommendationSummary).mockImplementation(never as never);
+  vi.mocked(loadGroupedRecommendations).mockImplementation(never as never);
+}
+
+function renderOverview(onNavigate = vi.fn(), summaryPending = false, storeId = "") {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   return {
     ...render(
       <QueryClientProvider client={client}>
         <ExecutiveOverview
           dashboard={dashboard}
-          storeId=""
+          storeId={storeId}
           channelType=""
-          forecastSummary={forecastSummary}
-          forecastSummaryPending={false}
+          forecastSummary={summaryPending ? undefined : forecastSummary}
+          forecastSummaryPending={summaryPending}
           forecastSummaryError={null}
           onNavigate={onNavigate}
         />
@@ -469,10 +484,288 @@ afterEach(() => {
 });
 
 describe("Executive Overview parity", () => {
+  it("states no verdict before its evidence arrives", async () => {
+    installPendingMocks();
+    // The forecast summary arrives as a PROP, so holding only the queries pending
+    // would leave it loaded and make verdicts derived from it legitimate. Hold it
+    // too, so the test describes a genuine nothing-has-loaded state.
+    const {container} = renderOverview(vi.fn(), true);
+
+    // The shell paints immediately -- that is the point of having no page gate.
+    expect(screen.getByRole("button", {name: "Open Action Center"})).toBeInTheDocument();
+
+    // But nothing may state a conclusion yet. These rows are always rendered, so
+    // without their own pending signal they resolved their ternaries against
+    // undefined data and read as findings: "New", "Watch", "Observed",
+    // "Unavailable". A verdict derived from data that has not loaded is not a
+    // governed absence, it is a fabricated one.
+    // Every verdict this page can state from an empty ternary. Enumerated rather
+    // than sampled: the earlier version of this test omitted "Review", "Pending"
+    // and "High", and each omission was a live gap.
+    const fabricated = [
+      "New", "Ahead", "Watch", "Observed", "Unavailable", "Improving",
+      "High", "Action", "Pending", "Review", "In Progress", "Escalated",
+      "No signal", "At Risk", "Healthy", "Overstock", "Strong"
+    ];
+    const badges = Array.from(container.querySelectorAll(".badge"), (n) => n.textContent?.trim());
+    for (const label of fabricated) {
+      expect(badges, `"${label}" was stated before its data loaded`).not.toContain(label);
+    }
+    expect(badges.filter((b) => b === "Loading…").length).toBeGreaterThan(0);
+
+    // The two prop-derived tables must route through their loading row rather
+    // than rendering a full body of defaulted measures.
+    expect(screen.queryAllByText("No signal")).toHaveLength(0);
+    expect(screen.queryAllByText("Review store detail")).toHaveLength(0);
+    expect(screen.getAllByText("Loading live data…").length).toBeGreaterThan(0);
+
+    // "4 live signals" is a claim about data, and the four decision statements
+    // beneath it must not read as governed absences while merely loading.
+    expect(screen.queryByText("4 live signals")).not.toBeInTheDocument();
+
+    // The strong invariant: while NOTHING has resolved, nothing can be governed-
+    // absent. `UnavailableValue` always carries data-unavailable="true", so the
+    // weaker "every Not available has a cause" check passed even when the real
+    // state was "still loading" -- which is how the AI Value Realization metrics
+    // slipped through. A governed absence asserts the platform cannot produce a
+    // value; that cannot be known before the request that would establish it has
+    // come back.
+    const governedAbsences = Array.from(
+      container.querySelectorAll("[data-unavailable=\"true\"]"),
+      (n) => n.getAttribute("title") ?? n.textContent?.trim()
+    );
+    expect(
+      governedAbsences,
+      "a governed absence was asserted before its source resolved"
+    ).toEqual([]);
+    expect(screen.queryAllByText("Not available", {exact: true})).toHaveLength(0);
+
+    // Not a value cell but the same error: this note reads
+    // `!data?.approvalSLA.available`, which is true while the request is still in
+    // flight, so it asserted "no SLA is configured" before asking.
+    expect(screen.queryByText(/no time-based approval SLA is configured/)).not.toBeInTheDocument();
+  });
+
+  it("never claims live signals while any one decision statement is loading", async () => {
+    // One leg at a time. The header flag has to cover all four statements, and a
+    // flag missing ANY leg is only visible in the partial state where that leg
+    // alone is pending -- which is reachable here: per-route holds for the three
+    // query-backed legs, and the independent summary prop for the fourth.
+    const never = () => new Promise(() => undefined);
+    const holdSlice = (path: string) => {
+      const real = vi.mocked(loadInventorySlice).getMockImplementation()!;
+      vi.mocked(loadInventorySlice).mockImplementation(((endpoint: string, ...rest: never[]) =>
+        String(endpoint).includes(path)
+          ? never()
+          : real(endpoint as never, ...rest)) as never);
+    };
+    const legs: Array<{leg: string; hold?: () => void; summaryPending?: boolean}> = [
+      {leg: "markdown provision (inventoryValuation)", hold: () => holdSlice("/inventory/valuation")},
+      {leg: "demand at risk (forecast summary)", summaryPending: true},
+      {leg: "price recommendations (pricingSummary)",
+        hold: () => vi.mocked(loadRecommendationSummary).mockImplementation(never as never)},
+      {leg: "worst store (forecastStores)",
+        hold: () => vi.mocked(loadForecastStores).mockImplementation(never as never)}
+    ];
+
+    for (const {leg, hold, summaryPending} of legs) {
+      cleanup();
+      installMocks();
+      hold?.();
+      renderOverview(vi.fn(), summaryPending ?? false);
+      await screen.findByText("Critical Decisions Required");
+      await waitFor(() => {
+        const statements = Array.from(
+          document.querySelectorAll(".alert span"), (n) => n.textContent?.trim());
+        expect(statements, `${leg}: its own statement should read Loading…`).toContain("Loading…");
+      });
+      expect(
+        screen.queryByText("4 live signals"),
+        `${leg}: the header claimed 4 live signals while that statement was loading`
+      ).toBeNull();
+    }
+  });
+
+  it("does not fabricate values in a dialog opened during load", async () => {
+    // The toolbar is interactive from first paint, so these are reachable while
+    // their measures are in flight. Their bodies are fixed rows, so without a
+    // guard they state "0" open items and a bare "Not available" value at risk.
+    installPendingMocks();
+    const {container} = renderOverview(vi.fn(), true);
+
+    for (const [button, title] of [
+      ["Open Action Center", "Executive Action Center"],
+      ["Store-Level Drilldown", "Store-Level Drilldown"],
+      ["Business-Level Drilldown", "Business-Level Drilldown"]
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", {name: button}));
+      const dialog = await screen.findByRole("dialog", {name: title});
+      expect(within(dialog).getByText(/Loading the accepted executive measures/))
+        .toBeInTheDocument();
+      // EXCLUSIVE: no fixed-row body underneath the message.
+      expect(within(dialog).queryByRole("table"), `${title} rendered a body while loading`)
+        .not.toBeInTheDocument();
+      expect(within(dialog).queryAllByText("Not available", {exact: true})).toHaveLength(0);
+      fireEvent.keyDown(document, {key: "Escape"});
+    }
+    // And nothing leaked into the page behind them.
+    expect(container.querySelectorAll("[data-unavailable=\"true\"]")).toHaveLength(0);
+  });
+
+  it("does not show portfolio demand-at-risk while a scoped store is loading", async () => {
+    // With a filter active, demandAtRisk switches source to forecastStores. If
+    // only the portfolio summary is awaited, the scoped view silently falls back
+    // to PORTFOLIO numbers -- the wrong scope, which is worse than a blank.
+    installMocks();
+    vi.mocked(loadForecastStores).mockImplementation((() => new Promise(() => undefined)) as never);
+    renderOverview(vi.fn(), false, "india-west:mumbai-flagship");
+    await screen.findByText("Critical Decisions Required");
+
+    const rowValue = (label: string) =>
+      screen.getByText(label).closest("tr")?.cells[1]?.textContent?.trim();
+    expect(rowValue("Near stock-out"), "scoped demand-at-risk must not fall back to portfolio")
+      .toBe("Loading…");
+    const statements = Array.from(
+      document.querySelectorAll(".alert span"), (n) => n.textContent?.trim());
+    expect(statements, "the stock-out decision must not state a portfolio figure for a scoped view")
+      .toContain("Loading…");
+  });
+
+  it("does not substitute portfolio demand-at-risk when a filter resolves empty", async () => {
+    // The RESOLVED-empty case, not the pending one: a filtered request that comes
+    // back with items: [] must read as a governed absence for that scope, never
+    // as the portfolio total under a scoped heading.
+    installMocks();
+    vi.mocked(loadForecastStores).mockResolvedValue({
+      schemaVersion: "retail-forecast-stores/v1",
+      dataMode: "live",
+      authority,
+      items: []
+    } as never);
+    renderOverview(vi.fn(), false, "india-west:mumbai-flagship");
+    await screen.findByText("Critical Decisions Required");
+
+    const rowValue = (label: string) =>
+      screen.getByText(label).closest("tr")?.cells[1]?.textContent?.trim();
+    await waitFor(() => expect(rowValue("Near stock-out")).not.toBe("Loading…"));
+    expect(rowValue("Near stock-out"), "an empty filtered scope must not show the portfolio total")
+      .toBe("Not available");
+    const kpi = Array.from(document.querySelectorAll(".executive-kpi"))
+      .find((k) => k.querySelector("small")?.textContent === "Stock-out Loss (Est.)");
+    expect(kpi?.querySelector(".value")?.textContent,
+      "the KPI must not show the portfolio total for an empty filtered scope")
+      .toBe("Not available");
+  });
+
+  it("waits for forecast stores before the Business drilldown states a verdict", async () => {
+    // Unfiltered, demandAtRiskPending tracks only the summary, so the dialog's
+    // "Model retraining" line -- which reads worstStore from forecastStores --
+    // could state "No signal" while those rows were still in flight.
+    installMocks();
+    vi.mocked(loadForecastStores).mockImplementation((() => new Promise(() => undefined)) as never);
+    renderOverview();
+    await screen.findByText("Executive Business Health");
+
+    // The Action Tracker row reads the same source for its VERDICT while taking
+    // its value from demandAtRisk, so one flag for both let it state "Review"
+    // here. Checked before opening the dialog, on the page itself.
+    const trackerRow = screen.getByText("Resolve forecast underperformance").closest("tr");
+    expect(trackerRow?.cells[5]?.textContent,
+      "the forecast verdict reads worstStore, which is still loading")
+      .toBe("Loading…");
+
+    fireEvent.click(screen.getByRole("button", {name: "Business-Level Drilldown"}));
+    const dialog = await screen.findByRole("dialog", {name: "Business-Level Drilldown"});
+    expect(within(dialog).getByText(/Loading the accepted executive measures/)).toBeInTheDocument();
+    expect(within(dialog).queryByText("No signal")).not.toBeInTheDocument();
+  });
+
+  it("shows Loading only on the cells whose own source is still pending", async () => {
+    // STAGGERED, not all-pending. Holding every source at once cannot detect a
+    // cell wired to the wrong query's flag -- both the right and the wrong flag
+    // read pending. Holding ONE source and letting the rest resolve is what
+    // separates them, and it is how the real page behaves: these requests return
+    // at different times.
+    const hold = <T,>(fn: T) => fn as never;
+    const rowValue = (label: string) => {
+      const cell = screen.getByText(label).closest("tr")?.cells[1];
+      return cell?.textContent?.trim();
+    };
+
+    // (1) Hold ONLY the pricing-governance route. The approval-pipeline and
+    // guardrail figures are derived from pricingSummary, so they must be REAL
+    // here; keying them to pricingGovernance would show "Loading…" forever.
+    installMocks();
+    vi.mocked(loadPricingGovernance).mockImplementation(hold(() => new Promise(() => undefined)));
+    const first = renderOverview();
+    await screen.findByText("Pricing Governance");
+    // waitFor is the discriminator: keyed to pricingSummary these resolve as soon
+    // as it lands, but keyed to the held pricingGovernance they never would.
+    for (const label of ["Under review", "Needs override", "Outside guardrails"]) {
+      await waitFor(() =>
+        expect(rowValue(label), `${label} is derived from pricingSummary, not pricingGovernance`)
+          .not.toBe("Loading…"));
+    }
+    first.unmount();
+
+    // (2) Hold ONLY the executive route. overstockValue and stockoutRate come
+    // from executiveSummary, so they MUST be loading; keying them to
+    // inventoryOverview would print a verdict from data that has not arrived.
+    installMocks();
+    vi.mocked(loadExecutiveOverview).mockImplementation(hold(() => new Promise(() => undefined)));
+    renderOverview();
+    await screen.findByText("Executive Business Health");
+    // Wait until a row whose source DID resolve is populated, so the assertions
+    // below describe a settled staggered state rather than t=0.
+    await waitFor(() => expect(rowValue("At-risk inventory")).not.toBe("Loading…"));
+    expect(rowValue("Stock-out cell rate"), "stockoutRate comes from executiveSummary").toBe("Loading…");
+    expect(rowValue("Overstock"), "overstockValue comes from executiveSummary").toBe("Loading…");
+    // ...while a sibling row fed by a source that DID resolve must not be.
+    expect(rowValue("At-risk inventory"), "atRiskValue comes from inventoryOverview").not.toBe("Loading…");
+
+    // (3) Hold ONLY /inventory/stores. worstStore reads forecastStores alone, so
+    // its decision statement must already be settled -- guarding it on the whole
+    // storeMeasuresPending set would make it wait on three unrelated queries and
+    // give back the progressive-render gain.
+    cleanup();
+    installMocks();
+    const realSlice = vi.mocked(loadInventorySlice).getMockImplementation()!;
+    vi.mocked(loadInventorySlice).mockImplementation(((endpoint: string, ...rest: never[]) =>
+      String(endpoint).includes("/inventory/stores")
+        ? new Promise(() => undefined)
+        : realSlice(endpoint as never, ...rest)) as never);
+    renderOverview();
+    await screen.findByText("Critical Decisions Required");
+    await waitFor(() => {
+      const statements = Array.from(
+        document.querySelectorAll(".alert span"), (n) => n.textContent?.trim());
+      expect(
+        statements.some((s) => s?.includes("lowest measured store")),
+        "the forecast-underperformance statement reads forecastStores only"
+      ).toBe(true);
+    });
+  });
+
   it("keeps the original KPI and card order with governed live executive measures", async () => {
     const {container} = renderOverview();
-    expect(screen.getByRole("status")).toHaveTextContent("Loading Executive Overview");
-    expect(screen.queryByText("Not available", {exact: true})).not.toBeInTheDocument();
+    // The page deliberately has no page-level loading gate: waiting for all
+    // thirteen sources meant first paint took MAX(latency) -- measured 1.30s,
+    // spent on the one query that feeds a single chart -- while the headline KPI
+    // query had already returned. The chrome now paints immediately and each
+    // tile resolves on its own `pending` prop. What must STILL hold during that
+    // window is the governed rule that nothing renders a bare "Not available".
+    // There is no page-level loading gate any more: waiting on all thirteen
+    // sources meant first paint cost MAX(latency) -- measured 1.30s, spent on the
+    // one query feeding a single chart -- while the headline KPI query had
+    // already returned at 0.53s. The chrome paints immediately instead.
+    expect(screen.getByRole("button", {name: "Open Action Center"})).toBeInTheDocument();
+    // The property that must hold now that tiles render before their data: a
+    // pending KPI reads "Loading…", never "Not available". Conflating "still
+    // loading" with "governed absent" is the specific way progressive rendering
+    // could mislead, so it is asserted rather than assumed.
+    for (const kpi of Array.from(container.querySelectorAll(".executive-kpi"))) {
+      expect(kpi.querySelector(".value")?.textContent).not.toBe("Not available");
+    }
     expect(await screen.findByText("Store Performance Heatmap")).toBeInTheDocument();
 
     expect(Array.from(container.querySelectorAll(".executive-kpi > small"), (node) => node.textContent)).toEqual([

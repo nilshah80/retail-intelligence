@@ -124,6 +124,21 @@ function Badge({children}: {children: ReactNode}) {
   return <span className={`badge ${badgeClass(label)}`}>{children}</span>;
 }
 
+/**
+ * A status badge whose row is always rendered, so it needs its own pending
+ * signal.
+ *
+ * These rows are driven by fixed labels rather than by query results, so unlike
+ * a table body they never fall through to <TableEmpty pending=...>. Without this
+ * they resolve their ternaries against undefined data and state a conclusion --
+ * "New", "Watch", "Observed", "Unavailable" -- before any evidence has arrived.
+ * A verdict derived from data that has not loaded is not a governed absence; it
+ * is a fabricated one.
+ */
+function StatusBadge({pending, children}: {pending: boolean; children: ReactNode}) {
+  return <Badge>{pending ? "Loading…" : children}</Badge>;
+}
+
 function UnavailableValue({reason}: {reason: string}) {
   return (
     <span
@@ -188,6 +203,7 @@ function ExecutiveModal({
   title,
   returnFocus,
   children,
+  pending = false,
   confirmLabel,
   onConfirm,
   onClose
@@ -196,6 +212,13 @@ function ExecutiveModal({
   title: string;
   returnFocus: HTMLElement | null;
   children: ReactNode;
+  /**
+   * The toolbar is interactive from first paint, so a dialog can be opened while
+   * its measures are still in flight. Its bodies are fixed rows, so they would
+   * otherwise state "0" open items, a bare "Not available" value at risk, and
+   * "Review" / "No signal" verdicts from data that had not arrived.
+   */
+  pending?: boolean;
   confirmLabel?: string;
   onConfirm?: () => void;
   onClose: () => void;
@@ -256,7 +279,13 @@ function ExecutiveModal({
           <h3 ref={titleRef} id="executive-modal-title" tabIndex={-1}>{title}</h3>
           <button className="modal-close" type="button" aria-label={`Close ${title}`} onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">
+          {pending ? (
+            <div className="state-card" role="status" aria-live="polite" aria-busy="true">
+              Loading the accepted executive measures…
+            </div>
+          ) : children}
+        </div>
         <div className="modal-foot">
           {confirmLabel && onConfirm && (
             <button className="modal-action" type="button" onClick={onConfirm}>
@@ -440,10 +469,21 @@ export function ExecutiveOverview({
     : forecastPortfolio?.portfolioFvaVsMa13Pct
       ?? forecastPortfolio?.fvaVsMa13Pct
       ?? null;
-  const demandAtRiskMinor = scopeHasFilter && filteredForecastRows.length
+  // Exclusive per branch, for both the value and its pending flag: a filtered
+  // scope reads forecastStores and nothing else, an unfiltered one reads the
+  // portfolio summary and nothing else. The previous `&& filteredForecastRows
+  // .length` fallback substituted PORTFOLIO numbers into a scoped view whenever
+  // the filter matched no rows -- the same wrong-scope substitution as showing
+  // them while the request was still in flight. `sum([])` is null, so an empty
+  // filtered result now reads as a governed absence rather than someone else's
+  // total.
+  const demandAtRiskPending = scopeHasFilter
+    ? forecastStores.isPending
+    : forecastSummaryPending;
+  const demandAtRiskMinor = scopeHasFilter
     ? sum(filteredForecastRows.map((row) => row.demandAtRiskMinor))
     : forecastPortfolio?.demandAtRiskMinor ?? null;
-  const demandAtRiskCells = scopeHasFilter && filteredForecastRows.length
+  const demandAtRiskCells = scopeHasFilter
     ? sum(filteredForecastRows.map((row) => row.demandAtRiskCells))
     : forecastPortfolio?.demandAtRiskCells ?? null;
 
@@ -454,6 +494,12 @@ export function ExecutiveOverview({
   const overstockValue = executiveSummary?.overstockValueMinor ?? null;
   const stockoutRate = executiveSummary?.stockoutRatePct ?? null;
   const stockTurn = summaryNumber(inventoryOverview.data, "stockTurn");
+  // Only the branch actually taken matters: the region branch reads
+  // executiveSummary, the fallback derives from stockTurn on the inventory
+  // overview. Waiting on both would hold a figure whose own source had landed.
+  const inventoryDaysPending = region
+    ? executive.isPending
+    : inventoryOverview.isPending;
   const inventoryDays = region
     ? executiveSummary?.inventoryDays ?? null
     : stockTurn && stockTurn > 0 ? 365 / stockTurn : null;
@@ -526,11 +572,32 @@ export function ExecutiveOverview({
     return risk(left.stockoutRisk) - risk(right.stockoutRisk)
       || (left.forecast?.accuracy ?? 101) - (right.forecast?.accuracy ?? 101);
   });
+  const storeMeasuresPending = forecastStores.isPending
+    || inventoryStores.isPending
+    || pricingStores.isPending
+    || executive.isPending;
+  // These two tables are built from `dashboard.filters.stores` -- a prop that is
+  // available synchronously -- and only their MEASURES come from queries. So the
+  // row array is never empty while loading, which made the <TableEmpty pending>
+  // already wired below unreachable: every row rendered with its measures
+  // defaulted, stating "No signal", "Watch" and "Review store detail" as though
+  // those were findings. Holding the rows back until the measures land routes
+  // them through that existing loading state instead. One flag drives both the
+  // gate and the TableEmpty prop, so the two cannot disagree.
+  // "4 live signals" and the four decision statements below are fixed rows, so
+  // they never reach a loading state of their own; while their sources are in
+  // flight the card asserted four live signals and four bare "Not available"
+  // statements.
+  const criticalDecisionsPending = inventoryValuation.isPending
+    || demandAtRiskPending
+    || pricingSummary.isPending
+    || forecastStores.isPending;
   // The approved heatmap is deliberately an executive top-five. Regional
   // rollups and drilldowns still use the complete store population below.
-  const storeRows = rankedStoreRows.slice(0, 5);
+  const storeRows = storeMeasuresPending ? [] : rankedStoreRows.slice(0, 5);
 
   const regionRows = useMemo(() => {
+    if (storeMeasuresPending) return [];
     const grouped = new Map<string, typeof rankedStoreRows>();
     for (const row of rankedStoreRows) {
       const existing = grouped.get(row.store.region) ?? [];
@@ -553,7 +620,7 @@ export function ExecutiveOverview({
             : "Watch";
       return {name, rows, accuracy, days, status, executive: executiveRegion};
     }).sort((left, right) => (right.accuracy ?? -1) - (left.accuracy ?? -1));
-  }, [executive.data?.regions, rankedStoreRows]);
+  }, [executive.data?.regions, rankedStoreRows, storeMeasuresPending]);
 
   const inventoryCategoryRows = (inventoryOverview.data?.cards?.categories ?? []) as Row[];
   const pricingCategoryRows = (pricingCategories.data?.items ?? []) as Row[];
@@ -647,6 +714,13 @@ export function ExecutiveOverview({
       level: "Business",
       owner: "Pricing",
       due: "Current approval cycle",
+      // Each row is a fixed label whose measures come from a query, so the table
+      // never empties and never reaches a TableEmpty pending row. Without a
+      // per-row flag the status column states "Pending" / "No signal" / "Review"
+      // before any evidence exists, and Expected Value reads a bare
+      // "Not available" for a figure that is merely still in flight.
+      pending: pricingSummary.isPending,
+      statusPending: pricingSummary.isPending,
       expected: marginOpportunity === null ? unavailable : `${money(marginOpportunity, inventoryCurrency)} margin opportunity`,
       status: adoptedCount && adoptedCount > 0 ? "In Progress" : "Pending",
       page: "priceRecommendations" as ExecutiveDestination
@@ -656,6 +730,8 @@ export function ExecutiveOverview({
       level: "Store",
       owner: "Supply Chain",
       due: "Current transfer plan",
+      pending: inventoryTransfers.isPending,
+      statusPending: inventoryTransfers.isPending,
       expected: transferBenefit === null ? unavailable : `${money(transferBenefit, inventoryCurrency)} expected recovery`,
       status: transferRows && transferRows > 0 ? "Review" : "No signal",
       page: "inventoryTransfers" as ExecutiveDestination
@@ -665,6 +741,10 @@ export function ExecutiveOverview({
       level: "Regional",
       owner: "Demand Planning",
       due: "Next forecast review",
+      pending: demandAtRiskPending,
+      // Only forecastStores: the verdict reads worstStore alone, so pairing it
+      // with the value's flag made it wait on the portfolio summary too.
+      statusPending: forecastStores.isPending,
       expected: demandAtRiskMinor === null ? unavailable : `${money(demandAtRiskMinor, inventoryCurrency)} demand at risk`,
       status: worstStore?.accuracy !== null && worstStore?.accuracy !== undefined && worstStore.accuracy < 80
         ? "Escalated"
@@ -676,6 +756,8 @@ export function ExecutiveOverview({
       level: "Store",
       owner: rowText(replenishmentExceptions.data?.items[0], "owner") ?? "Supply Planning",
       due: "Current exception queue",
+      pending: replenishmentExceptions.isPending,
+      statusPending: replenishmentExceptions.isPending,
       expected: exceptionRows === null ? unavailable : `${formatCount(exceptionRows)} open exceptions`,
       status: exceptionWarnings && exceptionWarnings > 0 ? "Pending" : "Review",
       page: "replenishmentExceptions" as ExecutiveDestination
@@ -711,21 +793,14 @@ export function ExecutiveOverview({
   const scopedAggregationNote = scopedAggregationNotes.length
     ? scopedAggregationNotes.join(" ")
     : null;
-  const pagePending = forecastSummaryPending || [
-    executive,
-    forecastActuals,
-    forecastStores,
-    inventoryOverview,
-    inventoryStores,
-    inventoryValuation,
-    inventoryExpiry,
-    inventoryTransfers,
-    replenishmentExceptions,
-    pricingSummary,
-    pricingStores,
-    pricingCategories,
-    pricingGovernance
-  ].some((source) => source.isPending);
+  // No page-level pending gate. Every tile below already takes its own
+  // `pending` prop and every table its own <TableEmpty pending=...>, and an
+  // all-or-nothing gate over these thirteen sources made all of that
+  // unreachable: first paint waited on MAX(latency) instead of on the KPI
+  // query. Measured, that was 1.30s spent waiting on /forecast/actuals -- which
+  // feeds one chart -- while /executive/overview, which feeds the headline
+  // numbers, returned in 0.53s. `globalError` above still aggregates failures,
+  // so a broken source is reported rather than rendered as a blank.
 
   const openDialog = (next: ExecutiveDialog, trigger: HTMLElement) => {
     dialogTrigger.current = trigger;
@@ -736,17 +811,6 @@ export function ExecutiveOverview({
     setDialog(null);
     onNavigate(page);
   };
-
-  if (pagePending) {
-    return (
-      <div id="overview" className="executive-overview">
-        <div className="state-card" role="status" aria-live="polite" aria-busy="true">
-          <strong>Loading Executive Overview…</strong>
-          <span>Assembling accepted sales, forecast, pricing and inventory measures.</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div id="overview" className="executive-overview">
@@ -806,7 +870,7 @@ export function ExecutiveOverview({
           name="inventory-value"
           label="Inventory Value"
           value={onHandValue === null ? null : money(onHandValue, inventoryCurrency)}
-          pending={inventoryOverview.isPending || (Boolean(region) && executive.isPending)}
+          pending={region ? executive.isPending : inventoryOverview.isPending}
           reason={inventoryOverview.error?.message ?? executive.error?.message ?? "Accepted inventory valuation is unavailable for this scope."}
           note="Accepted unit cost × current on-hand units"
         />
@@ -814,7 +878,7 @@ export function ExecutiveOverview({
           name="stockout-loss"
           label="Stock-out Loss (Est.)"
           value={demandAtRiskMinor === null ? null : money(demandAtRiskMinor, inventoryCurrency)}
-          pending={forecastSummaryPending || forecastStores.isPending}
+          pending={demandAtRiskPending}
           reason={forecastSummaryError?.message ?? forecastStores.error?.message ?? "Forecast-to-inventory exposure is unavailable."}
           delta={demandAtRiskCells === null ? null : `${formatCount(demandAtRiskCells)} cells at near-term risk`}
           deltaTone="warn"
@@ -840,31 +904,31 @@ export function ExecutiveOverview({
         <div className="card">
           <div className="card-head"><h3>Executive Business Health</h3><span>Current month</span></div>
           <div className="table-scroll"><table className="table"><tbody>
-            <tr><td>Revenue vs LY</td><td>{executiveSummary ? `${money(executiveSummary.monthRevenueMinor, inventoryCurrency)} / ${money(executiveSummary.monthPriorRevenueMinor, inventoryCurrency)}` : <UnavailableValue reason="Comparable month revenue is unavailable." />}</td><td><Badge>{executiveSummary?.monthGrowthPct === null || executiveSummary?.monthGrowthPct === undefined ? "New" : executiveSummary.monthGrowthPct >= 0 ? "Ahead" : "Watch"}</Badge></td></tr>
-            <tr><td>Gross margin vs LY mix</td><td>{executiveSummary?.monthGrossMarginPct === null || executiveSummary?.monthGrossMarginPct === undefined || executiveSummary?.monthPriorGrossMarginPct === null || executiveSummary?.monthPriorGrossMarginPct === undefined ? <UnavailableValue reason="Comparable cost-covered current-WAC margin is unavailable." /> : `${formatPercent(executiveSummary.monthGrossMarginPct)} / ${formatPercent(executiveSummary.monthPriorGrossMarginPct)}`}</td><td><Badge>{executiveSummary?.monthGrossMarginPct !== null && executiveSummary?.monthGrossMarginPct !== undefined && executiveSummary?.monthPriorGrossMarginPct !== null && executiveSummary?.monthPriorGrossMarginPct !== undefined && executiveSummary.monthGrossMarginPct >= executiveSummary.monthPriorGrossMarginPct ? "Ahead" : "Watch"}</Badge></td></tr>
-            <tr><td>Inventory days</td><td>{inventoryDays === null ? <UnavailableValue reason="Stock turn is unavailable for this scope." /> : formatDays(inventoryDays)}</td><td><Badge>{inventoryDays === null ? "Unavailable" : "Observed"}</Badge></td></tr>
-            <tr><td>Stock-out cell rate</td><td>{stockoutRate === null ? <UnavailableValue reason="Stock-health cell coverage is unavailable." /> : formatPercent(stockoutRate)}</td><td><Badge>{stockoutRate !== null && stockoutRate > 5 ? "Watch" : "Observed"}</Badge></td></tr>
-            <tr><td>AI recommendation adoption</td><td>{adoptionPct === null ? <UnavailableValue reason="Approval workflow evidence is not available." /> : formatPercent(adoptionPct)}</td><td><Badge>{adoptionPct === null ? "Unavailable" : adoptionPct >= 70 ? "Improving" : "Watch"}</Badge></td></tr>
+            <tr><td>Revenue vs LY</td><td>{executive.isPending ? "Loading…" : executiveSummary ? `${money(executiveSummary.monthRevenueMinor, inventoryCurrency)} / ${money(executiveSummary.monthPriorRevenueMinor, inventoryCurrency)}` : <UnavailableValue reason="Comparable month revenue is unavailable." />}</td><td><StatusBadge pending={executive.isPending}>{executive.isPending ? "Loading…" : executiveSummary?.monthGrowthPct === null || executiveSummary?.monthGrowthPct === undefined ? "New" : executiveSummary.monthGrowthPct >= 0 ? "Ahead" : "Watch"}</StatusBadge></td></tr>
+            <tr><td>Gross margin vs LY mix</td><td>{executive.isPending ? "Loading…" : executiveSummary?.monthGrossMarginPct === null || executiveSummary?.monthGrossMarginPct === undefined || executiveSummary?.monthPriorGrossMarginPct === null || executiveSummary?.monthPriorGrossMarginPct === undefined ? <UnavailableValue reason="Comparable cost-covered current-WAC margin is unavailable." /> : `${formatPercent(executiveSummary.monthGrossMarginPct)} / ${formatPercent(executiveSummary.monthPriorGrossMarginPct)}`}</td><td><StatusBadge pending={executive.isPending}>{executiveSummary?.monthGrossMarginPct !== null && executiveSummary?.monthGrossMarginPct !== undefined && executiveSummary?.monthPriorGrossMarginPct !== null && executiveSummary?.monthPriorGrossMarginPct !== undefined && executiveSummary.monthGrossMarginPct >= executiveSummary.monthPriorGrossMarginPct ? "Ahead" : "Watch"}</StatusBadge></td></tr>
+            <tr><td>Inventory days</td><td>{inventoryDaysPending ? "Loading…" : inventoryDays === null ? <UnavailableValue reason="Stock turn is unavailable for this scope." /> : formatDays(inventoryDays)}</td><td><StatusBadge pending={inventoryDaysPending}>{inventoryDays === null ? "Unavailable" : "Observed"}</StatusBadge></td></tr>
+            <tr><td>Stock-out cell rate</td><td>{executive.isPending ? "Loading…" : stockoutRate === null ? <UnavailableValue reason="Stock-health cell coverage is unavailable." /> : formatPercent(stockoutRate)}</td><td><StatusBadge pending={executive.isPending}>{stockoutRate !== null && stockoutRate > 5 ? "Watch" : "Observed"}</StatusBadge></td></tr>
+            <tr><td>AI recommendation adoption</td><td>{pricingSummary.isPending ? "Loading…" : adoptionPct === null ? <UnavailableValue reason="Approval workflow evidence is not available." /> : formatPercent(adoptionPct)}</td><td><StatusBadge pending={pricingSummary.isPending}>{adoptionPct === null ? "Unavailable" : adoptionPct >= 70 ? "Improving" : "Watch"}</StatusBadge></td></tr>
           </tbody></table></div>
         </div>
 
         <div className="card">
           <div className="card-head"><h3>AI Value Realization</h3><span>Current opportunities</span></div>
           <div className="executive-metric-grid">
-            <div className="executive-metric"><span>Revenue Opportunity</span><strong>{revenueOpportunity === null ? <UnavailableValue reason={realizedValueReason} /> : money(revenueOpportunity, inventoryCurrency)}</strong><small>Model-implied pricing opportunity</small></div>
-            <div className="executive-metric"><span>Margin Opportunity</span><strong>{marginOpportunity === null ? <UnavailableValue reason={pricing?.kpis.marginReasonCode ?? realizedValueReason} /> : money(marginOpportunity, inventoryCurrency)}</strong><small>Current accepted cost basis</small></div>
-            <div className="executive-metric"><span>Markdown Provision</span><strong>{markdownProvision === null ? <UnavailableValue reason="Accepted markdown provision is unavailable." /> : money(markdownProvision, inventoryCurrency)}</strong><small>Current ageing-stock exposure</small></div>
-            <div className="executive-metric"><span>Transfer Recovery</span><strong>{transferBenefit === null ? <UnavailableValue reason="Accepted transfer benefit is unavailable." /> : money(transferBenefit, inventoryCurrency)}</strong><small>Expected benefit of recommended transfers</small></div>
+            <div className="executive-metric"><span>Revenue Opportunity</span><strong>{pricingSummary.isPending ? "Loading…" : revenueOpportunity === null ? <UnavailableValue reason={realizedValueReason} /> : money(revenueOpportunity, inventoryCurrency)}</strong><small>Model-implied pricing opportunity</small></div>
+            <div className="executive-metric"><span>Margin Opportunity</span><strong>{pricingSummary.isPending ? "Loading…" : marginOpportunity === null ? <UnavailableValue reason={pricing?.kpis.marginReasonCode ?? realizedValueReason} /> : money(marginOpportunity, inventoryCurrency)}</strong><small>Current accepted cost basis</small></div>
+            <div className="executive-metric"><span>Markdown Provision</span><strong>{inventoryValuation.isPending ? "Loading…" : markdownProvision === null ? <UnavailableValue reason="Accepted markdown provision is unavailable." /> : money(markdownProvision, inventoryCurrency)}</strong><small>Current ageing-stock exposure</small></div>
+            <div className="executive-metric"><span>Transfer Recovery</span><strong>{inventoryTransfers.isPending ? "Loading…" : transferBenefit === null ? <UnavailableValue reason="Accepted transfer benefit is unavailable." /> : money(transferBenefit, inventoryCurrency)}</strong><small>Expected benefit of recommended transfers</small></div>
           </div>
           <div className="callout executive-callout"><strong>Executive insight</strong><p>These values are actionable opportunity and exposure measures. They are not presented as realized attribution without a governed post-action baseline.</p></div>
         </div>
 
         <div className="card">
-          <div className="card-head"><h3>Critical Decisions Required</h3><span>4 live signals</span></div>
-          <div className="alert"><div className="alert-icon">₹</div><div><strong>Review high-value markdown exposure</strong><span>{markdownProvision === null ? unavailable : `${money(markdownProvision, inventoryCurrency)} current markdown provision.`}</span></div></div>
-          <div className="alert"><div className="alert-icon">!</div><div><strong>Resolve stock-out exposure</strong><span>{demandAtRiskMinor === null ? unavailable : `${formatCount(demandAtRiskCells)} cells may expose ${money(demandAtRiskMinor, inventoryCurrency)} of forecast demand.`}</span></div></div>
-          <div className="alert"><div className="alert-icon">↗</div><div><strong>Review price recommendations</strong><span>{openRecommendations === null ? unavailable : `${formatCount(openRecommendations)} recommendations expose ${money(marginOpportunity, inventoryCurrency)} margin opportunity.`}</span></div></div>
-          <div className="alert"><div className="alert-icon">⚙</div><div><strong>Investigate forecast underperformance</strong><span>{worstStore ? `${worstStore.name} is the lowest measured store at ${formatPercent(worstStore.accuracy)}.` : unavailable}</span></div></div>
+          <div className="card-head"><h3>Critical Decisions Required</h3><span>{criticalDecisionsPending ? "Loading…" : "4 live signals"}</span></div>
+          <div className="alert"><div className="alert-icon">₹</div><div><strong>Review high-value markdown exposure</strong><span>{inventoryValuation.isPending ? "Loading…" : markdownProvision === null ? unavailable : `${money(markdownProvision, inventoryCurrency)} current markdown provision.`}</span></div></div>
+          <div className="alert"><div className="alert-icon">!</div><div><strong>Resolve stock-out exposure</strong><span>{demandAtRiskPending ? "Loading…" : demandAtRiskMinor === null ? unavailable : `${formatCount(demandAtRiskCells)} cells may expose ${money(demandAtRiskMinor, inventoryCurrency)} of forecast demand.`}</span></div></div>
+          <div className="alert"><div className="alert-icon">↗</div><div><strong>Review price recommendations</strong><span>{pricingSummary.isPending ? "Loading…" : openRecommendations === null ? unavailable : `${formatCount(openRecommendations)} recommendations expose ${money(marginOpportunity, inventoryCurrency)} margin opportunity.`}</span></div></div>
+          <div className="alert"><div className="alert-icon">⚙</div><div><strong>Investigate forecast underperformance</strong><span>{forecastStores.isPending ? "Loading…" : worstStore ? `${worstStore.name} is the lowest measured store at ${formatPercent(worstStore.accuracy)}.` : unavailable}</span></div></div>
         </div>
       </div>
 
@@ -883,7 +947,7 @@ export function ExecutiveOverview({
                 <td><Badge>{row.health}</Badge></td>
                 <td><button className="link-button" type="button" onClick={() => navigate("storeInventory")}>{row.priorityAction}</button></td>
               </tr>)}
-              {!storeRows.length && <TableEmpty colSpan={7} pending={forecastStores.isPending || inventoryStores.isPending} />}
+              {!storeRows.length && <TableEmpty colSpan={7} pending={storeMeasuresPending} />}
             </tbody>
           </table></div>
         </div>
@@ -902,7 +966,7 @@ export function ExecutiveOverview({
                 <td>{row.accuracy === null ? <UnavailableValue reason="Comparable regional accuracy is unavailable." /> : formatPercent(row.accuracy)}</td>
                 <td><Badge>{row.status}</Badge></td>
               </tr>)}
-              {!regionRows.length && <TableEmpty colSpan={7} pending={forecastStores.isPending || inventoryStores.isPending} />}
+              {!regionRows.length && <TableEmpty colSpan={7} pending={storeMeasuresPending} />}
             </tbody>
           </table></div>
         </div>
@@ -927,24 +991,24 @@ export function ExecutiveOverview({
         <div className="card">
           <div className="card-head"><h3>Inventory Risk Exposure</h3><button className="link-button" type="button" onClick={() => navigate("inventoryOverview")}>₹ value</button></div>
           <table className="table"><tbody>
-            <tr><td>Overstock</td><td>{overstockValue === null ? <UnavailableValue reason="Costed overstock exposure is unavailable." /> : money(overstockValue, inventoryCurrency)}</td><td><Badge>{overstockValue && overstockValue > 0 ? "High" : "No signal"}</Badge></td></tr>
-            <tr><td>At-risk inventory</td><td>{atRiskValue === null ? <UnavailableValue reason="At-risk inventory value is unavailable." /> : money(atRiskValue, inventoryCurrency)}</td><td><Badge>{atRiskValue && atRiskValue > 0 ? "Watch" : "No signal"}</Badge></td></tr>
-            <tr><td>Near stock-out</td><td>{demandAtRiskMinor === null ? <UnavailableValue reason="Forecast demand at risk is unavailable." /> : `${money(demandAtRiskMinor, inventoryCurrency)} sales risk`}</td><td><Badge>{demandAtRiskMinor && demandAtRiskMinor > 0 ? "High" : "No signal"}</Badge></td></tr>
-            <tr><td>Near expiry</td><td>{nearExpiryValue === null ? <UnavailableValue reason="Near-expiry cost exposure is unavailable." /> : money(nearExpiryValue, inventoryCurrency)}</td><td><Badge>{nearExpiryValue && nearExpiryValue > 0 ? "Watch" : "No signal"}</Badge></td></tr>
-            <tr><td>Transfer opportunity</td><td>{transferValue === null ? <UnavailableValue reason="Transfer recommendation value is unavailable." /> : money(transferValue, inventoryCurrency)}</td><td><Badge>{transferRows && transferRows > 0 ? "Action" : "No signal"}</Badge></td></tr>
+            <tr><td>Overstock</td><td>{executive.isPending ? "Loading…" : overstockValue === null ? <UnavailableValue reason="Costed overstock exposure is unavailable." /> : money(overstockValue, inventoryCurrency)}</td><td><StatusBadge pending={executive.isPending}>{overstockValue && overstockValue > 0 ? "High" : "No signal"}</StatusBadge></td></tr>
+            <tr><td>At-risk inventory</td><td>{inventoryOverview.isPending ? "Loading…" : atRiskValue === null ? <UnavailableValue reason="At-risk inventory value is unavailable." /> : money(atRiskValue, inventoryCurrency)}</td><td><StatusBadge pending={inventoryOverview.isPending}>{atRiskValue && atRiskValue > 0 ? "Watch" : "No signal"}</StatusBadge></td></tr>
+            <tr><td>Near stock-out</td><td>{demandAtRiskPending ? "Loading…" : demandAtRiskMinor === null ? <UnavailableValue reason="Forecast demand at risk is unavailable." /> : `${money(demandAtRiskMinor, inventoryCurrency)} sales risk`}</td><td><StatusBadge pending={demandAtRiskPending}>{demandAtRiskMinor && demandAtRiskMinor > 0 ? "High" : "No signal"}</StatusBadge></td></tr>
+            <tr><td>Near expiry</td><td>{inventoryExpiry.isPending ? "Loading…" : nearExpiryValue === null ? <UnavailableValue reason="Near-expiry cost exposure is unavailable." /> : money(nearExpiryValue, inventoryCurrency)}</td><td><StatusBadge pending={inventoryExpiry.isPending}>{nearExpiryValue && nearExpiryValue > 0 ? "Watch" : "No signal"}</StatusBadge></td></tr>
+            <tr><td>Transfer opportunity</td><td>{inventoryTransfers.isPending ? "Loading…" : transferValue === null ? <UnavailableValue reason="Transfer recommendation value is unavailable." /> : money(transferValue, inventoryCurrency)}</td><td><StatusBadge pending={inventoryTransfers.isPending}>{transferRows && transferRows > 0 ? "Action" : "No signal"}</StatusBadge></td></tr>
           </tbody></table>
         </div>
 
         <div className="card">
           <div className="card-head"><h3>Pricing Governance</h3><button className="link-button" type="button" onClick={() => navigate("priceRecommendations")}>This week</button></div>
           <table className="table"><tbody>
-            <tr><td>Recommendations generated</td><td>{openRecommendations === null ? <UnavailableValue reason="Pricing recommendation summary is unavailable." /> : formatCount(openRecommendations)}</td></tr>
-            <tr><td>Approved</td><td>{adoptionPct === null ? <UnavailableValue reason="Approval workflow evidence is not available." /> : formatPercent(adoptionPct)}</td></tr>
-            <tr><td>Under review</td><td>{pendingReviewPct === null ? <UnavailableValue reason="Approval pipeline evidence is not available." /> : formatPercent(pendingReviewPct)}</td></tr>
-            <tr><td>Needs override</td><td>{needingOverridePct === null ? <UnavailableValue reason="Override evidence is unavailable." /> : formatPercent(needingOverridePct)}</td></tr>
-            <tr><td>Outside guardrails</td><td>{outsideGuardrails === null ? <UnavailableValue reason="A distinct outside-guardrail count is not published." /> : <Badge>{formatCount(outsideGuardrails)}</Badge>}</td></tr>
+            <tr><td>Recommendations generated</td><td>{pricingSummary.isPending ? "Loading…" : openRecommendations === null ? <UnavailableValue reason="Pricing recommendation summary is unavailable." /> : formatCount(openRecommendations)}</td></tr>
+            <tr><td>Approved</td><td>{pricingSummary.isPending ? "Loading…" : adoptionPct === null ? <UnavailableValue reason="Approval workflow evidence is not available." /> : formatPercent(adoptionPct)}</td></tr>
+            <tr><td>Under review</td><td>{pricingSummary.isPending ? "Loading…" : pendingReviewPct === null ? <UnavailableValue reason="Approval pipeline evidence is not available." /> : formatPercent(pendingReviewPct)}</td></tr>
+            <tr><td>Needs override</td><td>{pricingSummary.isPending ? "Loading…" : needingOverridePct === null ? <UnavailableValue reason="Override evidence is unavailable." /> : formatPercent(needingOverridePct)}</td></tr>
+            <tr><td>Outside guardrails</td><td>{pricingSummary.isPending ? "Loading…" : outsideGuardrails === null ? <UnavailableValue reason="A distinct outside-guardrail count is not published." /> : <StatusBadge pending={pricingSummary.isPending}>{formatCount(outsideGuardrails)}</StatusBadge>}</td></tr>
           </tbody></table>
-          {!pricingGovernance.data?.approvalSLA.available && <p className="executive-card-note">Counts reflect current recommendation dispositions; no time-based approval SLA is configured.</p>}
+          {!pricingGovernance.isPending && !pricingGovernance.data?.approvalSLA.available && <p className="executive-card-note">Counts reflect current recommendation dispositions; no time-based approval SLA is configured.</p>}
         </div>
       </div>
 
@@ -977,8 +1041,8 @@ export function ExecutiveOverview({
               <td>{row.level}</td>
               <td>{row.owner}</td>
               <td>{row.due}</td>
-              <td>{row.expected}</td>
-              <td><Badge>{row.status}</Badge></td>
+              <td>{row.pending ? "Loading…" : row.expected}</td>
+              <td><StatusBadge pending={row.statusPending}>{row.status}</StatusBadge></td>
             </tr>)}
           </tbody></table></div>
           <p className="executive-card-note">Accountable functions and review windows describe the source queue; no individual assignment or due date is implied.</p>
@@ -987,6 +1051,9 @@ export function ExecutiveOverview({
 
       <ExecutiveModal
         open={dialog === "actions"}
+        pending={inventoryValuation.isPending || demandAtRiskPending
+          || pricingSummary.isPending || replenishmentExceptions.isPending
+          || inventoryTransfers.isPending}
         title="Executive Action Center"
         returnFocus={dialogTrigger.current}
         confirmLabel="Mark Reviewed"
@@ -1008,6 +1075,7 @@ export function ExecutiveOverview({
 
       <ExecutiveModal
         open={dialog === "store"}
+        pending={storeMeasuresPending}
         title="Store-Level Drilldown"
         returnFocus={dialogTrigger.current}
         confirmLabel="Open Store Action Plan"
@@ -1035,6 +1103,9 @@ export function ExecutiveOverview({
 
       <ExecutiveModal
         open={dialog === "business"}
+        pending={pricingSummary.isPending || inventoryValuation.isPending
+          || inventoryTransfers.isPending || demandAtRiskPending
+          || forecastStores.isPending}
         title="Business-Level Drilldown"
         returnFocus={dialogTrigger.current}
         onClose={() => setDialog(null)}

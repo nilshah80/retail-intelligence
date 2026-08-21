@@ -260,6 +260,7 @@ function SimpleRows({
 function ForecastModal({
   modal,
   onClose,
+  sourceError,
   summary,
   stores,
   version,
@@ -271,6 +272,8 @@ function ForecastModal({
 }: {
   modal: OwnedForecastModal;
   onClose: () => void;
+  /** The failure of the source THIS modal reads, if any. */
+  sourceError?: unknown;
   summary?: ReturnType<typeof useForecastData>["summary"];
   stores?: ReturnType<typeof useForecastData>["stores"];
   version?: ReturnType<typeof useForecastData>["versions"];
@@ -295,7 +298,19 @@ function ForecastModal({
   const [adjustmentRowId, setAdjustmentRowId] = useState(
     selectedRows[0]?.rowId ?? allRows[0]?.rowId ?? ""
   );
-  const adjustmentRow = allRows.find((row) => row.rowId === adjustmentRowId);
+  // Resolved on every render, not latched at mount. The dialog is reachable
+  // before the workbench query lands (its data belongs to SKU View, so the page
+  // no longer waits for it), and useState only ever saw the mount-time value --
+  // so opening the dialog during that window left the row empty and never
+  // re-defaulted when the rows arrived, showing blank product/store/forecast
+  // fields. `adjustmentRowId` still records an explicit user choice; "" means
+  // "not chosen yet", and since no option carries an empty value the fallback
+  // can never shadow a real selection.
+  const effectiveRowId = adjustmentRowId
+    || selectedRows[0]?.rowId
+    || allRows[0]?.rowId
+    || "";
+  const adjustmentRow = allRows.find((row) => row.rowId === effectiveRowId);
   const [drilldownStoreId, setDrilldownStoreId] = useState(
     activeStoreId || stores?.items[0]?.storeId || ""
   );
@@ -359,6 +374,17 @@ function ForecastModal({
           </button>
         </div>
         <div className="modal-body">
+          {/* A modal is reachable while its own source is still failing, because a
+              failed query no longer takes the whole page down with it. Saying so
+              beats rendering an empty body: an absence has to carry its cause. */}
+          {sourceError ? (
+            <div className="state-card error-state">
+              <strong>This view is unavailable.</strong>
+              <span>{String(sourceError)}</span>
+              <small>No sample or fallback values are displayed.</small>
+            </div>
+          ) : (
+            <>
           {(modal === "accept" || modal === "adjust" || modal === "actions") && (
             <div className="callout compact-callout"><strong>Workflow unavailable</strong><p>The planner workflow is not configured. Local exploration does not submit, persist, or change forecast authority.</p></div>
           )}
@@ -374,7 +400,7 @@ function ForecastModal({
           )}
           {modal === "adjust" && (
             <div className="pricing-form-grid two">
-              <div className="pricing-field"><label><span>Product / SKU</span><select className="filter" value={adjustmentRowId} onChange={(event) => setAdjustmentRowId(event.target.value)}>{allRows.map((row) => <option key={row.rowId} value={row.rowId}>{row.productName} · {row.skuId}</option>)}</select></label></div>
+              <div className="pricing-field"><label><span>Product / SKU</span><select className="filter" value={effectiveRowId} onChange={(event) => setAdjustmentRowId(event.target.value)}>{allRows.map((row) => <option key={row.rowId} value={row.rowId}>{row.productName} · {row.skuId}</option>)}</select></label></div>
               <div className="pricing-field"><label><span>Store</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.storeName ?? "—"} /></label></div>
               <div className="pricing-field"><label><span>AI Forecast</span><input className="filter" readOnly aria-readonly="true" value={adjustmentRow?.aiForecast ?? "—"} /></label></div>
               <div className="pricing-field"><label><span>Planner Forecast</span><input className="filter" readOnly aria-readonly="true" title="No planner override applied; equals the AI forecast" value={adjustmentRow?.aiForecast ?? "—"} /></label></div>
@@ -428,6 +454,8 @@ function ForecastModal({
           )}
           {modal === "versions" && (
             <div className="table-scroll"><table className="table"><thead><tr><th>Version</th><th>Created By</th><th>Accuracy</th><th>Bias</th><th>Demand Units</th><th>Status</th></tr></thead><tbody>{(version?.items ?? []).map((item) => <tr key={item.versionId}><td>{item.versionId}</td><td>{item.createdBy}</td><td>{percentage(item.accuracy)}</td><td>{percentage(item.bias, true)}</td><td>{count(item.demandUnits)}</td><td>{statusBadge(item.lifecycleStatus)}</td></tr>)}</tbody></table></div>
+          )}
+            </>
           )}
         </div>
         <div className="modal-foot">
@@ -872,6 +900,44 @@ function ScenarioModal({
   );
 }
 
+type ForecastSource =
+  | "summary" | "actuals" | "horizons" | "stores"
+  | "workbench" | "drivers" | "signals" | "versions";
+
+/**
+ * Loading and failure states for ONE tab, rendered inside the tab panel.
+ *
+ * Deliberately not a page-level gate: the shell (toolbar, KPI row, tab strip) is
+ * driven by its own sources, so a panel waiting on a slow query -- or failing
+ * outright -- must not take the navigation with it. Before this, selecting a tab
+ * whose data was still in flight replaced the whole page with one loading card
+ * and left no way to switch back.
+ */
+function TabPanelState({
+  data,
+  sources,
+  children
+}: {
+  data: ReturnType<typeof useForecastData>;
+  sources: ReadonlyArray<ForecastSource>;
+  children: React.ReactNode;
+}) {
+  const error = sources.map((source) => data.errors[source]).find(Boolean);
+  if (error) {
+    return (
+      <div className="state-card error-state">
+        <strong>This view is unavailable.</strong>
+        <span>{String(error)}</span>
+        <small>No sample or fallback values are displayed.</small>
+      </div>
+    );
+  }
+  if (sources.some((source) => !data[source])) {
+    return <div className="state-card">Loading the accepted forecast…</div>;
+  }
+  return <>{children}</>;
+}
+
 function useForecastData(filters: ForecastFilters) {
   const summary = useQuery({
     queryKey: ["forecast-summary"],
@@ -910,26 +976,23 @@ function useForecastData(filters: ForecastFilters) {
     queryFn: ({signal}) => loadForecastVersions(signal)
   });
   return {
-    pending: [
-      summary,
-      actuals,
-      horizons,
-      stores,
-      workbench,
-      drivers,
-      signals,
-      versions
-    ].some((query) => query.isPending),
-    error: [
-      summary,
-      actuals,
-      horizons,
-      stores,
-      workbench,
-      drivers,
-      signals,
-      versions
-    ].find((query) => query.error)?.error,
+    // No aggregate `pending`. It was .some(isPending) over all eight queries, and
+    // reading it anywhere reinstates the all-or-nothing first paint that the
+    // shell/panel split exists to remove. Callers test the sources they render.
+    // Per source, not just the first of any. A single aggregated error made an
+    // inactive query fatal to the whole page: a failing workbench request -- which
+    // only SKU View and the modals read -- replaced a fully-loaded Overview with
+    // the fatal card. Callers scope this to what they actually render.
+    errors: {
+      summary: summary.error,
+      actuals: actuals.error,
+      horizons: horizons.error,
+      stores: stores.error,
+      workbench: workbench.error,
+      drivers: drivers.error,
+      signals: signals.error,
+      versions: versions.error
+    },
     summary: summary.data,
     actuals: actuals.data,
     horizons: horizons.data,
@@ -1733,17 +1796,43 @@ export function DemandForecast({
     }
   }
 
-  if (data.error) {
+  // What the SHELL itself reads: the KPI row above the tab strip takes accuracy
+  // and bias from `scopedMetrics` (horizons) and FVA from `summary`. Everything
+  // else belongs to one tab, so it is guarded inside that tab's panel below
+  // rather than here -- withholding the whole page for a panel's data removed the
+  // toolbar, KPIs and tab strip, leaving no way to switch back to a tab that had
+  // already loaded.
+  const shellSources = ["summary", "horizons"] as const;
+  // One dependency map per tab, used for BOTH pending and errors so the two can
+  // never disagree about what a tab needs. `versions` appears nowhere: only the
+  // modal reads it, and every modal data prop is optional and optional-chained.
+  const panelSources: Record<Tab, ReadonlyArray<ForecastSource>> = {
+    "Overview": ["actuals", "horizons"],
+    "Store View": ["stores"],
+    "SKU View": ["workbench"],
+    "Demand Drivers": ["drivers", "signals"],
+    "Governance": []
+  };
+  const fatalError = shellSources.map((source) => data.errors[source]).find(Boolean);
+  if (fatalError) {
     return (
       <div className="state-card error-state">
         <strong>Live forecast data is unavailable.</strong>
-        <span>{String(data.error)}</span>
+        <span>{String(fatalError)}</span>
         <small>No sample or fallback values are displayed.</small>
       </div>
     );
   }
-  if (data.pending || !data.summary || !data.actuals || !data.horizons ||
-    !data.stores || !data.workbench || !data.drivers || !data.signals || !data.versions) {
+  // `data.pending` is deliberately not consulted: it is `.some(isPending)` over
+  // every query, so it would reinstate the all-or-nothing wait -- the default
+  // Overview tab paid the ~3.5s workbench request on every cold load for data it
+  // never renders. `!data.X` is the equivalent per-source test, and because each
+  // query carries `placeholderData: (previous) => previous` a filter change keeps
+  // the last good value on screen instead of blanking it.
+  // Listed explicitly as well as via `shellSources` so the compiler narrows the
+  // two sources the shell dereferences below; `some()` over a key list proves
+  // nothing to the checker, and reaching for `!` would just hide it.
+  if (shellSources.some((source) => !data[source]) || !data.summary || !data.horizons) {
     return <div className="state-card">Loading the accepted forecast…</div>;
   }
 
@@ -1874,31 +1963,48 @@ export function DemandForecast({
       </div>
       <section className="forecast-panel" role="tabpanel">
         {tab === "Overview" && (
-          <Overview
-            data={data}
-            healthGrain={healthGrain}
-            granularity={granularity}
-            horizonWeeks={horizonWeeks}
-            windowMetrics={scopedMetrics}
-            setModal={openModal}
-          />
+          <TabPanelState data={data} sources={panelSources.Overview}>
+            <Overview
+              data={data}
+              healthGrain={healthGrain}
+              granularity={granularity}
+              horizonWeeks={horizonWeeks}
+              windowMetrics={scopedMetrics}
+              setModal={openModal}
+            />
+          </TabPanelState>
         )}
-        {tab === "Store View" && <StoreView data={data} setModal={openModal} />}
+        {tab === "Store View" && (
+          <TabPanelState data={data} sources={panelSources["Store View"]}>
+            <StoreView data={data} setModal={openModal} />
+          </TabPanelState>
+        )}
         {tab === "SKU View" && (
-          <SkuView
-            data={data}
-            selected={selectedRows}
-            onToggle={toggleWorkbenchRow}
-            onToggleAll={toggleAllWorkbenchRows}
-          />
+          <TabPanelState data={data} sources={panelSources["SKU View"]}>
+            <SkuView
+              data={data}
+              selected={selectedRows}
+              onToggle={toggleWorkbenchRow}
+              onToggleAll={toggleAllWorkbenchRows}
+            />
+          </TabPanelState>
         )}
-        {tab === "Demand Drivers" && <DriversView data={data} />}
+        {tab === "Demand Drivers" && (
+          <TabPanelState data={data} sources={panelSources["Demand Drivers"]}>
+            <DriversView data={data} />
+          </TabPanelState>
+        )}
         {tab === "Governance" && <GovernanceView data={data} />}
       </section>
       {modal && modal !== "scenario" && (
         <ForecastModal
           modal={modal}
           onClose={() => setModal(null)}
+          sourceError={
+            modal === "versions" ? data.errors.versions
+              : modal === "stores" ? data.errors.stores
+                : data.errors.workbench
+          }
           summary={data.summary}
           stores={data.stores}
           version={data.versions}
