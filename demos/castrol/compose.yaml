@@ -1,0 +1,25 @@
+name: retail-castrol-demo
+
+services:
+  postgres:
+    image: postgres:17.10-bookworm
+    container_name: retail-castrol-demo-postgres
+    environment:
+      POSTGRES_USER: retail
+      POSTGRES_PASSWORD: castrol-demo-local-only
+      POSTGRES_DB: retail_intelligence
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - castrol-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retail -d retail_intelligence"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  castrol-data:
+    name: retail-castrol-demo-data
+    labels:
+      retail.demo: castrol-disposable

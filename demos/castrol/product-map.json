@@ -1,0 +1,707 @@
+{
+  "schemaVersion": 1,
+  "checkedOn": "2026-09-24",
+  "purpose": "Disposable synthetic Castrol-branded demonstration catalog; these mappings are not lubricant substitution advice.",
+  "sourceCatalog": "datagen/configs/gulf-oil-india-ten-year.json",
+  "notes": [
+    "Only the product-family identities are sourced. SKU identifiers, line distinctions, grades, pack combinations, dates, prices, costs, demand, stock and forecasts remain synthetic demonstration data; they are not an official Castrol India catalog or actual Castrol business data.",
+    "Indian official sources are used where available; global Castrol sources support other authentic families. Global references do not establish Indian distribution or current local availability.",
+    "Several source families map to one authentic target family. Keep unique synthetic SKU identifiers; do not invent extra Castrol product names to make the mapping one-to-one.",
+    "Mappings follow broad application category only and do not assert formulation, performance specification, OEM approval or technical interchangeability.",
+    "The conversion must use null mappings to exclude associated products and dependent serving data rather than rename unsupported merchandise.",
+    "The Castrol and Gulf brands must both be excluded from competitor-brand and competitor-product fields; an owned Castrol product in a comparison record is expected."
+  ],
+  "productMap": {
+    "Gulf Pride 4T Plus": "Castrol Activ 4T",
+    "Gulf Pride 4T Ultra": "Castrol POWER1 4T",
+    "Gulf Pride 4T UltraSynth": "Castrol POWER1 ULTIMATE",
+    "Gulf Pride 2T": "Castrol Activ 2T",
+    "Gulf Pride 4T Scooter": "Castrol Activ Scooter",
+    "Gulf Formula G": "Castrol MAGNATEC",
+    "Gulf Formula ULE": "Castrol EDGE",
+    "Gulf Formula GX": "Castrol GTX",
+    "Gulf Ultrasynth X": "Castrol EDGE",
+    "Gulf Formula Diesel": "Castrol GTX Diesel",
+    "Gulf Superfleet XLD": "Castrol CRB TURBOMAX",
+    "Gulf Superfleet LE": "Castrol VECTON",
+    "Gulf Superfleet Supreme": "Castrol CRB ESSENTIAL",
+    "Gulf Superfleet Turbo": "Castrol CRB TURBOMAX",
+    "Gulf Superfleet LNG": null,
+    "Gulf Superfleet CK-4": "Castrol CRB TURBOMAX+",
+    "Gulf Superior Tractor Oil": "Castrol CRB PLUS",
+    "Gulf Max Star": "Castrol CRB PRIMA",
+    "Gulf Multi TF": "Castrol TRANSMAX Agri MP",
+    "Gulf Tracsynth": "Castrol CRB PLUS",
+    "Gulf Gear MP": "Castrol TRANSMAX Axle EPX",
+    "Gulf Gear EP": "Castrol TRANSMAX Axle EPX",
+    "Gulf Gear HD": "Castrol TRANSMAX Universal LL",
+    "Gulf Gear Synth": "Castrol TRANSMAX Axle Long Life",
+    "Gulf ATF DX-III": "Castrol TRANSMAX DEX/MERC",
+    "Gulf ATF Multi": "Castrol TRANSMAX ATF/CVT Universal",
+    "Gulf UTTO": "Castrol TRANSMAX Agri Trans Plus",
+    "Gulf Crown Grease": "Castrol Spheerol EPL",
+    "Gulf Superlith": "Castrol Spheerol EPLX 460",
+    "Gulf Wheel Bearing Grease": "Castrol Spheerol HTB",
+    "Gulf Multipurpose Grease": "Castrol Spheerol AP",
+    "Gulf Radiator Coolant": "Castrol Radicool Essential",
+    "Gulf Endurance Coolant": "Castrol Radicool SF",
+    "Gulf Brake Fluid DOT 3": "Castrol Brake Fluid DOT 3",
+    "Gulf Brake Fluid DOT 4": "Castrol Brake Fluid DOT 4",
+    "Gulf Harmony AW": "Castrol Hyspin AWS",
+    "Gulf Harmony HVI": "Castrol Hyspin AWH-M",
+    "Gulf Harmony ZF": "Castrol Hyspin ZZ",
+    "Gulf Hydrasynth": "Castrol Hyspin DSP",
+    "Gulf Cyclo Compressor Oil": "Castrol Aircol PD",
+    "Gulf Turbine Oil": "Castrol Perfecto T",
+    "Gulf Compressor Synth": "Castrol Aircol SR",
+    "Gulf Cutting Oil": "Castrol Ilocut",
+    "Gulf Soluble Cutting Fluid": "Castrol Hysol",
+    "Gulf Quenching Oil": "Castrol Iloquench",
+    "Gulf Industrial Gear EP": "Castrol Alpha SP",
+    "Gulf Circulating Oil": "Castrol Magna",
+    "Gulf Industrial Gear Synth": "Castrol Optigear Synthetic X",
+    "Gulf AdBlue": "Castrol AdBlue",
+    "Gulf AdBlue Pro": "Castrol AdBlue",
+    "Gulf eVolt Driveline Fluid": "Castrol ON EV Transmission Fluid",
+    "Gulf eVolt Coolant": "Castrol ON EV Thermal Fluid",
+    "Gulf eVolt Thermal Fluid": "Castrol ON EV Thermal Fluid",
+    "Gulf Car Battery 35Ah": null,
+    "Gulf Car Battery 65Ah": null,
+    "Gulf Two-wheeler Battery 9Ah": null,
+    "Gulf Inverter Battery 150Ah": null,
+    "Gulf Car Wash Shampoo": "Castrol Ultra Protect Shampoo",
+    "Gulf Radiator Flush": null,
+    "Gulf Chain Lube Spray": "Castrol Chain Lube",
+    "Gulf Brake Cleaner": "Castrol Brake Cleaner",
+    "Gulf Pride 4T UltraSynth Plus": "Castrol POWER1 ULTIMATE",
+    "Gulf Ultrasynth X LV": "Castrol EDGE",
+    "Gulf Superfleet CK-4 Plus": "Castrol CRB TURBOMAX+",
+    "Gulf Tracsynth Pro": "Castrol CRB PLUS",
+    "Gulf Gear Synth LS": "Castrol TRANSMAX Limited Slip",
+    "Gulf Superlith EP2": "Castrol Spheerol EPLX 460",
+    "Gulf Endurance Coolant OAT": "Castrol Radicool SF",
+    "Gulf Hydrasynth HV": "Castrol Hyspin AWH-M",
+    "Gulf eVolt Driveline Fluid 2": "Castrol ON EV Transmission Fluid",
+    "Gulf eVolt Battery Coolant": "Castrol ON EV Thermal Fluid",
+    "Gulf AdBlue Bulk": "Castrol AdBlue",
+    "Gulf Engine Flush": "Castrol Engine Shampoo - Two Wheelers"
+  },
+  "productNotes": {
+    "Gulf Pride 4T Plus": {
+      "sourceProductCode": "GLF-PRIDE-4T-PLUS",
+      "sourceIds": [
+        "india_2025",
+        "activ_global"
+      ],
+      "application": "mco",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Pride 4T Ultra": {
+      "sourceProductCode": "GLF-PRIDE-4T-ULTRA",
+      "sourceIds": [
+        "india_portfolio",
+        "nz_catalogue"
+      ],
+      "application": "mco",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Pride 4T UltraSynth": {
+      "sourceProductCode": "GLF-PRIDE-4T-USYN",
+      "sourceIds": [
+        "india_2025",
+        "nz_catalogue"
+      ],
+      "application": "mco",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Pride 2T": {
+      "sourceProductCode": "GLF-PRIDE-2T",
+      "sourceIds": [
+        "activ_global",
+        "nz_catalogue"
+      ],
+      "application": "mco",
+      "note": "Authentic two-stroke family. The source 20W-40 attribute is synthetic and must not be represented as an official Castrol Activ 2T grade."
+    },
+    "Gulf Pride 4T Scooter": {
+      "sourceProductCode": "GLF-PRIDE-4T-SCOOT",
+      "sourceIds": [
+        "india_2025"
+      ],
+      "application": "mco",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Formula G": {
+      "sourceProductCode": "GLF-FORMULA-G",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Formula ULE": {
+      "sourceProductCode": "GLF-FORMULA-ULE",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Formula GX": {
+      "sourceProductCode": "GLF-FORMULA-GX",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Ultrasynth X": {
+      "sourceProductCode": "GLF-ULTRASYNTH-X",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Formula Diesel": {
+      "sourceProductCode": "GLF-FORMULA-DSL",
+      "sourceIds": [
+        "india_gtx_diesel"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet XLD": {
+      "sourceProductCode": "GLF-SUPERFLEET-XLD",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet LE": {
+      "sourceProductCode": "GLF-SUPERFLEET-LE",
+      "sourceIds": [
+        "india_gtx_diesel"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet Supreme": {
+      "sourceProductCode": "GLF-SUPERFLEET-SUP",
+      "sourceIds": [
+        "india_2024"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet Turbo": {
+      "sourceProductCode": "GLF-SUPERFLEET-TURBO",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet LNG": {
+      "sourceProductCode": "GLF-SUPERFLEET-LNG",
+      "sourceIds": [],
+      "application": "deo",
+      "reason": "No verified compatible Castrol LNG vehicle engine-oil counterpart; diesel engine oil is not assumed equivalent."
+    },
+    "Gulf Superfleet CK-4": {
+      "sourceProductCode": "GLF-SUPERFLEET-CK4",
+      "sourceIds": [
+        "india_2025",
+        "india_2024"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superior Tractor Oil": {
+      "sourceProductCode": "GLF-SUP-TRACTOR-OIL",
+      "sourceIds": [
+        "india_2025",
+        "india_2024"
+      ],
+      "application": "tractor",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Max Star": {
+      "sourceProductCode": "GLF-MAX-STAR",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "tractor",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Multi TF": {
+      "sourceProductCode": "GLF-MULTI-TF",
+      "sourceIds": [
+        "agriculture"
+      ],
+      "application": "tractor",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Tracsynth": {
+      "sourceProductCode": "GLF-TRACSYNTH",
+      "sourceIds": [
+        "india_2025",
+        "india_2024"
+      ],
+      "application": "tractor",
+      "note": "Application-family mapping only; do not retain an assertion that the target has the source synthetic formulation. Original formulation equivalence is not claimed."
+    },
+    "Gulf Gear MP": {
+      "sourceProductCode": "GLF-GEAR-MP",
+      "sourceIds": [
+        "axle_fluids"
+      ],
+      "application": "gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Gear EP": {
+      "sourceProductCode": "GLF-GEAR-EP",
+      "sourceIds": [
+        "axle_fluids"
+      ],
+      "application": "gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Gear HD": {
+      "sourceProductCode": "GLF-GEAR-HD",
+      "sourceIds": [
+        "axle_fluids"
+      ],
+      "application": "gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Gear Synth": {
+      "sourceProductCode": "GLF-GEAR-SYNTH",
+      "sourceIds": [
+        "axle_fluids"
+      ],
+      "application": "gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf ATF DX-III": {
+      "sourceProductCode": "GLF-ATF-DX3",
+      "sourceIds": [
+        "us_transmax"
+      ],
+      "application": "atf",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf ATF Multi": {
+      "sourceProductCode": "GLF-ATF-MULTI",
+      "sourceIds": [
+        "us_transmax"
+      ],
+      "application": "atf",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf UTTO": {
+      "sourceProductCode": "GLF-UTTO",
+      "sourceIds": [
+        "agriculture"
+      ],
+      "application": "atf",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Crown Grease": {
+      "sourceProductCode": "GLF-CROWN-GREASE",
+      "sourceIds": [
+        "nz_catalogue",
+        "sugar"
+      ],
+      "application": "grease",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superlith": {
+      "sourceProductCode": "GLF-SUPERLITH",
+      "sourceIds": [
+        "eplx"
+      ],
+      "application": "grease",
+      "note": "Official Spheerol EPLX 460 data sheet covers NLGI 1 and 2. Any retained NLGI 3 attribute is synthetic and is not an authentic target SKU specification."
+    },
+    "Gulf Wheel Bearing Grease": {
+      "sourceProductCode": "GLF-WHEEL-BEARING",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "grease",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Multipurpose Grease": {
+      "sourceProductCode": "GLF-MP-GREASE",
+      "sourceIds": [
+        "sugar"
+      ],
+      "application": "grease",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Radiator Coolant": {
+      "sourceProductCode": "GLF-RAD-COOLANT",
+      "sourceIds": [
+        "india_radicool"
+      ],
+      "application": "coolant-brake",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Endurance Coolant": {
+      "sourceProductCode": "GLF-ENDURANCE-COOL",
+      "sourceIds": [
+        "radicool_oat"
+      ],
+      "application": "coolant-brake",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Brake Fluid DOT 3": {
+      "sourceProductCode": "GLF-BRAKE-DOT3",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "coolant-brake",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Brake Fluid DOT 4": {
+      "sourceProductCode": "GLF-BRAKE-DOT4",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "coolant-brake",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Harmony AW": {
+      "sourceProductCode": "GLF-HARMONY-AW",
+      "sourceIds": [
+        "industrial"
+      ],
+      "application": "hydraulic",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Harmony HVI": {
+      "sourceProductCode": "GLF-HARMONY-HVI",
+      "sourceIds": [
+        "hydraulics"
+      ],
+      "application": "hydraulic",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Harmony ZF": {
+      "sourceProductCode": "GLF-HARMONY-ZF",
+      "sourceIds": [
+        "hydraulics"
+      ],
+      "application": "hydraulic",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Hydrasynth": {
+      "sourceProductCode": "GLF-HYDRASYNTH",
+      "sourceIds": [
+        "hydraulics"
+      ],
+      "application": "hydraulic",
+      "note": "Application-family mapping only; do not retain an assertion that the target has the source synthetic formulation. Original formulation equivalence is not claimed."
+    },
+    "Gulf Cyclo Compressor Oil": {
+      "sourceProductCode": "GLF-CYCLO-COMP",
+      "sourceIds": [
+        "sugar"
+      ],
+      "application": "compressor-turbine",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Turbine Oil": {
+      "sourceProductCode": "GLF-TURBINE-OIL",
+      "sourceIds": [
+        "sugar"
+      ],
+      "application": "compressor-turbine",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Compressor Synth": {
+      "sourceProductCode": "GLF-COMP-SYNTH",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "compressor-turbine",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Cutting Oil": {
+      "sourceProductCode": "GLF-CUTTING-OIL",
+      "sourceIds": [
+        "metalworking"
+      ],
+      "application": "metalworking",
+      "note": "Authentic application family. Source ISO viscosity labels and pack combinations are synthetic demo attributes, not confirmed Castrol specifications."
+    },
+    "Gulf Soluble Cutting Fluid": {
+      "sourceProductCode": "GLF-SOLUBLE-CUT",
+      "sourceIds": [
+        "metalworking",
+        "india_2025"
+      ],
+      "application": "metalworking",
+      "note": "Authentic application family. Source ISO viscosity labels and pack combinations are synthetic demo attributes, not confirmed Castrol specifications."
+    },
+    "Gulf Quenching Oil": {
+      "sourceProductCode": "GLF-QUENCH-OIL",
+      "sourceIds": [
+        "metalworking"
+      ],
+      "application": "metalworking",
+      "note": "Authentic application family. Source ISO viscosity labels and pack combinations are synthetic demo attributes, not confirmed Castrol specifications."
+    },
+    "Gulf Industrial Gear EP": {
+      "sourceProductCode": "GLF-IND-GEAR-EP",
+      "sourceIds": [
+        "industrial"
+      ],
+      "application": "industrial-gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Circulating Oil": {
+      "sourceProductCode": "GLF-CIRC-OIL",
+      "sourceIds": [
+        "industrial"
+      ],
+      "application": "industrial-gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Industrial Gear Synth": {
+      "sourceProductCode": "GLF-IND-GEAR-SYN",
+      "sourceIds": [
+        "india_optigear"
+      ],
+      "application": "industrial-gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf AdBlue": {
+      "sourceProductCode": "GLF-ADBLUE",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "adblue",
+      "note": "Castrol AdBlue is documented in the official New Zealand catalog. India availability is unverified. All former Standard/Pro/Bulk lines use the same authentic family; no Castrol AdBlue Pro product is invented."
+    },
+    "Gulf AdBlue Pro": {
+      "sourceProductCode": "GLF-ADBLUE-PRO",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "adblue",
+      "note": "Castrol AdBlue is documented in the official New Zealand catalog. India availability is unverified. All former Standard/Pro/Bulk lines use the same authentic family; no Castrol AdBlue Pro product is invented."
+    },
+    "Gulf eVolt Driveline Fluid": {
+      "sourceProductCode": "GLF-EVOLT-DRIVE",
+      "sourceIds": [
+        "ev"
+      ],
+      "application": "ev-fluids",
+      "note": "Authentic global Castrol ON fluid family; particular retail pack formats and India availability are not verified. Multiple source lines remain separate synthetic demonstration lines."
+    },
+    "Gulf eVolt Coolant": {
+      "sourceProductCode": "GLF-EVOLT-COOL",
+      "sourceIds": [
+        "ev",
+        "ev_thermal"
+      ],
+      "application": "ev-fluids",
+      "note": "Authentic global Castrol ON fluid family; particular retail pack formats and India availability are not verified. Multiple source lines remain separate synthetic demonstration lines."
+    },
+    "Gulf eVolt Thermal Fluid": {
+      "sourceProductCode": "GLF-EVOLT-THERM",
+      "sourceIds": [
+        "ev",
+        "ev_thermal"
+      ],
+      "application": "ev-fluids",
+      "note": "Authentic global Castrol ON fluid family; particular retail pack formats and India availability are not verified. Multiple source lines remain separate synthetic demonstration lines."
+    },
+    "Gulf Car Battery 35Ah": {
+      "sourceProductCode": "GLF-BATT-CAR-35AH",
+      "sourceIds": [],
+      "application": "battery",
+      "reason": "No verified Castrol battery counterpart; excluded instead of reclassifying a battery as lubricant."
+    },
+    "Gulf Car Battery 65Ah": {
+      "sourceProductCode": "GLF-BATT-CAR-65AH",
+      "sourceIds": [],
+      "application": "battery",
+      "reason": "No verified Castrol battery counterpart; excluded instead of reclassifying a battery as lubricant."
+    },
+    "Gulf Two-wheeler Battery 9Ah": {
+      "sourceProductCode": "GLF-BATT-BIKE-9AH",
+      "sourceIds": [],
+      "application": "battery",
+      "reason": "No verified Castrol battery counterpart; excluded instead of reclassifying a battery as lubricant."
+    },
+    "Gulf Inverter Battery 150Ah": {
+      "sourceProductCode": "GLF-BATT-INV-150AH",
+      "sourceIds": [],
+      "application": "battery",
+      "reason": "No verified Castrol battery counterpart; excluded instead of reclassifying a battery as lubricant."
+    },
+    "Gulf Car Wash Shampoo": {
+      "sourceProductCode": "GLF-WASH-SHAMPOO",
+      "sourceIds": [
+        "india_2025"
+      ],
+      "application": "car-care",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Radiator Flush": {
+      "sourceProductCode": "GLF-RADIATOR-FLUSH",
+      "sourceIds": [],
+      "application": "car-care",
+      "reason": "No verified compatible Castrol radiator-flush counterpart."
+    },
+    "Gulf Chain Lube Spray": {
+      "sourceProductCode": "GLF-CHAIN-LUBE",
+      "sourceIds": [
+        "india_2024"
+      ],
+      "application": "car-care",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Brake Cleaner": {
+      "sourceProductCode": "GLF-BRAKE-CLEANER",
+      "sourceIds": [
+        "india_2025"
+      ],
+      "application": "car-care",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Pride 4T UltraSynth Plus": {
+      "sourceProductCode": "GLF-PRIDE-4T-USYN-PLUS",
+      "sourceIds": [
+        "india_2025",
+        "nz_catalogue"
+      ],
+      "application": "mco",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Ultrasynth X LV": {
+      "sourceProductCode": "GLF-ULTRASYNTH-X-LV",
+      "sourceIds": [
+        "india_portfolio"
+      ],
+      "application": "pcmo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superfleet CK-4 Plus": {
+      "sourceProductCode": "GLF-SUPERFLEET-CK4-PLUS",
+      "sourceIds": [
+        "india_2025",
+        "india_2024"
+      ],
+      "application": "deo",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Tracsynth Pro": {
+      "sourceProductCode": "GLF-TRACSYNTH-PRO",
+      "sourceIds": [
+        "india_2025",
+        "india_2024"
+      ],
+      "application": "tractor",
+      "note": "Application-family mapping only; do not retain an assertion that the target has the source synthetic formulation. Original formulation equivalence is not claimed."
+    },
+    "Gulf Gear Synth LS": {
+      "sourceProductCode": "GLF-GEAR-SYNTH-LS",
+      "sourceIds": [
+        "axle_fluids"
+      ],
+      "application": "gear",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Superlith EP2": {
+      "sourceProductCode": "GLF-SUPERLITH-EP2",
+      "sourceIds": [
+        "eplx"
+      ],
+      "application": "grease",
+      "note": "Official Spheerol EPLX 460 data sheet covers NLGI 1 and 2. Any retained NLGI 3 attribute is synthetic and is not an authentic target SKU specification."
+    },
+    "Gulf Endurance Coolant OAT": {
+      "sourceProductCode": "GLF-ENDURANCE-COOL-OAT",
+      "sourceIds": [
+        "radicool_oat"
+      ],
+      "application": "coolant-brake",
+      "note": "Family identity is documented by the linked official sources. This is a category-level demo mapping, not a technical interchangeability or India SKU-availability claim."
+    },
+    "Gulf Hydrasynth HV": {
+      "sourceProductCode": "GLF-HYDRASYNTH-HV",
+      "sourceIds": [
+        "hydraulics"
+      ],
+      "application": "hydraulic",
+      "note": "Application-family mapping only; do not retain an assertion that the target has the source synthetic formulation. Original formulation equivalence is not claimed."
+    },
+    "Gulf eVolt Driveline Fluid 2": {
+      "sourceProductCode": "GLF-EVOLT-DRIVE-2",
+      "sourceIds": [
+        "ev"
+      ],
+      "application": "ev-fluids",
+      "note": "Authentic global Castrol ON fluid family; particular retail pack formats and India availability are not verified. Multiple source lines remain separate synthetic demonstration lines."
+    },
+    "Gulf eVolt Battery Coolant": {
+      "sourceProductCode": "GLF-EVOLT-BATTERY-COOL",
+      "sourceIds": [
+        "ev",
+        "ev_thermal"
+      ],
+      "application": "ev-fluids",
+      "note": "Authentic global Castrol ON fluid family; particular retail pack formats and India availability are not verified. Multiple source lines remain separate synthetic demonstration lines."
+    },
+    "Gulf AdBlue Bulk": {
+      "sourceProductCode": "GLF-ADBLUE-BULK",
+      "sourceIds": [
+        "nz_catalogue"
+      ],
+      "application": "adblue",
+      "note": "Castrol AdBlue is documented in the official New Zealand catalog. India availability is unverified. All former Standard/Pro/Bulk lines use the same authentic family; no Castrol AdBlue Pro product is invented."
+    },
+    "Gulf Engine Flush": {
+      "sourceProductCode": "GLF-ENGINE-FLUSH",
+      "sourceIds": [
+        "engine_shampoo"
+      ],
+      "application": "car-care",
+      "note": "Engine-cleaning counterpart documented in a Castrol India-format safety data sheet. Specifically a two-wheeler engine shampoo; no all-vehicle compatibility is asserted."
+    }
+  },
+  "sources": {
+    "india_2025": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_in/india/home/documents/investors/cil-annual-report-2025.pdf",
+    "india_2024": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_in/india/home/documents/investors/cil-annual-report-2024.pdf",
+    "india_portfolio": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_in/india/home/documents/investors/cil-2q-1h-2024-earnings-call-transcript.pdf",
+    "india_gtx_diesel": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_in/india/home/documents/investors/second-quarter-ended-30june2022.pdf",
+    "activ_global": "https://www.castrol.com/id_id/indonesia/home/products/our-brands/two-wheelers/castrol-activ.html",
+    "nz_catalogue": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_nz/new-zealand/home/documents/castrol-new-zealand-product-catalogue-q2-2024.pdf",
+    "us_transmax": "https://www.castrol.com/en_us/united-states/home/products/our-brands/automotive/castrol-transmax.html",
+    "axle_fluids": "https://www.castrol.com/pt_pt/portugal/home/products/commercial-vehicle/commercial-product-type/axle-and-universal-fluids.html",
+    "agriculture": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_za/south_africa/home/industries/commercial-vehicles-applications/agriculture/ts-and-cs-castrol-agri-national-promo.pdf",
+    "eplx": "https://msdspds.castrol.com/bpglis/FusionPDS.nsf/Files/EFC7C5FDD67DDC018025825B0058303A/%24File/Spheerol%20EPLX%20460.pdf",
+    "radicool_oat": "https://www.castrol.com/de_de/germany/home/products/automotive/automotive-engines/coolants.html",
+    "india_radicool": "https://msdspds.castrol.com/ussds/amersdsf.nsf/0/F443EFE16C07232680258A9E00583065/%24file/3061589.pdf",
+    "hydraulics": "https://www.castrol.com/en_us/united-states/home/products/industrial/lubricants/hydraulic-fluids.html",
+    "industrial": "https://www.castrol.com/en_ke/east_africa/home/industries/industrial.html",
+    "sugar": "https://www.castrol.com/en_us/united-states/home/industries/other-industries/sugar.html",
+    "metalworking": "https://www.castrol.com/en_gb/united-kingdom/home/industries/automotive-manufacture/engine-and-transmission/engine.html",
+    "india_optigear": "https://www.castrol.com/content/dam/castrol/country-sites-new/en_in/india/home/documents/investors/6-castrol_india_limited_annual_report_24apr.pdf",
+    "ev": "https://www.castrol.com/en/global/corporate/products/our-brands/cars/castrol-on.html",
+    "ev_thermal": "https://www.castrol.com/en/global/corporate/products/our-brands/cars/castrol-on/castrol-on-ev-thermal-fluids.html",
+    "engine_shampoo": "https://msdspds.castrol.com/ussds/amersdsf.nsf/0/95D530F5C3A53BAD80258C0E0057F956/%24file/3146153.pdf"
+  },
+  "summary": {
+    "sourceProductCount": 73,
+    "retainedSourceProductCount": 67,
+    "excludedSourceProductCount": 6,
+    "retainedVariantCount": 268,
+    "excludedVariantCount": 24
+  }
+}
